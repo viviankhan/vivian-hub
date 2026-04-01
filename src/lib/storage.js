@@ -1,70 +1,160 @@
 // src/lib/storage.js
-// ─────────────────────────────────────────────────────────────
-// Abstraction layer: uses Supabase when configured, falls back
-// to localStorage. The rest of the app only calls these functions
-// and never knows which backend is being used.
-// ─────────────────────────────────────────────────────────────
-
 import { createClient } from '@supabase/supabase-js'
 
-const SUPABASE_URL  = import.meta.env.VITE_SUPABASE_URL
-const SUPABASE_KEY  = import.meta.env.VITE_SUPABASE_ANON_KEY
-const USE_SUPABASE  = !!(SUPABASE_URL && SUPABASE_KEY)
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
+const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY
+const USE_SUPABASE = !!(SUPABASE_URL && SUPABASE_KEY)
 
-export const supabase = USE_SUPABASE
-  ? createClient(SUPABASE_URL, SUPABASE_KEY)
-  : null
+export const supabase = USE_SUPABASE ? createClient(SUPABASE_URL, SUPABASE_KEY) : null
+export const isUsingSupabase = USE_SUPABASE
 
-// ── Low-level get / set ────────────────────────────────────────
+// ── localStorage helpers ───────────────────────────────────────
+async function lsGet(key) {
+  try { const r = localStorage.getItem('vivian_'+key); return r ? JSON.parse(r) : null } catch { return null }
+}
+async function lsSet(key, value) {
+  try { localStorage.setItem('vivian_'+key, JSON.stringify(value)) } catch {}
+}
 
+// ── KV store ───────────────────────────────────────────────────
 export async function dbGet(key) {
   if (USE_SUPABASE) {
-    const { data, error } = await supabase
-      .from('kv_store')
-      .select('value')
-      .eq('key', key)
-      .maybeSingle()
-    if (error) console.error('dbGet', key, error)
+    const { data } = await supabase.from('kv_store').select('value').eq('key', key).maybeSingle()
     return data?.value ?? null
   }
-  try {
-    const raw = localStorage.getItem('vivian_' + key)
-    return raw ? JSON.parse(raw) : null
-  } catch { return null }
+  return lsGet(key)
 }
-
 export async function dbSet(key, value) {
   if (USE_SUPABASE) {
-    const { error } = await supabase
-      .from('kv_store')
-      .upsert({ key, value, updated_at: new Date().toISOString() })
-    if (error) console.error('dbSet', key, error)
+    await supabase.from('kv_store').upsert({ key, value, updated_at: new Date().toISOString() })
     return
   }
-  try { localStorage.setItem('vivian_' + key, JSON.stringify(value)) } catch {}
+  lsSet(key, value)
 }
 
-// ── High-level helpers ─────────────────────────────────────────
+export const getTodos          = () => dbGet('todos').then(v => v ?? {})
+export const setTodos          = v  => dbSet('todos', v)
+export const getWeekState      = () => dbGet('week_state').then(v => v ?? {})
+export const setWeekState      = v  => dbSet('week_state', v)
+export const getLog            = () => dbGet('log').then(v => v ?? [])
+export const setLog            = v  => dbSet('log', v)
+export const getNotes          = () => dbGet('notes').then(v => v ?? '')
+export const setNotes          = v  => dbSet('notes', v)
+export const getFcProgress     = () => dbGet('fc_progress').then(v => v ?? {})
+export const setFcProgress     = v  => dbSet('fc_progress', v)
+export const getFcStudied      = () => dbGet('fc_studied').then(v => v ?? {})
+export const setFcStudied      = v  => dbSet('fc_studied', v)
+export const getScheduledTasks = () => dbGet('scheduled_tasks').then(v => v ?? [])
+export const setScheduledTasks = v  => dbSet('scheduled_tasks', v)
 
-export async function getTodos()       { return await dbGet('todos')       ?? {} }
-export async function setTodos(v)      { await dbSet('todos', v) }
+// ── Classes ────────────────────────────────────────────────────
+export async function getClasses() {
+  if (USE_SUPABASE) {
+    const { data } = await supabase.from('classes').select('*').order('sort_order')
+    return data ?? []
+  }
+  return (await lsGet('classes')) ?? []
+}
+export async function addClass(cls) {
+  if (USE_SUPABASE) {
+    const { data } = await supabase.from('classes').insert(cls).select().single()
+    return data
+  }
+  const all = (await lsGet('classes')) ?? []
+  const created = { ...cls, id: 'cls-' + Date.now(), created_at: new Date().toISOString() }
+  await lsSet('classes', [...all, created])
+  return created
+}
+export async function deleteClass(id) {
+  if (USE_SUPABASE) { await supabase.from('classes').delete().eq('id', id); return }
+  const all = (await lsGet('classes')) ?? []
+  await lsSet('classes', all.filter(c => c.id !== id))
+}
 
-export async function getWeekState()   { return await dbGet('week_state')  ?? {} }
-export async function setWeekState(v)  { await dbSet('week_state', v) }
+// ── Weeks ──────────────────────────────────────────────────────
+export async function getWeeks(classId) {
+  if (USE_SUPABASE) {
+    const { data } = await supabase.from('study_weeks').select('*').eq('class_id', classId).order('sort_order')
+    return data ?? []
+  }
+  return (await lsGet('weeks_'+classId)) ?? []
+}
+export async function addWeek(week) {
+  if (USE_SUPABASE) {
+    const { data } = await supabase.from('study_weeks').insert(week).select().single()
+    return data
+  }
+  const all = (await lsGet('weeks_'+week.class_id)) ?? []
+  const created = { ...week, id: 'wk-' + Date.now(), created_at: new Date().toISOString() }
+  await lsSet('weeks_'+week.class_id, [...all, created])
+  return created
+}
+export async function deleteWeek(id, classId) {
+  if (USE_SUPABASE) { await supabase.from('study_weeks').delete().eq('id', id); return }
+  const all = (await lsGet('weeks_'+classId)) ?? []
+  await lsSet('weeks_'+classId, all.filter(w => w.id !== id))
+}
 
-export async function getLog()         { return await dbGet('log')         ?? [] }
-export async function setLog(v)        { await dbSet('log', v) }
+// ── Flashcards ─────────────────────────────────────────────────
+export async function getCards(weekId) {
+  if (USE_SUPABASE) {
+    const { data } = await supabase.from('flashcards').select('*').eq('week_id', weekId).order('created_at')
+    return data ?? []
+  }
+  return (await lsGet('cards_'+weekId)) ?? []
+}
+export async function importCards(cards) {
+  if (USE_SUPABASE) {
+    const { data, error } = await supabase.from('flashcards').upsert(cards, { onConflict: 'id' }).select()
+    if (error) throw error
+    return data
+  }
+  const byWeek = {}
+  cards.forEach(c => { if (!byWeek[c.week_id]) byWeek[c.week_id] = []; byWeek[c.week_id].push(c) })
+  for (const [wid, wCards] of Object.entries(byWeek)) {
+    const existing = (await lsGet('cards_'+wid)) ?? []
+    const merged = [...existing.filter(e => !wCards.find(n => n.id === e.id)), ...wCards]
+    await lsSet('cards_'+wid, merged)
+  }
+  return cards
+}
+export async function deleteCard(id, weekId) {
+  if (USE_SUPABASE) { await supabase.from('flashcards').delete().eq('id', id); return }
+  const all = (await lsGet('cards_'+weekId)) ?? []
+  await lsSet('cards_'+weekId, all.filter(c => c.id !== id))
+}
 
-export async function getNotes()       { return await dbGet('notes')       ?? '' }
-export async function setNotes(v)      { await dbSet('notes', v) }
-
-export async function getFcProgress()  { return await dbGet('fc_progress') ?? {} }
-export async function setFcProgress(v) { await dbSet('fc_progress', v) }
-
-export async function getFcStudied()   { return await dbGet('fc_studied')  ?? {} }
-export async function setFcStudied(v)  { await dbSet('fc_studied', v) }
-
-export async function getScheduledTasks() { return await dbGet('scheduled_tasks') ?? [] }
-export async function setScheduledTasks(v) { await dbSet('scheduled_tasks', v) }
-
-export const isUsingSupabase = USE_SUPABASE
+// ── Files ──────────────────────────────────────────────────────
+export async function getFiles(weekId) {
+  if (USE_SUPABASE) {
+    const { data } = await supabase.from('study_files').select('*').eq('week_id', weekId).order('created_at')
+    return data ?? []
+  }
+  return (await lsGet('files_'+weekId)) ?? []
+}
+export async function uploadFile(weekId, file) {
+  const addedDate = new Date().toISOString().split('T')[0]
+  if (USE_SUPABASE) {
+    const path = `${weekId}/${Date.now()}_${file.name}`
+    const { error: upErr } = await supabase.storage.from('study-files').upload(path, file)
+    if (upErr) throw upErr
+    const { data: urlData } = supabase.storage.from('study-files').getPublicUrl(path)
+    const record = { week_id: weekId, file_name: file.name, storage_path: path, file_url: urlData.publicUrl, file_size: Math.round(file.size/1024), added_date: addedDate }
+    const { data } = await supabase.from('study_files').insert(record).select().single()
+    return data
+  }
+  const b64 = await new Promise(res => { const r = new FileReader(); r.onload = e => res(e.target.result); r.readAsDataURL(file) })
+  const record = { id: 'f-'+Date.now(), week_id: weekId, file_name: file.name, file_url: b64, file_size: Math.round(file.size/1024), added_date: addedDate }
+  const all = (await lsGet('files_'+weekId)) ?? []
+  await lsSet('files_'+weekId, [...all, record])
+  return record
+}
+export async function deleteStudyFile(id, weekId, storagePath) {
+  if (USE_SUPABASE) {
+    if (storagePath) await supabase.storage.from('study-files').remove([storagePath])
+    await supabase.from('study_files').delete().eq('id', id)
+    return
+  }
+  const all = (await lsGet('files_'+weekId)) ?? []
+  await lsSet('files_'+weekId, all.filter(f => f.id !== id))
+}
