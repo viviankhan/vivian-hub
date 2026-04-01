@@ -67,12 +67,16 @@ export function findSlots(durationMinutes, scheduledTasks = [], deadlineDate = n
     const dayScheduled = scheduledTasks.filter(t => t.date === dateStr)
 
     // Merge all blocks into occupied ranges
+    // Filter out midnight-crossing blocks (e.g. sleep 22:30→06:00) whose
+    // end < start would corrupt the gap-finding algorithm.
     const occupied = [
-      ...fixedBlocks.map(b => ({
-        start: timeToMinutes(b.start),
-        end: timeToMinutes(b.end),
-        label: b.label,
-      })),
+      ...fixedBlocks
+        .filter(b => timeToMinutes(b.end) > timeToMinutes(b.start))
+        .map(b => ({
+          start: timeToMinutes(b.start),
+          end: timeToMinutes(b.end),
+          label: b.label,
+        })),
       ...dayScheduled.map(t => ({
         start: timeToMinutes(t.startTime),
         end: timeToMinutes(t.startTime) + t.durationMinutes,

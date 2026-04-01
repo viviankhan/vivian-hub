@@ -69,12 +69,10 @@ export default function App() {
   }, [])
 
   const appendLog = useCallback(async (entry) => {
-    setLogState(prev => {
-      const next = [...prev, { ...entry, ts: new Date().toISOString() }]
-      setLog(next)
-      return next
-    })
-  }, [])
+    const next = [...log, { ...entry, ts: new Date().toISOString() }]
+    setLogState(next)
+    await setLog(next)
+  }, [log])
 
   const updateNotes = useCallback(async (val) => {
     setNotesState(val)
@@ -92,12 +90,10 @@ export default function App() {
   }, [])
 
   const addScheduledTask = useCallback(async (task) => {
-    setScheduledState(prev => {
-      const next = [...prev, task]
-      setScheduledTasks(next)
-      return next
-    })
-  }, [])
+    const next = [...scheduled, task]
+    setScheduledState(next)
+    await setScheduledTasks(next)
+  }, [scheduled])
 
   if (loading) return (
     <div style={{ minHeight:'100vh', background:'#FAFAF7', display:'flex', alignItems:'center', justifyContent:'center' }}>
