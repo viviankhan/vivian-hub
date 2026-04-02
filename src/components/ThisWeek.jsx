@@ -6,6 +6,10 @@ const CAT_COLORS = {
   career:  { dot:'#D97706', bg:'#FEF9E7', text:'#78350F' },
   personal:{ dot:'#A855F7', bg:'#F5EEF8', text:'#6B3FA0' },
   urgent:  { dot:'#EF4444', bg:'#FEE2E2', text:'#7F1D1D' },
+  health:  { dot:'#E07B2E', bg:'#FFF3E4', text:'#7B4F1E' },
+  meeting: { dot:'#3B82F6', bg:'#EFF6FF', text:'#1E3A8A' },
+  deadline:{ dot:'#EF4444', bg:'#FEE2E2', text:'#7F1D1D' },
+  social:  { dot:'#A855F7', bg:'#F5EEF8', text:'#6B3FA0' },
 }
 
 function todayStr() {
@@ -13,86 +17,94 @@ function todayStr() {
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
 }
 
-export default function ThisWeek({ weekState, updateWeekState }) {
+function fmt12(t) {
+  if (!t) return ''
+  const [h, m] = t.split(':').map(Number)
+  return `${h % 12 || 12}:${String(m).padStart(2,'0')} ${h >= 12 ? 'PM' : 'AM'}`
+}
+
+function TaskRow({ id, text, cat, done, carried, carriedFrom, onToggle }) {
+  const c = CAT_COLORS[cat] || CAT_COLORS.career
+  return (
+    <div className={`week-task-row ${done ? 'done' : ''} ${carried ? 'carried' : ''}`}
+      style={{ opacity: done ? .45 : 1, background: carried ? '#FFFBEB' : undefined,
+        margin: carried ? '0 -16px' : undefined, paddingLeft: carried ? 16 : undefined, paddingRight: carried ? 16 : undefined }}
+      onClick={onToggle}>
+      <div className="week-task-dot" style={{ background: done ? c.dot : carried ? 'transparent' : 'transparent', borderColor: done ? c.dot : carried ? '#F59E0B' : '#D1D5DB' }}>
+        {done && <span style={{ color:'white', fontSize:10, fontWeight:700 }}>✓</span>}
+      </div>
+      <div style={{ flex:1, display:'flex', alignItems:'center', gap:6, flexWrap:'wrap' }}>
+        <span style={{ fontSize:13, color: done ? 'var(--muted)' : 'var(--text)', textDecoration: done ? 'line-through' : 'none' }}>{text}</span>
+        <span style={{ fontSize:9, letterSpacing:1, textTransform:'uppercase', padding:'1px 6px', borderRadius:10, background:c.bg, color:c.text }}>{cat}</span>
+        {carried && <span style={{ fontSize:9, letterSpacing:1, textTransform:'uppercase', padding:'1px 6px', borderRadius:10, background:'#FEF3C7', color:'#92400E' }}>↩ from {carriedFrom}</span>}
+      </div>
+    </div>
+  )
+}
+
+export default function ThisWeek({ todos, weekState, syncToggle, commitments }) {
   const today = todayStr()
   const todayIdx = WEEK_PLAN.findIndex(d => d.date === today)
+  const isDone = (id) => !!(todos[id] || weekState[id])
 
-  const toggle = async (id) => {
-    const next = { ...weekState, [id]: !weekState[id] }
-    await updateWeekState(next)
-  }
+  // Index commitments by date for quick lookup
+  const commitsByDate = {}
+  ;(commitments || []).forEach(c => {
+    if (!c.date) return
+    if (!commitsByDate[c.date]) commitsByDate[c.date] = []
+    commitsByDate[c.date].push(c)
+  })
 
   return (
     <div>
       <div className="page-title">This Week</div>
-      <div className="page-sub">Mar 30 – Apr 5 · Week 1 · Tap tasks to check off</div>
+      <div className="page-sub">Checking off here syncs with Today and the Log</div>
 
       {WEEK_PLAN.map((day, i) => {
         const isToday = day.date === today
-        const isPast = i < todayIdx
-        const done = day.tasks.filter(t => weekState[t.id]).length
+        const dayCommitments = (commitsByDate[day.date] || [])
+          .sort((a, b) => (a.time || '99').localeCompare(b.time || '99'))
 
-        // Carry-forward: tasks from previous day with carry:true that aren't done
-        const carried = i > 0
-          ? WEEK_PLAN[i-1].tasks.filter(t => t.carry && !weekState[t.id])
+        const carriedFromPrev = i > 0
+          ? WEEK_PLAN[i-1].tasks.filter(t => t.carry && !isDone(t.id))
           : []
+
+        const total = day.tasks.length + carriedFromPrev.length + dayCommitments.length
+        const done  = day.tasks.filter(t => isDone(t.id)).length
+          + dayCommitments.filter(c => isDone(c.id)).length
 
         return (
           <div key={day.date} className={`week-day-card ${isToday ? 'today' : ''}`}>
             <div className="week-day-header">
               <div style={{ display:'flex', alignItems:'center', gap:8 }}>
                 <span className="week-day-label">{day.dayLabel}</span>
-                {isToday && (
-                  <span style={{ fontSize:10, letterSpacing:1, textTransform:'uppercase', color:'#7ABF5E' }}>Today</span>
-                )}
+                {isToday && <span style={{ fontSize:10, letterSpacing:1, textTransform:'uppercase', color:'#7ABF5E' }}>Today</span>}
               </div>
-              <span style={{ fontSize:11, color: isToday ? 'var(--green-mid)' : 'var(--muted)' }}>{done}/{day.tasks.length + carried.length}</span>
+              <span style={{ fontSize:11, color: isToday ? 'var(--green-mid)' : 'var(--muted)' }}>{done}/{total}</span>
             </div>
 
             <div style={{ padding:'6px 16px 12px' }}>
-              {/* Carried tasks */}
-              {carried.map(t => {
-                const c = CAT_COLORS[t.cat] || CAT_COLORS.career
-                return (
-                  <div
-                    key={'carried-'+t.id}
-                    className="week-task-row carried"
-                    onClick={() => toggle(t.id)}
-                  >
-                    <div className="week-task-dot" style={{ borderColor:'#F59E0B' }} />
-                    <div style={{ flex:1 }}>
-                      <span style={{ fontSize:13, color:'var(--text)' }}>{t.text}</span>
-                      <span style={{ fontSize:9, letterSpacing:1, textTransform:'uppercase', padding:'1px 6px', borderRadius:10, marginLeft:6, background:'#FEF3C7', color:'#92400E' }}>
-                        ↩ from {WEEK_PLAN[i-1].dayLabel}
-                      </span>
-                    </div>
-                  </div>
-                )
-              })}
+              {/* Commitments for this day */}
+              {dayCommitments.map(c => (
+                <TaskRow key={c.id} id={c.id}
+                  text={c.time ? `${fmt12(c.time)} — ${c.text}` : c.text}
+                  cat={c.cat} done={isDone(c.id)}
+                  onToggle={() => syncToggle(c.id, c.text, c.cat)} />
+              ))}
 
-              {/* Day tasks */}
-              {day.tasks.map(t => {
-                const isDone = !!weekState[t.id]
-                const c = CAT_COLORS[t.cat] || CAT_COLORS.career
-                return (
-                  <div
-                    key={t.id}
-                    className={`week-task-row ${isDone ? 'done' : ''}`}
-                    onClick={() => toggle(t.id)}
-                  >
-                    <div
-                      className="week-task-dot"
-                      style={{ background: isDone ? c.dot : 'transparent', borderColor: isDone ? c.dot : '#D1D5DB' }}
-                    >
-                      {isDone && <span style={{ color:'white', fontSize:10, fontWeight:700 }}>✓</span>}
-                    </div>
-                    <div style={{ flex:1, display:'flex', alignItems:'center', gap:6, flexWrap:'wrap' }}>
-                      <span className={`week-task-text`} style={{ fontSize:13, color: isDone ? 'var(--muted)' : 'var(--text)', textDecoration: isDone ? 'line-through' : 'none' }}>{t.text}</span>
-                      <span style={{ fontSize:9, letterSpacing:1, textTransform:'uppercase', padding:'1px 6px', borderRadius:10, background:c.bg, color:c.text }}>{t.cat}</span>
-                    </div>
-                  </div>
-                )
-              })}
+              {/* Carried from previous day */}
+              {carriedFromPrev.map(t => (
+                <TaskRow key={'carry-'+t.id} id={t.id} text={t.text} cat={t.cat}
+                  done={isDone(t.id)} carried carriedFrom={WEEK_PLAN[i-1].dayLabel}
+                  onToggle={() => syncToggle(t.id, t.text, t.cat)} />
+              ))}
+
+              {/* Template tasks */}
+              {day.tasks.map(t => (
+                <TaskRow key={t.id} id={t.id} text={t.text} cat={t.cat}
+                  done={isDone(t.id)}
+                  onToggle={() => syncToggle(t.id, t.text, t.cat)} />
+              ))}
             </div>
           </div>
         )

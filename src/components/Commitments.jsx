@@ -1,15 +1,5 @@
-import { useState, useEffect, useCallback } from 'react'
-import { dbGet, dbSet } from '../lib/storage.js'
+import { useState } from 'react'
 
-// ── Storage helpers ────────────────────────────────────────────
-async function loadCommitments() {
-  return (await dbGet('commitments')) ?? []
-}
-async function saveCommitments(data) {
-  await dbSet('commitments', data)
-}
-
-// ── Helpers ────────────────────────────────────────────────────
 const DAYS = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday']
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 
@@ -33,14 +23,15 @@ function formatDate(dateStr) {
   return `${dayName} · ${monthDay}`
 }
 
-function isPast(dateStr) {
-  if (!dateStr) return false
-  const d = new Date(dateStr + 'T23:59:00')
-  return d < new Date()
+function fmt12(t) {
+  if (!t) return ''
+  const [h, m] = t.split(':').map(Number)
+  return `${h % 12 || 12}:${String(m).padStart(2,'0')} ${h >= 12 ? 'PM' : 'AM'}`
 }
 
-function isToday(dateStr) {
-  return dateStr === todayStr()
+function isPast(dateStr) {
+  if (!dateStr) return false
+  return new Date(dateStr + 'T23:59:00') < new Date()
 }
 
 function isSoon(dateStr) {
@@ -52,18 +43,16 @@ function isSoon(dateStr) {
 }
 
 const CATEGORIES = [
-  { id:'meeting',   label:'Meeting',        color:'#3B82F6', bg:'#EFF6FF' },
-  { id:'deadline',  label:'Deadline',       color:'#EF4444', bg:'#FEF2F2' },
-  { id:'social',    label:'Social',         color:'#A855F7', bg:'#F5F3FF' },
-  { id:'lab',       label:'Lab / Research', color:'#059669', bg:'#ECFDF5' },
-  { id:'class',     label:'Class / Study',  color:'#7C3AED', bg:'#EDE9FE' },
-  { id:'personal',  label:'Personal',       color:'#D97706', bg:'#FEF9E7' },
-  { id:'other',     label:'Other',          color:'#6B7280', bg:'#F3F4F6' },
+  { id:'meeting',  label:'Meeting',       color:'#3B82F6', bg:'#EFF6FF' },
+  { id:'deadline', label:'Deadline',      color:'#EF4444', bg:'#FEF2F2' },
+  { id:'social',   label:'Social',        color:'#A855F7', bg:'#F5F3FF' },
+  { id:'lab',      label:'Lab/Research',  color:'#059669', bg:'#ECFDF5' },
+  { id:'class',    label:'Class/Study',   color:'#7C3AED', bg:'#EDE9FE' },
+  { id:'personal', label:'Personal',      color:'#D97706', bg:'#FEF9E7' },
+  { id:'other',    label:'Other',         color:'#6B7280', bg:'#F3F4F6' },
 ]
 
-function getCat(id) {
-  return CATEGORIES.find(c => c.id === id) || CATEGORIES[CATEGORIES.length - 1]
-}
+function getCat(id) { return CATEGORIES.find(c => c.id === id) || CATEGORIES[CATEGORIES.length-1] }
 
 // ── Quick-add form ─────────────────────────────────────────────
 function QuickAdd({ onAdd }) {
@@ -74,47 +63,57 @@ function QuickAdd({ onAdd }) {
   const [prepMin, setPrepMin] = useState('')
   const [cat,     setCat]     = useState('meeting')
   const [person,  setPerson]  = useState('')
+  const [overlap, setOverlap] = useState(null)
 
-  const reset = () => { setText(''); setDate(''); setTime(''); setPrepMin(''); setPerson(''); setCat('meeting'); setOpen(false) }
+  const reset = () => { setText(''); setDate(''); setTime(''); setPrepMin(''); setPerson(''); setCat('meeting'); setOverlap(null); setOpen(false) }
 
-  const submit = () => {
+  const submit = async () => {
     if (!text.trim()) return
     const id = 'c-' + Date.now()
-    onAdd({
+    const warning = await onAdd({
       id, text: text.trim(), date: date || null, time: time || null,
       prepMin: prepMin ? parseInt(prepMin) : null,
       cat, person: person.trim() || null,
       done: false, createdAt: new Date().toISOString()
     })
-    reset()
+    if (warning) {
+      setOverlap(warning)
+    } else {
+      reset()
+    }
   }
 
   if (!open) return (
     <button onClick={() => setOpen(true)}
       style={{ width:'100%', background:'var(--forest)', border:'none', borderRadius:14, padding:'14px 18px', cursor:'pointer', display:'flex', alignItems:'center', gap:10, marginBottom:16 }}>
-      <span style={{ fontSize:20 }}>＋</span>
-      <span style={{ fontFamily:'DM Sans, sans-serif', fontSize:13, color:'var(--green-light)', fontWeight:600, letterSpacing:.5 }}>Add a commitment</span>
+      <span style={{ fontSize:20 }}>+</span>
+      <span style={{ fontFamily:'DM Sans, sans-serif', fontSize:13, color:'var(--green-light)', fontWeight:600 }}>Add a commitment</span>
     </button>
   )
 
   return (
     <div style={{ background:'white', borderRadius:14, border:'2px solid var(--forest)', padding:'18px', marginBottom:16 }}>
-      <div style={{ fontFamily:'Cormorant Garamond, serif', fontSize:18, fontWeight:600, color:'var(--text)', marginBottom:14 }}>New Commitment</div>
+      <div className="serif" style={{ fontSize:18, fontWeight:600, color:'var(--text)', marginBottom:14 }}>New Commitment</div>
 
-      {/* Main description */}
-      <textarea
-        value={text} onChange={e => setText(e.target.value)}
-        placeholder="What did you commit to? e.g. Pitch Synbio to molbio students"
-        autoFocus
-        style={{ width:'100%', minHeight:72, fontSize:13, padding:'10px 12px', borderRadius:10, border:'1px solid var(--border)', resize:'none', marginBottom:10, fontFamily:'DM Sans, sans-serif', lineHeight:1.5, outline:'none' }}
-      />
+      {overlap && (
+        <div style={{ background:'#FEF3C7', border:'1px solid #F59E0B', borderRadius:10, padding:'10px 14px', marginBottom:12, fontSize:12, color:'#92400E' }}>
+          <strong>Schedule overlap:</strong> This conflicts with <em>{overlap}</em>. Save anyway or pick a different time?
+          <div style={{ display:'flex', gap:8, marginTop:8 }}>
+            <button className="btn-primary" style={{ fontSize:11, padding:'5px 14px' }} onClick={reset}>Save anyway</button>
+            <button className="btn-ghost" style={{ fontSize:11, padding:'5px 14px' }} onClick={() => setOverlap(null)}>Change time</button>
+          </div>
+        </div>
+      )}
 
-      {/* Person */}
+      <textarea value={text} onChange={e => setText(e.target.value)}
+        placeholder="What did you commit to?"
+        autoFocus rows={2}
+        style={{ width:'100%', fontSize:13, padding:'10px 12px', borderRadius:10, border:'1px solid var(--border)', resize:'none', marginBottom:10, fontFamily:'DM Sans, sans-serif', lineHeight:1.5, outline:'none' }} />
+
       <input value={person} onChange={e => setPerson(e.target.value)}
         placeholder="Who did you commit to? (optional)"
         style={{ width:'100%', fontSize:12, padding:'8px 12px', borderRadius:10, border:'1px solid var(--border)', marginBottom:10, fontFamily:'DM Sans, sans-serif' }} />
 
-      {/* Date + time row */}
       <div style={{ display:'flex', gap:8, marginBottom:10, flexWrap:'wrap' }}>
         <div style={{ flex:1, minWidth:130 }}>
           <div style={{ fontSize:10, color:'var(--muted)', letterSpacing:1, textTransform:'uppercase', marginBottom:4 }}>Date</div>
@@ -139,7 +138,6 @@ function QuickAdd({ onAdd }) {
         </div>
       </div>
 
-      {/* Category */}
       <div style={{ marginBottom:14 }}>
         <div style={{ fontSize:10, color:'var(--muted)', letterSpacing:1, textTransform:'uppercase', marginBottom:6 }}>Category</div>
         <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
@@ -166,154 +164,90 @@ function QuickAdd({ onAdd }) {
   )
 }
 
-// ── Single commitment card ─────────────────────────────────────
-function CommitCard({ c, onToggle, onDelete }) {
+// ── Commitment card ────────────────────────────────────────────
+function CommitCard({ c, todos, weekState, syncToggle, onDelete }) {
   const cat = getCat(c.cat)
-  const past = isPast(c.date) && !c.done
-  const today = isToday(c.date)
+  const done = !!(todos[c.id] || weekState[c.id] || c.done)
+  const past = isPast(c.date) && !done
+  const today = c.date === todayStr()
   const soon = isSoon(c.date) && !past
 
-  let borderColor = 'var(--border)'
-  let bg = 'white'
-  if (c.done)   { bg = '#FAFAF7'; borderColor = '#E5E7EB' }
-  else if (past) { bg = '#FFF5F5'; borderColor = '#FECACA' }
-  else if (today){ bg = '#F0FDF4'; borderColor = '#86EFAC' }
-  else if (soon) { bg = '#FFFBEB'; borderColor = '#FDE68A' }
+  let borderColor = 'var(--border)', bg = 'white'
+  if (done)  { bg = '#FAFAF7'; borderColor = '#E5E7EB' }
+  else if (past)  { bg = '#FFF5F5'; borderColor = '#FECACA' }
+  else if (today) { bg = '#F0FDF4'; borderColor = '#86EFAC' }
+  else if (soon)  { bg = '#FFFBEB'; borderColor = '#FDE68A' }
 
   return (
-    <div style={{ background:bg, borderRadius:12, border:`1px solid ${borderColor}`, padding:'14px 16px', marginBottom:8, opacity: c.done ? .55 : 1, transition:'all .2s' }}>
+    <div style={{ background:bg, borderRadius:12, border:`1px solid ${borderColor}`, padding:'14px 16px', marginBottom:8, opacity: done ? .55 : 1 }}>
       <div style={{ display:'flex', gap:10, alignItems:'flex-start' }}>
-        {/* Checkbox */}
-        <div onClick={() => onToggle(c.id)}
-          style={{ width:20, height:20, borderRadius:'50%', flexShrink:0, marginTop:2, cursor:'pointer', border: c.done ? 'none' : `2px solid ${cat.color}`, background: c.done ? cat.color : 'transparent', display:'flex', alignItems:'center', justifyContent:'center', transition:'all .2s' }}>
-          {c.done && <span style={{ color:'white', fontSize:11, fontWeight:700 }}>✓</span>}
+        <div onClick={() => syncToggle(c.id, c.text, c.cat)}
+          style={{ width:20, height:20, borderRadius:'50%', flexShrink:0, marginTop:2, cursor:'pointer', border: done ? 'none' : `2px solid ${cat.color}`, background: done ? cat.color : 'transparent', display:'flex', alignItems:'center', justifyContent:'center' }}>
+          {done && <span style={{ color:'white', fontSize:11, fontWeight:700 }}>✓</span>}
         </div>
-
-        <div style={{ flex:1, minWidth:0 }}>
-          {/* Title */}
-          <div style={{ fontSize:14, fontWeight:600, color: c.done ? 'var(--muted)' : 'var(--text)', textDecoration: c.done ? 'line-through' : 'none', lineHeight:1.4, marginBottom:4 }}>
+        <div style={{ flex:1, cursor:'pointer' }} onClick={() => syncToggle(c.id, c.text, c.cat)}>
+          <div style={{ fontSize:14, fontWeight:600, color: done ? 'var(--muted)' : 'var(--text)', textDecoration: done ? 'line-through' : 'none', lineHeight:1.4, marginBottom:4 }}>
             {c.text}
           </div>
-
-          {/* Person */}
-          {c.person && (
-            <div style={{ fontSize:11, color:'var(--muted)', marginBottom:4 }}>
-              👤 {c.person}
-            </div>
-          )}
-
-          {/* Date / time / prep */}
+          {c.person && <div style={{ fontSize:11, color:'var(--muted)', marginBottom:4 }}>With: {c.person}</div>}
           <div style={{ display:'flex', gap:8, flexWrap:'wrap', alignItems:'center' }}>
-            {c.date && (
-              <span style={{ fontSize:11, color: past ? '#DC2626' : today ? '#059669' : 'var(--muted)', fontWeight: (today || past) ? 600 : 400 }}>
-                📅 {formatDate(c.date)}{c.time ? ` @ ${c.time}` : ''}
-              </span>
-            )}
-            {c.prepMin && (
-              <span style={{ fontSize:11, color:'var(--muted)' }}>
-                ⏰ Leave {c.prepMin} min early
-              </span>
-            )}
-            <span style={{ fontSize:10, padding:'2px 8px', borderRadius:10, background:cat.bg, color:cat.color, fontWeight:500 }}>
-              {cat.label}
-            </span>
-            {past && !c.done && (
-              <span style={{ fontSize:10, padding:'2px 8px', borderRadius:10, background:'#FEE2E2', color:'#DC2626', fontWeight:600 }}>
-                PAST DUE
-              </span>
-            )}
-            {today && !c.done && (
-              <span style={{ fontSize:10, padding:'2px 8px', borderRadius:10, background:'#DCFCE7', color:'#059669', fontWeight:600 }}>
-                TODAY
-              </span>
-            )}
+            {c.date && <span style={{ fontSize:11, color: past ? '#DC2626' : today ? '#059669' : 'var(--muted)', fontWeight: (today||past) ? 600 : 400 }}>
+              {formatDate(c.date)}{c.time ? ` @ ${fmt12(c.time)}` : ''}
+            </span>}
+            {c.prepMin && <span style={{ fontSize:11, color:'var(--muted)' }}>Leave {c.prepMin} min early</span>}
+            <span style={{ fontSize:10, padding:'2px 8px', borderRadius:10, background:cat.bg, color:cat.color, fontWeight:500 }}>{cat.label}</span>
+            {past  && !done && <span style={{ fontSize:10, padding:'2px 8px', borderRadius:10, background:'#FEE2E2', color:'#DC2626', fontWeight:600 }}>PAST DUE</span>}
+            {today && !done && <span style={{ fontSize:10, padding:'2px 8px', borderRadius:10, background:'#DCFCE7', color:'#059669', fontWeight:600 }}>TODAY</span>}
+            {!c.date && !done && <span style={{ fontSize:10, padding:'2px 8px', borderRadius:10, background:'#F3F4F6', color:'#6B7280' }}>Unscheduled</span>}
           </div>
         </div>
-
-        {/* Delete */}
         <button onClick={() => onDelete(c.id)}
-          style={{ background:'none', border:'none', cursor:'pointer', color:'#D1D5DB', fontSize:16, padding:'0 2px', flexShrink:0, lineHeight:1 }}>
-          ✕
-        </button>
+          style={{ background:'none', border:'none', cursor:'pointer', color:'#D1D5DB', fontSize:16, padding:'0 2px', flexShrink:0 }}>✕</button>
       </div>
     </div>
   )
 }
 
-// ── Main component ─────────────────────────────────────────────
-export default function Commitments() {
-  const [items,   setItems]   = useState([])
-  const [loading, setLoading] = useState(true)
-  const [filter,  setFilter]  = useState('upcoming') // upcoming | all | done
+// ── Main ───────────────────────────────────────────────────────
+export default function Commitments({ commitments, addCommitment, deleteCommitment, todos, weekState, syncToggle }) {
+  const [filter, setFilter] = useState('upcoming')
 
-  useEffect(() => {
-    loadCommitments().then(data => { setItems(data); setLoading(false) })
-  }, [])
-
-  const persist = useCallback(async (next) => {
-    setItems(next)
-    await saveCommitments(next)
-  }, [])
-
-  const handleAdd = async (commitment) => {
-    await persist([commitment, ...items])
-  }
-
-  const handleToggle = async (id) => {
-    await persist(items.map(c => c.id === id ? { ...c, done: !c.done } : c))
-  }
-
-  const handleDelete = async (id) => {
-    if (!confirm('Remove this commitment?')) return
-    await persist(items.filter(c => c.id !== id))
-  }
-
-  // Sort: today first, then by date, then undated, then done
-  const sorted = [...items].sort((a, b) => {
-    if (a.done !== b.done) return a.done ? 1 : -1
+  const sorted = [...(commitments || [])].sort((a, b) => {
+    const aDone = !!(todos[a.id] || weekState[a.id] || a.done)
+    const bDone = !!(todos[b.id] || weekState[b.id] || b.done)
+    if (aDone !== bDone) return aDone ? 1 : -1
     if (!a.date && !b.date) return 0
-    if (!a.date) return 1
-    if (!b.date) return -1
+    if (!a.date) return 1; if (!b.date) return -1
     return a.date.localeCompare(b.date)
   })
 
+  const isDone = (c) => !!(todos[c.id] || weekState[c.id] || c.done)
   const visible = sorted.filter(c => {
-    if (filter === 'upcoming') return !c.done
-    if (filter === 'done')     return c.done
+    if (filter === 'upcoming') return !isDone(c)
+    if (filter === 'done')     return isDone(c)
     return true
   })
 
-  const todayCount   = items.filter(c => !c.done && isToday(c.date)).length
-  const pastCount    = items.filter(c => !c.done && isPast(c.date)).length
-  const upcomingCount = items.filter(c => !c.done && !isPast(c.date)).length
-
-  if (loading) return <div style={{ padding:20, color:'var(--muted)', fontSize:13 }}>Loading…</div>
+  const pastCount = (commitments||[]).filter(c => !isDone(c) && isPast(c.date)).length
+  const unscheduled = (commitments||[]).filter(c => !isDone(c) && !c.date).length
 
   return (
     <div>
       <div className="page-title">Commitments</div>
-      <div className="page-sub">Things you said yes to — never forget again</div>
+      <div className="page-sub">Things you said yes to. Auto-synced with Today, Week, and Calendar.</div>
 
-      <QuickAdd onAdd={handleAdd} />
+      <QuickAdd onAdd={addCommitment} />
 
-      {/* Stats row */}
-      {items.length > 0 && (
-        <div style={{ display:'flex', gap:8, marginBottom:16, flexWrap:'wrap' }}>
-          {[
-            { label:'Upcoming', count:upcomingCount, color:'#1C2B1A', active: filter==='upcoming' },
-            { label:'All',      count:items.length,   color:'#6B7280', active: filter==='all' },
-            { label:'Done',     count:items.filter(c=>c.done).length, color:'#059669', active: filter==='done' },
-          ].map(f => (
-            <button key={f.label} onClick={() => setFilter(f.label.toLowerCase())}
-              style={{ fontSize:11, padding:'5px 14px', borderRadius:20, border:'none', cursor:'pointer', fontFamily:'DM Sans, sans-serif', fontWeight:600, background: f.active ? f.color : '#F3F4F6', color: f.active ? 'white' : 'var(--muted)' }}>
-              {f.label} {f.count > 0 ? `(${f.count})` : ''}
+      {(commitments||[]).length > 0 && (
+        <div style={{ display:'flex', gap:8, marginBottom:16, flexWrap:'wrap', alignItems:'center' }}>
+          {[['upcoming','Upcoming'], ['all','All'], ['done','Done']].map(([id, label]) => (
+            <button key={id} onClick={() => setFilter(id)}
+              style={{ fontSize:11, padding:'5px 14px', borderRadius:20, border:'none', cursor:'pointer', fontFamily:'DM Sans, sans-serif', fontWeight:600, background: filter===id ? 'var(--forest)' : '#F3F4F6', color: filter===id ? 'white' : 'var(--muted)' }}>
+              {label}
             </button>
           ))}
-          {pastCount > 0 && (
-            <span style={{ fontSize:11, padding:'5px 14px', borderRadius:20, background:'#FEE2E2', color:'#DC2626', fontWeight:600 }}>
-              ⚠️ {pastCount} past due
-            </span>
-          )}
+          {pastCount > 0 && <span style={{ fontSize:11, padding:'5px 12px', borderRadius:20, background:'#FEE2E2', color:'#DC2626', fontWeight:600 }}>{pastCount} past due</span>}
+          {unscheduled > 0 && <span style={{ fontSize:11, padding:'5px 12px', borderRadius:20, background:'#F3F4F6', color:'#6B7280' }}>{unscheduled} unscheduled</span>}
         </div>
       )}
 
@@ -321,14 +255,13 @@ export default function Commitments() {
         <div style={{ background:'white', borderRadius:12, border:'1px solid var(--border)', padding:24, textAlign:'center' }}>
           <div style={{ fontSize:28, marginBottom:8 }}>🤝</div>
           <div style={{ fontSize:13, color:'var(--muted)' }}>
-            {filter === 'done' ? 'Nothing marked done yet.' : 'No commitments yet. Use the button above to add one.'}
+            {filter === 'done' ? 'Nothing marked done yet.' : 'No commitments. Use the button above to add one.'}
           </div>
         </div>
-      ) : (
-        visible.map(c => (
-          <CommitCard key={c.id} c={c} onToggle={handleToggle} onDelete={handleDelete} />
-        ))
-      )}
+      ) : visible.map(c => (
+        <CommitCard key={c.id} c={c} todos={todos} weekState={weekState}
+          syncToggle={syncToggle} onDelete={deleteCommitment} />
+      ))}
     </div>
   )
 }
