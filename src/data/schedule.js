@@ -9,7 +9,7 @@
 // suggest slots that overlap with these.
 export const FIXED_BLOCKS = {
   monday: [
-    { start: '08:00', end: '09:45', label: 'Yeast lab' },
+    { start: '08:00', end: '10:20', label: 'Yeast lab' },
     { start: '09:50', end: '11:00', label: 'Coral Reef — Youngchild 316' },
     { start: '11:00', end: '11:50', label: 'Yeast lab' },
     { start: '12:00', end: '12:45', label: 'Lunch at Commons' },
@@ -42,7 +42,6 @@ export const FIXED_BLOCKS = {
     { start: '22:30', end: '06:00', label: 'Sleep' },
   ],
   thursday: [
-    { start: '08:00', end: '10:20', label: 'Yeast lab' },
     { start: '10:25', end: '12:10', label: 'Ecological Energetics — Youngchild 316' },
     { start: '12:20', end: '12:50', label: 'Lunch at Commons' },
     { start: '13:00', end: '16:00', label: 'Coral Reef Lab — Youngchild 321' },
