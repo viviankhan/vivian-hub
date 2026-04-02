@@ -3,6 +3,7 @@ import { isUsingSupabase, getTodos, setTodos, getWeekState, setWeekState, getLog
 
 import Today from './components/Today.jsx'
 import ThisWeek from './components/ThisWeek.jsx'
+import Commitments from './components/Commitments.jsx'
 import Calendar from './components/Calendar.jsx'
 import Study from './components/Study.jsx'
 import Scheduler from './components/Scheduler.jsx'
@@ -10,68 +11,62 @@ import Routines from './components/Routines.jsx'
 import Notes from './components/Notes.jsx'
 import Log from './components/Log.jsx'
 import Info from './components/Info.jsx'
-import Commitments from './components/Commitments.jsx'
 import Edits from './components/Edits.jsx'
 
 const TABS = [
-  { id:'today',       label:'✅ Today' },
-  { id:'week',        label:'📋 Week' },
-  { id:'commitments', label:'🤝 Commitments' },
-  { id:'calendar',    label:'📅 Calendar' },
-  { id:'study',       label:'📚 Study' },
-  { id:'scheduler',   label:'🧠 Scheduler' },
-  { id:'routines',    label:'🌙 Routines' },
-  { id:'notes',       label:'📝 Notes' },
-  { id:'log',         label:'📓 Log' },
-  { id:'info',        label:'ℹ️ Info' },
-  { id:'edits',       label:'🔧 Edits' },
+  { id:'today',       label:'Today' },
+  { id:'week',        label:'Week' },
+  { id:'commitments', label:'Commitments' },
+  { id:'calendar',    label:'Calendar' },
+  { id:'study',       label:'Study' },
+  { id:'scheduler',   label:'Scheduler' },
+  { id:'routines',    label:'Routines' },
+  { id:'notes',       label:'Notes' },
+  { id:'log',         label:'Log' },
+  { id:'info',        label:'Info' },
+  { id:'edits',       label:'Edits' },
 ]
 
 export default function App() {
   const [tab, setTab] = useState('today')
 
-  // ── Shared state (persisted) ───────────────────────────────
-  const [todos,      setTodosState]      = useState({})
-  const [weekState,  setWeekStateLocal]  = useState({})
-  const [log,        setLogState]        = useState([])
-  const [notes,      setNotesState]      = useState('')
-  const [fcProgress, setFcProgressState] = useState({})
-  const [fcStudied,  setFcStudiedState]  = useState({})
-  const [scheduled,  setScheduledState]  = useState([])
-  const [loading,    setLoading]         = useState(true)
+  const [todos,      setTodos_]      = useState({})
+  const [weekState,  setWeekState_]  = useState({})
+  const [log,        setLog_]        = useState([])
+  const [notes,      setNotes_]      = useState('')
+  const [fcProgress, setFcProgress_] = useState({})
+  const [fcStudied,  setFcStudied_]  = useState({})
+  const [scheduled,  setScheduled_]  = useState([])
+  const [loading,    setLoading]     = useState(true)
 
-  // ── Load from storage on mount ─────────────────────────────
   useEffect(() => {
     async function load() {
       const [t, w, l, n, fcp, fcs, sch] = await Promise.all([
         getTodos(), getWeekState(), getLog(), getNotes(),
         getFcProgress(), getFcStudied(), getScheduledTasks(),
       ])
-      setTodosState(t)
-      setWeekStateLocal(w)
-      setLogState(l)
-      setNotesState(n)
-      setFcProgressState(fcp)
-      setFcStudiedState(fcs)
-      setScheduledState(sch)
+      setTodos_(t)
+      setWeekState_(w)
+      setLog_(l)
+      setNotes_(n)
+      setFcProgress_(fcp)
+      setFcStudied_(fcs)
+      setScheduled_(sch)
       setLoading(false)
     }
     load()
   }, [])
 
-  // ── Persist helpers ────────────────────────────────────────
-  const updateTodos = useCallback(async (newState) => {
-    setTodosState(newState)
-    await setTodos(newState)
+  const updateTodos = useCallback(async (val) => {
+    setTodos_(val); await setTodos(val)
   }, [])
 
-  const updateWeekState = useCallback(async (newState) => {
-    setWeekStateLocal(newState)
-    await setWeekState(newState)
+  const updateWeekState = useCallback(async (val) => {
+    setWeekState_(val); await setWeekState(val)
   }, [])
 
   const appendLog = useCallback(async (entry) => {
-    setLogState(prev => {
+    setLog_(prev => {
       const next = [...prev, { ...entry, ts: new Date().toISOString() }]
       setLog(next)
       return next
@@ -79,45 +74,38 @@ export default function App() {
   }, [])
 
   const updateNotes = useCallback(async (val) => {
-    setNotesState(val)
-    await setNotes(val)
+    setNotes_(val); await setNotes(val)
   }, [])
 
   const updateFcProgress = useCallback(async (val) => {
-    setFcProgressState(val)
-    await setFcProgress(val)
+    setFcProgress_(val); await setFcProgress(val)
   }, [])
 
   const updateFcStudied = useCallback(async (val) => {
-    setFcStudiedState(val)
-    await setFcStudied(val)
+    setFcStudied_(val); await setFcStudied(val)
   }, [])
 
   const addScheduledTask = useCallback(async (task) => {
-    setScheduledState(prev => {
+    setScheduled_(prev => {
       const next = [...prev, task]
       setScheduledTasks(next)
       return next
     })
   }, [])
 
-  // ── Unified toggle: syncs Today ↔ This Week ↔ Log ──────────
-  // Call this from both Today and ThisWeek so state always matches.
+  // Unified toggle — syncs Today checkboxes, This Week checkboxes, and Log
   const syncToggle = useCallback(async (id, label, tag) => {
-    const currentlyDone = !!(todos[id] || weekState[id])
-    const nowDone = !currentlyDone
-
+    const nowDone = !(todos[id] || weekState[id])
     const nextTodos = { ...todos,     [id]: nowDone }
     const nextWeek  = { ...weekState, [id]: nowDone }
-    setTodosState(nextTodos)
-    setWeekStateLocal(nextWeek)
+    setTodos_(nextTodos)
+    setWeekState_(nextWeek)
     await Promise.all([setTodos(nextTodos), setWeekState(nextWeek)])
-
     if (nowDone) {
       const d = new Date()
       const dateKey   = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
       const dateLabel = d.toLocaleDateString('en-US', { weekday:'long', month:'long', day:'numeric' })
-      setLogState(prev => {
+      setLog_(prev => {
         const next = [...prev, { date: dateKey, dateLabel, label, tag, ts: d.toISOString() }]
         setLog(next)
         return next
@@ -134,11 +122,19 @@ export default function App() {
     </div>
   )
 
-  const sharedProps = { todos: todosState, updateTodos, weekState, updateWeekState, syncToggle, log, appendLog, notes, updateNotes, fcProgress, updateFcProgress, fcStudied, updateFcStudied, scheduled, addScheduledTask }
+  const sharedProps = {
+    todos, updateTodos,
+    weekState, updateWeekState,
+    syncToggle,
+    log, appendLog,
+    notes, updateNotes,
+    fcProgress, updateFcProgress,
+    fcStudied, updateFcStudied,
+    scheduled, addScheduledTask,
+  }
 
   return (
     <div>
-      {/* Header */}
       <header className="header">
         <div className="header-top">
           <div>
@@ -146,40 +142,35 @@ export default function App() {
             <h1 className="header-title">Your Becoming</h1>
           </div>
           <div className="header-badges">
-            🎓 Lawrence University<br/>
-            🔬 Biology + YeastScreen<br/>
-            🎯 MD-PhD Immunology<br/>
+            Lawrence University<br/>
+            Biology + YeastScreen<br/>
+            MD-PhD Immunology<br/>
             <span className={`storage-badge ${isUsingSupabase ? 'cloud' : 'local'}`}>
-              {isUsingSupabase ? '☁️ Cloud sync on' : '💾 Local storage'}
+              {isUsingSupabase ? 'Cloud sync on' : 'Local storage'}
             </span>
           </div>
         </div>
         <nav className="nav">
           {TABS.map(t => (
-            <button
-              key={t.id}
-              className={`nav-btn ${tab === t.id ? 'active' : ''}`}
-              onClick={() => setTab(t.id)}
-            >
+            <button key={t.id} className={`nav-btn ${tab === t.id ? 'active' : ''}`} onClick={() => setTab(t.id)}>
               {t.label}
             </button>
           ))}
         </nav>
       </header>
 
-      {/* Content */}
       <main className="content">
         {tab === 'today'       && <Today       {...sharedProps} />}
         {tab === 'week'        && <ThisWeek    {...sharedProps} />}
         {tab === 'commitments' && <Commitments />}
-        {tab === 'calendar'    && <Calendar  />}
-        {tab === 'study'     && <Study     {...sharedProps} />}
-        {tab === 'scheduler' && <Scheduler {...sharedProps} />}
-        {tab === 'routines'  && <Routines  />}
-        {tab === 'notes'     && <Notes     notes={notes} updateNotes={updateNotes} />}
-        {tab === 'log'       && <Log       log={log} />}
-        {tab === 'info'      && <Info      />}
-        {tab === 'edits'     && <Edits     />}
+        {tab === 'calendar'    && <Calendar />}
+        {tab === 'study'       && <Study     {...sharedProps} />}
+        {tab === 'scheduler'   && <Scheduler {...sharedProps} />}
+        {tab === 'routines'    && <Routines />}
+        {tab === 'notes'       && <Notes notes={notes} updateNotes={updateNotes} />}
+        {tab === 'log'         && <Log log={log} />}
+        {tab === 'info'        && <Info />}
+        {tab === 'edits'       && <Edits />}
       </main>
     </div>
   )
