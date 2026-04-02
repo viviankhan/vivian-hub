@@ -104,17 +104,15 @@ export default function App() {
   // ── Unified toggle: syncs Today ↔ This Week ↔ Log ──────────
   // Call this from both Today and ThisWeek so state always matches.
   const syncToggle = useCallback(async (id, label, tag) => {
-    const currentlyDone = !!(todosState[id] || weekState[id])
+    const currentlyDone = !!(todos[id] || weekState[id])
     const nowDone = !currentlyDone
 
-    // Update both stores simultaneously
-    const nextTodos = { ...todosState, [id]: nowDone }
-    const nextWeek  = { ...weekState,  [id]: nowDone }
+    const nextTodos = { ...todos,     [id]: nowDone }
+    const nextWeek  = { ...weekState, [id]: nowDone }
     setTodosState(nextTodos)
     setWeekStateLocal(nextWeek)
     await Promise.all([setTodos(nextTodos), setWeekState(nextWeek)])
 
-    // Log on check-off only
     if (nowDone) {
       const d = new Date()
       const dateKey   = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
@@ -125,7 +123,7 @@ export default function App() {
         return next
       })
     }
-  }, [todosState, weekState])
+  }, [todos, weekState])
 
   if (loading) return (
     <div style={{ minHeight:'100vh', background:'#FAFAF7', display:'flex', alignItems:'center', justifyContent:'center' }}>
