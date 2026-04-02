@@ -10,19 +10,20 @@ import Routines from './components/Routines.jsx'
 import Notes from './components/Notes.jsx'
 import Log from './components/Log.jsx'
 import Info from './components/Info.jsx'
-import Edits from './components/Edits.jsx'
+import Commitments from './components/Commitments.jsx'
 
 const TABS = [
-  { id:'today',     label:'✅ Today' },
-  { id:'week',      label:'📋 Week' },
-  { id:'calendar',  label:'📅 Calendar' },
-  { id:'study',     label:'📚 Study' },
-  { id:'scheduler', label:'🧠 Scheduler' },
-  { id:'routines',  label:'🌙 Routines' },
-  { id:'notes',     label:'📝 Notes' },
-  { id:'log',       label:'📓 Log' },
-  { id:'info',      label:'ℹ️ Info' },
-  { id:'edits',     label:'🔧 Edits' },
+  { id:'today',       label:'✅ Today' },
+  { id:'week',        label:'📋 Week' },
+  { id:'commitments', label:'🤝 Commitments' },
+  { id:'calendar',    label:'📅 Calendar' },
+  { id:'study',       label:'📚 Study' },
+  { id:'scheduler',   label:'🧠 Scheduler' },
+  { id:'routines',    label:'🌙 Routines' },
+  { id:'notes',       label:'📝 Notes' },
+  { id:'log',         label:'📓 Log' },
+  { id:'info',        label:'ℹ️ Info' },
+  { id:'edits',       label:'🔧 Edits' },
 ]
 
 export default function App() {
@@ -99,6 +100,32 @@ export default function App() {
     })
   }, [])
 
+  // ── Unified toggle: syncs Today ↔ This Week ↔ Log ──────────
+  // Call this from both Today and ThisWeek so state always matches.
+  const syncToggle = useCallback(async (id, label, tag) => {
+    const currentlyDone = !!(todosState[id] || weekState[id])
+    const nowDone = !currentlyDone
+
+    // Update both stores simultaneously
+    const nextTodos = { ...todosState, [id]: nowDone }
+    const nextWeek  = { ...weekState,  [id]: nowDone }
+    setTodosState(nextTodos)
+    setWeekStateLocal(nextWeek)
+    await Promise.all([setTodos(nextTodos), setWeekState(nextWeek)])
+
+    // Log on check-off only
+    if (nowDone) {
+      const d = new Date()
+      const dateKey   = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
+      const dateLabel = d.toLocaleDateString('en-US', { weekday:'long', month:'long', day:'numeric' })
+      setLogState(prev => {
+        const next = [...prev, { date: dateKey, dateLabel, label, tag, ts: d.toISOString() }]
+        setLog(next)
+        return next
+      })
+    }
+  }, [todosState, weekState])
+
   if (loading) return (
     <div style={{ minHeight:'100vh', background:'#FAFAF7', display:'flex', alignItems:'center', justifyContent:'center' }}>
       <div style={{ textAlign:'center' }}>
@@ -108,7 +135,7 @@ export default function App() {
     </div>
   )
 
-  const sharedProps = { todos, updateTodos, weekState, updateWeekState, log, appendLog, notes, updateNotes, fcProgress, updateFcProgress, fcStudied, updateFcStudied, scheduled, addScheduledTask }
+  const sharedProps = { todos: todosState, updateTodos, weekState, updateWeekState, syncToggle, log, appendLog, notes, updateNotes, fcProgress, updateFcProgress, fcStudied, updateFcStudied, scheduled, addScheduledTask }
 
   return (
     <div>
@@ -143,9 +170,10 @@ export default function App() {
 
       {/* Content */}
       <main className="content">
-        {tab === 'today'     && <Today     {...sharedProps} />}
-        {tab === 'week'      && <ThisWeek  {...sharedProps} />}
-        {tab === 'calendar'  && <Calendar  />}
+        {tab === 'today'       && <Today       {...sharedProps} />}
+        {tab === 'week'        && <ThisWeek    {...sharedProps} />}
+        {tab === 'commitments' && <Commitments />}
+        {tab === 'calendar'    && <Calendar  />}
         {tab === 'study'     && <Study     {...sharedProps} />}
         {tab === 'scheduler' && <Scheduler {...sharedProps} />}
         {tab === 'routines'  && <Routines  />}
