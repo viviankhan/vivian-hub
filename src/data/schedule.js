@@ -42,6 +42,7 @@ export const FIXED_BLOCKS = {
     { start: '22:30', end: '06:00', label: 'Sleep' },
   ],
   thursday: [
+    { start: '08:00', end: '09:45', label: 'Yeast lab' },
     { start: '10:25', end: '12:10', label: 'Ecological Energetics — Youngchild 316' },
     { start: '12:20', end: '12:50', label: 'Lunch at Commons' },
     { start: '13:00', end: '16:00', label: 'Coral Reef Lab — Youngchild 321' },
