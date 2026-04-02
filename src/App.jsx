@@ -11,6 +11,7 @@ import Notes from './components/Notes.jsx'
 import Log from './components/Log.jsx'
 import Info from './components/Info.jsx'
 import Commitments from './components/Commitments.jsx'
+import Edits from './components/Edits.jsx'
 
 const TABS = [
   { id:'today',       label:'✅ Today' },
