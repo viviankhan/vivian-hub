@@ -1,398 +1,386 @@
-// src/components/Today.jsx
 import { useState, useEffect } from 'react'
-import { DAILY_TODOS, MORNING_ROUTINE } from '../data/schedule.js'
+import { DAILY_TODOS, MORNING_ROUTINE, FIXED_BLOCKS } from '../data/schedule.js'
 
-const TAG_CLASS = {
-  health:'tag-health', class:'tag-class', lab:'tag-lab', career:'tag-career',
-  fitness:'tag-fitness', personal:'tag-personal', sleep:'tag-sleep',
-  urgent:'tag-urgent', carried:'tag-carried', polish:'tag-polish',
-  meeting:'tag-career', deadline:'tag-urgent', social:'tag-personal',
+const TAG_COLORS = {
+  health:'#E07B2E', class:'#7C3AED', lab:'#059669', career:'#D97706',
+  fitness:'#3B82F6', personal:'#A855F7', sleep:'#52B788', urgent:'#EF4444',
+  carried:'#F59E0B', polish:'#EC4899', meeting:'#3B82F6', deadline:'#EF4444',
 }
-
-const TAGS = ['class','lab','career','personal','fitness','health','urgent','meeting','deadline','social']
 
 function todayKey() {
   const d = new Date()
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
 }
-
 function todayLabel() {
   return new Date().toLocaleDateString('en-US', { weekday:'long', month:'long', day:'numeric' })
 }
-
-function nowMinutes() {
-  const d = new Date(); return d.getHours() * 60 + d.getMinutes()
+function nowMins() {
+  const d = new Date(); return d.getHours()*60 + d.getMinutes()
 }
-
-function parseTaskMinutes(label) {
+function parseTimeMins(label) {
   const m = label.match(/~?(\d{1,2}):(\d{2})\s*(AM|PM)/i)
   if (!m) return null
-  let h = parseInt(m[1]); const min = parseInt(m[2]); const ampm = m[3].toUpperCase()
-  if (ampm === 'PM' && h !== 12) h += 12
-  if (ampm === 'AM' && h === 12) h = 0
-  return h * 60 + min
+  let h = parseInt(m[1]); const min = parseInt(m[2]); const ap = m[3].toUpperCase()
+  if (ap==='PM' && h!==12) h+=12; if (ap==='AM' && h===12) h=0
+  return h*60+min
 }
-
-function timeToMinutes(t) {
-  if (!t) return null
-  const [h, m] = t.split(':').map(Number); return h * 60 + m
+function timeToMins(t) {
+  if (!t) return null; const [h,m] = t.split(':').map(Number); return h*60+m
 }
-
 function fmt12(t) {
-  if (!t) return ''
-  const [h, m] = t.split(':').map(Number)
-  const ampm = h >= 12 ? 'PM' : 'AM'; const h12 = h % 12 || 12
-  return `${h12}:${String(m).padStart(2,'0')} ${ampm}`
+  if (!t) return ''; const [h,m] = t.split(':').map(Number)
+  return `${h%12||12}:${String(m).padStart(2,'0')} ${h>=12?'PM':'AM'}`
 }
 
-// ── Skip / Reschedule panel ────────────────────────────────────
-function ActionPanel({ onSkip, onReschedule, onCancel }) {
-  const [mode,    setMode]    = useState(null) // null | 'skip' | 'reschedule'
-  const [reason,  setReason]  = useState('')
-  const [newDate, setNewDate] = useState('')
-  const [newTime, setNewTime] = useState('')
+// Find unoccupied slots in the day
+function getFreeSlotsForDay(dateStr) {
+  const dayNames = ['sunday','monday','tuesday','wednesday','thursday','friday','saturday']
+  const dayName = dayNames[new Date(dateStr+'T12:00:00').getDay()]
+  const blocks = (FIXED_BLOCKS[dayName] || []).map(b => ({
+    start: timeToMins(b.start), end: timeToMins(b.end), label: b.label
+  }))
+  blocks.sort((a,b) => a.start-b.start)
+  const slots = []
+  let cursor = 8*60 // 8 AM
+  for (const b of blocks) {
+    if (b.start-cursor >= 30) {
+      slots.push({ start: cursor, end: b.start, label:`${fmt12(String(Math.floor(cursor/60)).padStart(2,'0')+':'+String(cursor%60).padStart(2,'0'))} – ${fmt12(String(Math.floor(b.start/60)).padStart(2,'0')+':'+String(b.start%60).padStart(2,'0'))}` })
+    }
+    cursor = Math.max(cursor, b.end)
+  }
+  if (22*60-cursor >= 30) slots.push({ start: cursor, end: 22*60, label: `${fmt12(String(Math.floor(cursor/60)).padStart(2,'0')+':'+String(cursor%60).padStart(2,'0'))} onwards` })
+  return slots
+}
 
-  const handleSkip = () => {
-    onSkip(reason.trim() || null)
+// ── Manage Task Modal ──────────────────────────────────────────
+function TaskModal({ task, dateKey, todos, onClose, onDelete, onReschedule }) {
+  const [view, setView] = useState('main') // main | delete | reschedule
+  const [reason, setReason] = useState('')
+  const [reschedDate, setReschedDate] = useState(dateKey)
+  const [reschedTime, setReschedTime] = useState('')
+  const [conflict, setConflict] = useState(null)
+  const freeSlots = getFreeSlotsForDay(reschedDate)
+
+  const handleDelete = () => {
+    onDelete(task, reason || null)
+    onClose()
   }
 
-  const handleReschedule = () => {
-    if (!newDate) return
-    onReschedule(newDate, newTime || null, reason.trim() || null)
+  const checkConflict = (date, time) => {
+    if (!time) { setConflict(null); return }
+    const dayNames = ['sunday','monday','tuesday','wednesday','thursday','friday','saturday']
+    const dayName = dayNames[new Date(date+'T12:00:00').getDay()]
+    const blocks = FIXED_BLOCKS[dayName] || []
+    const mins = timeToMins(time)
+    for (const b of blocks) {
+      const bs = timeToMins(b.start), be = timeToMins(b.end)
+      if (mins >= bs && mins < be) { setConflict(b.label); return }
+    }
+    // Also check today's todos
+    const dayTodos = DAILY_TODOS[date] || []
+    for (const t of dayTodos) {
+      if (t.id === task.id) continue
+      const tm = parseTimeMins(t.label || '')
+      if (tm !== null && Math.abs(tm - mins) < 30 && todos[t.id] !== true) {
+        setConflict(`existing task "${t.label?.substring(0,40)}"`)
+        return
+      }
+    }
+    setConflict(null)
   }
 
   return (
-    <div style={{ background:'#FAFAF7', border:'1px solid var(--border)', borderTop:'none', borderRadius:'0 0 10px 10px', padding:'12px 14px', marginTop:-4, marginBottom:8 }}>
-      {!mode && (
-        <div style={{ display:'flex', gap:8, flexWrap:'wrap', alignItems:'center' }}>
-          <span style={{ fontSize:11, color:'var(--muted)', flex:1 }}>What do you want to do?</span>
-          <button onClick={() => setMode('reschedule')}
-            style={{ fontSize:11, padding:'5px 13px', borderRadius:10, border:'1px solid #D1E8D0', background:'#F0FDF4', color:'#059669', cursor:'pointer', fontFamily:'DM Sans, sans-serif', fontWeight:600 }}>
-            📅 Reschedule
-          </button>
-          <button onClick={() => setMode('skip')}
-            style={{ fontSize:11, padding:'5px 13px', borderRadius:10, border:'1px solid #FECACA', background:'#FEF2F2', color:'#DC2626', cursor:'pointer', fontFamily:'DM Sans, sans-serif', fontWeight:600 }}>
-            ✕ Remove today
-          </button>
-          <button onClick={onCancel}
-            style={{ fontSize:11, padding:'5px 10px', borderRadius:10, border:'1px solid var(--border)', background:'transparent', color:'var(--muted)', cursor:'pointer', fontFamily:'DM Sans, sans-serif' }}>
-            Cancel
-          </button>
-        </div>
-      )}
-
-      {mode === 'skip' && (
-        <div>
-          <div style={{ fontSize:11, color:'#DC2626', fontWeight:600, marginBottom:8 }}>Remove from today</div>
-          <input value={reason} onChange={e => setReason(e.target.value)}
-            placeholder="Why? — optional, shows in log"
-            autoFocus
-            onKeyDown={e => { if (e.key === 'Enter') handleSkip(); if (e.key === 'Escape') setMode(null) }}
-            style={{ width:'100%', fontSize:12, padding:'7px 10px', borderRadius:8, border:'1px solid var(--border)', marginBottom:8 }} />
-          <div style={{ display:'flex', gap:8 }}>
-            <button onClick={handleSkip}
-              style={{ padding:'6px 18px', borderRadius:10, border:'none', background:'#DC2626', color:'white', cursor:'pointer', fontSize:11, fontFamily:'DM Sans, sans-serif', fontWeight:600 }}>
-              Remove
-            </button>
-            <button onClick={() => { setMode(null); setReason('') }}
-              style={{ padding:'6px 12px', borderRadius:10, border:'1px solid var(--border)', background:'transparent', color:'var(--muted)', cursor:'pointer', fontSize:11, fontFamily:'DM Sans, sans-serif' }}>
-              Back
-            </button>
-          </div>
-        </div>
-      )}
-
-      {mode === 'reschedule' && (
-        <div>
-          <div style={{ fontSize:11, color:'#059669', fontWeight:600, marginBottom:8 }}>Move to another time</div>
-          <div style={{ display:'flex', gap:8, marginBottom:8, flexWrap:'wrap' }}>
-            <div style={{ flex:1, minWidth:140 }}>
-              <div style={{ fontSize:10, color:'var(--muted)', marginBottom:3 }}>New date <span style={{ color:'#DC2626' }}>*</span></div>
-              <input type="date" value={newDate} onChange={e => setNewDate(e.target.value)}
-                style={{ width:'100%', fontSize:12, padding:'6px 10px', borderRadius:8, border:'1px solid var(--border)' }} />
+    <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.5)', zIndex:600, display:'flex', alignItems:'center', justifyContent:'center', padding:16 }}>
+      <div style={{ background:'white', borderRadius:16, padding:24, maxWidth:400, width:'100%', boxShadow:'0 24px 64px rgba(0,0,0,.3)' }}>
+        {view === 'main' && (
+          <>
+            <div className="serif" style={{ fontSize:18, fontWeight:600, color:'var(--text)', marginBottom:6 }}>Manage Task</div>
+            <div style={{ fontSize:13, color:'var(--muted)', marginBottom:20, lineHeight:1.5, padding:'10px 14px', background:'#F7F6F3', borderRadius:10 }}>{task.label || task.text}</div>
+            <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
+              <button onClick={() => setView('reschedule')}
+                style={{ padding:'12px', borderRadius:10, border:'1px solid var(--border)', background:'white', cursor:'pointer', textAlign:'left', fontSize:13, color:'var(--text)', fontFamily:'DM Sans, sans-serif' }}>
+                📅 Reschedule — pick a new time or date
+              </button>
+              <button onClick={() => setView('delete')}
+                style={{ padding:'12px', borderRadius:10, border:'1px solid #FECACA', background:'#FFF5F5', cursor:'pointer', textAlign:'left', fontSize:13, color:'#991B1B', fontFamily:'DM Sans, sans-serif' }}>
+                🗑️ Delete — remove and log why
+              </button>
             </div>
-            <div style={{ flex:1, minWidth:120 }}>
-              <div style={{ fontSize:10, color:'var(--muted)', marginBottom:3 }}>New time — optional</div>
-              <input type="time" value={newTime} onChange={e => setNewTime(e.target.value)}
-                style={{ width:'100%', fontSize:12, padding:'6px 10px', borderRadius:8, border:'1px solid var(--border)' }} />
+            <button onClick={onClose} style={{ marginTop:14, width:'100%', padding:'9px', borderRadius:10, border:'1px solid var(--border)', background:'white', color:'var(--muted)', cursor:'pointer', fontSize:12, fontFamily:'DM Sans, sans-serif' }}>
+              Cancel
+            </button>
+          </>
+        )}
+
+        {view === 'delete' && (
+          <>
+            <div className="serif" style={{ fontSize:18, fontWeight:600, color:'#991B1B', marginBottom:6 }}>Delete Task</div>
+            <div style={{ fontSize:13, color:'var(--muted)', marginBottom:14, fontStyle:'italic' }}>{task.label || task.text}</div>
+            <div style={{ fontSize:11, color:'var(--muted)', letterSpacing:1, textTransform:'uppercase', marginBottom:6 }}>Reason (optional — shows in log)</div>
+            <textarea value={reason} onChange={e => setReason(e.target.value)}
+              placeholder="e.g. ran out of time, not relevant today…"
+              rows={3}
+              style={{ width:'100%', fontSize:13, padding:'10px 12px', borderRadius:10, border:'1px solid var(--border)', marginBottom:14, fontFamily:'DM Sans, sans-serif', resize:'none', outline:'none', lineHeight:1.5 }} />
+            <div style={{ display:'flex', gap:8 }}>
+              <button onClick={handleDelete}
+                style={{ flex:1, padding:'10px', borderRadius:10, border:'none', background:'#EF4444', color:'white', cursor:'pointer', fontFamily:'DM Sans, sans-serif', fontWeight:600, fontSize:13 }}>
+                Delete{reason ? ' & Log' : ''}
+              </button>
+              <button onClick={() => setView('main')}
+                style={{ padding:'10px 16px', borderRadius:10, border:'1px solid var(--border)', background:'white', color:'var(--muted)', cursor:'pointer', fontSize:12, fontFamily:'DM Sans, sans-serif' }}>
+                Back
+              </button>
             </div>
-          </div>
-          <input value={reason} onChange={e => setReason(e.target.value)}
-            placeholder="Why? — optional, shows in log"
-            onKeyDown={e => { if (e.key === 'Escape') setMode(null) }}
-            style={{ width:'100%', fontSize:12, padding:'7px 10px', borderRadius:8, border:'1px solid var(--border)', marginBottom:8 }} />
-          <div style={{ display:'flex', gap:8 }}>
-            <button onClick={handleReschedule} disabled={!newDate}
-              style={{ padding:'6px 18px', borderRadius:10, border:'none', background: newDate ? '#059669' : '#E5E7EB', color: newDate ? 'white' : '#9CA3AF', cursor: newDate ? 'pointer' : 'default', fontSize:11, fontFamily:'DM Sans, sans-serif', fontWeight:600 }}>
-              Move it
-            </button>
-            <button onClick={() => { setMode(null); setReason(''); setNewDate(''); setNewTime('') }}
-              style={{ padding:'6px 12px', borderRadius:10, border:'1px solid var(--border)', background:'transparent', color:'var(--muted)', cursor:'pointer', fontSize:11, fontFamily:'DM Sans, sans-serif' }}>
-              Back
-            </button>
-          </div>
-        </div>
-      )}
-    </div>
-  )
-}
+          </>
+        )}
 
-// ── Todo row ───────────────────────────────────────────────────
-function TodoRow({ id, label, note, tag, done, overdue, onToggle, onOpenAction, isCustom, onDeleteCustom, actionOpen }) {
-  return (
-    <div style={{
-      background: overdue ? '#FFF5F5' : 'white',
-      borderRadius: actionOpen ? '12px 12px 0 0' : 12,
-      border: `1px solid ${actionOpen ? '#6B8060' : overdue ? '#FECACA' : 'var(--border)'}`,
-      padding:'12px 16px',
-      opacity: done ? .42 : 1,
-    }}>
-      <div style={{ display:'flex', gap:12, alignItems:'flex-start' }}>
-        <div style={{
-          width:20, height:20, borderRadius:'50%', flexShrink:0, marginTop:2,
-          border: done ? 'none' : overdue ? '2px solid #FCA5A5' : '2px solid #D1D5DB',
-          background: done ? '#52B788' : 'transparent',
-          display:'flex', alignItems:'center', justifyContent:'center', transition:'all .2s', cursor:'pointer',
-        }} onClick={onToggle}>
-          {done && <span style={{ color:'white', fontSize:11, fontWeight:700 }}>✓</span>}
-        </div>
+        {view === 'reschedule' && (
+          <>
+            <div className="serif" style={{ fontSize:18, fontWeight:600, color:'var(--text)', marginBottom:6 }}>Reschedule</div>
+            <div style={{ fontSize:13, color:'var(--muted)', marginBottom:16, fontStyle:'italic' }}>{task.label || task.text}</div>
 
-        <div style={{ flex:1, cursor:'pointer' }} onClick={onToggle}>
-          <div style={{ fontSize:13, fontWeight:500, color:'var(--text)', textDecoration: done ? 'line-through' : 'none' }}>{label}</div>
-          {note && <div style={{ fontSize:11, color:'var(--muted)', marginTop:2, lineHeight:1.4 }}>{note}</div>}
-          <div style={{ display:'flex', gap:6, marginTop:4, flexWrap:'wrap', alignItems:'center' }}>
-            <span className={`tag ${TAG_CLASS[tag] || 'tag-class'}`}>{tag}</span>
-            {overdue && !done && (
-              <span style={{ fontSize:9, letterSpacing:1, textTransform:'uppercase', padding:'2px 7px', borderRadius:10, background:'#FEE2E2', color:'#991B1B', fontWeight:600 }}>overdue</span>
+            <div style={{ display:'flex', gap:8, marginBottom:12 }}>
+              <div style={{ flex:1 }}>
+                <div style={{ fontSize:10, color:'var(--muted)', letterSpacing:1, textTransform:'uppercase', marginBottom:4 }}>Date</div>
+                <input type="date" value={reschedDate} onChange={e => { setReschedDate(e.target.value); checkConflict(e.target.value, reschedTime) }}
+                  style={{ width:'100%', fontSize:12, padding:'8px 10px', borderRadius:10, border:'1px solid var(--border)', fontFamily:'DM Sans, sans-serif' }} />
+              </div>
+              <div style={{ flex:1 }}>
+                <div style={{ fontSize:10, color:'var(--muted)', letterSpacing:1, textTransform:'uppercase', marginBottom:4 }}>Time</div>
+                <input type="time" value={reschedTime} onChange={e => { setReschedTime(e.target.value); checkConflict(reschedDate, e.target.value) }}
+                  style={{ width:'100%', fontSize:12, padding:'8px 10px', borderRadius:10, border:'1px solid var(--border)', fontFamily:'DM Sans, sans-serif' }} />
+              </div>
+            </div>
+
+            {/* Free slots suggestion */}
+            {freeSlots.length > 0 && (
+              <div style={{ marginBottom:12 }}>
+                <div style={{ fontSize:10, color:'var(--muted)', letterSpacing:1, textTransform:'uppercase', marginBottom:6 }}>Open slots on {reschedDate}</div>
+                <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
+                  {freeSlots.slice(0,4).map((s,i) => (
+                    <button key={i} onClick={() => { const t=String(Math.floor(s.start/60)).padStart(2,'0')+':'+String(s.start%60).padStart(2,'0'); setReschedTime(t); checkConflict(reschedDate,t) }}
+                      style={{ fontSize:10, padding:'4px 10px', borderRadius:20, border:'1px solid #B2DFDB', background:'#E0F2F1', color:'#00695C', cursor:'pointer', fontFamily:'DM Sans, sans-serif' }}>
+                      {s.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
             )}
-          </div>
-        </div>
 
-        {/* Action / delete button */}
-        {!done && (
-          isCustom ? (
-            <button onClick={onDeleteCustom}
-              title="Remove this task"
-              style={{ background:'none', border:'none', cursor:'pointer', color:'#D1D5DB', fontSize:16, padding:'0 2px', flexShrink:0, marginTop:1 }}>✕</button>
-          ) : (
-            <button onClick={onOpenAction}
-              title="Skip or reschedule"
-              style={{
-                background: actionOpen ? '#F0FDF4' : 'none',
-                border: actionOpen ? '1px solid #86EFAC' : '1px solid var(--border)',
-                borderRadius:8, cursor:'pointer',
-                color: actionOpen ? '#059669' : '#C0BAB0',
-                fontSize:13, padding:'2px 9px', flexShrink:0,
-                fontFamily:'DM Sans, sans-serif', lineHeight:1,
-              }}>
-              ···
-            </button>
-          )
+            {/* Conflict warning */}
+            {conflict && (
+              <div style={{ background:'#FEF3C7', border:'1px solid #F59E0B', borderRadius:10, padding:'10px 14px', marginBottom:12, fontSize:12, color:'#92400E' }}>
+                <strong>Conflict with:</strong> {conflict}
+                <div style={{ display:'flex', gap:6, marginTop:8 }}>
+                  <button onClick={() => { onReschedule(task, reschedDate, reschedTime, 'replace'); onClose() }}
+                    style={{ fontSize:10, padding:'4px 10px', borderRadius:10, border:'none', background:'#F59E0B', color:'white', cursor:'pointer', fontFamily:'DM Sans, sans-serif' }}>
+                    Replace it
+                  </button>
+                  <button onClick={() => { onReschedule(task, reschedDate, reschedTime, 'alongside'); onClose() }}
+                    style={{ fontSize:10, padding:'4px 10px', borderRadius:10, border:'1px solid #F59E0B', background:'white', color:'#92400E', cursor:'pointer', fontFamily:'DM Sans, sans-serif' }}>
+                    Schedule alongside
+                  </button>
+                </div>
+              </div>
+            )}
+
+            <div style={{ display:'flex', gap:8 }}>
+              <button onClick={() => { if(!conflict) { onReschedule(task, reschedDate, reschedTime, 'normal'); onClose() } else setConflict(conflict) }}
+                style={{ flex:1, padding:'10px', borderRadius:10, border:'none', background:'var(--forest)', color:'var(--green-light)', cursor:'pointer', fontFamily:'DM Sans, sans-serif', fontWeight:600, fontSize:13 }}>
+                Reschedule
+              </button>
+              <button onClick={() => setView('main')}
+                style={{ padding:'10px 16px', borderRadius:10, border:'1px solid var(--border)', background:'white', color:'var(--muted)', cursor:'pointer', fontSize:12, fontFamily:'DM Sans, sans-serif' }}>
+                Back
+              </button>
+            </div>
+          </>
         )}
       </div>
     </div>
   )
 }
 
-// ── Add task form ──────────────────────────────────────────────
-function AddTodoForm({ onAdd, onCancel }) {
-  const [label, setLabel] = useState('')
-  const [note,  setNote]  = useState('')
-  const [tag,   setTag]   = useState('personal')
-
-  const submit = () => {
-    if (!label.trim()) return
-    onAdd({ label: label.trim(), note: note.trim(), tag })
-  }
-
+// ── Task row ───────────────────────────────────────────────────
+function TaskRow({ id, label, note, tag, done, overdue, onToggle, onManage }) {
+  const dot = TAG_COLORS[tag] || '#9CA3AF'
   return (
-    <div style={{ background:'white', borderRadius:12, border:'2px solid var(--forest)', padding:'14px 16px', marginBottom:16 }}>
-      <div style={{ fontSize:11, color:'var(--muted)', letterSpacing:1, textTransform:'uppercase', marginBottom:10 }}>Add task for today</div>
-      <input value={label} onChange={e => setLabel(e.target.value)}
-        placeholder="Task (e.g. 7:00 PM — Review thesis notes)"
-        autoFocus
-        onKeyDown={e => { if (e.key === 'Enter') submit(); if (e.key === 'Escape') onCancel() }}
-        style={{ marginBottom:8 }} />
-      <input value={note} onChange={e => setNote(e.target.value)}
-        placeholder="Note — optional"
-        onKeyDown={e => { if (e.key === 'Enter') submit(); if (e.key === 'Escape') onCancel() }}
-        style={{ marginBottom:10 }} />
-      <div style={{ display:'flex', gap:8, alignItems:'center', flexWrap:'wrap' }}>
-        <select value={tag} onChange={e => setTag(e.target.value)} style={{ flex:1, minWidth:120 }}>
-          {TAGS.map(t => <option key={t} value={t}>{t}</option>)}
-        </select>
-        <button className="btn-primary" onClick={submit} disabled={!label.trim()} style={{ padding:'8px 18px' }}>Add</button>
-        <button className="btn-ghost" onClick={onCancel} style={{ padding:'8px 14px' }}>Cancel</button>
+    <div style={{ display:'flex', gap:10, alignItems:'flex-start', background: overdue?'#FFF5F5':'white', borderRadius:12, border:`1px solid ${overdue?'#FECACA':'var(--border)'}`, padding:'11px 14px', marginBottom:7, opacity:done?.45:1 }}>
+      <div onClick={onToggle}
+        style={{ width:20, height:20, borderRadius:'50%', flexShrink:0, marginTop:2, cursor:'pointer', border:done?'none':`2px solid ${overdue?'#FCA5A5':dot}`, background:done?'#52B788':'transparent', display:'flex', alignItems:'center', justifyContent:'center' }}>
+        {done && <span style={{ color:'white', fontSize:11, fontWeight:700 }}>✓</span>}
       </div>
+      <div style={{ flex:1, cursor:'pointer' }} onClick={onToggle}>
+        <div style={{ fontSize:13, fontWeight:500, color:'var(--text)', textDecoration:done?'line-through':'none' }}>{label}</div>
+        {note && <div style={{ fontSize:11, color:'var(--muted)', marginTop:2, lineHeight:1.4 }}>{note}</div>}
+        <div style={{ display:'flex', gap:5, marginTop:4, flexWrap:'wrap', alignItems:'center' }}>
+          <span style={{ fontSize:9, padding:'2px 7px', borderRadius:10, background:`${dot}18`, color:dot, fontWeight:600, letterSpacing:1, textTransform:'uppercase' }}>{tag}</span>
+          {overdue && !done && <span style={{ fontSize:9, padding:'2px 7px', borderRadius:10, background:'#FEE2E2', color:'#991B1B', fontWeight:600, letterSpacing:1, textTransform:'uppercase' }}>overdue</span>}
+        </div>
+      </div>
+      {/* Manage button */}
+      {!done && (
+        <button onClick={onManage}
+          style={{ fontSize:11, padding:'4px 8px', borderRadius:8, border:'1px solid var(--border)', background:'white', color:'var(--muted)', cursor:'pointer', flexShrink:0, alignSelf:'center' }}>
+          ···
+        </button>
+      )}
+    </div>
+  )
+}
+
+// ── MCAT Banner ────────────────────────────────────────────────
+function MCATBanner() {
+  const [expanded, setExpanded] = useState(false)
+  // Quiz 1 is April 6 — count days to MCAT (placeholder target)
+  const mcatDate = new Date('2026-08-01')
+  const today = new Date(); today.setHours(0,0,0,0)
+  const daysLeft = Math.ceil((mcatDate-today)/86400000)
+  return (
+    <div style={{ background:'linear-gradient(135deg,#1C2B1A,#2D4A28)', borderRadius:14, padding:'14px 18px', marginBottom:16, border:'1px solid rgba(90,180,90,.25)', cursor:'pointer' }}
+      onClick={() => setExpanded(o=>!o)}>
+      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
+        <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+          <span style={{ fontSize:22 }}>📚</span>
+          <div>
+            <div className="serif" style={{ fontSize:16, fontWeight:600, color:'var(--sand)' }}>MCAT Review — 30 min</div>
+            <div style={{ fontSize:11, color:'var(--green-mid)', marginTop:1 }}>6:19 – 6:49 AM · One focused concept block · {daysLeft} days to go</div>
+          </div>
+        </div>
+        <span style={{ color:'var(--green-mid)', fontSize:13 }}>{expanded?'▴':'▾'}</span>
+      </div>
+      {expanded && (
+        <div style={{ marginTop:14, borderTop:'1px solid rgba(255,255,255,.08)', paddingTop:12 }} onClick={e=>e.stopPropagation()}>
+          <div style={{ fontSize:12, color:'var(--green-light)', lineHeight:1.7 }}>
+            <div style={{ marginBottom:6 }}><strong style={{ color:'var(--sand)' }}>Today's focus:</strong> Pick one content block — biochemistry, biology, or C/P — and go deep for 30 minutes. No skimming.</div>
+            <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
+              {['Biochem','Cell Bio','Genetics','Physiology','Psych/Soc','C/P','CARS'].map(sub => (
+                <span key={sub} style={{ fontSize:10, padding:'3px 10px', borderRadius:10, background:'rgba(90,180,90,.15)', border:'1px solid rgba(90,180,90,.25)', color:'var(--green-light)' }}>{sub}</span>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
 
 // ── Main ───────────────────────────────────────────────────────
-export default function Today({
-  todos, weekState, syncToggle, commitments,
-  customDailyTodos, updateCustomDailyTodos, deleteCustomTodo,
-  skippedTasks, updateSkippedTasks,
-  appendLog,
-}) {
-  const [morningOpen,  setMorningOpen]  = useState(false)
-  const [now,          setNow]          = useState(nowMinutes())
-  const [showAddForm,  setShowAddForm]  = useState(false)
-  const [actionOpenId, setActionOpenId] = useState(null)
+export default function Today({ todos, weekState, syncToggle, commitments, appendLog }) {
+  const [morningOpen, setMorningOpen] = useState(false)
+  const [now, setNow] = useState(nowMins())
+  const [managingTask, setManagingTask] = useState(null)
+  const [rescheduled, setRescheduled] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('vivian_rescheduled_today') || '{}') } catch { return {} }
+  })
+  const [deleted, setDeleted] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('vivian_deleted_' + new Date().toISOString().split('T')[0]) || '[]') } catch { return [] }
+  })
 
   useEffect(() => {
-    const t = setInterval(() => setNow(nowMinutes()), 60000)
+    const t = setInterval(() => setNow(nowMins()), 60000)
     return () => clearInterval(t)
   }, [])
 
-  const dateKey       = todayKey()
-  const templateTodos = DAILY_TODOS[dateKey] || []
-  const customTodos   = (customDailyTodos || {})[dateKey] || []
-  const skipped       = skippedTasks || {}
-
-  const visibleTemplateTodos = templateTodos.filter(t => !skipped[`${dateKey}-${t.id}`])
+  const dateKey = todayKey()
+  const templateTodos = (DAILY_TODOS[dateKey] || []).filter(t => !deleted.includes(t.id))
   const todayCommitments = (commitments || []).filter(c => c.date === dateKey && !c.done)
   const isDone = id => !!(todos[id] || weekState[id])
 
-  const sortedCommitments = [...todayCommitments].sort((a, b) => {
-    if (!a.time && !b.time) return 0
-    if (!a.time) return 1; if (!b.time) return -1
-    return a.time.localeCompare(b.time)
-  })
+  const doneCount = templateTodos.filter(t => isDone(t.id)).length + todayCommitments.filter(c => isDone(c.id)).length
+  const totalCount = templateTodos.length + todayCommitments.length
 
-  const doneCount =
-    visibleTemplateTodos.filter(t => isDone(t.id)).length +
-    todayCommitments.filter(c => isDone(c.id)).length +
-    customTodos.filter(t => isDone(t.id)).length
-  const totalCount = visibleTemplateTodos.length + todayCommitments.length + customTodos.length
-
-  // ── Handlers ─────────────────────────────────────────────────
-
-  const handleAddCustom = async ({ label, note, tag }) => {
-    const id = 'custom-' + Date.now()
-    const existing = (customDailyTodos || {})[dateKey] || []
-    const next = { ...(customDailyTodos || {}), [dateKey]: [...existing, { id, label, note, tag }] }
-    await updateCustomDailyTodos(next)
-    setShowAddForm(false)
+  // Handle delete with reason
+  const handleDelete = (task, reason) => {
+    const id = task.id
+    const newDeleted = [...deleted, id]
+    setDeleted(newDeleted)
+    localStorage.setItem('vivian_deleted_' + dateKey, JSON.stringify(newDeleted))
+    if (appendLog) {
+      const d = new Date()
+      appendLog({
+        date: dateKey,
+        dateLabel: todayLabel(),
+        label: `Deleted: ${task.label || task.text}${reason ? ` — Reason: ${reason}` : ''}`,
+        tag: 'deleted',
+        ts: d.toISOString()
+      })
+    }
   }
 
-  const handleDeleteCustom = async todoId => {
-    const existing = (customDailyTodos || {})[dateKey] || []
-    const next = { ...(customDailyTodos || {}), [dateKey]: existing.filter(t => t.id !== todoId) }
-    await updateCustomDailyTodos(next)
-    if (deleteCustomTodo) await deleteCustomTodo(todoId)
+  // Handle reschedule
+  const handleReschedule = (task, date, time, mode) => {
+    const id = task.id
+    // Mark as rescheduled (remove from today)
+    const newDeleted = [...deleted, id]
+    setDeleted(newDeleted)
+    localStorage.setItem('vivian_deleted_' + dateKey, JSON.stringify(newDeleted))
+    // Store in rescheduled for the target date
+    const key = 'vivian_rescheduled_' + date
+    try {
+      const existing = JSON.parse(localStorage.getItem(key) || '[]')
+      const entry = { ...task, rescheduledTime: time, rescheduledFrom: dateKey, mode }
+      localStorage.setItem(key, JSON.stringify([...existing, entry]))
+    } catch {}
+    if (appendLog) {
+      appendLog({
+        date: dateKey, dateLabel: todayLabel(),
+        label: `Rescheduled: ${task.label || task.text} → ${date}${time ? ' @ '+fmt12(time) : ''}`,
+        tag: 'rescheduled', ts: new Date().toISOString()
+      })
+    }
   }
 
-  const logAction = async (task, actionLabel) => {
-    if (!appendLog) return
-    const d = new Date()
-    await appendLog({
-      date: dateKey,
-      dateLabel: d.toLocaleDateString('en-US', { weekday:'long', month:'long', day:'numeric' }),
-      label: actionLabel,
-      tag: task.tag,
-      ts: d.toISOString(),
-    })
-  }
-
-  const handleSkip = async (task, reason) => {
-    const skipKey = `${dateKey}-${task.id}`
-    await updateSkippedTasks({
-      ...skipped,
-      [skipKey]: { date:dateKey, label:task.label, tag:task.tag, action:'skipped', reason, ts:new Date().toISOString() }
-    })
-    await logAction(task, reason ? `Skipped: ${task.label} — "${reason}"` : `Skipped: ${task.label}`)
-    setActionOpenId(null)
-  }
-
-  const handleReschedule = async (task, newDate, newTime, reason) => {
-    const skipKey = `${dateKey}-${task.id}`
-    await updateSkippedTasks({
-      ...skipped,
-      [skipKey]: { date:dateKey, label:task.label, tag:task.tag, action:'rescheduled', reason, rescheduledTo:newDate, rescheduledToTime:newTime, ts:new Date().toISOString() }
-    })
-
-    // Create custom todo on target date
-    const timePrefix = newTime ? `${fmt12(newTime)} — ` : ''
-    const newLabel = `${timePrefix}${task.label}`
-    const noteText = `Rescheduled from ${dateKey}${reason ? ` — ${reason}` : ''}`
-    const newId = 'rescheduled-' + Date.now()
-    const existing = (customDailyTodos || {})[newDate] || []
-    await updateCustomDailyTodos({
-      ...(customDailyTodos || {}),
-      [newDate]: [...existing, { id:newId, label:newLabel, note:noteText, tag:task.tag }]
-    })
-
-    const newDateLabel = new Date(newDate + 'T12:00:00').toLocaleDateString('en-US', { weekday:'short', month:'short', day:'numeric' })
-    await logAction(task, reason
-      ? `Rescheduled to ${newDateLabel}: ${task.label} — "${reason}"`
-      : `Rescheduled to ${newDateLabel}: ${task.label}`)
-    setActionOpenId(null)
-  }
-
-  // ── Render ────────────────────────────────────────────────────
+  const sortedCommitments = [...todayCommitments].sort((a,b) => (a.time||'99').localeCompare(b.time||'99'))
 
   return (
     <div>
+      {/* MCAT Banner — always at top */}
+      <MCATBanner />
+
       <div className="page-title">{todayLabel()}</div>
       <div className="page-sub">{doneCount}/{totalCount} tasks done today</div>
 
-      {/* ── ADD TASK — top ── */}
-      {showAddForm ? (
-        <AddTodoForm onAdd={handleAddCustom} onCancel={() => setShowAddForm(false)} />
-      ) : (
-        <button onClick={() => setShowAddForm(true)}
-          style={{ width:'100%', background:'var(--forest)', border:'none', borderRadius:12, padding:'13px 18px', cursor:'pointer', display:'flex', alignItems:'center', gap:10, marginBottom:16 }}>
-          <span style={{ fontSize:18, color:'var(--green-light)' }}>+</span>
-          <span style={{ fontFamily:'DM Sans, sans-serif', fontSize:13, color:'var(--green-light)', fontWeight:600 }}>Add task for today</span>
-        </button>
-      )}
-
-      {/* Morning routine */}
-      <div onClick={() => setMorningOpen(o => !o)}
+      {/* Morning routine collapsible */}
+      <div onClick={() => setMorningOpen(o=>!o)}
         style={{ background:'white', borderRadius:12, border:'1px solid var(--border)', padding:'12px 16px', marginBottom:12, cursor:'pointer', userSelect:'none' }}>
         <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
           <div style={{ display:'flex', alignItems:'center', gap:10 }}>
             <span style={{ fontSize:18 }}>☀️</span>
             <div>
-              <div className="serif" style={{ fontSize:16, fontWeight:600 }}>Morning Routine</div>
-              <div style={{ fontSize:11, color:'var(--muted)', marginTop:1 }}>6:00 – 7:50 AM · {morningOpen ? 'tap to collapse' : 'tap to expand'}</div>
+              <div className="serif" style={{ fontSize:15, fontWeight:600 }}>Morning Routine</div>
+              <div style={{ fontSize:11, color:'var(--muted)', marginTop:1 }}>6:00 – 7:50 AM · {morningOpen?'collapse':'expand'}</div>
             </div>
           </div>
-          <span style={{ color:'var(--muted)', fontSize:14, transform: morningOpen ? 'rotate(180deg)' : '', transition:'transform .2s' }}>▾</span>
+          <span style={{ color:'var(--muted)', fontSize:14, transform:morningOpen?'rotate(180deg)':'', transition:'transform .2s' }}>▾</span>
         </div>
         {morningOpen && (
-          <div onClick={e => e.stopPropagation()} style={{ marginTop:14, borderTop:'1px solid var(--border)', paddingTop:12 }}>
+          <div onClick={e=>e.stopPropagation()} style={{ marginTop:14, borderTop:'1px solid var(--border)', paddingTop:12 }}>
             {MORNING_ROUTINE.map(item => (
               <div key={item.habit} className="routine-item">
                 <div className="routine-time">{item.time}</div>
                 <div className="routine-icon">{item.icon}</div>
-                <div>
-                  <div className="routine-habit">{item.habit}</div>
-                  <div className="routine-detail">{item.detail}</div>
-                </div>
+                <div><div className="routine-habit">{item.habit}</div><div className="routine-detail">{item.detail}</div></div>
               </div>
             ))}
           </div>
         )}
       </div>
 
-      {/* Commitments for today */}
+      {/* Commitments today */}
       {sortedCommitments.length > 0 && (
         <>
           <p className="section-label">Commitments Today</p>
           {sortedCommitments.map(c => {
             const label = c.time ? `${fmt12(c.time)} — ${c.text}` : c.text
-            const note = [c.person && `With: ${c.person}`, c.prepMin && `Leave ${c.prepMin} min early`].filter(Boolean).join(' · ')
-            const mins = timeToMinutes(c.time)
-            const overdue = mins !== null && now > mins + 10 && !c.done
+            const note = [c.person&&`With: ${c.person}`, c.prepMin&&`Leave ${c.prepMin} min early`].filter(Boolean).join(' · ')
+            const mins = timeToMins(c.time)
+            const overdue = mins!==null && now>mins+10 && !isDone(c.id)
             return (
-              <div key={c.id} style={{ marginBottom:8 }}>
-                <TodoRow id={c.id} label={label} note={note || undefined}
-                  tag={c.cat} done={isDone(c.id)} overdue={overdue}
-                  onToggle={() => syncToggle(c.id, c.text, c.cat)}
-                  isCustom={true} />
-              </div>
+              <TaskRow key={c.id} id={c.id} label={label} note={note||undefined}
+                tag={c.cat} done={isDone(c.id)} overdue={overdue}
+                onToggle={() => syncToggle(c.id, c.text, c.cat)}
+                onManage={() => setManagingTask(c)} />
             )
           })}
         </>
@@ -404,53 +392,36 @@ export default function Today({
         <div style={{ background:'white', borderRadius:12, border:'1px solid var(--border)', padding:20, textAlign:'center', color:'var(--muted)', fontSize:13 }}>
           No schedule for {dateKey} — Claude adds new days to DAILY_TODOS in schedule.js.
         </div>
-      ) : visibleTemplateTodos.map(t => {
+      ) : templateTodos.map(t => {
         const done = isDone(t.id)
-        const mins = parseTaskMinutes(t.label)
-        const overdue = !done && mins !== null && now > mins + 10
-        const isOpen = actionOpenId === t.id
+        const mins = parseTimeMins(t.label)
+        const overdue = !done && mins!==null && now>mins+10
         return (
-          <div key={t.id} style={{ marginBottom: isOpen ? 0 : 8 }}>
-            <TodoRow
-              id={t.id} label={t.label} note={t.note}
-              tag={t.tag} done={done} overdue={overdue}
-              onToggle={() => { syncToggle(t.id, t.label, t.tag); setActionOpenId(null) }}
-              onOpenAction={() => setActionOpenId(isOpen ? null : t.id)}
-              isCustom={false}
-              actionOpen={isOpen}
-            />
-            {isOpen && (
-              <ActionPanel
-                onSkip={reason => handleSkip(t, reason)}
-                onReschedule={(newDate, newTime, reason) => handleReschedule(t, newDate, newTime, reason)}
-                onCancel={() => setActionOpenId(null)}
-              />
-            )}
-          </div>
+          <TaskRow key={t.id} id={t.id} label={t.label} note={t.note}
+            tag={t.tag} done={done} overdue={overdue}
+            onToggle={() => syncToggle(t.id, t.label, t.tag)}
+            onManage={() => setManagingTask(t)} />
         )
       })}
 
-      {/* Custom todos */}
-      {customTodos.length > 0 && (
-        <>
-          <p className="section-label" style={{ marginTop:16 }}>Added by You</p>
-          {customTodos.map(t => (
-            <div key={t.id} style={{ marginBottom:8 }}>
-              <TodoRow
-                id={t.id} label={t.label} note={t.note}
-                tag={t.tag} done={isDone(t.id)} overdue={false}
-                onToggle={() => syncToggle(t.id, t.label, t.tag)}
-                isCustom={true}
-                onDeleteCustom={() => handleDeleteCustom(t.id)}
-              />
-            </div>
-          ))}
-        </>
+      {deleted.length > 0 && (
+        <div style={{ fontSize:11, color:'var(--muted)', textAlign:'center', marginTop:8 }}>
+          {deleted.length} task{deleted.length>1?'s':''} removed today ·
+          <button onClick={() => { setDeleted([]); localStorage.removeItem('vivian_deleted_'+dateKey) }}
+            style={{ background:'none', border:'none', color:'var(--teal)', cursor:'pointer', fontSize:11, marginLeft:4 }}>
+            Undo all
+          </button>
+        </div>
       )}
 
-      <div style={{ marginTop:12 }}>
-        <button className="btn-ghost" onClick={() => { if (confirm('Reset all checkboxes for today?')) window.location.reload() }}>Reset today</button>
-      </div>
+      {managingTask && (
+        <TaskModal
+          task={managingTask} dateKey={dateKey} todos={todos}
+          onClose={() => setManagingTask(null)}
+          onDelete={handleDelete}
+          onReschedule={handleReschedule}
+        />
+      )}
     </div>
   )
 }
