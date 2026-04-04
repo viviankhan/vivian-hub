@@ -14,6 +14,7 @@ import {
   getRoutinesCustom, setRoutinesCustom,
   getRoutinesDone, setRoutinesDone,
   getRoutinesTodayOverride, setRoutinesTodayOverride,
+  getSkippedTasks, setSkippedTasks,
   dbGet, dbSet,
 } from './lib/storage.js'
 import { FIXED_BLOCKS } from './data/schedule.js'
@@ -23,7 +24,6 @@ import ThisWeek    from './components/ThisWeek.jsx'
 import Commitments from './components/Commitments.jsx'
 import Calendar    from './components/Calendar.jsx'
 import Study       from './components/Study.jsx'
-import Scheduler   from './components/Scheduler.jsx'
 import Routines    from './components/Routines.jsx'
 import Notes       from './components/Notes.jsx'
 import Log         from './components/Log.jsx'
@@ -36,7 +36,6 @@ const TABS = [
   { id:'commitments', label:'Commitments' },
   { id:'calendar',    label:'Calendar'    },
   { id:'study',       label:'Study'       },
-  { id:'scheduler',   label:'Scheduler'   },
   { id:'routines',    label:'Routines'    },
   { id:'notes',       label:'Notes'       },
   { id:'log',         label:'Log'         },
@@ -88,13 +87,14 @@ export default function App() {
   const [routinesCustom,       setRoutinesCustom_]       = useState(null)
   const [routinesDone,         setRoutinesDone_]         = useState({})
   const [routinesTodayOverride, setRoutinesTodayOverride_] = useState({})
+  const [skippedTasks,         setSkippedTasks_]         = useState({})
 
   const [loading, setLoading] = useState(true)
 
   // ── Load all state on mount ────────────────────────────────
   useEffect(() => {
     async function load() {
-      const [t, w, l, n, fcp, fcs, sch, com, cdt, se, rc, rd, rto] = await Promise.all([
+      const [t, w, l, n, fcp, fcs, sch, com, cdt, se, rc, rd, rto, sk] = await Promise.all([
         getTodos(),
         getWeekState(),
         getLog(),
@@ -108,6 +108,7 @@ export default function App() {
         getRoutinesCustom(),
         getRoutinesDone(),
         getRoutinesTodayOverride(),
+        getSkippedTasks(),
       ])
       setTodos_(t)
       setWeekState_(w)
@@ -122,6 +123,7 @@ export default function App() {
       setRoutinesCustom_(rc)
       setRoutinesDone_(rd)
       setRoutinesTodayOverride_(rto)
+      setSkippedTasks_(sk)
       setLoading(false)
     }
     load()
@@ -176,6 +178,11 @@ export default function App() {
   const updateRoutinesTodayOverride = useCallback(async v => {
     setRoutinesTodayOverride_(v)
     await setRoutinesTodayOverride(v)
+  }, [])
+
+  const updateSkippedTasks = useCallback(async v => {
+    setSkippedTasks_(v)
+    await setSkippedTasks(v)
   }, [])
 
   // ── Commitments CRUD ───────────────────────────────────────
@@ -294,6 +301,9 @@ export default function App() {
             customDailyTodos={customDailyTodos}
             updateCustomDailyTodos={updateCustomDailyTodos}
             deleteCustomTodo={deleteCustomTodo}
+            skippedTasks={skippedTasks}
+            updateSkippedTasks={updateSkippedTasks}
+            appendLog={appendLog}
           />
         )}
         {tab === 'week' && (
@@ -320,12 +330,6 @@ export default function App() {
             fcProgress={fcProgress} updateFcProgress={updateFcProgress}
             fcStudied={fcStudied}   updateFcStudied={updateFcStudied}
             studyExtras={studyExtras} updateStudyExtras={updateStudyExtras}
-          />
-        )}
-        {tab === 'scheduler' && (
-          <Scheduler
-            scheduled={scheduled} addScheduledTask={addScheduledTask}
-            todos={todos} updateTodos={updateTodos}
           />
         )}
         {tab === 'routines' && (

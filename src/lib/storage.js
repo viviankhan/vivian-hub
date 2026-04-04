@@ -94,4 +94,9 @@ export async function setRoutinesDone(v) { await dbSet('routines_done', v) }
 export async function getRoutinesTodayOverride()  { return await dbGet('routines_today_override') ?? {} }
 export async function setRoutinesTodayOverride(v) { await dbSet('routines_today_override', v) }
 
+// Skipped/rescheduled tasks — tracks template tasks that were removed or moved
+// Structure: { 'task-id': { date, label, tag, action:'skipped'|'rescheduled', reason, rescheduledTo?, rescheduledToTime?, ts } }
+export async function getSkippedTasks()  { return await dbGet('skipped_tasks') ?? {} }
+export async function setSkippedTasks(v) { await dbSet('skipped_tasks', v) }
+
 export const isUsingSupabase = USE_SUPABASE

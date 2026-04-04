@@ -45,48 +45,156 @@ function fmt12(t) {
   return `${h12}:${String(m).padStart(2,'0')} ${ampm}`
 }
 
-// ── Row component ──────────────────────────────────────────────
-function TodoRow({ id, label, note, tag, done, overdue, onToggle, onDelete }) {
+// ── Skip / Reschedule panel ────────────────────────────────────
+function ActionPanel({ onSkip, onReschedule, onCancel }) {
+  const [mode,    setMode]    = useState(null) // null | 'skip' | 'reschedule'
+  const [reason,  setReason]  = useState('')
+  const [newDate, setNewDate] = useState('')
+  const [newTime, setNewTime] = useState('')
+
+  const handleSkip = () => {
+    onSkip(reason.trim() || null)
+  }
+
+  const handleReschedule = () => {
+    if (!newDate) return
+    onReschedule(newDate, newTime || null, reason.trim() || null)
+  }
+
   return (
-    <div style={{
-      display:'flex', gap:12, alignItems:'flex-start',
-      background: overdue ? '#FFF5F5' : 'white',
-      borderRadius:12,
-      border: `1px solid ${overdue ? '#FECACA' : 'var(--border)'}`,
-      padding:'12px 16px', marginBottom:8,
-      opacity: done ? .42 : 1,
-    }}>
-      <div style={{
-        width:20, height:20, borderRadius:'50%', flexShrink:0, marginTop:2,
-        border: done ? 'none' : overdue ? '2px solid #FCA5A5' : '2px solid #D1D5DB',
-        background: done ? '#52B788' : 'transparent',
-        display:'flex', alignItems:'center', justifyContent:'center', transition:'all .2s',
-        cursor:'pointer',
-      }} onClick={onToggle}>
-        {done && <span style={{ color:'white', fontSize:11, fontWeight:700 }}>✓</span>}
-      </div>
-      <div style={{ flex:1, cursor:'pointer' }} onClick={onToggle}>
-        <div style={{ fontSize:13, fontWeight:500, color:'var(--text)', textDecoration: done ? 'line-through' : 'none' }}>{label}</div>
-        {note && <div style={{ fontSize:11, color:'var(--muted)', marginTop:2, lineHeight:1.4 }}>{note}</div>}
-        <div style={{ display:'flex', gap:6, marginTop:4, flexWrap:'wrap', alignItems:'center' }}>
-          <span className={`tag ${TAG_CLASS[tag] || 'tag-class'}`}>{tag}</span>
-          {overdue && !done && (
-            <span style={{ fontSize:9, letterSpacing:1, textTransform:'uppercase', padding:'2px 7px', borderRadius:10, background:'#FEE2E2', color:'#991B1B', fontWeight:600 }}>overdue</span>
-          )}
+    <div style={{ background:'#FAFAF7', border:'1px solid var(--border)', borderTop:'none', borderRadius:'0 0 10px 10px', padding:'12px 14px', marginTop:-4, marginBottom:8 }}>
+      {!mode && (
+        <div style={{ display:'flex', gap:8, flexWrap:'wrap', alignItems:'center' }}>
+          <span style={{ fontSize:11, color:'var(--muted)', flex:1 }}>What do you want to do?</span>
+          <button onClick={() => setMode('reschedule')}
+            style={{ fontSize:11, padding:'5px 13px', borderRadius:10, border:'1px solid #D1E8D0', background:'#F0FDF4', color:'#059669', cursor:'pointer', fontFamily:'DM Sans, sans-serif', fontWeight:600 }}>
+            📅 Reschedule
+          </button>
+          <button onClick={() => setMode('skip')}
+            style={{ fontSize:11, padding:'5px 13px', borderRadius:10, border:'1px solid #FECACA', background:'#FEF2F2', color:'#DC2626', cursor:'pointer', fontFamily:'DM Sans, sans-serif', fontWeight:600 }}>
+            ✕ Remove today
+          </button>
+          <button onClick={onCancel}
+            style={{ fontSize:11, padding:'5px 10px', borderRadius:10, border:'1px solid var(--border)', background:'transparent', color:'var(--muted)', cursor:'pointer', fontFamily:'DM Sans, sans-serif' }}>
+            Cancel
+          </button>
         </div>
-      </div>
-      {onDelete && (
-        <button
-          onClick={e => { e.stopPropagation(); onDelete() }}
-          title="Remove this task"
-          style={{ background:'none', border:'none', cursor:'pointer', color:'#D1D5DB', fontSize:16, padding:'0 2px', flexShrink:0, marginTop:1, lineHeight:1 }}
-        >✕</button>
+      )}
+
+      {mode === 'skip' && (
+        <div>
+          <div style={{ fontSize:11, color:'#DC2626', fontWeight:600, marginBottom:8 }}>Remove from today</div>
+          <input value={reason} onChange={e => setReason(e.target.value)}
+            placeholder="Why? — optional, shows in log"
+            autoFocus
+            onKeyDown={e => { if (e.key === 'Enter') handleSkip(); if (e.key === 'Escape') setMode(null) }}
+            style={{ width:'100%', fontSize:12, padding:'7px 10px', borderRadius:8, border:'1px solid var(--border)', marginBottom:8 }} />
+          <div style={{ display:'flex', gap:8 }}>
+            <button onClick={handleSkip}
+              style={{ padding:'6px 18px', borderRadius:10, border:'none', background:'#DC2626', color:'white', cursor:'pointer', fontSize:11, fontFamily:'DM Sans, sans-serif', fontWeight:600 }}>
+              Remove
+            </button>
+            <button onClick={() => { setMode(null); setReason('') }}
+              style={{ padding:'6px 12px', borderRadius:10, border:'1px solid var(--border)', background:'transparent', color:'var(--muted)', cursor:'pointer', fontSize:11, fontFamily:'DM Sans, sans-serif' }}>
+              Back
+            </button>
+          </div>
+        </div>
+      )}
+
+      {mode === 'reschedule' && (
+        <div>
+          <div style={{ fontSize:11, color:'#059669', fontWeight:600, marginBottom:8 }}>Move to another time</div>
+          <div style={{ display:'flex', gap:8, marginBottom:8, flexWrap:'wrap' }}>
+            <div style={{ flex:1, minWidth:140 }}>
+              <div style={{ fontSize:10, color:'var(--muted)', marginBottom:3 }}>New date <span style={{ color:'#DC2626' }}>*</span></div>
+              <input type="date" value={newDate} onChange={e => setNewDate(e.target.value)}
+                style={{ width:'100%', fontSize:12, padding:'6px 10px', borderRadius:8, border:'1px solid var(--border)' }} />
+            </div>
+            <div style={{ flex:1, minWidth:120 }}>
+              <div style={{ fontSize:10, color:'var(--muted)', marginBottom:3 }}>New time — optional</div>
+              <input type="time" value={newTime} onChange={e => setNewTime(e.target.value)}
+                style={{ width:'100%', fontSize:12, padding:'6px 10px', borderRadius:8, border:'1px solid var(--border)' }} />
+            </div>
+          </div>
+          <input value={reason} onChange={e => setReason(e.target.value)}
+            placeholder="Why? — optional, shows in log"
+            onKeyDown={e => { if (e.key === 'Escape') setMode(null) }}
+            style={{ width:'100%', fontSize:12, padding:'7px 10px', borderRadius:8, border:'1px solid var(--border)', marginBottom:8 }} />
+          <div style={{ display:'flex', gap:8 }}>
+            <button onClick={handleReschedule} disabled={!newDate}
+              style={{ padding:'6px 18px', borderRadius:10, border:'none', background: newDate ? '#059669' : '#E5E7EB', color: newDate ? 'white' : '#9CA3AF', cursor: newDate ? 'pointer' : 'default', fontSize:11, fontFamily:'DM Sans, sans-serif', fontWeight:600 }}>
+              Move it
+            </button>
+            <button onClick={() => { setMode(null); setReason(''); setNewDate(''); setNewTime('') }}
+              style={{ padding:'6px 12px', borderRadius:10, border:'1px solid var(--border)', background:'transparent', color:'var(--muted)', cursor:'pointer', fontSize:11, fontFamily:'DM Sans, sans-serif' }}>
+              Back
+            </button>
+          </div>
+        </div>
       )}
     </div>
   )
 }
 
-// ── Inline add form ────────────────────────────────────────────
+// ── Todo row ───────────────────────────────────────────────────
+function TodoRow({ id, label, note, tag, done, overdue, onToggle, onOpenAction, isCustom, onDeleteCustom, actionOpen }) {
+  return (
+    <div style={{
+      background: overdue ? '#FFF5F5' : 'white',
+      borderRadius: actionOpen ? '12px 12px 0 0' : 12,
+      border: `1px solid ${actionOpen ? '#6B8060' : overdue ? '#FECACA' : 'var(--border)'}`,
+      padding:'12px 16px',
+      opacity: done ? .42 : 1,
+    }}>
+      <div style={{ display:'flex', gap:12, alignItems:'flex-start' }}>
+        <div style={{
+          width:20, height:20, borderRadius:'50%', flexShrink:0, marginTop:2,
+          border: done ? 'none' : overdue ? '2px solid #FCA5A5' : '2px solid #D1D5DB',
+          background: done ? '#52B788' : 'transparent',
+          display:'flex', alignItems:'center', justifyContent:'center', transition:'all .2s', cursor:'pointer',
+        }} onClick={onToggle}>
+          {done && <span style={{ color:'white', fontSize:11, fontWeight:700 }}>✓</span>}
+        </div>
+
+        <div style={{ flex:1, cursor:'pointer' }} onClick={onToggle}>
+          <div style={{ fontSize:13, fontWeight:500, color:'var(--text)', textDecoration: done ? 'line-through' : 'none' }}>{label}</div>
+          {note && <div style={{ fontSize:11, color:'var(--muted)', marginTop:2, lineHeight:1.4 }}>{note}</div>}
+          <div style={{ display:'flex', gap:6, marginTop:4, flexWrap:'wrap', alignItems:'center' }}>
+            <span className={`tag ${TAG_CLASS[tag] || 'tag-class'}`}>{tag}</span>
+            {overdue && !done && (
+              <span style={{ fontSize:9, letterSpacing:1, textTransform:'uppercase', padding:'2px 7px', borderRadius:10, background:'#FEE2E2', color:'#991B1B', fontWeight:600 }}>overdue</span>
+            )}
+          </div>
+        </div>
+
+        {/* Action / delete button */}
+        {!done && (
+          isCustom ? (
+            <button onClick={onDeleteCustom}
+              title="Remove this task"
+              style={{ background:'none', border:'none', cursor:'pointer', color:'#D1D5DB', fontSize:16, padding:'0 2px', flexShrink:0, marginTop:1 }}>✕</button>
+          ) : (
+            <button onClick={onOpenAction}
+              title="Skip or reschedule"
+              style={{
+                background: actionOpen ? '#F0FDF4' : 'none',
+                border: actionOpen ? '1px solid #86EFAC' : '1px solid var(--border)',
+                borderRadius:8, cursor:'pointer',
+                color: actionOpen ? '#059669' : '#C0BAB0',
+                fontSize:13, padding:'2px 9px', flexShrink:0,
+                fontFamily:'DM Sans, sans-serif', lineHeight:1,
+              }}>
+              ···
+            </button>
+          )
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ── Add task form ──────────────────────────────────────────────
 function AddTodoForm({ onAdd, onCancel }) {
   const [label, setLabel] = useState('')
   const [note,  setNote]  = useState('')
@@ -98,55 +206,51 @@ function AddTodoForm({ onAdd, onCancel }) {
   }
 
   return (
-    <div style={{ background:'white', borderRadius:12, border:'2px solid var(--forest)', padding:'14px 16px', marginBottom:8 }}>
+    <div style={{ background:'white', borderRadius:12, border:'2px solid var(--forest)', padding:'14px 16px', marginBottom:16 }}>
       <div style={{ fontSize:11, color:'var(--muted)', letterSpacing:1, textTransform:'uppercase', marginBottom:10 }}>Add task for today</div>
-
-      <input
-        value={label}
-        onChange={e => setLabel(e.target.value)}
+      <input value={label} onChange={e => setLabel(e.target.value)}
         placeholder="Task (e.g. 7:00 PM — Review thesis notes)"
         autoFocus
         onKeyDown={e => { if (e.key === 'Enter') submit(); if (e.key === 'Escape') onCancel() }}
-        style={{ marginBottom:8 }}
-      />
-      <input
-        value={note}
-        onChange={e => setNote(e.target.value)}
-        placeholder="Note — optional detail"
+        style={{ marginBottom:8 }} />
+      <input value={note} onChange={e => setNote(e.target.value)}
+        placeholder="Note — optional"
         onKeyDown={e => { if (e.key === 'Enter') submit(); if (e.key === 'Escape') onCancel() }}
-        style={{ marginBottom:10 }}
-      />
-
+        style={{ marginBottom:10 }} />
       <div style={{ display:'flex', gap:8, alignItems:'center', flexWrap:'wrap' }}>
         <select value={tag} onChange={e => setTag(e.target.value)} style={{ flex:1, minWidth:120 }}>
           {TAGS.map(t => <option key={t} value={t}>{t}</option>)}
         </select>
-        <button className="btn-primary" onClick={submit} disabled={!label.trim()} style={{ padding:'8px 18px' }}>
-          Add
-        </button>
-        <button className="btn-ghost" onClick={onCancel} style={{ padding:'8px 14px' }}>
-          Cancel
-        </button>
+        <button className="btn-primary" onClick={submit} disabled={!label.trim()} style={{ padding:'8px 18px' }}>Add</button>
+        <button className="btn-ghost" onClick={onCancel} style={{ padding:'8px 14px' }}>Cancel</button>
       </div>
     </div>
   )
 }
 
-// ── Main component ─────────────────────────────────────────────
-export default function Today({ todos, weekState, syncToggle, commitments, customDailyTodos, updateCustomDailyTodos, deleteCustomTodo }) {
-  const [morningOpen, setMorningOpen] = useState(false)
-  const [now, setNow] = useState(nowMinutes())
-  const [showAddForm, setShowAddForm] = useState(false)
+// ── Main ───────────────────────────────────────────────────────
+export default function Today({
+  todos, weekState, syncToggle, commitments,
+  customDailyTodos, updateCustomDailyTodos, deleteCustomTodo,
+  skippedTasks, updateSkippedTasks,
+  appendLog,
+}) {
+  const [morningOpen,  setMorningOpen]  = useState(false)
+  const [now,          setNow]          = useState(nowMinutes())
+  const [showAddForm,  setShowAddForm]  = useState(false)
+  const [actionOpenId, setActionOpenId] = useState(null)
 
   useEffect(() => {
     const t = setInterval(() => setNow(nowMinutes()), 60000)
     return () => clearInterval(t)
   }, [])
 
-  const dateKey = todayKey()
+  const dateKey       = todayKey()
   const templateTodos = DAILY_TODOS[dateKey] || []
-  const customTodos = (customDailyTodos || {})[dateKey] || []
+  const customTodos   = (customDailyTodos || {})[dateKey] || []
+  const skipped       = skippedTasks || {}
 
+  const visibleTemplateTodos = templateTodos.filter(t => !skipped[`${dateKey}-${t.id}`])
   const todayCommitments = (commitments || []).filter(c => c.date === dateKey && !c.done)
   const isDone = id => !!(todos[id] || weekState[id])
 
@@ -157,10 +261,10 @@ export default function Today({ todos, weekState, syncToggle, commitments, custo
   })
 
   const doneCount =
-    templateTodos.filter(t => isDone(t.id)).length +
+    visibleTemplateTodos.filter(t => isDone(t.id)).length +
     todayCommitments.filter(c => isDone(c.id)).length +
     customTodos.filter(t => isDone(t.id)).length
-  const totalCount = templateTodos.length + todayCommitments.length + customTodos.length
+  const totalCount = visibleTemplateTodos.length + todayCommitments.length + customTodos.length
 
   // ── Handlers ─────────────────────────────────────────────────
 
@@ -179,6 +283,53 @@ export default function Today({ todos, weekState, syncToggle, commitments, custo
     if (deleteCustomTodo) await deleteCustomTodo(todoId)
   }
 
+  const logAction = async (task, actionLabel) => {
+    if (!appendLog) return
+    const d = new Date()
+    await appendLog({
+      date: dateKey,
+      dateLabel: d.toLocaleDateString('en-US', { weekday:'long', month:'long', day:'numeric' }),
+      label: actionLabel,
+      tag: task.tag,
+      ts: d.toISOString(),
+    })
+  }
+
+  const handleSkip = async (task, reason) => {
+    const skipKey = `${dateKey}-${task.id}`
+    await updateSkippedTasks({
+      ...skipped,
+      [skipKey]: { date:dateKey, label:task.label, tag:task.tag, action:'skipped', reason, ts:new Date().toISOString() }
+    })
+    await logAction(task, reason ? `Skipped: ${task.label} — "${reason}"` : `Skipped: ${task.label}`)
+    setActionOpenId(null)
+  }
+
+  const handleReschedule = async (task, newDate, newTime, reason) => {
+    const skipKey = `${dateKey}-${task.id}`
+    await updateSkippedTasks({
+      ...skipped,
+      [skipKey]: { date:dateKey, label:task.label, tag:task.tag, action:'rescheduled', reason, rescheduledTo:newDate, rescheduledToTime:newTime, ts:new Date().toISOString() }
+    })
+
+    // Create custom todo on target date
+    const timePrefix = newTime ? `${fmt12(newTime)} — ` : ''
+    const newLabel = `${timePrefix}${task.label}`
+    const noteText = `Rescheduled from ${dateKey}${reason ? ` — ${reason}` : ''}`
+    const newId = 'rescheduled-' + Date.now()
+    const existing = (customDailyTodos || {})[newDate] || []
+    await updateCustomDailyTodos({
+      ...(customDailyTodos || {}),
+      [newDate]: [...existing, { id:newId, label:newLabel, note:noteText, tag:task.tag }]
+    })
+
+    const newDateLabel = new Date(newDate + 'T12:00:00').toLocaleDateString('en-US', { weekday:'short', month:'short', day:'numeric' })
+    await logAction(task, reason
+      ? `Rescheduled to ${newDateLabel}: ${task.label} — "${reason}"`
+      : `Rescheduled to ${newDateLabel}: ${task.label}`)
+    setActionOpenId(null)
+  }
+
   // ── Render ────────────────────────────────────────────────────
 
   return (
@@ -186,11 +337,20 @@ export default function Today({ todos, weekState, syncToggle, commitments, custo
       <div className="page-title">{todayLabel()}</div>
       <div className="page-sub">{doneCount}/{totalCount} tasks done today</div>
 
-      {/* Morning routine collapsible */}
-      <div
-        onClick={() => setMorningOpen(o => !o)}
-        style={{ background:'white', borderRadius:12, border:'1px solid var(--border)', padding:'12px 16px', marginBottom:12, cursor:'pointer', userSelect:'none' }}
-      >
+      {/* ── ADD TASK — top ── */}
+      {showAddForm ? (
+        <AddTodoForm onAdd={handleAddCustom} onCancel={() => setShowAddForm(false)} />
+      ) : (
+        <button onClick={() => setShowAddForm(true)}
+          style={{ width:'100%', background:'var(--forest)', border:'none', borderRadius:12, padding:'13px 18px', cursor:'pointer', display:'flex', alignItems:'center', gap:10, marginBottom:16 }}>
+          <span style={{ fontSize:18, color:'var(--green-light)' }}>+</span>
+          <span style={{ fontFamily:'DM Sans, sans-serif', fontSize:13, color:'var(--green-light)', fontWeight:600 }}>Add task for today</span>
+        </button>
+      )}
+
+      {/* Morning routine */}
+      <div onClick={() => setMorningOpen(o => !o)}
+        style={{ background:'white', borderRadius:12, border:'1px solid var(--border)', padding:'12px 16px', marginBottom:12, cursor:'pointer', userSelect:'none' }}>
         <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
           <div style={{ display:'flex', alignItems:'center', gap:10 }}>
             <span style={{ fontSize:18 }}>☀️</span>
@@ -227,56 +387,65 @@ export default function Today({ todos, weekState, syncToggle, commitments, custo
             const mins = timeToMinutes(c.time)
             const overdue = mins !== null && now > mins + 10 && !c.done
             return (
-              <TodoRow key={c.id} id={c.id} label={label} note={note || undefined}
-                tag={c.cat} done={isDone(c.id)} overdue={overdue}
-                onToggle={() => syncToggle(c.id, c.text, c.cat)} />
+              <div key={c.id} style={{ marginBottom:8 }}>
+                <TodoRow id={c.id} label={label} note={note || undefined}
+                  tag={c.cat} done={isDone(c.id)} overdue={overdue}
+                  onToggle={() => syncToggle(c.id, c.text, c.cat)}
+                  isCustom={true} />
+              </div>
             )
           })}
         </>
       )}
 
-      {/* Template schedule from schedule.js */}
+      {/* Template schedule */}
       <p className="section-label">Today's Schedule</p>
       {templateTodos.length === 0 ? (
         <div style={{ background:'white', borderRadius:12, border:'1px solid var(--border)', padding:20, textAlign:'center', color:'var(--muted)', fontSize:13 }}>
           No schedule for {dateKey} — Claude adds new days to DAILY_TODOS in schedule.js.
         </div>
-      ) : templateTodos.map(t => {
+      ) : visibleTemplateTodos.map(t => {
         const done = isDone(t.id)
         const mins = parseTaskMinutes(t.label)
         const overdue = !done && mins !== null && now > mins + 10
+        const isOpen = actionOpenId === t.id
         return (
-          <TodoRow key={t.id} id={t.id} label={t.label} note={t.note}
-            tag={t.tag} done={done} overdue={overdue}
-            onToggle={() => syncToggle(t.id, t.label, t.tag)} />
+          <div key={t.id} style={{ marginBottom: isOpen ? 0 : 8 }}>
+            <TodoRow
+              id={t.id} label={t.label} note={t.note}
+              tag={t.tag} done={done} overdue={overdue}
+              onToggle={() => { syncToggle(t.id, t.label, t.tag); setActionOpenId(null) }}
+              onOpenAction={() => setActionOpenId(isOpen ? null : t.id)}
+              isCustom={false}
+              actionOpen={isOpen}
+            />
+            {isOpen && (
+              <ActionPanel
+                onSkip={reason => handleSkip(t, reason)}
+                onReschedule={(newDate, newTime, reason) => handleReschedule(t, newDate, newTime, reason)}
+                onCancel={() => setActionOpenId(null)}
+              />
+            )}
+          </div>
         )
       })}
 
-      {/* Custom todos Vivian added */}
+      {/* Custom todos */}
       {customTodos.length > 0 && (
         <>
           <p className="section-label" style={{ marginTop:16 }}>Added by You</p>
           {customTodos.map(t => (
-            <TodoRow
-              key={t.id} id={t.id} label={t.label} note={t.note}
-              tag={t.tag} done={isDone(t.id)} overdue={false}
-              onToggle={() => syncToggle(t.id, t.label, t.tag)}
-              onDelete={() => handleDeleteCustom(t.id)}
-            />
+            <div key={t.id} style={{ marginBottom:8 }}>
+              <TodoRow
+                id={t.id} label={t.label} note={t.note}
+                tag={t.tag} done={isDone(t.id)} overdue={false}
+                onToggle={() => syncToggle(t.id, t.label, t.tag)}
+                isCustom={true}
+                onDeleteCustom={() => handleDeleteCustom(t.id)}
+              />
+            </div>
           ))}
         </>
-      )}
-
-      {/* Add form / button */}
-      {showAddForm ? (
-        <AddTodoForm onAdd={handleAddCustom} onCancel={() => setShowAddForm(false)} />
-      ) : (
-        <button
-          onClick={() => setShowAddForm(true)}
-          style={{ width:'100%', background:'white', border:'1px dashed var(--border)', borderRadius:12, padding:'11px 16px', cursor:'pointer', display:'flex', alignItems:'center', gap:8, color:'var(--muted)', fontSize:13, marginBottom:8 }}
-        >
-          <span style={{ fontSize:18, lineHeight:1 }}>+</span> Add task for today
-        </button>
       )}
 
       <div style={{ marginTop:12 }}>
