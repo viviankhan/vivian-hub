@@ -67,4 +67,31 @@ export async function setFcStudied(v)  { await dbSet('fc_studied', v) }
 export async function getScheduledTasks() { return await dbGet('scheduled_tasks') ?? [] }
 export async function setScheduledTasks(v) { await dbSet('scheduled_tasks', v) }
 
+// ── New in this update ─────────────────────────────────────────
+
+// Custom per-day todos Vivian adds through Today tab
+// Structure: { 'YYYY-MM-DD': [{ id, label, note, tag }] }
+export async function getCustomDailyTodos()  { return await dbGet('custom_daily_todos') ?? {} }
+export async function setCustomDailyTodos(v) { await dbSet('custom_daily_todos', v) }
+
+// Study extras: user-added classes, weeks, files, and hidden base files
+// Structure: { userClasses, userWeeks, userFiles, hiddenBaseFiles }
+export async function getStudyExtras()  { return await dbGet('study_extras') ?? null }
+export async function setStudyExtras(v) { await dbSet('study_extras', v) }
+
+// Custom routine definitions (if user has edited them)
+// Structure: { morning: [...items], night: [...items] } or null = use schedule.js defaults
+export async function getRoutinesCustom()  { return await dbGet('routines_custom') ?? null }
+export async function setRoutinesCustom(v) { await dbSet('routines_custom', v) }
+
+// Daily routine check-offs
+// Structure: { 'YYYY-MM-DD': { morning: { 'Wake up': true }, night: { ... } } }
+export async function getRoutinesDone()  { return await dbGet('routines_done') ?? {} }
+export async function setRoutinesDone(v) { await dbSet('routines_done', v) }
+
+// Today-only routine overrides (don't touch the permanent base)
+// Structure: { 'YYYY-MM-DD': { morning?: [...items], night?: [...items] } }
+export async function getRoutinesTodayOverride()  { return await dbGet('routines_today_override') ?? {} }
+export async function setRoutinesTodayOverride(v) { await dbSet('routines_today_override', v) }
+
 export const isUsingSupabase = USE_SUPABASE

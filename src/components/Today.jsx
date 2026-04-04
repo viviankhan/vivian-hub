@@ -1,3 +1,4 @@
+// src/components/Today.jsx
 import { useState, useEffect } from 'react'
 import { DAILY_TODOS, MORNING_ROUTINE } from '../data/schedule.js'
 
@@ -7,6 +8,8 @@ const TAG_CLASS = {
   urgent:'tag-urgent', carried:'tag-carried', polish:'tag-polish',
   meeting:'tag-career', deadline:'tag-urgent', social:'tag-personal',
 }
+
+const TAGS = ['class','lab','career','personal','fitness','health','urgent','meeting','deadline','social']
 
 function todayKey() {
   const d = new Date()
@@ -42,7 +45,8 @@ function fmt12(t) {
   return `${h12}:${String(m).padStart(2,'0')} ${ampm}`
 }
 
-function TodoRow({ id, label, note, tag, done, overdue, onToggle }) {
+// ── Row component ──────────────────────────────────────────────
+function TodoRow({ id, label, note, tag, done, overdue, onToggle, onDelete }) {
   return (
     <div style={{
       display:'flex', gap:12, alignItems:'flex-start',
@@ -50,31 +54,89 @@ function TodoRow({ id, label, note, tag, done, overdue, onToggle }) {
       borderRadius:12,
       border: `1px solid ${overdue ? '#FECACA' : 'var(--border)'}`,
       padding:'12px 16px', marginBottom:8,
-      opacity: done ? .42 : 1, cursor:'pointer',
-    }} onClick={onToggle}>
+      opacity: done ? .42 : 1,
+    }}>
       <div style={{
         width:20, height:20, borderRadius:'50%', flexShrink:0, marginTop:2,
         border: done ? 'none' : overdue ? '2px solid #FCA5A5' : '2px solid #D1D5DB',
         background: done ? '#52B788' : 'transparent',
         display:'flex', alignItems:'center', justifyContent:'center', transition:'all .2s',
-      }}>
+        cursor:'pointer',
+      }} onClick={onToggle}>
         {done && <span style={{ color:'white', fontSize:11, fontWeight:700 }}>✓</span>}
       </div>
-      <div style={{ flex:1 }}>
+      <div style={{ flex:1, cursor:'pointer' }} onClick={onToggle}>
         <div style={{ fontSize:13, fontWeight:500, color:'var(--text)', textDecoration: done ? 'line-through' : 'none' }}>{label}</div>
         {note && <div style={{ fontSize:11, color:'var(--muted)', marginTop:2, lineHeight:1.4 }}>{note}</div>}
         <div style={{ display:'flex', gap:6, marginTop:4, flexWrap:'wrap', alignItems:'center' }}>
           <span className={`tag ${TAG_CLASS[tag] || 'tag-class'}`}>{tag}</span>
-          {overdue && !done && <span style={{ fontSize:9, letterSpacing:1, textTransform:'uppercase', padding:'2px 7px', borderRadius:10, background:'#FEE2E2', color:'#991B1B', fontWeight:600 }}>overdue</span>}
+          {overdue && !done && (
+            <span style={{ fontSize:9, letterSpacing:1, textTransform:'uppercase', padding:'2px 7px', borderRadius:10, background:'#FEE2E2', color:'#991B1B', fontWeight:600 }}>overdue</span>
+          )}
         </div>
+      </div>
+      {onDelete && (
+        <button
+          onClick={e => { e.stopPropagation(); onDelete() }}
+          title="Remove this task"
+          style={{ background:'none', border:'none', cursor:'pointer', color:'#D1D5DB', fontSize:16, padding:'0 2px', flexShrink:0, marginTop:1, lineHeight:1 }}
+        >✕</button>
+      )}
+    </div>
+  )
+}
+
+// ── Inline add form ────────────────────────────────────────────
+function AddTodoForm({ onAdd, onCancel }) {
+  const [label, setLabel] = useState('')
+  const [note,  setNote]  = useState('')
+  const [tag,   setTag]   = useState('personal')
+
+  const submit = () => {
+    if (!label.trim()) return
+    onAdd({ label: label.trim(), note: note.trim(), tag })
+  }
+
+  return (
+    <div style={{ background:'white', borderRadius:12, border:'2px solid var(--forest)', padding:'14px 16px', marginBottom:8 }}>
+      <div style={{ fontSize:11, color:'var(--muted)', letterSpacing:1, textTransform:'uppercase', marginBottom:10 }}>Add task for today</div>
+
+      <input
+        value={label}
+        onChange={e => setLabel(e.target.value)}
+        placeholder="Task (e.g. 7:00 PM — Review thesis notes)"
+        autoFocus
+        onKeyDown={e => { if (e.key === 'Enter') submit(); if (e.key === 'Escape') onCancel() }}
+        style={{ marginBottom:8 }}
+      />
+      <input
+        value={note}
+        onChange={e => setNote(e.target.value)}
+        placeholder="Note — optional detail"
+        onKeyDown={e => { if (e.key === 'Enter') submit(); if (e.key === 'Escape') onCancel() }}
+        style={{ marginBottom:10 }}
+      />
+
+      <div style={{ display:'flex', gap:8, alignItems:'center', flexWrap:'wrap' }}>
+        <select value={tag} onChange={e => setTag(e.target.value)} style={{ flex:1, minWidth:120 }}>
+          {TAGS.map(t => <option key={t} value={t}>{t}</option>)}
+        </select>
+        <button className="btn-primary" onClick={submit} disabled={!label.trim()} style={{ padding:'8px 18px' }}>
+          Add
+        </button>
+        <button className="btn-ghost" onClick={onCancel} style={{ padding:'8px 14px' }}>
+          Cancel
+        </button>
       </div>
     </div>
   )
 }
 
-export default function Today({ todos, weekState, syncToggle, commitments }) {
+// ── Main component ─────────────────────────────────────────────
+export default function Today({ todos, weekState, syncToggle, commitments, customDailyTodos, updateCustomDailyTodos, deleteCustomTodo }) {
   const [morningOpen, setMorningOpen] = useState(false)
   const [now, setNow] = useState(nowMinutes())
+  const [showAddForm, setShowAddForm] = useState(false)
 
   useEffect(() => {
     const t = setInterval(() => setNow(nowMinutes()), 60000)
@@ -83,32 +145,52 @@ export default function Today({ todos, weekState, syncToggle, commitments }) {
 
   const dateKey = todayKey()
   const templateTodos = DAILY_TODOS[dateKey] || []
+  const customTodos = (customDailyTodos || {})[dateKey] || []
 
-  // Commitments for today
   const todayCommitments = (commitments || []).filter(c => c.date === dateKey && !c.done)
+  const isDone = id => !!(todos[id] || weekState[id])
 
-  const isDone = (id) => !!(todos[id] || weekState[id])
-
-  // Sort commitments by time, put untimed ones at end
   const sortedCommitments = [...todayCommitments].sort((a, b) => {
     if (!a.time && !b.time) return 0
-    if (!a.time) return 1
-    if (!b.time) return -1
+    if (!a.time) return 1; if (!b.time) return -1
     return a.time.localeCompare(b.time)
   })
 
-  const doneCount = templateTodos.filter(t => isDone(t.id)).length
-    + todayCommitments.filter(c => isDone(c.id)).length
-  const totalCount = templateTodos.length + todayCommitments.length
+  const doneCount =
+    templateTodos.filter(t => isDone(t.id)).length +
+    todayCommitments.filter(c => isDone(c.id)).length +
+    customTodos.filter(t => isDone(t.id)).length
+  const totalCount = templateTodos.length + todayCommitments.length + customTodos.length
+
+  // ── Handlers ─────────────────────────────────────────────────
+
+  const handleAddCustom = async ({ label, note, tag }) => {
+    const id = 'custom-' + Date.now()
+    const existing = (customDailyTodos || {})[dateKey] || []
+    const next = { ...(customDailyTodos || {}), [dateKey]: [...existing, { id, label, note, tag }] }
+    await updateCustomDailyTodos(next)
+    setShowAddForm(false)
+  }
+
+  const handleDeleteCustom = async todoId => {
+    const existing = (customDailyTodos || {})[dateKey] || []
+    const next = { ...(customDailyTodos || {}), [dateKey]: existing.filter(t => t.id !== todoId) }
+    await updateCustomDailyTodos(next)
+    if (deleteCustomTodo) await deleteCustomTodo(todoId)
+  }
+
+  // ── Render ────────────────────────────────────────────────────
 
   return (
     <div>
       <div className="page-title">{todayLabel()}</div>
       <div className="page-sub">{doneCount}/{totalCount} tasks done today</div>
 
-      {/* Morning routine */}
-      <div onClick={() => setMorningOpen(o => !o)}
-        style={{ background:'white', borderRadius:12, border:'1px solid var(--border)', padding:'12px 16px', marginBottom:12, cursor:'pointer', userSelect:'none' }}>
+      {/* Morning routine collapsible */}
+      <div
+        onClick={() => setMorningOpen(o => !o)}
+        style={{ background:'white', borderRadius:12, border:'1px solid var(--border)', padding:'12px 16px', marginBottom:12, cursor:'pointer', userSelect:'none' }}
+      >
         <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
           <div style={{ display:'flex', alignItems:'center', gap:10 }}>
             <span style={{ fontSize:18 }}>☀️</span>
@@ -125,14 +207,17 @@ export default function Today({ todos, weekState, syncToggle, commitments }) {
               <div key={item.habit} className="routine-item">
                 <div className="routine-time">{item.time}</div>
                 <div className="routine-icon">{item.icon}</div>
-                <div><div className="routine-habit">{item.habit}</div><div className="routine-detail">{item.detail}</div></div>
+                <div>
+                  <div className="routine-habit">{item.habit}</div>
+                  <div className="routine-detail">{item.detail}</div>
+                </div>
               </div>
             ))}
           </div>
         )}
       </div>
 
-      {/* Today's commitments (shown first, with time if set) */}
+      {/* Commitments for today */}
       {sortedCommitments.length > 0 && (
         <>
           <p className="section-label">Commitments Today</p>
@@ -150,7 +235,7 @@ export default function Today({ todos, weekState, syncToggle, commitments }) {
         </>
       )}
 
-      {/* Template schedule */}
+      {/* Template schedule from schedule.js */}
       <p className="section-label">Today's Schedule</p>
       {templateTodos.length === 0 ? (
         <div style={{ background:'white', borderRadius:12, border:'1px solid var(--border)', padding:20, textAlign:'center', color:'var(--muted)', fontSize:13 }}>
@@ -166,6 +251,33 @@ export default function Today({ todos, weekState, syncToggle, commitments }) {
             onToggle={() => syncToggle(t.id, t.label, t.tag)} />
         )
       })}
+
+      {/* Custom todos Vivian added */}
+      {customTodos.length > 0 && (
+        <>
+          <p className="section-label" style={{ marginTop:16 }}>Added by You</p>
+          {customTodos.map(t => (
+            <TodoRow
+              key={t.id} id={t.id} label={t.label} note={t.note}
+              tag={t.tag} done={isDone(t.id)} overdue={false}
+              onToggle={() => syncToggle(t.id, t.label, t.tag)}
+              onDelete={() => handleDeleteCustom(t.id)}
+            />
+          ))}
+        </>
+      )}
+
+      {/* Add form / button */}
+      {showAddForm ? (
+        <AddTodoForm onAdd={handleAddCustom} onCancel={() => setShowAddForm(false)} />
+      ) : (
+        <button
+          onClick={() => setShowAddForm(true)}
+          style={{ width:'100%', background:'white', border:'1px dashed var(--border)', borderRadius:12, padding:'11px 16px', cursor:'pointer', display:'flex', alignItems:'center', gap:8, color:'var(--muted)', fontSize:13, marginBottom:8 }}
+        >
+          <span style={{ fontSize:18, lineHeight:1 }}>+</span> Add task for today
+        </button>
+      )}
 
       <div style={{ marginTop:12 }}>
         <button className="btn-ghost" onClick={() => { if (confirm('Reset all checkboxes for today?')) window.location.reload() }}>Reset today</button>

@@ -1,4 +1,6 @@
+// src/components/Commitments.jsx
 import { useState } from 'react'
+import { findSlots } from '../lib/scheduler.js'
 
 const DAYS = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday']
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
@@ -52,7 +54,73 @@ const CATEGORIES = [
   { id:'other',    label:'Other',         color:'#6B7280', bg:'#F3F4F6' },
 ]
 
+const DURATIONS = [
+  { label:'15 min', value:15 },
+  { label:'30 min', value:30 },
+  { label:'1 hour', value:60 },
+  { label:'2 hours', value:120 },
+]
+
 function getCat(id) { return CATEGORIES.find(c => c.id === id) || CATEGORIES[CATEGORIES.length-1] }
+
+// ── Inline slot picker ─────────────────────────────────────────
+function SlotPicker({ commitmentId, commitmentLabel, scheduled, onPick, onCancel }) {
+  const [duration, setDuration] = useState(30)
+  const [slots, setSlots] = useState(null) // null = not searched yet
+  const [loading, setLoading] = useState(false)
+
+  const search = () => {
+    setLoading(true)
+    const results = findSlots(duration, scheduled || [], null, 7)
+    setSlots(results)
+    setLoading(false)
+  }
+
+  return (
+    <div style={{ background:'#F7F9F5', border:'1px solid #D1E8D0', borderRadius:10, padding:'12px 14px', marginTop:10 }}>
+      <div style={{ fontSize:11, color:'#52B788', fontWeight:600, letterSpacing:1, textTransform:'uppercase', marginBottom:10 }}>
+        Find a time slot
+      </div>
+
+      <div style={{ display:'flex', gap:8, alignItems:'center', marginBottom:10, flexWrap:'wrap' }}>
+        <select value={duration} onChange={e => setDuration(Number(e.target.value))}
+          style={{ fontSize:12, padding:'6px 10px', borderRadius:8, border:'1px solid var(--border)', flex:1, minWidth:100 }}>
+          {DURATIONS.map(d => <option key={d.value} value={d.value}>{d.label}</option>)}
+        </select>
+        <button className="btn-primary" onClick={search} style={{ padding:'6px 16px', fontSize:10 }}>
+          {loading ? 'Searching…' : 'Search →'}
+        </button>
+        <button className="btn-ghost" onClick={onCancel} style={{ padding:'6px 12px', fontSize:10 }}>
+          Cancel
+        </button>
+      </div>
+
+      {slots !== null && slots.length === 0 && (
+        <div style={{ fontSize:12, color:'#7F1D1D', padding:'6px 0' }}>
+          No open slots found in the next 7 days. Try a shorter duration.
+        </div>
+      )}
+
+      {slots && slots.map((slot, i) => (
+        <div
+          key={i}
+          onClick={() => onPick(slot, duration)}
+          style={{ background:'white', border:'1px solid #D1E8D0', borderRadius:8, padding:'9px 12px', marginBottom:6, cursor:'pointer', display:'flex', justifyContent:'space-between', alignItems:'center' }}
+        >
+          <div>
+            <div style={{ fontFamily:'Cormorant Garamond, serif', fontSize:15, color:'var(--text)', fontWeight:600 }}>
+              {slot.dayLabel} · {slot.startDisplay} – {slot.endDisplay}
+            </div>
+            <div style={{ fontSize:11, color:'var(--muted)', marginTop:1 }}>{slot.context}</div>
+          </div>
+          <span style={{ fontSize:10, letterSpacing:1, textTransform:'uppercase', padding:'4px 10px', borderRadius:12, border:'none', background:'var(--forest)', color:'var(--green-light)', cursor:'pointer' }}>
+            Pick →
+          </span>
+        </div>
+      ))}
+    </div>
+  )
+}
 
 // ── Quick-add form ─────────────────────────────────────────────
 function QuickAdd({ onAdd }) {
@@ -165,18 +233,26 @@ function QuickAdd({ onAdd }) {
 }
 
 // ── Commitment card ────────────────────────────────────────────
-function CommitCard({ c, todos, weekState, syncToggle, onDelete }) {
+function CommitCard({ c, todos, weekState, syncToggle, onDelete, onSchedule, scheduled }) {
+  const [showScheduler, setShowScheduler] = useState(false)
   const cat = getCat(c.cat)
   const done = !!(todos[c.id] || weekState[c.id] || c.done)
   const past = isPast(c.date) && !done
   const today = c.date === todayStr()
   const soon = isSoon(c.date) && !past
+  const unscheduled = !c.date
 
   let borderColor = 'var(--border)', bg = 'white'
-  if (done)  { bg = '#FAFAF7'; borderColor = '#E5E7EB' }
-  else if (past)  { bg = '#FFF5F5'; borderColor = '#FECACA' }
-  else if (today) { bg = '#F0FDF4'; borderColor = '#86EFAC' }
-  else if (soon)  { bg = '#FFFBEB'; borderColor = '#FDE68A' }
+  if (done)         { bg = '#FAFAF7'; borderColor = '#E5E7EB' }
+  else if (past)    { bg = '#FFF5F5'; borderColor = '#FECACA' }
+  else if (today)   { bg = '#F0FDF4'; borderColor = '#86EFAC' }
+  else if (soon)    { bg = '#FFFBEB'; borderColor = '#FDE68A' }
+  else if (unscheduled) { borderColor = '#E5E7EB' }
+
+  const handlePickSlot = (slot, duration) => {
+    onSchedule(c.id, { date: slot.date, time: slot.startTime })
+    setShowScheduler(false)
+  }
 
   return (
     <div style={{ background:bg, borderRadius:12, border:`1px solid ${borderColor}`, padding:'14px 16px', marginBottom:8, opacity: done ? .55 : 1 }}>
@@ -185,43 +261,70 @@ function CommitCard({ c, todos, weekState, syncToggle, onDelete }) {
           style={{ width:20, height:20, borderRadius:'50%', flexShrink:0, marginTop:2, cursor:'pointer', border: done ? 'none' : `2px solid ${cat.color}`, background: done ? cat.color : 'transparent', display:'flex', alignItems:'center', justifyContent:'center' }}>
           {done && <span style={{ color:'white', fontSize:11, fontWeight:700 }}>✓</span>}
         </div>
+
         <div style={{ flex:1, cursor:'pointer' }} onClick={() => syncToggle(c.id, c.text, c.cat)}>
           <div style={{ fontSize:14, fontWeight:600, color: done ? 'var(--muted)' : 'var(--text)', textDecoration: done ? 'line-through' : 'none', lineHeight:1.4, marginBottom:4 }}>
             {c.text}
           </div>
           {c.person && <div style={{ fontSize:11, color:'var(--muted)', marginBottom:4 }}>With: {c.person}</div>}
           <div style={{ display:'flex', gap:8, flexWrap:'wrap', alignItems:'center' }}>
-            {c.date && <span style={{ fontSize:11, color: past ? '#DC2626' : today ? '#059669' : 'var(--muted)', fontWeight: (today||past) ? 600 : 400 }}>
-              {formatDate(c.date)}{c.time ? ` @ ${fmt12(c.time)}` : ''}
-            </span>}
+            {c.date && (
+              <span style={{ fontSize:11, color: past ? '#DC2626' : today ? '#059669' : 'var(--muted)', fontWeight: (today||past) ? 600 : 400 }}>
+                {formatDate(c.date)}{c.time ? ` @ ${fmt12(c.time)}` : ''}
+              </span>
+            )}
             {c.prepMin && <span style={{ fontSize:11, color:'var(--muted)' }}>Leave {c.prepMin} min early</span>}
             <span style={{ fontSize:10, padding:'2px 8px', borderRadius:10, background:cat.bg, color:cat.color, fontWeight:500 }}>{cat.label}</span>
             {past  && !done && <span style={{ fontSize:10, padding:'2px 8px', borderRadius:10, background:'#FEE2E2', color:'#DC2626', fontWeight:600 }}>PAST DUE</span>}
             {today && !done && <span style={{ fontSize:10, padding:'2px 8px', borderRadius:10, background:'#DCFCE7', color:'#059669', fontWeight:600 }}>TODAY</span>}
-            {!c.date && !done && <span style={{ fontSize:10, padding:'2px 8px', borderRadius:10, background:'#F3F4F6', color:'#6B7280' }}>Unscheduled</span>}
+            {unscheduled && !done && <span style={{ fontSize:10, padding:'2px 8px', borderRadius:10, background:'#F3F4F6', color:'#6B7280' }}>Unscheduled</span>}
           </div>
         </div>
-        <button onClick={() => onDelete(c.id)}
-          style={{ background:'none', border:'none', cursor:'pointer', color:'#D1D5DB', fontSize:16, padding:'0 2px', flexShrink:0 }}>✕</button>
+
+        <div style={{ display:'flex', gap:6, flexShrink:0, alignItems:'flex-start' }}>
+          {/* Find time button for unscheduled commitments */}
+          {unscheduled && !done && (
+            <button
+              onClick={e => { e.stopPropagation(); setShowScheduler(s => !s) }}
+              title="Find a time slot for this"
+              style={{ fontSize:10, letterSpacing:.5, textTransform:'uppercase', padding:'4px 10px', borderRadius:10, border:'1px solid #D1E8D0', background: showScheduler ? 'var(--forest)' : '#F7F9F5', color: showScheduler ? 'var(--green-light)' : '#52B788', cursor:'pointer', fontFamily:'DM Sans, sans-serif', fontWeight:600, whiteSpace:'nowrap' }}
+            >
+              {showScheduler ? 'Cancel' : '🗓 Find time'}
+            </button>
+          )}
+          <button onClick={() => onDelete(c.id)}
+            style={{ background:'none', border:'none', cursor:'pointer', color:'#D1D5DB', fontSize:16, padding:'0 2px' }}>✕</button>
+        </div>
       </div>
+
+      {/* Inline scheduler panel */}
+      {showScheduler && (
+        <SlotPicker
+          commitmentId={c.id}
+          commitmentLabel={c.text}
+          scheduled={scheduled}
+          onPick={handlePickSlot}
+          onCancel={() => setShowScheduler(false)}
+        />
+      )}
     </div>
   )
 }
 
 // ── Main ───────────────────────────────────────────────────────
-export default function Commitments({ commitments, addCommitment, deleteCommitment, todos, weekState, syncToggle }) {
+export default function Commitments({ commitments, addCommitment, updateCommitment, deleteCommitment, todos, weekState, syncToggle, scheduled }) {
   const [filter, setFilter] = useState('upcoming')
 
+  const isDone = c => !!(todos[c.id] || weekState[c.id] || c.done)
+
   const sorted = [...(commitments || [])].sort((a, b) => {
-    const aDone = !!(todos[a.id] || weekState[a.id] || a.done)
-    const bDone = !!(todos[b.id] || weekState[b.id] || b.done)
+    const aDone = isDone(a), bDone = isDone(b)
     if (aDone !== bDone) return aDone ? 1 : -1
     if (!a.date && !b.date) return 0
     if (!a.date) return 1; if (!b.date) return -1
     return a.date.localeCompare(b.date)
   })
 
-  const isDone = (c) => !!(todos[c.id] || weekState[c.id] || c.done)
   const visible = sorted.filter(c => {
     if (filter === 'upcoming') return !isDone(c)
     if (filter === 'done')     return isDone(c)
@@ -231,10 +334,14 @@ export default function Commitments({ commitments, addCommitment, deleteCommitme
   const pastCount = (commitments||[]).filter(c => !isDone(c) && isPast(c.date)).length
   const unscheduled = (commitments||[]).filter(c => !isDone(c) && !c.date).length
 
+  const handleSchedule = (id, { date, time }) => {
+    updateCommitment(id, { date, time })
+  }
+
   return (
     <div>
       <div className="page-title">Commitments</div>
-      <div className="page-sub">Things you said yes to. Auto-synced with Today, Week, and Calendar.</div>
+      <div className="page-sub">Things you said yes to. Tap 🗓 Find time on unscheduled items to auto-schedule them.</div>
 
       <QuickAdd onAdd={addCommitment} />
 
@@ -247,7 +354,7 @@ export default function Commitments({ commitments, addCommitment, deleteCommitme
             </button>
           ))}
           {pastCount > 0 && <span style={{ fontSize:11, padding:'5px 12px', borderRadius:20, background:'#FEE2E2', color:'#DC2626', fontWeight:600 }}>{pastCount} past due</span>}
-          {unscheduled > 0 && <span style={{ fontSize:11, padding:'5px 12px', borderRadius:20, background:'#F3F4F6', color:'#6B7280' }}>{unscheduled} unscheduled</span>}
+          {unscheduled > 0 && <span style={{ fontSize:11, padding:'5px 12px', borderRadius:20, background:'#F0FDF4', color:'#059669', fontWeight:600 }}>🗓 {unscheduled} unscheduled</span>}
         </div>
       )}
 
@@ -259,8 +366,11 @@ export default function Commitments({ commitments, addCommitment, deleteCommitme
           </div>
         </div>
       ) : visible.map(c => (
-        <CommitCard key={c.id} c={c} todos={todos} weekState={weekState}
-          syncToggle={syncToggle} onDelete={deleteCommitment} />
+        <CommitCard
+          key={c.id} c={c} todos={todos} weekState={weekState}
+          syncToggle={syncToggle} onDelete={deleteCommitment}
+          onSchedule={handleSchedule} scheduled={scheduled}
+        />
       ))}
     </div>
   )
