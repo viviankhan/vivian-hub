@@ -130,7 +130,23 @@ export async function importCards(cards) {
   }
   return cards
 }
-export async function deleteCard(id, weekId) {
+export async function updateCard(card) {
+  if (USE_SUPABASE) {
+    const { data, error } = await supabase.from('flashcards').upsert(card, { onConflict: 'id' }).select().single()
+    if (error) throw error
+    return data
+  }
+  const all = (await lsGet('cards_'+card.week_id)) ?? []
+  const next = all.map(c => c.id === card.id ? card : c)
+  await lsSet('cards_'+card.week_id, next)
+  return card
+}
+
+// ── Quick Links (Google Drive shortcuts) ───────────────────────
+export const getQuickLinks = () => dbGet('quick_links').then(v => v ?? [])
+export const setQuickLinks = v  => dbSet('quick_links', v)
+
+
   if (USE_SUPABASE) { await supabase.from('flashcards').delete().eq('id', id); return }
   const all = (await lsGet('cards_'+weekId)) ?? []
   await lsSet('cards_'+weekId, all.filter(c => c.id !== id))
