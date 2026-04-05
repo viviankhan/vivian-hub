@@ -7,7 +7,7 @@ import {
   getQuickLinks, setQuickLinks,
 } from '../lib/storage.js'
 
-// ── Helpers ────────────────────────────────────────────────────
+// ── Helpers ───────────────────────────────────────────────────────────────────
 function fileIcon(name) {
   const ext = (name||'').split('.').pop().toLowerCase()
   if (['html','htm'].includes(ext)) return '🃏'
@@ -30,7 +30,7 @@ function fileSz(kb) {
 }
 function uid() { return 'c-' + Date.now() + '-' + Math.random().toString(36).slice(2,7) }
 
-// ── Card editor modal ──────────────────────────────────────────
+// ── Card editor modal ─────────────────────────────────────────────────────────
 function CardEditor({ card, weekId, allGroups, onSave, onDelete, onClose }) {
   const [term,    setTerm]    = useState(card.term || card.common || '')
   const [sci,     setSci]     = useState(card.sci || '')
@@ -161,7 +161,157 @@ function CardEditor({ card, weekId, allGroups, onSave, onDelete, onClose }) {
   )
 }
 
-// ── Card tile ──────────────────────────────────────────────────
+// ── JSON import review modal ──────────────────────────────────────────────────
+function JsonImportModal({ weekId, onImported, onClose }) {
+  const [raw,    setRaw]    = useState('')
+  const [cards,  setCards]  = useState(null)
+  const [error,  setError]  = useState('')
+  const [saving, setSaving] = useState(false)
+  const fileRef = useRef()
+
+  const parse = (text) => {
+    try {
+      const json = JSON.parse(text)
+      const arr = Array.isArray(json) ? json : json.cards
+      if (!arr?.length) { setError('No cards found in file.'); return }
+      setCards(arr.map((c, i) => ({
+        _key:       i,
+        term:       c.term || c.common || c.front || '',
+        sci:        c.sci || '',
+        definition: c.definition || c.def || c.back || '',
+        etymology:  c.etymology || '',
+        topic:      c.topic || c.group || '',
+        img_src:    c.img_src || c.img || '',
+      })))
+      setError('')
+    } catch(e) { setError('Invalid JSON: ' + e.message) }
+  }
+
+  const handleFile = async (e) => {
+    const file = e.target.files[0]; if (!file) return
+    parse(await file.text())
+    e.target.value = ''
+  }
+
+  const updateField = (key, field, val) => {
+    setCards(prev => prev.map(c => c._key === key ? { ...c, [field]: val } : c))
+  }
+
+  const removeCard = (key) => {
+    setCards(prev => prev.filter(c => c._key !== key))
+  }
+
+  const save = async () => {
+    if (!cards?.length) return
+    setSaving(true)
+    try {
+      const toSave = cards.map(({ _key, ...c }) => ({ ...c, id: uid(), week_id: weekId }))
+      await importCards(toSave)
+      onImported()
+      onClose()
+    } catch(e) { setError('Save failed: ' + e.message) }
+    setSaving(false)
+  }
+
+  return (
+    <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.55)', zIndex:800, display:'flex', alignItems:'flex-start', justifyContent:'center', padding:24, overflowY:'auto' }}>
+      <div style={{ background:'white', borderRadius:16, padding:24, maxWidth:660, width:'100%', boxShadow:'0 24px 64px rgba(0,0,0,.3)', marginTop:24 }}>
+
+        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:18 }}>
+          <div style={{ fontSize:16, fontWeight:600, color:'var(--text)' }}>Import flashcards</div>
+          <button onClick={onClose} style={{ background:'none', border:'none', cursor:'pointer', color:'var(--muted)', fontSize:20 }}>✕</button>
+        </div>
+
+        {/* Step 1 — paste or upload */}
+        {!cards && (
+          <>
+            <textarea
+              value={raw}
+              onChange={e => setRaw(e.target.value)}
+              placeholder={'Paste JSON from Claude here…\n[{"term":"...","definition":"..."},...]'}
+              rows={8}
+              style={{ width:'100%', fontSize:12, padding:'10px 12px', borderRadius:10, border:'1px solid var(--border)', fontFamily:'monospace', resize:'vertical', outline:'none', marginBottom:10 }}
+            />
+            <div style={{ display:'flex', gap:8, alignItems:'center' }}>
+              <button onClick={() => parse(raw)}
+                style={{ padding:'8px 18px', borderRadius:9, border:'none', background:'var(--forest)', color:'var(--green-light)', cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:600, fontSize:13 }}>
+                Parse
+              </button>
+              <span style={{ color:'var(--muted)', fontSize:12 }}>or</span>
+              <label style={{ cursor:'pointer' }}>
+                <span style={{ fontSize:12, padding:'8px 14px', borderRadius:9, border:'1px solid var(--border)', background:'white', color:'var(--muted)', display:'inline-block', fontFamily:'DM Sans,sans-serif' }}>
+                  Upload .json file
+                </span>
+                <input ref={fileRef} type="file" accept=".json" style={{ display:'none' }} onChange={handleFile} />
+              </label>
+            </div>
+            {error && <div style={{ marginTop:8, fontSize:12, color:'#EF4444' }}>{error}</div>}
+          </>
+        )}
+
+        {/* Step 2 — review and edit */}
+        {cards && (
+          <>
+            <div style={{ fontSize:12, color:'var(--muted)', marginBottom:12 }}>
+              {cards.length} card{cards.length !== 1 ? 's' : ''} — edit anything before saving
+            </div>
+            <div style={{ maxHeight:420, overflowY:'auto', display:'flex', flexDirection:'column', gap:10, marginBottom:16 }}>
+              {cards.map((c, i) => (
+                <div key={c._key} style={{ border:'1px solid var(--border)', borderRadius:10, padding:'12px 14px', background:'#FAFAFA', position:'relative' }}>
+                  <div style={{ fontSize:10, color:'var(--muted)', marginBottom:8, fontWeight:600, letterSpacing:1 }}>CARD {i + 1}</div>
+                  <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8, marginBottom:8 }}>
+                    <div>
+                      <div style={{ fontSize:10, color:'var(--muted)', marginBottom:3 }}>TERM</div>
+                      <input value={c.term} onChange={e => updateField(c._key, 'term', e.target.value)}
+                        style={{ width:'100%', fontSize:13, padding:'6px 9px', borderRadius:7, border:'1px solid var(--border)', fontFamily:'DM Sans,sans-serif', outline:'none' }} />
+                    </div>
+                    <div>
+                      <div style={{ fontSize:10, color:'var(--muted)', marginBottom:3 }}>SCIENTIFIC NAME</div>
+                      <input value={c.sci} onChange={e => updateField(c._key, 'sci', e.target.value)}
+                        style={{ width:'100%', fontSize:12, padding:'6px 9px', borderRadius:7, border:'1px solid var(--border)', fontFamily:'DM Sans,sans-serif', fontStyle:'italic', outline:'none' }} />
+                    </div>
+                  </div>
+                  <div style={{ marginBottom:8 }}>
+                    <div style={{ fontSize:10, color:'var(--muted)', marginBottom:3 }}>DEFINITION</div>
+                    <textarea value={c.definition} onChange={e => updateField(c._key, 'definition', e.target.value)} rows={2}
+                      style={{ width:'100%', fontSize:12, padding:'6px 9px', borderRadius:7, border:'1px solid var(--border)', fontFamily:'DM Sans,sans-serif', resize:'vertical', outline:'none' }} />
+                  </div>
+                  <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8 }}>
+                    <div>
+                      <div style={{ fontSize:10, color:'var(--muted)', marginBottom:3 }}>ETYMOLOGY</div>
+                      <input value={c.etymology} onChange={e => updateField(c._key, 'etymology', e.target.value)}
+                        style={{ width:'100%', fontSize:12, padding:'6px 9px', borderRadius:7, border:'1px solid var(--border)', fontFamily:'DM Sans,sans-serif', outline:'none' }} />
+                    </div>
+                    <div>
+                      <div style={{ fontSize:10, color:'var(--muted)', marginBottom:3 }}>GROUP</div>
+                      <input value={c.topic} onChange={e => updateField(c._key, 'topic', e.target.value)}
+                        style={{ width:'100%', fontSize:12, padding:'6px 9px', borderRadius:7, border:'1px solid var(--border)', fontFamily:'DM Sans,sans-serif', outline:'none' }} />
+                    </div>
+                  </div>
+                  <button onClick={() => removeCard(c._key)}
+                    style={{ position:'absolute', top:10, right:10, background:'none', border:'none', cursor:'pointer', color:'#EF4444', fontSize:14 }}>✕</button>
+                </div>
+              ))}
+            </div>
+            {error && <div style={{ marginBottom:8, fontSize:12, color:'#EF4444' }}>{error}</div>}
+            <div style={{ display:'flex', gap:8 }}>
+              <button onClick={save} disabled={saving || !cards.length}
+                style={{ flex:1, padding:'10px', borderRadius:9, border:'none', background:'var(--forest)', color:'var(--green-light)', cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:600, fontSize:13, opacity: saving ? .6 : 1 }}>
+                {saving ? 'Saving…' : `Save ${cards.length} card${cards.length !== 1 ? 's' : ''}`}
+              </button>
+              <button onClick={() => { setCards(null); setRaw('') }}
+                style={{ padding:'10px 16px', borderRadius:9, border:'1px solid var(--border)', background:'white', cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontSize:12, color:'var(--muted)' }}>
+                Back
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ── Card tile ─────────────────────────────────────────────────────────────────
 function CardTile({ card, onClick }) {
   const img = card.img_src || card.img
   return (
@@ -183,13 +333,13 @@ function CardTile({ card, onClick }) {
   )
 }
 
-// ── Cards panel inside a folder ────────────────────────────────
+// ── Cards panel inside a folder ───────────────────────────────────────────────
 function CardsPanel({ folderId, weekLabel }) {
-  const [cards,   setCards]   = useState([])
-  const [loading, setLoading] = useState(true)
-  const [editing, setEditing] = useState(null) // null | 'new' | card object
-  const [filter,  setFilter]  = useState('All')
-  const [importMsg, setImportMsg] = useState('')
+  const [cards,      setCards]      = useState([])
+  const [loading,    setLoading]    = useState(true)
+  const [editing,    setEditing]    = useState(null)
+  const [filter,     setFilter]     = useState('All')
+  const [showImport, setShowImport] = useState(false)
 
   useEffect(() => {
     getCards(folderId).then(c => { setCards(c); setLoading(false) })
@@ -212,20 +362,9 @@ function CardsPanel({ folderId, weekLabel }) {
     setCards(prev => prev.filter(c => c.id !== card.id))
   }
 
-  const handleImport = async (e) => {
-    const file = e.target.files[0]; if (!file) return
-    try {
-      const json = JSON.parse(await file.text())
-      const arr = Array.isArray(json) ? json : json.cards
-      if (!arr?.length) { setImportMsg('No cards found in file.'); return }
-      const withWeek = arr.map(c => ({ ...c, week_id: folderId }))
-      await importCards(withWeek)
-      const fresh = await getCards(folderId)
-      setCards(fresh)
-      setImportMsg(`✓ Imported ${withWeek.length} cards`)
-    } catch(err) { setImportMsg('Error: ' + err.message) }
-    e.target.value = ''
-    setTimeout(() => setImportMsg(''), 4000)
+  const handleImported = async () => {
+    const fresh = await getCards(folderId)
+    setCards(fresh)
   }
 
   if (loading) return <div style={{ padding:12, fontSize:12, color:'var(--muted)' }}>Loading cards…</div>
@@ -238,13 +377,10 @@ function CardsPanel({ folderId, weekLabel }) {
           style={{ fontSize:11, padding:'6px 14px', borderRadius:9, border:'none', background:'var(--forest)', color:'var(--green-light)', cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:600 }}>
           + New Card
         </button>
-        <label style={{ cursor:'pointer' }}>
-          <span style={{ fontSize:11, padding:'6px 12px', borderRadius:9, border:'1px solid var(--border)', background:'white', color:'var(--muted)', cursor:'pointer', fontFamily:'DM Sans,sans-serif', display:'inline-block' }}>
-            ↓ Import JSON
-          </span>
-          <input type="file" accept=".json" style={{ display:'none' }} onChange={handleImport} />
-        </label>
-        {importMsg && <span style={{ fontSize:11, color: importMsg.startsWith('✓') ? '#059669' : '#EF4444' }}>{importMsg}</span>}
+        <button onClick={() => setShowImport(true)}
+          style={{ fontSize:11, padding:'6px 12px', borderRadius:9, border:'1px solid var(--border)', background:'white', color:'var(--muted)', cursor:'pointer', fontFamily:'DM Sans,sans-serif' }}>
+          ↓ Import JSON
+        </button>
         <span style={{ marginLeft:'auto', fontSize:11, color:'var(--muted)' }}>{cards.length} card{cards.length!==1?'s':''}</span>
       </div>
 
@@ -275,7 +411,7 @@ function CardsPanel({ folderId, weekLabel }) {
         </div>
       )}
 
-      {/* Editor modal */}
+      {/* Card editor modal */}
       {editing && (
         <CardEditor
           card={editing} weekId={folderId}
@@ -283,11 +419,19 @@ function CardsPanel({ folderId, weekLabel }) {
           onSave={handleSave} onDelete={handleDelete}
           onClose={() => setEditing(null)} />
       )}
+
+      {/* JSON import review modal */}
+      {showImport && (
+        <JsonImportModal
+          weekId={folderId}
+          onImported={handleImported}
+          onClose={() => setShowImport(false)} />
+      )}
     </div>
   )
 }
 
-// ── File row ───────────────────────────────────────────────────
+// ── File row ──────────────────────────────────────────────────────────────────
 function FileRow({ f, onDelete }) {
   return (
     <div style={{ display:'flex', gap:10, alignItems:'center', padding:'9px 12px', borderRadius:9, border:'1px solid var(--border)', marginBottom:6, background:'white' }}>
@@ -309,10 +453,10 @@ function FileRow({ f, onDelete }) {
   )
 }
 
-// ── Folder row ─────────────────────────────────────────────────
+// ── Folder row ────────────────────────────────────────────────────────────────
 function FolderRow({ folder, classId, depth=0, onDeleted }) {
   const [open,       setOpen]      = useState(false)
-  const [activeTab,  setActiveTab] = useState('files') // 'files' | 'cards'
+  const [activeTab,  setActiveTab] = useState('files')
   const [files,      setFiles]     = useState([])
   const [subfolders, setSubfolders]= useState([])
   const [loading,    setLoading]   = useState(false)
@@ -433,7 +577,7 @@ function FolderRow({ folder, classId, depth=0, onDeleted }) {
   )
 }
 
-// ── Class block ────────────────────────────────────────────────
+// ── Class block ───────────────────────────────────────────────────────────────
 function ClassBlock({ cls, onDeleted }) {
   const [open, setOpen]       = useState(false)
   const [folders, setFolders] = useState([])
@@ -479,8 +623,8 @@ function ClassBlock({ cls, onDeleted }) {
                 <input value={fldLabel} onChange={e => setFldLabel(e.target.value)} placeholder="Folder name" autoFocus
                   onKeyDown={e => e.key==='Enter' && handleAddFolder()}
                   style={{ flex:1, minWidth:200, fontSize:12, padding:'7px 10px', borderRadius:9, border:'1px solid var(--border)', fontFamily:'DM Sans,sans-serif' }} />
-                <button className="btn-primary" style={{ padding:'7px 14px', fontSize:11 }} onClick={handleAddFolder} disabled={!fldLabel.trim()}>Add</button>
-                <button className="btn-ghost" style={{ padding:'7px 12px', fontSize:11 }} onClick={() => { setAddingFld(false); setFldLabel('') }}>Cancel</button>
+                <button className="btn-primary" style={{ padding:'7px 14px', fontSize:11 }} onClick={handleAddFolder} disabled={!fldLabel.trim()}>Create</button>
+                <button className="btn-ghost"   style={{ padding:'7px 12px', fontSize:11 }} onClick={() => { setAddingFld(false); setFldLabel('') }}>Cancel</button>
               </div>
             )}
           </div>
@@ -490,7 +634,7 @@ function ClassBlock({ cls, onDeleted }) {
   )
 }
 
-// ── Quick Links (Google Drive shortcuts) ───────────────────────
+// ── Quick Links ───────────────────────────────────────────────────────────────
 function QuickLinks() {
   const [links,   setLinks_]  = useState([])
   const [adding,  setAdding]  = useState(false)
@@ -565,7 +709,7 @@ function QuickLinks() {
   )
 }
 
-// ── Main ───────────────────────────────────────────────────────
+// ── Main ──────────────────────────────────────────────────────────────────────
 export default function Study() {
   const [classes, setClasses]  = useState([])
   const [loading, setLoading]  = useState(true)
