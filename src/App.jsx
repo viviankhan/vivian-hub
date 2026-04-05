@@ -109,9 +109,10 @@ export default function App() {
   const updateFcStudied  = useCallback(async (v) => { setFcStudied_(v);  await setFcStudied(v)  }, [])
 
   const appendLog = useCallback(async (entry) => {
+    const newEntry = { ...entry, ts: new Date().toISOString() }
     setLog_(prev => {
-      const next = [...prev, { ...entry, ts: new Date().toISOString() }]
-      setLog(next)
+      const next = [...prev, newEntry]
+      setLog(next)  // fire-and-forget outside the render cycle is fine here
       return next
     })
   }, [])
@@ -188,8 +189,9 @@ export default function App() {
       const d = new Date()
       const dateKey   = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
       const dateLabel = d.toLocaleDateString('en-US', { weekday:'long', month:'long', day:'numeric' })
+      const newEntry  = { date: dateKey, dateLabel, label, tag, ts: d.toISOString() }
       setLog_(prev => {
-        const next = [...prev, { date: dateKey, dateLabel, label, tag, ts: d.toISOString() }]
+        const next = [...prev, newEntry]
         setLog(next)
         return next
       })

@@ -169,10 +169,10 @@ export default function Today({ todos, weekState, syncToggle, commitments, appen
   const [now, setNow] = useState(nowMins())
   const [managing, setManaging] = useState(null)
   const [customTasks, setCustomTasks] = useState(() => {
-    try { return JSON.parse(localStorage.getItem('vivian_custom_'+new Date().toISOString().split('T')[0]) || '[]') } catch { return [] }
+    try { return JSON.parse(localStorage.getItem('vivian_custom_'+todayKey()) || '[]') } catch { return [] }
   })
   const [deleted, setDeleted] = useState(() => {
-    try { return JSON.parse(localStorage.getItem('vivian_deleted_'+new Date().toISOString().split('T')[0]) || '[]') } catch { return [] }
+    try { return JSON.parse(localStorage.getItem('vivian_deleted_'+todayKey()) || '[]') } catch { return [] }
   })
 
   useEffect(() => { const t = setInterval(() => setNow(nowMins()), 60000); return () => clearInterval(t) }, [])
