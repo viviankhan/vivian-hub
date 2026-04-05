@@ -146,7 +146,7 @@ export async function updateCard(card) {
 export const getQuickLinks = () => dbGet('quick_links').then(v => v ?? [])
 export const setQuickLinks = v  => dbSet('quick_links', v)
 
-
+export async function deleteCard(id, weekId) {
   if (USE_SUPABASE) { await supabase.from('flashcards').delete().eq('id', id); return }
   const all = (await lsGet('cards_'+weekId)) ?? []
   await lsSet('cards_'+weekId, all.filter(c => c.id !== id))
