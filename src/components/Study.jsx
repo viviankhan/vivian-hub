@@ -1,456 +1,245 @@
-// src/components/Study.jsx
-import { useState, useMemo } from 'react'
-import { STUDY_SETS } from '../data/flashcards.js'
+import { useState, useEffect, useCallback } from 'react'
+import {
+  getClasses, addClass, deleteClass,
+  getWeeks, addWeek, deleteWeek,
+  getFiles, uploadFile, deleteStudyFile,
+} from '../lib/storage.js'
 
-// ─────────────────────────────────────────────────────────────
-// studyExtras shape (stored in Supabase):
-// {
-//   userClasses:    [{ classId, className, weeks: [...] }],
-//   userWeeks:      { 'classId': [{ weekId, weekLabel, files:[], cards:[] }] },
-//   userFiles:      { 'classId-weekId': [{ id, name, type, addedDate }] },
-//   fileNotes:      { 'classId-weekId-fileIdentifier': string },  ← pasted content
-//   hiddenBaseFiles:{ 'classId-weekId': ['filename1', ...] },
-// }
-// ─────────────────────────────────────────────────────────────
-
-const EMPTY_EXTRAS = { userClasses:[], userWeeks:{}, userFiles:{}, fileNotes:{}, hiddenBaseFiles:{} }
-
-function groupBy(arr, key) {
-  const map = {}
-  arr.forEach(item => { const k = item[key] || 'General'; if (!map[k]) map[k] = []; map[k].push(item) })
-  return Object.entries(map)
+// ── File type helpers ──────────────────────────────────────────
+function fileIcon(name) {
+  const ext = name.split('.').pop().toLowerCase()
+  if (['html','htm'].includes(ext))         return '🃏'
+  if (['pdf'].includes(ext))                return '📄'
+  if (['pptx','ppt'].includes(ext))         return '📊'
+  if (['docx','doc'].includes(ext))         return '📝'
+  if (['xlsx','xls','csv'].includes(ext))   return '📈'
+  if (['jpg','jpeg','png','gif'].includes(ext)) return '🖼️'
+  if (['json'].includes(ext))               return '🗂️'
+  return '📎'
 }
 
-// ── Flashcard modal ────────────────────────────────────────────
-function FcModal({ cards, setKey, weekLabel, fcProgress, updateFcProgress, fcStudied, updateFcStudied, onClose }) {
-  const [tab, setTab]         = useState('all')
-  const [idx, setIdx]         = useState(0)
-  const [flipped, setFlipped] = useState(false)
-
-  const learned      = fcProgress[setKey] || {}
-  const deck         = tab === 'learned'   ? cards.filter(c => learned[c.id])
-                     : tab === 'unlearned' ? cards.filter(c => !learned[c.id])
-                     : cards
-  const card         = deck[idx] || null
-  const learnedCount = cards.filter(c => learned[c.id]).length
-  const pct          = cards.length ? (learnedCount / cards.length * 100) : 0
-
-  const next    = () => { setIdx(i => (i+1) % Math.max(deck.length,1)); setFlipped(false) }
-  const prev    = () => { setIdx(i => (i-1+Math.max(deck.length,1)) % Math.max(deck.length,1)); setFlipped(false) }
-  const shuffle = () => { setIdx(Math.floor(Math.random() * Math.max(deck.length,1))); setFlipped(false) }
-
-  const mark = async isLearned => {
-    if (!card) return
-    await updateFcProgress({ ...fcProgress, [setKey]: { ...learned, [card.id]: isLearned } })
-    await updateFcStudied({ ...fcStudied, [setKey]: new Date().toISOString() })
-    setIdx(i => (i+1) % Math.max(deck.length,1))
-    setFlipped(false)
-  }
-
-  const TabBtn = ({ id, label }) => (
-    <button className={`fc-tab-btn ${tab === id ? 'active' : ''}`}
-      onClick={() => { setTab(id); setIdx(0); setFlipped(false) }}>{label}</button>
-  )
-
-  return (
-    <div className="fc-overlay">
-      <div className="fc-inner">
-        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:18 }}>
-          <div>
-            <div className="serif" style={{ fontSize:22, color:'var(--sand)', fontWeight:600 }}>{weekLabel}</div>
-            <div style={{ fontSize:11, color:'#8FA882', marginTop:2, letterSpacing:.5 }}>{cards.length} cards · {learnedCount} learned</div>
-          </div>
-          <button className="btn-ghost" onClick={onClose} style={{ color:'#8FA882', borderColor:'rgba(255,255,255,.15)' }}>✕ Close</button>
-        </div>
-        <div style={{ display:'flex', gap:8, marginBottom:14 }}>
-          <TabBtn id="all"       label="All" />
-          <TabBtn id="unlearned" label={`Unlearned (${cards.filter(c=>!learned[c.id]).length})`} />
-          <TabBtn id="learned"   label={`Learned (${learnedCount})`} />
-        </div>
-        <div className="progress-track" style={{ marginBottom:6 }}>
-          <div className="progress-fill" style={{ width: pct+'%' }} />
-        </div>
-        <div style={{ fontSize:11, color:'#8FA882', textAlign:'center', marginBottom:16 }}>{learnedCount} / {cards.length} learned</div>
-
-        {!card ? (
-          <div style={{ background:'#0D1F3C', borderRadius:18, minHeight:200, display:'flex', alignItems:'center', justifyContent:'center', color:'#4A6B8A', fontSize:13 }}>No cards in this view</div>
-        ) : (
-          <div className="fc-card-wrap">
-            <div className={`fc-card ${flipped ? 'flipped' : ''}`} style={{ background:'#0D1F3C', border:'1px solid rgba(14,158,142,.3)' }} onClick={() => setFlipped(f=>!f)}>
-              <div className="fc-face">
-                <div style={{ fontSize:10, letterSpacing:2, textTransform:'uppercase', color:'#0E9E8E', marginBottom:10 }}>{card.topic}</div>
-                <div style={{ fontSize:11, color:'#4A6B8A', marginBottom:8 }}>#{idx+1} of {deck.length}</div>
-                {card.imgSrc && <img src={card.imgSrc} alt={card.term} style={{ width:'100%', maxHeight:160, objectFit:'cover', borderRadius:10, marginBottom:12 }} />}
-                <div className="fc-term">{card.term}</div>
-                <div style={{ fontSize:11, color:'rgba(255,255,255,.3)', letterSpacing:1.5, textTransform:'uppercase', marginTop:16 }}>Tap to flip →</div>
-              </div>
-              <div className="fc-back">
-                <div style={{ fontSize:10, letterSpacing:2, textTransform:'uppercase', color:'#0E9E8E', marginBottom:8 }}>{card.topic}</div>
-                <div className="serif" style={{ fontSize:16, color:'#C9E4B8', marginBottom:10, fontWeight:600 }}>{card.term}</div>
-                <div className="fc-def">{card.def}</div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        <div style={{ display:'flex', gap:8, justifyContent:'center', marginBottom:12, flexWrap:'wrap' }}>
-          <button className="fc-ctrl-btn btn-ghost" style={{ color:'#8FA882', border:'1px solid rgba(255,255,255,.15)' }} onClick={prev}>← Prev</button>
-          <button className="fc-ctrl-btn btn-ghost" style={{ color:'#8FA882', border:'1px solid rgba(255,255,255,.15)' }} onClick={shuffle}>⇌ Shuffle</button>
-          <button className="fc-ctrl-btn" style={{ background:'#0E9E8E', color:'#0A1628', border:'none', fontFamily:'DM Sans', fontSize:11, letterSpacing:1, textTransform:'uppercase', borderRadius:24, cursor:'pointer', fontWeight:700 }} onClick={next}>Next →</button>
-        </div>
-        <div style={{ display:'flex', gap:8, justifyContent:'center', flexWrap:'wrap' }}>
-          <button className="fc-ctrl-btn" style={{ background:'rgba(232,93,58,.1)', border:'1px solid rgba(232,93,58,.4)', color:'#E85D3A', fontFamily:'DM Sans', fontSize:11, letterSpacing:1, textTransform:'uppercase', borderRadius:24, cursor:'pointer' }} onClick={() => mark(false)}>✗ Still learning</button>
-          <button className="fc-ctrl-btn" style={{ background:'rgba(14,158,142,.1)', border:'1px solid rgba(14,158,142,.4)', color:'#0E9E8E', fontFamily:'DM Sans', fontSize:11, letterSpacing:1, textTransform:'uppercase', borderRadius:24, cursor:'pointer' }} onClick={() => mark(true)}>✓ Got it</button>
-        </div>
-      </div>
-    </div>
-  )
+function fileAction(name) {
+  const ext = name.split('.').pop().toLowerCase()
+  // HTML opens in new tab and runs natively (flashcard app, etc)
+  if (['html','htm'].includes(ext)) return { label:'Open', newTab:true }
+  // PDF opens inline in browser
+  if (['pdf'].includes(ext))        return { label:'Open',     newTab:true }
+  // Everything else downloads
+  return { label:'Download', newTab:false }
 }
 
-// ── File content panel ─────────────────────────────────────────
-function FileContentPanel({ content, onSave, onClose }) {
-  const [text, setText] = useState(content || '')
-  const [saved, setSaved] = useState(false)
-
-  const handleSave = () => {
-    onSave(text)
-    setSaved(true)
-    setTimeout(() => setSaved(false), 1600)
-  }
-
-  return (
-    <div style={{ background:'#FAFAF7', borderRadius:10, border:'1px solid var(--border)', padding:'12px 14px', marginTop:4, marginBottom:4 }}>
-      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:8 }}>
-        <span style={{ fontSize:10, color:'var(--muted)', letterSpacing:1, textTransform:'uppercase' }}>Notes / pasted content</span>
-        <div style={{ display:'flex', gap:8 }}>
-          <button onClick={handleSave}
-            style={{ fontSize:10, padding:'3px 12px', borderRadius:8, border:'none', background: saved ? '#52B788' : 'var(--forest)', color: saved ? 'white' : 'var(--green-light)', cursor:'pointer', fontFamily:'DM Sans, sans-serif', fontWeight:600, transition:'background .2s' }}>
-            {saved ? '✓ Saved' : 'Save'}
-          </button>
-          <button onClick={onClose}
-            style={{ fontSize:10, padding:'3px 10px', borderRadius:8, border:'1px solid var(--border)', background:'transparent', color:'var(--muted)', cursor:'pointer', fontFamily:'DM Sans, sans-serif' }}>
-            Close
-          </button>
-        </div>
-      </div>
-      <textarea
-        value={text}
-        onChange={e => setText(e.target.value)}
-        placeholder={`Paste notes, key terms, or content from this file here.\n\nTo generate flashcards: paste your content, save, then start a Claude session and say "generate flashcards from my [class] [week] notes."`}
-        style={{ width:'100%', minHeight:180, fontSize:12, padding:'10px 12px', borderRadius:8, border:'1px solid var(--border)', resize:'vertical', lineHeight:1.7, fontFamily:'DM Sans, sans-serif', background:'white', outline:'none' }}
-        autoFocus
-      />
-      <div style={{ fontSize:10, color:'var(--muted)', marginTop:5 }}>
-        Content saves to your cloud storage. Claude can read it during a session.
-      </div>
-    </div>
-  )
+function fileSizeLabel(kb) {
+  if (!kb) return ''
+  if (kb < 1024) return `${kb} KB`
+  return `${(kb/1024).toFixed(1)} MB`
 }
 
-// ── Single file row ────────────────────────────────────────────
-function FileRow({ file, identifier, isUserFile, isBase, content, onContentSave, onDelete, onHideBase }) {
-  const [expanded, setExpanded] = useState(false)
-  const hasContent = !!(content && content.trim())
-
+// ── File row ───────────────────────────────────────────────────
+function FileRow({ f, onDelete }) {
+  const action = fileAction(f.file_name)
   return (
-    <div style={{ marginBottom:5 }}>
-      <div className="file-row" style={{ alignItems:'center', gap:8 }}>
-        <span style={{ fontSize:15 }}>📄</span>
-        <span style={{ flex:1, fontSize:12, color:'var(--text)' }}>{file.name}</span>
-
-        {file.type && !['pdf',''].includes(file.type) && (
-          <span style={{ fontSize:10, padding:'1px 6px', borderRadius:6, background:'#EDE9FE', color:'#7C3AED' }}>{file.type}</span>
-        )}
-        {file.addedDate && <span style={{ fontSize:10, color:'var(--muted)', whiteSpace:'nowrap' }}>{file.addedDate}</span>}
-
-        <button
-          onClick={() => setExpanded(e => !e)}
-          style={{
-            fontSize:10, padding:'3px 9px', borderRadius:8, whiteSpace:'nowrap',
-            border:`1px solid ${hasContent ? '#86EFAC' : 'var(--border)'}`,
-            background: expanded ? '#F0FDF4' : hasContent ? '#F0FDF4' : 'transparent',
-            color: hasContent ? '#059669' : 'var(--muted)',
-            cursor:'pointer', fontFamily:'DM Sans, sans-serif',
-          }}
-        >
-          {expanded ? '▲ Close' : hasContent ? '📝 Notes' : '+ Notes'}
-        </button>
-
-        {isUserFile && <button onClick={onDelete} className="del-btn" title="Delete this file">✕</button>}
-        {isBase      && <button onClick={onHideBase} className="del-btn" title="Hide from this week">✕</button>}
+    <div style={{ display:'flex', gap:10, alignItems:'center', padding:'9px 12px', borderRadius:9, border:'1px solid var(--border)', marginBottom:6, background:'white' }}>
+      <span style={{ fontSize:18, flexShrink:0 }}>{fileIcon(f.file_name)}</span>
+      <div style={{ flex:1, minWidth:0 }}>
+        <div style={{ fontSize:13, fontWeight:500, color:'var(--text)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{f.file_name}</div>
+        <div style={{ fontSize:10, color:'var(--muted)', marginTop:1 }}>{fileSizeLabel(f.file_size)}{f.added_date ? ` · ${f.added_date}` : ''}</div>
       </div>
-
-      {expanded && (
-        <FileContentPanel
-          content={content}
-          onSave={text => { onContentSave(text) }}
-          onClose={() => setExpanded(false)}
-        />
+      {f.file_url ? (
+        <a href={f.file_url} target={action.newTab ? '_blank' : '_self'} download={action.newTab ? undefined : f.file_name} rel="noreferrer"
+          style={{ fontSize:11, padding:'5px 12px', borderRadius:8, border:'1px solid var(--forest)', color:'var(--forest)', textDecoration:'none', background:'var(--bg)', fontFamily:'DM Sans,sans-serif', fontWeight:600, flexShrink:0 }}>
+          {action.label}
+        </a>
+      ) : (
+        <span style={{ fontSize:11, color:'var(--muted)', flexShrink:0 }}>No URL</span>
       )}
+      <button onClick={() => onDelete(f)} style={{ background:'none', border:'none', cursor:'pointer', color:'#D1D5DB', fontSize:16, padding:'0 2px', flexShrink:0 }}>✕</button>
     </div>
   )
 }
 
-// ── Form helpers ───────────────────────────────────────────────
-function InlineForm({ placeholder, onSave, onCancel, buttonLabel = 'Add' }) {
-  const [val, setVal] = useState('')
-  return (
-    <div style={{ display:'flex', gap:8, padding:'10px 16px', background:'#F7F6F3', borderTop:'1px solid var(--border)' }}>
-      <input value={val} onChange={e => setVal(e.target.value)} placeholder={placeholder} autoFocus
-        onKeyDown={e => { if (e.key === 'Enter' && val.trim()) onSave(val.trim()); if (e.key === 'Escape') onCancel() }}
-        style={{ flex:1, fontSize:12, padding:'6px 10px', borderRadius:8, border:'1px solid var(--border)' }} />
-      <button className="btn-primary" style={{ padding:'6px 14px', fontSize:10 }}
-        onClick={() => val.trim() && onSave(val.trim())} disabled={!val.trim()}>{buttonLabel}</button>
-      <button className="btn-ghost" style={{ padding:'6px 10px', fontSize:10 }} onClick={onCancel}>Cancel</button>
-    </div>
-  )
-}
+// ── Folder row ─────────────────────────────────────────────────
+function FolderRow({ folder, classId, depth=0, onDeleted }) {
+  const [open,      setOpen]      = useState(false)
+  const [files,     setFiles]     = useState([])
+  const [subfolders,setSubfolders]= useState([])
+  const [loading,   setLoading]   = useState(false)
+  const [uploading, setUploading] = useState(false)
+  const [addingSub, setAddingSub] = useState(false)
+  const [subLabel,  setSubLabel]  = useState('')
+  const [uploadMsg, setUploadMsg] = useState('')
 
-function AddFileForm({ onSave, onCancel }) {
-  const [name,  setName]  = useState('')
-  const [type,  setType]  = useState('pdf')
-  const [notes, setNotes] = useState('')
-  return (
-    <div style={{ padding:'12px 16px', background:'#F7F6F3', borderTop:'1px solid var(--border)' }}>
-      <div style={{ display:'flex', gap:8, marginBottom:8, flexWrap:'wrap' }}>
-        <input value={name} onChange={e => setName(e.target.value)} placeholder="filename.pdf" autoFocus
-          onKeyDown={e => { if (e.key === 'Escape') onCancel() }}
-          style={{ flex:1, minWidth:160, fontSize:12, padding:'6px 10px', borderRadius:8, border:'1px solid var(--border)' }} />
-        <select value={type} onChange={e => setType(e.target.value)}
-          style={{ fontSize:12, padding:'6px 10px', borderRadius:8, border:'1px solid var(--border)' }}>
-          <option value="pdf">PDF</option>
-          <option value="pptx">PPTX</option>
-          <option value="docx">DOCX</option>
-          <option value="notes">Notes</option>
-          <option value="other">Other</option>
-        </select>
-      </div>
-      <textarea
-        value={notes} onChange={e => setNotes(e.target.value)}
-        placeholder={`Paste notes, summaries, or content here — optional.\n\nTo generate flashcards later: save this, then start a Claude session and say "generate flashcards from my [class] [week] notes."`}
-        style={{ width:'100%', fontSize:12, padding:'8px 10px', borderRadius:8, border:'1px solid var(--border)', resize:'vertical', minHeight:100, fontFamily:'DM Sans, sans-serif', lineHeight:1.6, marginBottom:8 }}
-      />
-      <div style={{ display:'flex', gap:8 }}>
-        <button className="btn-primary" style={{ padding:'6px 14px', fontSize:10 }}
-          onClick={() => name.trim() && onSave(name.trim(), type, notes.trim())} disabled={!name.trim()}>
-          Add file
-        </button>
-        <button className="btn-ghost" style={{ padding:'6px 10px', fontSize:10 }} onClick={onCancel}>Cancel</button>
-      </div>
-    </div>
-  )
-}
+  const load = useCallback(async () => {
+    if (loading) return
+    setLoading(true)
+    const [f, subs] = await Promise.all([
+      getFiles(folder.id),
+      depth === 0 ? getWeeks(classId, folder.id) : Promise.resolve([]),
+    ])
+    setFiles(f); setSubfolders(subs); setLoading(false)
+  }, [folder.id, classId, depth])
 
-// ── Week section ───────────────────────────────────────────────
-function WeekSection({ cls, wk, setKey, isUserWeek, extras, onExtrasChange, fcProgress, fcStudied, updateFcProgress, updateFcStudied, onDeleteWeek, openModal }) {
-  const [addingFile, setAddingFile] = useState(false)
-  const [open, setOpen]             = useState(false)
+  const toggle = () => { if (!open) load(); setOpen(o=>!o) }
 
-  const fileKey         = `${cls.classId}-${wk.weekId}`
-  const userFiles       = extras.userFiles[fileKey] || []
-  const hiddenBaseFiles = extras.hiddenBaseFiles[fileKey] || []
-  const fileNotes       = extras.fileNotes || {}
-
-  const visibleBaseFiles = wk.files.filter(f => !hiddenBaseFiles.includes(f.name))
-  const allFiles         = [...visibleBaseFiles, ...userFiles]
-
-  const learned      = fcProgress[setKey] || {}
-  const learnedCount = wk.cards.filter(c => learned[c.id]).length
-  const lastStudied  = fcStudied[setKey]
-  const lastStr      = lastStudied ? new Date(lastStudied).toLocaleDateString('en-US',{month:'short',day:'numeric'}) : 'Never'
-
-  const getContent    = identifier => fileNotes[`${fileKey}-${identifier}`] || ''
-  const handleSaveContent = (identifier, text) => {
-    onExtrasChange({ ...extras, fileNotes: { ...fileNotes, [`${fileKey}-${identifier}`]: text } })
-  }
-
-  const handleAddFile = (name, type, notes) => {
-    const fileId = 'file-'+Date.now()
-    const file   = { id:fileId, name, type, addedDate:new Date().toISOString().split('T')[0] }
-    const existing = extras.userFiles[fileKey] || []
-    const updatedExtras = { ...extras, userFiles: { ...extras.userFiles, [fileKey]: [...existing, file] } }
-    // If notes were pasted at creation time, store them immediately
-    if (notes) {
-      updatedExtras.fileNotes = { ...(extras.fileNotes || {}), [`${fileKey}-${fileId}`]: notes }
+  const handleUpload = async (e) => {
+    const file = e.target.files[0]; if (!file) return
+    setUploading(true); setUploadMsg('')
+    try {
+      const saved = await uploadFile(folder.id, file)
+      setFiles(prev => [...prev, saved])
+      setUploadMsg(`✓ Uploaded ${file.name}`)
+      setTimeout(() => setUploadMsg(''), 3000)
+    } catch(err) {
+      setUploadMsg('Upload failed: ' + err.message)
     }
-    onExtrasChange(updatedExtras)
-    setAddingFile(false)
+    setUploading(false); e.target.value = ''
   }
 
-  const handleDeleteUserFile = fileId => {
-    const existing = extras.userFiles[fileKey] || []
-    const newNotes = { ...fileNotes }
-    delete newNotes[`${fileKey}-${fileId}`]
-    onExtrasChange({ ...extras, userFiles: { ...extras.userFiles, [fileKey]: existing.filter(f => f.id !== fileId) }, fileNotes: newNotes })
+  const handleDelFile = async (f) => {
+    if (!confirm(`Remove "${f.file_name}"?`)) return
+    await deleteStudyFile(f.id, folder.id, f.storage_path)
+    setFiles(prev => prev.filter(x => x.id !== f.id))
   }
 
-  const handleHideBaseFile = filename => {
-    if (!confirm(`Hide "${filename}" from this week?`)) return
-    const existing = extras.hiddenBaseFiles[fileKey] || []
-    onExtrasChange({ ...extras, hiddenBaseFiles: { ...extras.hiddenBaseFiles, [fileKey]: [...existing, filename] } })
+  const handleAddSub = async () => {
+    if (!subLabel.trim()) return
+    const created = await addWeek({ class_id:classId, parent_id:folder.id, week_number:subfolders.length+1, week_label:subLabel.trim(), sort_order:subfolders.length })
+    setSubfolders(prev => [...prev, created])
+    setSubLabel(''); setAddingSub(false)
   }
+
+  const handleDel = async () => {
+    if (!confirm(`Delete "${folder.week_label}" and all its files?`)) return
+    await deleteWeek(folder.id, classId)
+    onDeleted(folder.id)
+  }
+
+  const indent = depth * 14
 
   return (
-    <div style={{ borderBottom:'1px solid var(--border)' }}>
-      <div className="study-week-row">
-        <div style={{ flex:1, cursor:'pointer' }} onClick={() => setOpen(o => !o)}>
-          <div style={{ fontSize:12, fontWeight:600, color:'var(--text)', display:'flex', alignItems:'center', gap:6 }}>
-            {wk.weekLabel}
-            {isUserWeek && <span style={{ fontSize:9, padding:'1px 6px', borderRadius:8, background:'#EDE9FE', color:'#7C3AED' }}>added by you</span>}
-          </div>
-          <div style={{ fontSize:10, color:'var(--muted)', marginTop:2 }}>
-            {wk.cards.length} cards · {learnedCount}/{wk.cards.length} learned · last studied {lastStr} · {allFiles.length} file{allFiles.length !== 1 ? 's' : ''}
+    <div style={{ borderBottom: depth===0 ? '1px solid var(--border)' : 'none' }}>
+      {/* Header */}
+      <div style={{ background:depth===0?'#F7F6F3':'#F0EFF8', padding:`9px 14px 9px ${14+indent}px`, display:'flex', justifyContent:'space-between', alignItems:'center', cursor:'pointer' }}
+        onClick={toggle}>
+        <div style={{ flex:1 }}>
+          {depth > 0 && <span style={{ color:'var(--muted)', marginRight:6, fontSize:11 }}>└</span>}
+          <span style={{ fontSize:depth===0?13:12, fontWeight:600, color:'var(--text)' }}>📁 {folder.week_label}</span>
+          <div style={{ fontSize:10, color:'var(--muted)', marginTop:1, paddingLeft:depth>0?14:0 }}>
+            {loading ? 'Loading…' : `${files.length} file${files.length!==1?'s':''}`}
           </div>
         </div>
-        <div style={{ display:'flex', gap:8, alignItems:'center' }}>
-          {wk.cards.length > 0 && (
-            <button className="study-btn" onClick={() => openModal({ cards:wk.cards, setKey, weekLabel:wk.weekLabel })}>Study ▶</button>
-          )}
-          {isUserWeek && (
-            <button onClick={() => { if (confirm(`Delete week "${wk.weekLabel}"?`)) onDeleteWeek() }}
-              style={{ background:'none', border:'none', cursor:'pointer', color:'rgba(239,68,68,.6)', fontSize:14, padding:'0 2px' }}>🗑</button>
-          )}
-          <span style={{ color:'var(--muted)', fontSize:11, cursor:'pointer' }} onClick={() => setOpen(o => !o)}>▾</span>
-        </div>
+        <span style={{ fontSize:11, color:'var(--muted)' }}>{open?'▴':'▾'}</span>
       </div>
 
       {open && (
-        <div style={{ padding:'12px 16px', background:'white' }}>
-          {/* Files */}
-          <div style={{ marginBottom:12 }}>
-            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:6 }}>
-              <div className="section-label" style={{ marginBottom:0 }}>Files</div>
-              <button onClick={() => setAddingFile(true)}
-                style={{ fontSize:10, letterSpacing:.5, textTransform:'uppercase', padding:'3px 10px', borderRadius:10, border:'1px solid var(--border)', background:'transparent', color:'#6B8060', cursor:'pointer', fontFamily:'DM Sans, sans-serif' }}>
-                + Add file
-              </button>
-            </div>
+        <div style={{ paddingLeft:indent, background:'white', borderTop:'1px solid #F0EFF8' }}>
+          {/* Sub-folders */}
+          {subfolders.map(sub => (
+            <FolderRow key={sub.id} folder={sub} classId={classId} depth={depth+1}
+              onDeleted={id => setSubfolders(prev => prev.filter(s => s.id!==id))} />
+          ))}
 
-            {allFiles.length === 0 && !addingFile && (
-              <div style={{ fontSize:12, color:'var(--muted)', fontStyle:'italic', padding:'4px 0' }}>No files — add one above</div>
+          <div style={{ padding:'12px 14px' }}>
+            {/* Files */}
+            {files.length===0 && !uploading && (
+              <div style={{ fontSize:12, color:'var(--muted)', fontStyle:'italic', marginBottom:10 }}>No files yet — upload below.</div>
             )}
+            {files.map(f => <FileRow key={f.id} f={f} onDelete={handleDelFile} />)}
 
-            {visibleBaseFiles.map((f, fi) => (
-              <FileRow key={fi} file={f} identifier={f.name} isBase
-                content={getContent(f.name)}
-                onContentSave={text => handleSaveContent(f.name, text)}
-                onHideBase={() => handleHideBaseFile(f.name)} />
-            ))}
+            {/* Upload */}
+            <div style={{ display:'flex', gap:8, alignItems:'center', flexWrap:'wrap', marginTop:6 }}>
+              <label style={{ cursor:'pointer' }}>
+                <span className="study-btn" style={{ fontSize:11, padding:'5px 12px', background:'var(--forest)', display:'inline-block' }}>
+                  {uploading ? 'Uploading…' : '↑ Upload file'}
+                </span>
+                <input type="file" style={{ display:'none' }} onChange={handleUpload} disabled={uploading}
+                  accept=".html,.htm,.pdf,.pptx,.ppt,.docx,.doc,.xlsx,.xls,.csv,.json,.png,.jpg,.jpeg,.gif" />
+              </label>
+              {uploadMsg && <span style={{ fontSize:11, color: uploadMsg.startsWith('✓') ? '#059669' : '#EF4444' }}>{uploadMsg}</span>}
+            </div>
 
-            {userFiles.map(f => (
-              <FileRow key={f.id} file={f} identifier={f.id} isUserFile
-                content={getContent(f.id)}
-                onContentSave={text => handleSaveContent(f.id, text)}
-                onDelete={() => handleDeleteUserFile(f.id)} />
-            ))}
-
-            {addingFile && <AddFileForm onSave={handleAddFile} onCancel={() => setAddingFile(false)} />}
+            {/* Sub-folder + delete */}
+            <div style={{ borderTop:'1px solid #F5F3EF', paddingTop:10, marginTop:10, display:'flex', gap:8, flexWrap:'wrap', alignItems:'center' }}>
+              {depth===0 && !addingSub && (
+                <button className="study-btn" style={{ fontSize:10, padding:'4px 10px' }} onClick={() => setAddingSub(true)}>+ Sub-folder</button>
+              )}
+              {depth===0 && addingSub && (
+                <>
+                  <input value={subLabel} onChange={e => setSubLabel(e.target.value)} placeholder="Sub-folder name…" autoFocus
+                    onKeyDown={e => e.key==='Enter' && handleAddSub()}
+                    style={{ flex:1, minWidth:140, fontSize:12, padding:'5px 9px', borderRadius:8, border:'1px solid var(--border)', fontFamily:'DM Sans,sans-serif' }} />
+                  <button className="btn-primary" style={{ padding:'5px 12px', fontSize:11 }} onClick={handleAddSub}>Add</button>
+                  <button className="btn-ghost"   style={{ padding:'5px 9px',  fontSize:11 }} onClick={() => { setAddingSub(false); setSubLabel('') }}>Cancel</button>
+                </>
+              )}
+              <button className="btn-danger" style={{ fontSize:10, padding:'4px 10px' }} onClick={handleDel}>Delete folder</button>
+            </div>
           </div>
-
-          {/* Cards */}
-          {wk.cards.length > 0 ? (
-            <div>
-              <div className="section-label" style={{ marginBottom:8 }}>Cards by topic</div>
-              {groupBy(wk.cards, 'topic').map(([topic, cards]) => (
-                <div key={topic} style={{ marginBottom:10 }}>
-                  <div style={{ fontSize:11, color:'#6B8060', fontWeight:600, marginBottom:4 }}>{topic}</div>
-                  {cards.map(c => {
-                    const isLearned = !!(fcProgress[setKey]?.[c.id])
-                    return (
-                      <div key={c.id} style={{ display:'flex', gap:8, alignItems:'center', padding:'4px 0', borderBottom:'1px solid #F5F3EF' }}>
-                        <span style={{ fontSize:11, color: isLearned ? '#52B788' : '#D1D5DB' }}>{isLearned ? '✓' : '○'}</span>
-                        <span style={{ fontSize:12, color: isLearned ? 'var(--muted)' : 'var(--text)', textDecoration: isLearned ? 'line-through' : 'none', flex:1 }}>{c.term}</span>
-                        <span style={{ fontSize:9, color:'#B0A898' }}>{c.dateAdded}</span>
-                      </div>
-                    )
-                  })}
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div style={{ fontSize:12, color:'var(--muted)', fontStyle:'italic' }}>
-              No flashcards yet — paste content into a file slot and send to Claude to generate them.
-            </div>
-          )}
         </div>
       )}
     </div>
   )
 }
 
-// ── Class section ──────────────────────────────────────────────
-function ClassSection({ cls, isUserClass, extras, onExtrasChange, fcProgress, fcStudied, updateFcProgress, updateFcStudied, onDeleteClass, openModal }) {
-  const [open, setOpen]             = useState(false)
-  const [addingWeek, setAddingWeek] = useState(false)
+// ── Class block ────────────────────────────────────────────────
+function ClassBlock({ cls, onDeleted }) {
+  const [open,      setOpen]     = useState(false)
+  const [folders,   setFolders]  = useState([])
+  const [addingFld, setAddingFld]= useState(false)
+  const [fldLabel,  setFldLabel] = useState('')
 
-  const userWeeksForClass = isUserClass ? [] : (extras.userWeeks[cls.classId] || [])
-  const allWeeks          = isUserClass ? cls.weeks : [...cls.weeks, ...userWeeksForClass]
+  const load = useCallback(async () => {
+    const w = await getWeeks(cls.id, null)
+    setFolders(w)
+  }, [cls.id])
 
-  const handleAddWeek = label => {
-    const weekId  = 'wk-' + Date.now()
-    const newWeek = { weekId, weekLabel:label, files:[], cards:[] }
-    if (isUserClass) {
-      onExtrasChange({ ...extras, userClasses: extras.userClasses.map(c =>
-        c.classId === cls.classId ? { ...c, weeks:[...c.weeks, newWeek] } : c
-      )})
-    } else {
-      const existing = extras.userWeeks[cls.classId] || []
-      onExtrasChange({ ...extras, userWeeks: { ...extras.userWeeks, [cls.classId]: [...existing, newWeek] } })
-    }
-    setAddingWeek(false)
+  const toggle = () => { if (!open) load(); setOpen(o=>!o) }
+
+  const handleAddFolder = async () => {
+    if (!fldLabel.trim()) return
+    const created = await addWeek({ class_id:cls.id, parent_id:null, week_number:folders.length+1, week_label:fldLabel.trim(), sort_order:folders.length })
+    setFolders(prev => [...prev, created])
+    setFldLabel(''); setAddingFld(false)
   }
 
-  const handleDeleteWeek = (weekId, isUserWk) => {
-    if (isUserClass) {
-      onExtrasChange({ ...extras, userClasses: extras.userClasses.map(c =>
-        c.classId === cls.classId ? { ...c, weeks:c.weeks.filter(w => w.weekId !== weekId) } : c
-      )})
-    } else if (isUserWk) {
-      const existing = extras.userWeeks[cls.classId] || []
-      onExtrasChange({ ...extras, userWeeks: { ...extras.userWeeks, [cls.classId]: existing.filter(w => w.weekId !== weekId) } })
-    }
+  const handleDelClass = async () => {
+    if (!confirm(`Delete "${cls.name}" and everything in it?`)) return
+    await deleteClass(cls.id)
+    onDeleted(cls.id)
   }
 
   return (
-    <div style={{ marginBottom:14 }}>
-      <div className="study-class-header" onClick={() => setOpen(o => !o)}>
-        <div>
-          <span className="serif" style={{ fontSize:18, color:'var(--sand)', fontWeight:600 }}>{cls.className}</span>
-          {isUserClass && <span style={{ marginLeft:10, fontSize:10, padding:'2px 8px', borderRadius:8, background:'rgba(124,58,237,.2)', color:'#C4B5FD' }}>added by you</span>}
+    <div style={{ marginBottom:12 }}>
+      <div style={{ background:'var(--forest)', borderRadius:open?'12px 12px 0 0':12, padding:'13px 18px', display:'flex', justifyContent:'space-between', alignItems:'center', cursor:'pointer' }} onClick={toggle}>
+        <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+          {cls.code && <span style={{ fontSize:10, letterSpacing:2, textTransform:'uppercase', color:'var(--green-mid)' }}>{cls.code}</span>}
+          <span className="serif" style={{ fontSize:17, color:'var(--sand)', fontWeight:600 }}>{cls.name}</span>
         </div>
-        <div style={{ display:'flex', gap:10, alignItems:'center' }}>
-          {isUserClass && (
-            <button onClick={e => { e.stopPropagation(); if (confirm(`Delete class "${cls.className}"?`)) onDeleteClass(cls.classId) }}
-              style={{ background:'none', border:'none', cursor:'pointer', color:'rgba(239,68,68,.6)', fontSize:14, padding:'0 2px' }}>🗑</button>
-          )}
-          <span style={{ color:'var(--green-light)', fontSize:13, transition:'transform .2s', transform: open ? 'rotate(180deg)' : '' }}>▾</span>
-        </div>
+        <span style={{ color:'var(--green-light)', fontSize:13, transition:'transform .2s', transform:open?'rotate(180deg)':'' }}>▾</span>
       </div>
 
       {open && (
         <div style={{ border:'1px solid var(--border)', borderTop:'none', borderRadius:'0 0 12px 12px', overflow:'hidden' }}>
-          {allWeeks.map(wk => {
-            const isUserWk = isUserClass || userWeeksForClass.some(w => w.weekId === wk.weekId)
-            const setKey   = cls.classId + '-' + wk.weekId
-            return (
-              <WeekSection key={wk.weekId} cls={cls} wk={wk} setKey={setKey}
-                isUserWeek={isUserWk} extras={extras} onExtrasChange={onExtrasChange}
-                fcProgress={fcProgress} fcStudied={fcStudied}
-                updateFcProgress={updateFcProgress} updateFcStudied={updateFcStudied}
-                onDeleteWeek={() => handleDeleteWeek(wk.weekId, isUserWk)}
-                openModal={openModal} />
-            )
-          })}
-          {addingWeek ? (
-            <InlineForm placeholder="Week label (e.g. Week 3 — Reef Ecology)" onSave={handleAddWeek} onCancel={() => setAddingWeek(false)} buttonLabel="Add week" />
-          ) : (
-            <div style={{ padding:'10px 16px', background:'#F7F6F3', borderTop: allWeeks.length > 0 ? '1px solid var(--border)' : 'none' }}>
-              <button onClick={() => setAddingWeek(true)}
-                style={{ fontSize:11, padding:'5px 14px', borderRadius:10, border:'1px dashed var(--border)', background:'transparent', color:'#6B8060', cursor:'pointer', fontFamily:'DM Sans, sans-serif' }}>
-                + Add week
-              </button>
-            </div>
-          )}
+          {folders.map(f => (
+            <FolderRow key={f.id} folder={f} classId={cls.id} depth={0}
+              onDeleted={id => setFolders(prev => prev.filter(x => x.id!==id))} />
+          ))}
+
+          <div style={{ padding:'12px 14px', background:'#FAFAF9', borderTop:folders.length?'1px solid var(--border)':'none' }}>
+            {!addingFld ? (
+              <div style={{ display:'flex', gap:8 }}>
+                <button className="study-btn" style={{ background:'#1C2B1A' }} onClick={() => setAddingFld(true)}>+ Add Folder</button>
+                <button className="btn-danger" style={{ fontSize:10, padding:'4px 12px' }} onClick={handleDelClass}>Delete class</button>
+              </div>
+            ) : (
+              <div style={{ display:'flex', gap:8, flexWrap:'wrap', alignItems:'center' }}>
+                <input value={fldLabel} onChange={e => setFldLabel(e.target.value)} placeholder="Folder name (e.g. Week 1 — Reef ID)" autoFocus
+                  onKeyDown={e => e.key==='Enter' && handleAddFolder()}
+                  style={{ flex:1, minWidth:200, fontSize:12, padding:'7px 10px', borderRadius:9, border:'1px solid var(--border)', fontFamily:'DM Sans,sans-serif' }} />
+                <button className="btn-primary" style={{ padding:'7px 14px', fontSize:11 }} onClick={handleAddFolder} disabled={!fldLabel.trim()}>Add</button>
+                <button className="btn-ghost"   style={{ padding:'7px 12px', fontSize:11 }} onClick={() => { setAddingFld(false); setFldLabel('') }}>Cancel</button>
+              </div>
+            )}
+          </div>
         </div>
       )}
     </div>
@@ -458,59 +247,67 @@ function ClassSection({ cls, isUserClass, extras, onExtrasChange, fcProgress, fc
 }
 
 // ── Main ───────────────────────────────────────────────────────
-export default function Study({ fcProgress, updateFcProgress, fcStudied, updateFcStudied, studyExtras, updateStudyExtras }) {
-  const [modal, setModal]             = useState(null)
-  const [addingClass, setAddingClass] = useState(false)
+export default function Study() {
+  const [classes,   setClasses]  = useState([])
+  const [loading,   setLoading]  = useState(true)
+  const [addingCls, setAddingCls]= useState(false)
+  const [clsName,   setClsName]  = useState('')
+  const [clsCode,   setClsCode]  = useState('')
 
-  const extras     = studyExtras ?? EMPTY_EXTRAS
-  const allClasses = useMemo(() => [...STUDY_SETS, ...(extras.userClasses || [])], [extras.userClasses])
+  useEffect(() => {
+    getClasses().then(c => { setClasses(c); setLoading(false) })
+  }, [])
 
-  const handleExtrasChange = async newExtras => { await updateStudyExtras(newExtras) }
-
-  const handleAddClass = name => {
-    const classId  = 'cls-' + Date.now()
-    handleExtrasChange({ ...extras, userClasses:[...(extras.userClasses||[]), { classId, className:name, weeks:[] }] })
-    setAddingClass(false)
+  const handleAddClass = async () => {
+    if (!clsName.trim()) return
+    const created = await addClass({ name:clsName.trim(), code:clsCode.trim(), sort_order:classes.length })
+    setClasses(prev => [...prev, created])
+    setClsName(''); setClsCode(''); setAddingCls(false)
   }
 
-  const handleDeleteClass = classId => {
-    const cleanWeeks = { ...extras.userWeeks }; delete cleanWeeks[classId]
-    handleExtrasChange({ ...extras, userClasses:(extras.userClasses||[]).filter(c => c.classId !== classId), userWeeks:cleanWeeks })
-  }
+  if (loading) return <div style={{ padding:20, color:'var(--muted)', fontSize:13 }}>Loading…</div>
 
   return (
     <div>
       <div className="page-title">Study Materials</div>
-      <div className="page-sub">Tap "+ Notes" on any file to paste content · Flashcard content managed by Claude</div>
+      <div className="page-sub">Classes → Folders → Files · Upload anything and open it here</div>
 
-      {modal && (
-        <FcModal {...modal} fcProgress={fcProgress} updateFcProgress={updateFcProgress}
-          fcStudied={fcStudied} updateFcStudied={updateFcStudied} onClose={() => setModal(null)} />
-      )}
+      <div style={{ background:'#F0F9F8', border:'1px solid #B2DFDB', borderRadius:12, padding:'11px 16px', marginBottom:20, fontSize:12, color:'#004D40', lineHeight:1.6 }}>
+        Upload <strong>HTML flashcard files</strong> to open them directly in the browser. Upload <strong>PDFs</strong> to view inline. Upload <strong>PPT / Word</strong> files to download and open in their app.
+      </div>
 
-      {allClasses.map(cls => {
-        const isUserClass = (extras.userClasses||[]).some(c => c.classId === cls.classId)
-        return (
-          <ClassSection key={cls.classId} cls={cls} isUserClass={isUserClass}
-            extras={extras} onExtrasChange={handleExtrasChange}
-            fcProgress={fcProgress} fcStudied={fcStudied}
-            updateFcProgress={updateFcProgress} updateFcStudied={updateFcStudied}
-            onDeleteClass={handleDeleteClass} openModal={setModal} />
-        )
-      })}
-
-      {addingClass ? (
-        <div style={{ background:'white', borderRadius:12, border:'2px solid var(--forest)', overflow:'hidden' }}>
-          <InlineForm placeholder="Class name (e.g. MCAT Prep)" onSave={handleAddClass}
-            onCancel={() => setAddingClass(false)} buttonLabel="Add class" />
+      {classes.length===0 && !addingCls && (
+        <div style={{ background:'white', borderRadius:12, border:'1px solid var(--border)', padding:24, textAlign:'center', color:'var(--muted)', fontSize:13, marginBottom:14 }}>
+          No classes yet. Add one below to get started.
         </div>
-      ) : (
-        <button onClick={() => setAddingClass(true)}
-          style={{ width:'100%', background:'var(--forest)', border:'none', borderRadius:12, padding:'13px 18px', cursor:'pointer', display:'flex', alignItems:'center', gap:10 }}>
-          <span style={{ fontSize:18 }}>+</span>
-          <span style={{ fontFamily:'DM Sans, sans-serif', fontSize:13, color:'var(--green-light)', fontWeight:600 }}>Add a class</span>
-        </button>
       )}
+
+      {classes.map(cls => (
+        <ClassBlock key={cls.id} cls={cls}
+          onDeleted={id => setClasses(prev => prev.filter(c => c.id!==id))} />
+      ))}
+
+      {/* Add class */}
+      <div style={{ background:'white', borderRadius:14, border:'2px dashed var(--border)', padding:'14px 16px', marginTop:8 }}>
+        {!addingCls ? (
+          <button className="btn-primary" onClick={() => setAddingCls(true)}>+ Add Class</button>
+        ) : (
+          <div>
+            <div className="section-label">New Class</div>
+            <div style={{ display:'flex', gap:8, flexWrap:'wrap', marginBottom:8 }}>
+              <input value={clsCode} onChange={e => setClsCode(e.target.value)} placeholder="Code (e.g. BIOL 505)"
+                style={{ width:140, fontSize:12, padding:'7px 10px', borderRadius:9, border:'1px solid var(--border)', fontFamily:'DM Sans,sans-serif' }} />
+              <input value={clsName} onChange={e => setClsName(e.target.value)} placeholder="Class name" autoFocus
+                onKeyDown={e => e.key==='Enter' && handleAddClass()}
+                style={{ flex:1, minWidth:200, fontSize:12, padding:'7px 10px', borderRadius:9, border:'1px solid var(--border)', fontFamily:'DM Sans,sans-serif' }} />
+            </div>
+            <div style={{ display:'flex', gap:8 }}>
+              <button className="btn-primary" style={{ padding:'7px 16px', fontSize:11 }} onClick={handleAddClass} disabled={!clsName.trim()}>Create</button>
+              <button className="btn-ghost"   style={{ padding:'7px 12px', fontSize:11 }} onClick={() => { setAddingCls(false); setClsName(''); setClsCode('') }}>Cancel</button>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   )
 }
