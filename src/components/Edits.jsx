@@ -5,6 +5,20 @@
 const EDIT_LOG = [
   {
     date: '2026-04-09',
+    summary: 'UX overhaul — Today timeline, Log analytics, nav restructure',
+    changes: [
+      'Today: live timeline with "you are here" marker at current time, tasks sorted overdue → now → upcoming → done',
+      'Today: current active task highlighted green, overdue float to top with red border',
+      'Today: location badge extracted from task text (e.g. Youngchild 316), day progress bar',
+      'Log: analytics dashboard — streak, avg/day, best day, category breakdown bars, 35-day heatmap',
+      'Log: day-of-week completions chart, tag filter on history view',
+      'Log + Notes merged into one tab with Stats / History / Notes sub-views',
+      'Nav: 11 tabs → 7 tabs — Routines/Scheduler/Recurring/Edits moved to Settings drawer',
+      'Settings drawer: slide-in panel (⚙️) with Recurring Tasks, Scheduler, Edits sections',
+    ]
+  },
+  {
+    date: '2026-04-09',
     summary: 'Recurring Tasks manager + date-scoped toggle state',
     changes: [
       'New Recurring tab — view, add, edit, delete recurring tasks per day of week',
