@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { DAILY_TODOS, MORNING_ROUTINE } from '../data/schedule.js'
+import { getDailyTodos, MORNING_ROUTINE } from '../data/schedule.js'
 
 const TAG_COLORS = {
   health:'#E07B2E', class:'#7C3AED', lab:'#059669', career:'#D97706',
@@ -178,7 +178,7 @@ export default function Today({ todos, weekState, syncToggle, commitments, appen
   useEffect(() => { const t = setInterval(() => setNow(nowMins()), 60000); return () => clearInterval(t) }, [])
 
   const dateKey = todayKey()
-  const templateTodos = (DAILY_TODOS[dateKey] || []).filter(t => !deleted.includes(t.id))
+  const templateTodos = getDailyTodos(dateKey).filter(t => !deleted.includes(t.id))
   const todayCommitments = (commitments||[]).filter(c => c.date===dateKey && !c.done)
   const isDone = id => !!(todos[id] || weekState[id])
 

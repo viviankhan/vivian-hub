@@ -2,11 +2,26 @@
 // ─────────────────────────────────────────────────────────────
 // THIS IS THE ONLY FILE CLAUDE EDITS FOR SCHEDULE CHANGES.
 // Never touch App.jsx or component files for schedule updates.
+//
+// WEEK_PLAN is now DYNAMIC — always today → today+6.
+// Tasks are keyed by day-of-week name so IDs stay stable
+// across weeks (no storage breakage).
+// One-off tasks (deadlines, appointments) go in Commitments.
 // ─────────────────────────────────────────────────────────────
 
+// ── date helpers ───────────────────────────────────────────────
+const DAY_NAMES   = ['sunday','monday','tuesday','wednesday','thursday','friday','saturday']
+const DAY_SHORT   = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat']
+const MONTH_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+
+function toDateStr(d) {
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
+}
+function toDayLabel(d) {
+  return `${DAY_SHORT[d.getDay()]} ${MONTH_SHORT[d.getMonth()]} ${d.getDate()}`
+}
+
 // ── FIXED DAILY BLOCKS (used by smart scheduler) ──────────────
-// These are immovable commitments. The scheduler will never
-// suggest slots that overlap with these.
 export const FIXED_BLOCKS = {
   monday: [
     { start: '08:00', end: '10:20', label: 'Yeast lab' },
@@ -80,174 +95,158 @@ export const FIXED_BLOCKS = {
   ],
 }
 
-const DAY_NAMES = ['sunday','monday','tuesday','wednesday','thursday','friday','saturday']
-
 export function getFixedBlocksForDate(date) {
   const dayName = DAY_NAMES[date.getDay()]
   return FIXED_BLOCKS[dayName] || []
 }
 
-// ── THIS WEEK PLAN ─────────────────────────────────────────────
-// carry: true = task will appear in next day if not done
-// These get updated by Claude when the week changes.
-export const WEEK_PLAN = [
-  {
-    date: '2026-03-30', dayLabel: 'Mon Mar 30',
-    tasks: [
-      { id:'mon-thesis',  text:'Submit honors thesis statement of intent', cat:'career', carry:false },
-      { id:'mon-email',   text:'Send honors conflict email to Ranger & Beth', cat:'career', carry:true },
-      { id:'mon-capstone',text:'Attend Capstone II first class — Steitz 202 @ 3:10 PM', cat:'class', carry:false },
-      { id:'mon-pcr',     text:'Set up and run PCR', cat:'lab', carry:false },
-      { id:'mon-reading', text:'Sheppard Ch. 3.1–3.3 (pp. 68–78) — Tropical Oceanography', cat:'class', carry:true },
-    ]
-  },
-  {
-    date: '2026-03-31', dayLabel: 'Tue Mar 31',
-    tasks: [
-      { id:'tue-gel',     text:'Run gel + image + purification (leave in B3 during class)', cat:'lab', carry:false },
-      { id:'tue-class',   text:'Ecological Energetics / Coral Structure & Anatomy — Youngchild 316 @ 10:25 AM', cat:'class', carry:false },
-      { id:'tue-reading', text:'Sheppard Ch. 2.0–2.1 (pp. 35–48) — Coral Structure & Anatomy', cat:'class', carry:true },
-      { id:'tue-ch4',     text:'Sheppard Ch. 4.1–4.9 (pp. 100–128) — Coral Structure cont.', cat:'class', carry:true },
-      { id:'tue-id',      text:'ID study: Sponges + Cnidaria (flashcard app)', cat:'class', carry:true },
-      { id:'tue-rose',    text:'Email Rose Theisen — schedule SE advisor meeting (graded, due May 1)', cat:'career', carry:true },
-    ]
-  },
-  {
-    date: '2026-04-01', dayLabel: 'Wed Apr 1',
-    tasks: [
-      { id:'wed-class',   text:'Coral Reef: Corals & Reef Builders — Youngchild 316 @ 9:50 AM', cat:'class', carry:false },
-      { id:'wed-reading', text:'Sheppard Ch. 2.2–2.8 (pp. 48–67) — Corals & Reef Builders', cat:'class', carry:true },
-      { id:'wed-id',      text:'ID study: Worms + Mollusca', cat:'class', carry:true },
-    ]
-  },
-  {
-    date: '2026-04-02', dayLabel: 'Thu Apr 2',
-    tasks: [
-      { id:'thu-ecol',    text:'Ecological Energetics — Youngchild 316 @ 10:25 AM', cat:'class', carry:false },
-      { id:'thu-crl',     text:'Coral Reef Lab — Youngchild 321 @ 1:00 PM', cat:'class', carry:false },
-      { id:'thu-reading', text:'Sheppard Ch. 1 (pp. 1–34) — Reef Building Past, Present & Future', cat:'class', carry:true },
-      { id:'thu-id',      text:'ID study: Arthropods + Echinoderms', cat:'class', carry:true },
-    ]
-  },
-  {
-    date: '2026-04-03', dayLabel: 'Fri Apr 3',
-    tasks: [
-      { id:'fri-class',   text:'Coral Reef: Reef Zonation & Primary Producers — Youngchild 316 @ 9:50 AM', cat:'class', carry:false },
-      { id:'fri-reading', text:'Sheppard Ch. 6.1–6.6 (pp. 167–180) — Reef Zonation & Primary Producers', cat:'class', carry:true },
-      { id:'fri-id',      text:'ID study: Corals pt. 1 — fire, gorgonians, branching', cat:'class', carry:true },
-    ]
-  },
-  {
-    date: '2026-04-04', dayLabel: 'Sat Apr 4',
-    tasks: [
-      { id:'sat-lab',     text:'Yeast lab 9 AM – 12 PM', cat:'lab', carry:false },
-      { id:'sat-id',      text:'ID study: Corals pt. 2 — brain, boulder, fleshy', cat:'class', carry:true },
-      { id:'sat-mcat',    text:'MCAT study session', cat:'career', carry:false },
-      { id:'sat-hair',    text:'Book hair appointment', cat:'personal', carry:true },
-    ]
-  },
-  {
-    date: '2026-04-05', dayLabel: 'Sun Apr 5',
-    tasks: [
-      { id:'sun-biofest', text:'BioFest survey due @ 11:59 PM — submit on Canvas', cat:'urgent', carry:false },
-      { id:'sun-id',      text:'ID study: Fish families — butterflies, angels, snappers', cat:'class', carry:true },
-      { id:'sun-plan',    text:'Plan the week ahead (Quiz 1 is Monday)', cat:'career', carry:false },
-    ]
-  },
-]
-
-// ── DAILY TODO SCHEDULES ───────────────────────────────────────
-// Maps YYYY-MM-DD → ordered list of checkable items for the day.
-// Claude only edits this object — never the Today component.
-export const DAILY_TODOS = {
-  '2026-03-31': [
-    { id:'breakfast',    label:'Breakfast at Commons', note:'Get there before 9 AM closes', tag:'health' },
-    { id:'tue-class',    label:'10:25 AM — Ecological Energetics / Coral Structure & Anatomy', note:'Youngchild 316 · leave by 10:10 AM', tag:'class' },
-    { id:'tue-gel',      label:'12:20 PM — Run gel + image', note:'Straight to lab after class', tag:'lab' },
-    { id:'purif-start',  label:'Start purification — leave in B3', note:'~3 hrs total · leave in B3 while at lunch', tag:'lab' },
-    { id:'tue-reading',  label:'~12:30 PM — Sheppard Ch. 2.0–2.1 (pp. 35–48)', note:'Coral Structure & Anatomy · during purification wait', tag:'class' },
-    { id:'mon-reading',  label:'~1:00 PM — Sheppard Ch. 3.1–3.3 (pp. 68–78)', note:'Tropical Oceanography · carried from Monday', tag:'carried' },
-    { id:'lunch',        label:'~1:10 PM — Lunch at Commons', note:'Walk over · full hour', tag:'health' },
-    { id:'purif-finish', label:'~2:10 PM — Back to bench, finish purification', note:'Walk back from Commons', tag:'lab' },
-    { id:'tue-rose',     label:'During lab — Email Rose Theisen re: SE advisor meeting', note:'Graded · due May 1', tag:'career' },
-    { id:'lab-pm',       label:'Afternoon yeast lab', note:'Continue until dinner', tag:'lab' },
-    { id:'dinner',       label:'4:30 PM — Dinner at Commons', note:'Leave lab 4:20 PM', tag:'health' },
-    { id:'walk',         label:'5:15 PM — 20 min walk', note:'Tuesday workout', tag:'fitness' },
-    { id:'tue-ch4',      label:'5:40 PM — Sheppard Ch. 4.1–4.9 (pp. 100–128)', note:'Coral Structure cont. · before Aidan call', tag:'class' },
-    { id:'aidan',        label:'7:00 PM — Call with Aidan', note:'Real rest. Ends by 9 PM.', tag:'personal' },
-    { id:'tue-id',       label:'9:00 PM — ID study: Sponges + Cnidaria', note:'Quiz 1 Apr 6 — 5 days away', tag:'class' },
-    { id:'log',          label:'9:20 PM — Research log', note:'3–5 sentences: gel results, purification, what comes next', tag:'lab' },
-    { id:'screens',      label:'9:35 PM — Screens off → wind down → sleep 10:30 PM', note:'Lay out Wednesday outfit + bag. Skincare PM.', tag:'sleep' },
+// ── RECURRING WEEKLY TASKS (by day name) ──────────────────────
+// These appear in This Week every week. IDs are stable (mon-X etc.)
+// so toggle state persists correctly across week rollovers.
+// Add one-off tasks via the Commitments panel.
+const RECURRING_TASKS = {
+  monday: [
+    { id:'mon-coral',    text:'Coral Reef class — Youngchild 316 @ 9:50 AM', cat:'class', carry:false },
+    { id:'mon-capstone', text:'Capstone II — Steitz 202 @ 3:10 PM', cat:'class', carry:false },
+    { id:'mon-lab',      text:'Yeast lab (full day around classes)', cat:'lab', carry:false },
   ],
+  tuesday: [
+    { id:'tue-ecol',     text:'Ecological Energetics — Youngchild 316 @ 10:25 AM', cat:'class', carry:false },
+    { id:'tue-lab',      text:'Yeast lab (full day around class)', cat:'lab', carry:false },
+  ],
+  wednesday: [
+    { id:'wed-coral',    text:'Coral Reef class — Youngchild 316 @ 9:50 AM', cat:'class', carry:false },
+    { id:'wed-lab',      text:'Yeast lab (full day around class)', cat:'lab', carry:false },
+  ],
+  thursday: [
+    { id:'thu-ecol',     text:'Ecological Energetics — Youngchild 316 @ 10:25 AM', cat:'class', carry:false },
+    { id:'thu-crl',      text:'Coral Reef Lab — Youngchild 321 @ 1:00 PM', cat:'class', carry:false },
+    { id:'thu-lab',      text:'Yeast lab (morning + evening blocks)', cat:'lab', carry:false },
+  ],
+  friday: [
+    { id:'fri-coral',    text:'Coral Reef class — Youngchild 316 @ 9:50 AM', cat:'class', carry:false },
+    { id:'fri-lab',      text:'Yeast lab (full day around class)', cat:'lab', carry:false },
+    { id:'fri-review',   text:'Weekly research log review', cat:'lab', carry:false },
+  ],
+  saturday: [
+    { id:'sat-lab',      text:'Yeast lab 9 AM – 12 PM', cat:'lab', carry:false },
+    { id:'sat-mcat',     text:'MCAT study session', cat:'career', carry:false },
+    { id:'sat-errands',  text:'Laundry + errands', cat:'personal', carry:false },
+  ],
+  sunday: [
+    { id:'sun-lab',      text:'Yeast lab (if needed, ~2 hrs)', cat:'lab', carry:false },
+    { id:'sun-plan',     text:'Plan the week ahead', cat:'career', carry:false },
+    { id:'sun-log',      text:'Weekly research log review', cat:'lab', carry:false },
+  ],
+}
 
-  '2026-04-01': [
+// ── WEEK PLAN — dynamic today → today+6 ───────────────────────
+function buildWeekPlan() {
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  return Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(today)
+    d.setDate(today.getDate() + i)
+    const dayName = DAY_NAMES[d.getDay()]
+    return {
+      date:     toDateStr(d),
+      dayLabel: toDayLabel(d),
+      tasks:    (RECURRING_TASKS[dayName] || []),
+    }
+  })
+}
+
+export const WEEK_PLAN = buildWeekPlan()
+
+// ── RECURRING DAILY TODOS (by day name) ───────────────────────
+// Hour-by-hour schedule shown on the Today tab.
+// Today.jsx calls getDailyTodos(dateKey) to get these.
+const DAILY_TODO_TEMPLATES = {
+  monday: [
+    { id:'mon-lab-am',   label:'8:00 AM — Yeast lab', note:'At bench by 8. Lab runs until class.', tag:'lab' },
+    { id:'mon-coral',    label:'9:50 AM — Coral Reef class', note:'Youngchild 316 · leave lab by 9:40 AM', tag:'class' },
+    { id:'mon-lab-mid',  label:'11:00 AM — Back to yeast lab', note:'Until lunch walk', tag:'lab' },
+    { id:'mon-lunch',    label:'11:50 AM — Walk to Commons, lunch', note:'~10 min walk', tag:'health' },
+    { id:'mon-lab-pm',   label:'12:55 PM — Yeast lab (afternoon block)', note:'Until Capstone', tag:'lab' },
+    { id:'mon-capstone', label:'3:10 PM — Capstone II', note:'Steitz 202 · leave lab by 3:00 PM', tag:'class' },
+    { id:'mon-dinner',   label:'4:30 PM — Dinner at Commons', note:'Leave lab 4:20 PM', tag:'health' },
+    { id:'mon-aidan',    label:'7:00 PM — Call with Aidan', note:'Real rest. Ends by 9 PM.', tag:'personal' },
+    { id:'mon-log',      label:'9:20 PM — Research log', note:'3–5 sentences: what you ran, what comes next', tag:'lab' },
+    { id:'mon-screens',  label:'9:35 PM — Screens off → wind down → sleep 10:30 PM', note:'Lay out Tuesday outfit + bag. Skincare PM.', tag:'sleep' },
+  ],
+  tuesday: [
+    { id:'tue-lab-am',   label:'8:00 AM — Yeast lab', note:'At bench by 8.', tag:'lab' },
+    { id:'tue-ecol',     label:'10:25 AM — Ecological Energetics', note:'Youngchild 316 · leave lab by 10:15 AM', tag:'class' },
+    { id:'tue-lunch',    label:'12:20 PM — Walk to Commons, lunch', note:'~10 min walk', tag:'health' },
+    { id:'tue-lab-pm',   label:'1:00 PM — Yeast lab (afternoon)', note:'Continue until dinner', tag:'lab' },
+    { id:'tue-dinner',   label:'4:30 PM — Dinner at Commons', note:'Leave lab 4:20 PM', tag:'health' },
+    { id:'tue-walk',     label:'5:15 PM — 20 min walk', note:'Tuesday workout', tag:'fitness' },
+    { id:'tue-aidan',    label:'7:00 PM — Call with Aidan', note:'Real rest. Ends by 9 PM.', tag:'personal' },
+    { id:'tue-log',      label:'9:20 PM — Research log', note:'3–5 sentences.', tag:'lab' },
+    { id:'tue-screens',  label:'9:35 PM — Screens off → wind down → sleep 10:30 PM', note:'Lay out Wednesday outfit + bag. Skincare PM.', tag:'sleep' },
+  ],
+  wednesday: [
     { id:'wed-lab-am',   label:'8:00 AM — Yeast lab', note:'At bench by 8. Lab runs until class.', tag:'lab' },
-    { id:'wed-class',    label:'9:50 AM — Coral Reef: Corals & Reef Builders', note:'Youngchild 316 · leave lab by 9:40 AM', tag:'class' },
+    { id:'wed-coral',    label:'9:50 AM — Coral Reef class', note:'Youngchild 316 · leave lab by 9:40 AM', tag:'class' },
     { id:'wed-lab-mid',  label:'11:00 AM — Back to yeast lab', note:'~50 min before lunch walk', tag:'lab' },
-    { id:'wed-lunch',    label:'11:50 AM — Walk to Commons, lunch', note:'~10 min walk · eat by 12', tag:'health' },
-    { id:'wed-lab-pm',   label:'12:55 PM — Yeast lab (afternoon block)', note:'10 min walk back from Commons', tag:'lab' },
+    { id:'wed-lunch',    label:'11:50 AM — Walk to Commons, lunch', note:'~10 min walk', tag:'health' },
+    { id:'wed-lab-pm',   label:'12:55 PM — Yeast lab (afternoon block)', note:'Until dinner', tag:'lab' },
     { id:'wed-dinner',   label:'4:30 PM — Dinner at Commons', note:'Leave lab 4:20 PM', tag:'health' },
-    { id:'wed-rose',     label:'Email Rose Theisen re: SE advisor meeting', note:'Graded · due May 1 · do this during lab downtime', tag:'career' },
-    { id:'wed-reading',  label:'~5:15 PM — Sheppard Ch. 2.2–2.8 (pp. 48–67)', note:'Corals & Reef Builders · before Aidan call', tag:'class' },
     { id:'wed-aidan',    label:'7:00 PM — Call with Aidan', note:'Real rest. Ends by 9 PM.', tag:'personal' },
-    { id:'wed-id',       label:'9:00 PM — ID study: Worms + Mollusca', note:'Quiz 1 Apr 6 — 4 days away', tag:'class' },
     { id:'wed-log',      label:'9:20 PM — Research log', note:'3–5 sentences. What did you run today?', tag:'lab' },
     { id:'wed-screens',  label:'9:35 PM — Screens off → wind down → sleep 10:30 PM', note:'Lay out Thursday outfit + bag. Skincare PM.', tag:'sleep' },
   ],
-
-  '2026-04-02': [
-    { id:'thu-lab-am',   label:'8:00 AM — Yeast lab', note:'At bench by 8. Lab runs until class.', tag:'lab' },
+  thursday: [
+    { id:'thu-lab-am',   label:'8:00 AM — Yeast lab', note:'At bench by 8.', tag:'lab' },
     { id:'thu-ecol',     label:'10:25 AM — Ecological Energetics', note:'Youngchild 316 · leave lab by 10:15 AM', tag:'class' },
     { id:'thu-lunch',    label:'12:10 PM — Walk to Commons, lunch', note:'~10 min walk from Youngchild', tag:'health' },
     { id:'thu-crl',      label:'1:00 PM — Coral Reef Lab', note:'Youngchild 321 · 10 min walk from Commons', tag:'class' },
     { id:'thu-dinner',   label:'4:30 PM — Dinner at Commons', note:'Leave after lab', tag:'health' },
     { id:'thu-lab-pm',   label:'5:15 PM — Yeast lab (~1.5 hrs)', note:'Back to bench after dinner', tag:'lab' },
-    { id:'thu-reading',  label:'~7:00 PM — Sheppard Ch. 1 (pp. 1–34)', note:'Reef Building Past, Present & Future · after lab', tag:'class' },
     { id:'thu-aidan',    label:'7:00 PM — Call with Aidan', note:'Real rest. Ends by 9 PM.', tag:'personal' },
-    { id:'thu-id',       label:'9:00 PM — ID study: Arthropods + Echinoderms', note:'Quiz 1 Apr 6 — 3 days away', tag:'class' },
     { id:'thu-log',      label:'9:20 PM — Research log', note:'3–5 sentences.', tag:'lab' },
     { id:'thu-screens',  label:'9:35 PM — Screens off → wind down → sleep 10:30 PM', note:'Lay out Friday outfit + bag. Skincare PM.', tag:'sleep' },
   ],
-
-  '2026-04-03': [
+  friday: [
     { id:'fri-lab-am',   label:'8:00 AM — Yeast lab', note:'At bench by 8.', tag:'lab' },
-    { id:'fri-class',    label:'9:50 AM — Coral Reef: Reef Zonation & Primary Producers', note:'Youngchild 316 · leave lab by 9:40 AM', tag:'class' },
+    { id:'fri-coral',    label:'9:50 AM — Coral Reef class', note:'Youngchild 316 · leave lab by 9:40 AM', tag:'class' },
     { id:'fri-lab-mid',  label:'11:00 AM — Back to yeast lab', note:'~50 min block', tag:'lab' },
     { id:'fri-lunch',    label:'11:50 AM — Walk to Commons, lunch', note:'~10 min walk', tag:'health' },
     { id:'fri-lab-pm',   label:'12:55 PM — Yeast lab (afternoon block)', note:'Until dinner', tag:'lab' },
     { id:'fri-dinner',   label:'4:30 PM — Dinner at Commons', note:'Leave lab 4:20 PM', tag:'health' },
-    { id:'fri-reading',  label:'~5:15 PM — Sheppard Ch. 6.1–6.6 (pp. 167–180)', note:'Reef Zonation & Primary Producers', tag:'class' },
     { id:'fri-aidan',    label:'7:00 PM — Call with Aidan', note:'Real rest. Ends by 9 PM.', tag:'personal' },
-    { id:'fri-id',       label:'9:00 PM — ID study: Corals pt. 1 — fire, gorgonians, branching', note:'Quiz 1 Apr 6 — 2 days away. Get these solid.', tag:'class' },
-    { id:'fri-log',      label:'9:20 PM — Weekly research log review', note:'What worked this week? What\'s next?', tag:'lab' },
+    { id:'fri-log',      label:"9:20 PM — Weekly research log review", note:"What worked this week? What's next?", tag:'lab' },
     { id:'fri-screens',  label:'9:35 PM — Screens off → wind down → sleep 10:30 PM', note:'Lay out Saturday outfit + bag. Skincare PM.', tag:'sleep' },
   ],
-
-  '2026-04-04': [
+  saturday: [
     { id:'sat-lab',      label:'9:00 AM — Yeast lab (~3 hrs)', note:'Commons opens 9 AM for breakfast first', tag:'lab' },
     { id:'sat-lunch',    label:'12:00 PM — Lunch at Commons', note:'Closes 2 PM on weekends', tag:'health' },
     { id:'sat-errands',  label:'1:00 PM — Laundry + errands', note:'Hair appointment if booked', tag:'health' },
-    { id:'sat-id',       label:'~2:00 PM — ID study: Corals pt. 2 — brain, boulder, fleshy', note:'Quiz 1 Apr 6 — tomorrow. All coral groups.', tag:'class' },
     { id:'sat-mcat',     label:'~3:00 PM — MCAT study session', note:'One focused content block', tag:'career' },
-    { id:'sat-hair',     label:'Book hair appointment if not done', note:'Every 8–10 weeks', tag:'personal' },
     { id:'sat-dinner',   label:'4:30 PM — Dinner at Commons', note:'Closes 7:30 PM on weekends', tag:'health' },
     { id:'sat-aidan',    label:'7:00 PM — Call with Aidan', note:'Real rest. Ends by 9 PM.', tag:'personal' },
     { id:'sat-log',      label:'9:00 PM — Research log', note:'Weekend summary.', tag:'lab' },
     { id:'sat-screens',  label:'9:35 PM — Screens off → wind down → sleep 10:30 PM', note:'Lay out Sunday outfit. Skincare PM.', tag:'sleep' },
   ],
-
-  '2026-04-05': [
-    { id:'sun-breakfast',label:'Commons opens 9 AM — breakfast first', note:'Then lab', tag:'health' },
-    { id:'sun-lab',      label:'10:00 AM — Yeast lab (if needed, ~2 hrs)', note:'Optional but Quiz 1 is tomorrow — ID study priority', tag:'lab' },
+  sunday: [
+    { id:'sun-breakfast',label:'9:00 AM — Breakfast at Commons', note:'Then lab if needed', tag:'health' },
+    { id:'sun-lab',      label:'10:00 AM — Yeast lab (if needed, ~2 hrs)', note:'Optional', tag:'lab' },
     { id:'sun-lunch',    label:'12:00 PM — Lunch at Commons', note:'Closes 2 PM', tag:'health' },
-    { id:'sun-id',       label:'~1:00 PM — ID study: Fish families — butterflies, angels, snappers', note:'Quiz 1 TOMORROW Apr 6 @ 9:50 AM. Drill everything.', tag:'class' },
-    { id:'sun-plan',     label:'~3:00 PM — Plan the week ahead', note:'Quiz 1 Mon, laptop for Dept Assessment Mon, Quiz 2 next Mon', tag:'career' },
-    { id:'sun-biofest',  label:'BioFest survey due @ 11:59 PM tonight', note:'Submit on Canvas — do NOT miss this', tag:'urgent' },
+    { id:'sun-plan',     label:'~3:00 PM — Plan the week ahead', note:'Review upcoming deadlines + calendar', tag:'career' },
     { id:'sun-dinner',   label:'4:30 PM — Dinner at Commons', note:'Closes 7:30 PM', tag:'health' },
-    { id:'sun-aidan',    label:'7:00 PM — Call with Aidan', note:'Keep it shorter tonight — big day tomorrow.', tag:'personal' },
-    { id:'sun-log',      label:'9:00 PM — Research log', note:'What did you accomplish this week? What\'s next?', tag:'lab' },
+    { id:'sun-aidan',    label:"7:00 PM — Call with Aidan", note:"Keep it shorter tonight — big day tomorrow.", tag:'personal' },
+    { id:'sun-log',      label:'9:00 PM — Research log', note:"What did you accomplish this week? What's next?", tag:'lab' },
     { id:'sun-screens',  label:'9:35 PM — Screens off → wind down → sleep 10:30 PM', note:'Lay out Monday outfit + bag. Skincare PM.', tag:'sleep' },
   ],
+}
+
+// ── getDailyTodos — call this from Today.jsx ───────────────────
+// Usage: getDailyTodos('2026-04-09') → array of todo items for that day
+export function getDailyTodos(dateStr) {
+  const [year, month, day] = dateStr.split('-').map(Number)
+  const d = new Date(year, month - 1, day)
+  const dayName = DAY_NAMES[d.getDay()]
+  return DAILY_TODO_TEMPLATES[dayName] || []
 }
 
 // ── CALENDAR EVENTS ────────────────────────────────────────────
