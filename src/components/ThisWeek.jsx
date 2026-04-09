@@ -45,7 +45,10 @@ function TaskRow({ id, text, cat, done, carried, carriedFrom, onToggle }) {
 export default function ThisWeek({ todos, weekState, syncToggle, commitments }) {
   const today = todayStr()
   const todayIdx = WEEK_PLAN.findIndex(d => d.date === today)
-  const isDone = (id) => !!(todos[id] || weekState[id])
+  // Template tasks scoped by date; commitments use their UUID directly
+  const isDone = (id, date, isCommitment) => isCommitment
+    ? !!(todos[id] || weekState[id])
+    : !!(todos[date+'_'+id] || weekState[date+'_'+id])
 
   // Index commitments by date for quick lookup
   const commitsByDate = {}
@@ -66,12 +69,12 @@ export default function ThisWeek({ todos, weekState, syncToggle, commitments }) 
           .sort((a, b) => (a.time || '99').localeCompare(b.time || '99'))
 
         const carriedFromPrev = i > 0
-          ? WEEK_PLAN[i-1].tasks.filter(t => t.carry && !isDone(t.id))
+          ? WEEK_PLAN[i-1].tasks.filter(t => t.carry && !isDone(t.id, WEEK_PLAN[i-1].date, false))
           : []
 
         const total = day.tasks.length + carriedFromPrev.length + dayCommitments.length
-        const done  = day.tasks.filter(t => isDone(t.id)).length
-          + dayCommitments.filter(c => isDone(c.id)).length
+        const done  = day.tasks.filter(t => isDone(t.id, day.date, false)).length
+          + dayCommitments.filter(c => isDone(c.id, day.date, true)).length
 
         return (
           <div key={day.date} className={`week-day-card ${isToday ? 'today' : ''}`}>
@@ -88,22 +91,22 @@ export default function ThisWeek({ todos, weekState, syncToggle, commitments }) 
               {dayCommitments.map(c => (
                 <TaskRow key={c.id} id={c.id}
                   text={c.time ? `${fmt12(c.time)} — ${c.text}` : c.text}
-                  cat={c.cat} done={isDone(c.id)}
-                  onToggle={() => syncToggle(c.id, c.text, c.cat)} />
+                  cat={c.cat} done={isDone(c.id, day.date, true)}
+                  onToggle={() => syncToggle(c.id, c.text, c.cat, null)} />
               ))}
 
               {/* Carried from previous day */}
               {carriedFromPrev.map(t => (
                 <TaskRow key={'carry-'+t.id} id={t.id} text={t.text} cat={t.cat}
-                  done={isDone(t.id)} carried carriedFrom={WEEK_PLAN[i-1].dayLabel}
-                  onToggle={() => syncToggle(t.id, t.text, t.cat)} />
+                  done={isDone(t.id, day.date, false)} carried carriedFrom={WEEK_PLAN[i-1].dayLabel}
+                  onToggle={() => syncToggle(t.id, t.text, t.cat, day.date)} />
               ))}
 
               {/* Template tasks */}
               {day.tasks.map(t => (
                 <TaskRow key={t.id} id={t.id} text={t.text} cat={t.cat}
-                  done={isDone(t.id)}
-                  onToggle={() => syncToggle(t.id, t.text, t.cat)} />
+                  done={isDone(t.id, day.date, false)}
+                  onToggle={() => syncToggle(t.id, t.text, t.cat, day.date)} />
               ))}
             </div>
           </div>

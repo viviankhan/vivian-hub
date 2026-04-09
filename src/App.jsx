@@ -159,13 +159,16 @@ export default function App() {
 
   // ── UNIFIED TOGGLE ─────────────────────────────────────────
   // Single function that syncs Today, This Week, Commitments, and Log.
-  // Works for both template schedule items and commitments.
-  const syncToggle = useCallback(async (id, label, tag) => {
+  // date param: pass the calendar date (YYYY-MM-DD) for template tasks so
+  // their done-state is scoped per day (prevents last week's checks bleeding in).
+  // Omit date (or pass null) for commitments — they use their UUID directly.
+  const syncToggle = useCallback(async (id, label, tag, date) => {
+    const storageKey = date ? `${date}_${id}` : id
     // Determine current state across all sources
     const isCommitment = commitments.some(c => c.id === id)
     const currentDone = isCommitment
       ? commitments.find(c => c.id === id)?.done
-      : !!(todos[id] || weekState[id])
+      : !!(todos[storageKey] || weekState[storageKey])
     const nowDone = !currentDone
 
     // Update commitments if this is a commitment
@@ -178,8 +181,8 @@ export default function App() {
     }
 
     // Always update todos + weekState (commitments also tracked here for cross-tab sync)
-    const nextTodos = { ...todos,     [id]: nowDone }
-    const nextWeek  = { ...weekState, [id]: nowDone }
+    const nextTodos = { ...todos,     [storageKey]: nowDone }
+    const nextWeek  = { ...weekState, [storageKey]: nowDone }
     setTodos_(nextTodos)
     setWeekState_(nextWeek)
     await Promise.all([setTodos(nextTodos), setWeekState(nextWeek)])

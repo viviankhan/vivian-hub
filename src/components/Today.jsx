@@ -180,7 +180,10 @@ export default function Today({ todos, weekState, syncToggle, commitments, appen
   const dateKey = todayKey()
   const templateTodos = getDailyTodos(dateKey).filter(t => !deleted.includes(t.id))
   const todayCommitments = (commitments||[]).filter(c => c.date===dateKey && !c.done)
-  const isDone = id => !!(todos[id] || weekState[id])
+  // Commitments use their UUID directly; template tasks are scoped by date
+  const isDone = (id, isCommitment) => isCommitment
+    ? !!(todos[id] || weekState[id])
+    : !!(todos[dateKey+'_'+id] || weekState[dateKey+'_'+id])
 
   const allTasks = [...todayCommitments.map(c => ({
     id:c.id, label: c.time?`${fmt12(c.time)} — ${c.text}`:c.text,
@@ -188,7 +191,7 @@ export default function Today({ todos, weekState, syncToggle, commitments, appen
     tag:c.cat, isCommitment:true
   })), ...templateTodos, ...customTasks]
 
-  const doneCount = allTasks.filter(t => isDone(t.id)).length
+  const doneCount = allTasks.filter(t => isDone(t.id, t.isCommitment)).length
 
   const handleAdd = (task) => {
     const next = [...customTasks, task]
@@ -255,13 +258,13 @@ export default function Today({ todos, weekState, syncToggle, commitments, appen
           No schedule for {dateKey} yet.
         </div>
       ) : allTasks.filter(t => !deleted.includes(t.id)).map(t => {
-        const done = isDone(t.id)
+        const done = isDone(t.id, t.isCommitment)
         const mins = parseTimeMins(t.label)
         const overdue = !done && mins!==null && now>mins+10
         return (
           <TaskRow key={t.id} id={t.id} label={t.label} note={t.note}
             tag={t.tag} done={done} overdue={overdue}
-            onToggle={() => syncToggle(t.id, t.label, t.tag)}
+            onToggle={() => syncToggle(t.id, t.label, t.tag, t.isCommitment ? null : dateKey)}
             onManage={() => setManaging(t)} />
         )
       })}
