@@ -243,26 +243,36 @@ export default function RecurringTasksManager({ recurringTasks, updateRecurringT
   const [confirmReset, setConfirmReset] = useState(false)
 
   // Build flat tasks array — migrate legacy format if needed
+  // Deduplicates tasks with the same text+type into one entry with merged days
   const flatData = useMemo(() => {
-    if (!recurringTasks) {
-      // Build from defaults
-      const tasks = []
-      DAYS.forEach(day => {
-        ;(defaultWeekTasks[day]||[]).forEach(t => tasks.push({ ...t, type:'week',  days:[day], startDate:null, endDate:null }))
-        ;(defaultDailyTodos[day]||[]).forEach(t => tasks.push({ ...t, type:'today', days:[day], startDate:null, endDate:null }))
-      })
-      return tasks
-    }
-    if (Array.isArray(recurringTasks.tasks)) return recurringTasks.tasks
-    // Migrate legacy per-day format
-    const tasks = []
-    const wt = recurringTasks.weekTasks  || {}
-    const dt = recurringTasks.dailyTodos || {}
+    if (Array.isArray(recurringTasks?.tasks)) return recurringTasks.tasks
+
+    // Build raw list from defaults or legacy per-day format
+    const raw = []
+    const wt = recurringTasks?.weekTasks  || defaultWeekTasks
+    const dt = recurringTasks?.dailyTodos || defaultDailyTodos
     DAYS.forEach(day => {
-      ;(wt[day]||[]).forEach(t => tasks.push({ ...t, type:'week',  days:[day], startDate:null, endDate:null }))
-      ;(dt[day]||[]).forEach(t => tasks.push({ ...t, type:'today', days:[day], startDate:null, endDate:null }))
+      ;(wt[day]||[]).forEach(t => raw.push({ ...t, type:'week',  days:[day], startDate:null, endDate:null }))
+      ;(dt[day]||[]).forEach(t => raw.push({ ...t, type:'today', days:[day], startDate:null, endDate:null }))
     })
-    return tasks
+
+    // Deduplicate: group by (text|label) + type + cat/tag → merge days arrays
+    const map = new Map()
+    raw.forEach(task => {
+      const key = `${task.text||task.label}||${task.type}||${task.cat||task.tag}`
+      if (map.has(key)) {
+        const existing = map.get(key)
+        const merged = [...new Set([...existing.days, ...task.days])]
+        map.set(key, { ...existing, days: merged })
+      } else {
+        map.set(key, { ...task })
+      }
+    })
+    // Sort days within each task to canonical order
+    const result = Array.from(map.values()).map(t => ({
+      ...t, days: DAYS.filter(d => t.days.includes(d))
+    }))
+    return result
   }, [recurringTasks])
 
   // Save helpers
