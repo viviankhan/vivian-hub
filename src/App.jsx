@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
-import { isUsingSupabase, getTodos, setTodos, getWeekState, setWeekState, getLog, setLog, getNotes, setNotes, getFcProgress, setFcProgress, getFcStudied, setFcStudied, getScheduledTasks, setScheduledTasks, dbGet, dbSet } from './lib/storage.js'
-import { FIXED_BLOCKS } from './data/schedule.js'
+import { isUsingSupabase, getTodos, setTodos, getWeekState, setWeekState, getLog, setLog, getNotes, setNotes, getFcProgress, setFcProgress, getFcStudied, setFcStudied, getScheduledTasks, setScheduledTasks, getRecurringTasks, setRecurringTasks, dbGet, dbSet } from './lib/storage.js'
+import { FIXED_BLOCKS, DEFAULT_RECURRING_TASKS, DEFAULT_DAILY_TODOS, buildWeekPlanFromTasks } from './data/schedule.js'
 
 import Today from './components/Today.jsx'
 import ThisWeek from './components/ThisWeek.jsx'
@@ -13,6 +13,7 @@ import Notes from './components/Notes.jsx'
 import Log from './components/Log.jsx'
 import Info from './components/Info.jsx'
 import Edits from './components/Edits.jsx'
+import RecurringTasksManager from './components/RecurringTasksManager.jsx'
 
 const TABS = [
   { id:'today',       label:'Today'       },
@@ -25,6 +26,7 @@ const TABS = [
   { id:'notes',       label:'Notes'       },
   { id:'log',         label:'Log'         },
   { id:'info',        label:'Info'        },
+  { id:'recurring',   label:'Recurring'   },
   { id:'edits',       label:'Edits'       },
 ]
 
@@ -34,23 +36,6 @@ function todayStr() {
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
 }
 
-// Check if a commitment's date falls within the current week plan dates
-function getWeekDates() {
-  const today = new Date()
-  const dates = []
-  // Get Mon-Sun of current week
-  const day = today.getDay()
-  const monday = new Date(today)
-  monday.setDate(today.getDate() - (day === 0 ? 6 : day - 1))
-  for (let i = 0; i < 7; i++) {
-    const d = new Date(monday)
-    d.setDate(monday.getDate() + i)
-    dates.push(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`)
-  }
-  return dates
-}
-
-// Check for time overlap with fixed blocks
 function checkOverlap(date, time, prepMin, fixedBlocks) {
   if (!date || !time) return null
   const dayName = ['sunday','monday','tuesday','wednesday','thursday','friday','saturday'][new Date(date+'T12:00:00').getDay()]
@@ -58,7 +43,7 @@ function checkOverlap(date, time, prepMin, fixedBlocks) {
   const [h, m] = time.split(':').map(Number)
   const startMin = h * 60 + m
   const prepStart = prepMin ? startMin - prepMin : startMin
-  const endMin = startMin + 60 // assume 1hr commitment
+  const endMin = startMin + 60
 
   for (const block of blocks) {
     const [bh, bm] = block.start.split(':').map(Number)
@@ -76,43 +61,57 @@ export default function App() {
   const [tab, setTab] = useState('today')
 
   // ── State ──────────────────────────────────────────────────
-  const [todos,       setTodos_]       = useState({})
-  const [weekState,   setWeekState_]   = useState({})
-  const [log,         setLog_]         = useState([])
-  const [notes,       setNotes_]       = useState('')
-  const [fcProgress,  setFcProgress_]  = useState({})
-  const [fcStudied,   setFcStudied_]   = useState({})
-  const [scheduled,   setScheduled_]   = useState([])
-  const [commitments, setCommitments_] = useState([])
-  const [loading,     setLoading]      = useState(true)
+  const [todos,          setTodos_]          = useState({})
+  const [weekState,      setWeekState_]      = useState({})
+  const [log,            setLog_]            = useState([])
+  const [notes,          setNotes_]          = useState('')
+  const [fcProgress,     setFcProgress_]     = useState({})
+  const [fcStudied,      setFcStudied_]      = useState({})
+  const [scheduled,      setScheduled_]      = useState([])
+  const [commitments,    setCommitments_]    = useState([])
+  const [recurringTasks, setRecurringTasks_] = useState(null) // null = not yet loaded
+  const [loading,        setLoading]         = useState(true)
 
   useEffect(() => {
     async function load() {
-      const [t, w, l, n, fcp, fcs, sch, com] = await Promise.all([
+      const [t, w, l, n, fcp, fcs, sch, com, rt] = await Promise.all([
         getTodos(), getWeekState(), getLog(), getNotes(),
         getFcProgress(), getFcStudied(), getScheduledTasks(),
         dbGet('commitments').then(v => v ?? []),
+        getRecurringTasks(),
       ])
       setTodos_(t); setWeekState_(w); setLog_(l); setNotes_(n)
       setFcProgress_(fcp); setFcStudied_(fcs); setScheduled_(sch)
       setCommitments_(com)
+      setRecurringTasks_(rt) // null means use defaults
       setLoading(false)
     }
     load()
   }, [])
 
+  // ── Derived schedule data ──────────────────────────────────
+  // Use stored recurring tasks if available, otherwise fall back to defaults
+  const activeWeekTasks  = recurringTasks?.weekTasks  ?? DEFAULT_RECURRING_TASKS
+  const activeDailyTodos = recurringTasks?.dailyTodos ?? DEFAULT_DAILY_TODOS
+  const weekPlan = buildWeekPlanFromTasks(activeWeekTasks)
+
   // ── Persist helpers ────────────────────────────────────────
-  const updateTodos     = useCallback(async (v) => { setTodos_(v);      await setTodos(v)     }, [])
-  const updateWeekState = useCallback(async (v) => { setWeekState_(v);  await setWeekState(v) }, [])
-  const updateNotes     = useCallback(async (v) => { setNotes_(v);      await setNotes(v)     }, [])
+  const updateTodos      = useCallback(async (v) => { setTodos_(v);      await setTodos(v)      }, [])
+  const updateWeekState  = useCallback(async (v) => { setWeekState_(v);  await setWeekState(v)  }, [])
+  const updateNotes      = useCallback(async (v) => { setNotes_(v);      await setNotes(v)      }, [])
   const updateFcProgress = useCallback(async (v) => { setFcProgress_(v); await setFcProgress(v) }, [])
   const updateFcStudied  = useCallback(async (v) => { setFcStudied_(v);  await setFcStudied(v)  }, [])
+
+  const updateRecurringTasks = useCallback(async (v) => {
+    setRecurringTasks_(v)
+    await setRecurringTasks(v)
+  }, [])
 
   const appendLog = useCallback(async (entry) => {
     const newEntry = { ...entry, ts: new Date().toISOString() }
     setLog_(prev => {
       const next = [...prev, newEntry]
-      setLog(next)  // fire-and-forget outside the render cycle is fine here
+      setLog(next)
       return next
     })
   }, [])
@@ -128,14 +127,13 @@ export default function App() {
   }, [])
 
   const addCommitment = useCallback(async (c) => {
-    // Check for overlap with fixed schedule
     const overlap = checkOverlap(c.date, c.time, c.prepMin, FIXED_BLOCKS)
     setCommitments_(prev => {
       const next = [c, ...prev]
       dbSet('commitments', next)
       return next
     })
-    return overlap // return overlap warning so UI can show it
+    return overlap
   }, [])
 
   const updateCommitment = useCallback(async (id, changes) => {
@@ -152,26 +150,19 @@ export default function App() {
       dbSet('commitments', next)
       return next
     })
-    // Also uncheck from todos/weekState
     setTodos_(prev => { const n = { ...prev }; delete n[id]; setTodos(n); return n })
     setWeekState_(prev => { const n = { ...prev }; delete n[id]; setWeekState(n); return n })
   }, [])
 
   // ── UNIFIED TOGGLE ─────────────────────────────────────────
-  // Single function that syncs Today, This Week, Commitments, and Log.
-  // date param: pass the calendar date (YYYY-MM-DD) for template tasks so
-  // their done-state is scoped per day (prevents last week's checks bleeding in).
-  // Omit date (or pass null) for commitments — they use their UUID directly.
   const syncToggle = useCallback(async (id, label, tag, date) => {
     const storageKey = date ? `${date}_${id}` : id
-    // Determine current state across all sources
     const isCommitment = commitments.some(c => c.id === id)
     const currentDone = isCommitment
       ? commitments.find(c => c.id === id)?.done
       : !!(todos[storageKey] || weekState[storageKey])
     const nowDone = !currentDone
 
-    // Update commitments if this is a commitment
     if (isCommitment) {
       setCommitments_(prev => {
         const next = prev.map(c => c.id === id ? { ...c, done: nowDone } : c)
@@ -180,14 +171,12 @@ export default function App() {
       })
     }
 
-    // Always update todos + weekState (commitments also tracked here for cross-tab sync)
     const nextTodos = { ...todos,     [storageKey]: nowDone }
     const nextWeek  = { ...weekState, [storageKey]: nowDone }
     setTodos_(nextTodos)
     setWeekState_(nextWeek)
     await Promise.all([setTodos(nextTodos), setWeekState(nextWeek)])
 
-    // Log on check-off only
     if (nowDone) {
       const d = new Date()
       const dateKey   = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
@@ -249,8 +238,8 @@ export default function App() {
       </header>
 
       <main className="content">
-        {tab === 'today'       && <Today       {...sharedProps} appendLog={appendLog} />}
-        {tab === 'week'        && <ThisWeek    {...sharedProps} />}
+        {tab === 'today'       && <Today       {...sharedProps} appendLog={appendLog} weekPlan={weekPlan} dailyTodos={activeDailyTodos} />}
+        {tab === 'week'        && <ThisWeek    {...sharedProps} weekPlan={weekPlan} />}
         {tab === 'commitments' && <Commitments {...sharedProps} />}
         {tab === 'calendar'    && <Calendar    {...sharedProps} />}
         {tab === 'study'       && <Study       {...sharedProps} />}
@@ -259,6 +248,11 @@ export default function App() {
         {tab === 'notes'       && <Notes notes={notes} updateNotes={updateNotes} />}
         {tab === 'log'         && <Log log={log} />}
         {tab === 'info'        && <Info />}
+        {tab === 'recurring'   && <RecurringTasksManager
+                                    recurringTasks={recurringTasks}
+                                    updateRecurringTasks={updateRecurringTasks}
+                                    defaultWeekTasks={DEFAULT_RECURRING_TASKS}
+                                    defaultDailyTodos={DEFAULT_DAILY_TODOS} />}
         {tab === 'edits'       && <Edits />}
       </main>
     </div>

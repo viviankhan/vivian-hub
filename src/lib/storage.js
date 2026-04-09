@@ -199,3 +199,7 @@ export async function deleteStudyFile(id, weekId, storagePath) {
   const all = (await lsGet('files_'+weekId)) ?? []
   await lsSet('files_'+weekId, all.filter(f => f.id !== id))
 }
+
+// ── Recurring Tasks (editable weekly schedule templates) ───────
+export const getRecurringTasks = () => dbGet('recurring_tasks').then(v => v ?? null)
+export const setRecurringTasks = v  => dbSet('recurring_tasks', v)

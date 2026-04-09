@@ -4,6 +4,18 @@
 
 const EDIT_LOG = [
   {
+    date: '2026-04-09',
+    summary: 'Recurring Tasks manager + date-scoped toggle state',
+    changes: [
+      'New Recurring tab — view, add, edit, delete recurring tasks per day of week',
+      'Separate panels for Week Panel tasks (brief summaries) and Today Schedule items (hourly)',
+      'Changes save to cloud immediately; Reset to defaults button to restore originals',
+      'Task done-state now scoped by date (2026-04-09_thu-lab) — no more cross-week bleed',
+      'WEEK_PLAN is now dynamic (today → today+6) — week view never goes blank again',
+      'getDailyTodos now accepts live override from DB instead of only reading schedule.js',
+    ]
+  },
+  {
     date: '2026-03-30',
     summary: 'Initial hub created (HTML file)',
     changes: [

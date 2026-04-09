@@ -1,4 +1,3 @@
-import { WEEK_PLAN } from '../data/schedule.js'
 
 const CAT_COLORS = {
   lab:     { dot:'#059669', bg:'#ECFDF5', text:'#065F46' },
@@ -42,7 +41,7 @@ function TaskRow({ id, text, cat, done, carried, carriedFrom, onToggle }) {
   )
 }
 
-export default function ThisWeek({ todos, weekState, syncToggle, commitments }) {
+export default function ThisWeek({ todos, weekState, syncToggle, commitments, weekPlan }) {
   const today = todayStr()
   const todayIdx = WEEK_PLAN.findIndex(d => d.date === today)
   // Template tasks scoped by date; commitments use their UUID directly

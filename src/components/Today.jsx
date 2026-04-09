@@ -164,7 +164,7 @@ function QuickAdd({ onAdd }) {
 }
 
 // ── Main ───────────────────────────────────────────────────────
-export default function Today({ todos, weekState, syncToggle, commitments, appendLog }) {
+export default function Today({ todos, weekState, syncToggle, commitments, appendLog, dailyTodos }) {
   const [morningOpen, setMorningOpen] = useState(false)
   const [now, setNow] = useState(nowMins())
   const [managing, setManaging] = useState(null)
@@ -178,7 +178,7 @@ export default function Today({ todos, weekState, syncToggle, commitments, appen
   useEffect(() => { const t = setInterval(() => setNow(nowMins()), 60000); return () => clearInterval(t) }, [])
 
   const dateKey = todayKey()
-  const templateTodos = getDailyTodos(dateKey).filter(t => !deleted.includes(t.id))
+  const templateTodos = getDailyTodos(dateKey, dailyTodos).filter(t => !deleted.includes(t.id))
   const todayCommitments = (commitments||[]).filter(c => c.date===dateKey && !c.done)
   // Commitments use their UUID directly; template tasks are scoped by date
   const isDone = (id, isCommitment) => isCommitment

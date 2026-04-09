@@ -104,7 +104,7 @@ export function getFixedBlocksForDate(date) {
 // These appear in This Week every week. IDs are stable (mon-X etc.)
 // so toggle state persists correctly across week rollovers.
 // Add one-off tasks via the Commitments panel.
-const RECURRING_TASKS = {
+export const DEFAULT_RECURRING_TASKS = {
   monday: [
     { id:'mon-coral',    text:'Coral Reef class — Youngchild 316 @ 9:50 AM', cat:'class', carry:false },
     { id:'mon-capstone', text:'Capstone II — Steitz 202 @ 3:10 PM', cat:'class', carry:false },
@@ -141,7 +141,7 @@ const RECURRING_TASKS = {
 }
 
 // ── WEEK PLAN — dynamic today → today+6 ───────────────────────
-function buildWeekPlan() {
+export function buildWeekPlanFromTasks(recurringTasks) {
   const today = new Date()
   today.setHours(0, 0, 0, 0)
   return Array.from({ length: 7 }, (_, i) => {
@@ -151,17 +151,17 @@ function buildWeekPlan() {
     return {
       date:     toDateStr(d),
       dayLabel: toDayLabel(d),
-      tasks:    (RECURRING_TASKS[dayName] || []),
+      tasks:    (recurringTasks[dayName] || []),
     }
   })
 }
 
-export const WEEK_PLAN = buildWeekPlan()
+export const WEEK_PLAN = buildWeekPlanFromTasks(DEFAULT_RECURRING_TASKS)
 
 // ── RECURRING DAILY TODOS (by day name) ───────────────────────
 // Hour-by-hour schedule shown on the Today tab.
 // Today.jsx calls getDailyTodos(dateKey) to get these.
-const DAILY_TODO_TEMPLATES = {
+export const DEFAULT_DAILY_TODOS = {
   monday: [
     { id:'mon-lab-am',   label:'8:00 AM — Yeast lab', note:'At bench by 8. Lab runs until class.', tag:'lab' },
     { id:'mon-coral',    label:'9:50 AM — Coral Reef class', note:'Youngchild 316 · leave lab by 9:40 AM', tag:'class' },
@@ -241,12 +241,13 @@ const DAILY_TODO_TEMPLATES = {
 }
 
 // ── getDailyTodos — call this from Today.jsx ───────────────────
-// Usage: getDailyTodos('2026-04-09') → array of todo items for that day
-export function getDailyTodos(dateStr) {
+// Pass dailyTodosOverride (from DB) to use live data; omit for static defaults.
+export function getDailyTodos(dateStr, dailyTodosOverride) {
   const [year, month, day] = dateStr.split('-').map(Number)
   const d = new Date(year, month - 1, day)
   const dayName = DAY_NAMES[d.getDay()]
-  return DAILY_TODO_TEMPLATES[dayName] || []
+  const source = dailyTodosOverride || DEFAULT_DAILY_TODOS
+  return source[dayName] || []
 }
 
 // ── CALENDAR EVENTS ────────────────────────────────────────────
