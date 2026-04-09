@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { getDailyTodos, MORNING_ROUTINE } from '../data/schedule.js'
+import { getDailyTodos, MORNING_ROUTINE, NIGHT_ROUTINE } from '../data/schedule.js'
 
 const TAG_COLORS = {
   health:'#E07B2E', class:'#7C3AED', lab:'#059669', career:'#D97706',
@@ -244,6 +244,7 @@ export default function Today({ todos, weekState, syncToggle, commitments, appen
   const [managing,   setManaging]   = useState(null)
   const [addingTask, setAddingTask] = useState(false)
   const [morningOpen,setMorningOpen]= useState(false)
+  const [nightOpen,  setNightOpen]  = useState(false)
   const [customTasks,setCustomTasks]= useState(()=>{
     try { return JSON.parse(localStorage.getItem('vivian_custom_'+todayKey())||'[]') } catch { return [] }
   })
@@ -362,6 +363,32 @@ export default function Today({ todos, weekState, syncToggle, commitments, appen
         {morningOpen&&(
           <div onClick={e=>e.stopPropagation()} style={{borderTop:'1px solid var(--border)',padding:'10px 16px 14px'}}>
             {MORNING_ROUTINE.map(item=>(
+              <div key={item.habit} className="routine-item">
+                <div className="routine-time">{item.time}</div>
+                <div className="routine-icon">{item.icon}</div>
+                <div><div className="routine-habit">{item.habit}</div><div className="routine-detail">{item.detail}</div></div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Night routine accordion */}
+      <div style={{background:'white',borderRadius:12,border:'1px solid var(--border)',marginBottom:20,overflow:'hidden'}}>
+        <div onClick={()=>setNightOpen(o=>!o)}
+          style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'12px 16px',cursor:'pointer',userSelect:'none'}}>
+          <div style={{display:'flex',alignItems:'center',gap:10}}>
+            <span style={{fontSize:18}}>🌙</span>
+            <div>
+              <div className="serif" style={{fontSize:15,fontWeight:600}}>Night Routine</div>
+              <div style={{fontSize:11,color:'var(--muted)',marginTop:1}}>5:00 PM – 10:30 PM · {nightOpen?'collapse':'expand'}</div>
+            </div>
+          </div>
+          <span style={{color:'var(--muted)',fontSize:13,transform:nightOpen?'rotate(180deg)':'',transition:'transform .2s'}}>▾</span>
+        </div>
+        {nightOpen&&(
+          <div onClick={e=>e.stopPropagation()} style={{borderTop:'1px solid var(--border)',padding:'10px 16px 14px'}}>
+            {NIGHT_ROUTINE.map(item=>(
               <div key={item.habit} className="routine-item">
                 <div className="routine-time">{item.time}</div>
                 <div className="routine-icon">{item.icon}</div>

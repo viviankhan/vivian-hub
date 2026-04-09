@@ -44,7 +44,7 @@ function EmojiPicker({ value, onChange }) {
 }
 
 // ── Single editable item ───────────────────────────────────────
-function ItemRow({ item, editMode, done, onToggle, onChange, onDelete }) {
+function ItemRow({ item, editMode, done, onToggle, onChange, onDelete, hideCheck }) {
   const c = CAT_COLORS[item.cat] || CAT_COLORS.career
 
   if (editMode) return (
@@ -80,14 +80,14 @@ function ItemRow({ item, editMode, done, onToggle, onChange, onDelete }) {
 
   return (
     <div style={{ display:'flex', gap:12, alignItems:'flex-start', padding:'12px 16px', borderBottom:'1px solid rgba(255,255,255,.05)', opacity: done ? .45 : 1 }}>
-      {/* Checkoff circle */}
-      <div onClick={onToggle}
+      {/* Checkoff circle — only shown in Today, not in settings */}
+      {!hideCheck && <div onClick={onToggle}
         style={{ width:20, height:20, borderRadius:'50%', flexShrink:0, marginTop:3, cursor:'pointer',
           border: done ? 'none' : `2px solid ${c.dot}`,
           background: done ? c.dot : 'transparent',
           display:'flex', alignItems:'center', justifyContent:'center', transition:'all .2s' }}>
         {done && <span style={{ color:'white', fontSize:11, fontWeight:700 }}>✓</span>}
-      </div>
+      </div>}
       <div style={{ fontSize:20, minWidth:26, textAlign:'center' }}>{item.icon}</div>
       <div style={{ flex:1 }}>
         <div style={{ display:'flex', alignItems:'baseline', gap:8, marginBottom:3, flexWrap:'wrap' }}>
@@ -102,9 +102,10 @@ function ItemRow({ item, editMode, done, onToggle, onChange, onDelete }) {
 }
 
 // ── Single routine section ─────────────────────────────────────
-function RoutineSection({ title, sub, icon, items, routineKey, routineLog, onUpdateItems, onUpdateLog, isDefault }) {
+function RoutineSection({ title, sub, icon, items, routineKey, routineLog, onUpdateItems, onUpdateLog, isDefault, settingsMode }) {
   const [editMode, setEditMode] = useState(false)
   const [localItems, setLocalItems] = useState(items)
+  const [localSub, setLocalSub] = useState(sub)
   const [open, setOpen] = useState(false)
   const today = todayKey()
   const doneSet = new Set(Object.keys(routineLog[today] || {}).filter(k => routineLog[today][k]))
@@ -125,12 +126,13 @@ function RoutineSection({ title, sub, icon, items, routineKey, routineLog, onUpd
   }
 
   const saveEdits = async () => {
-    await onUpdateItems(routineKey, localItems)
+    await onUpdateItems(routineKey, localItems, localSub)
     setEditMode(false)
   }
 
   const cancelEdits = () => {
     setLocalItems(items)
+    setLocalSub(sub)
     setEditMode(false)
   }
 
@@ -149,7 +151,11 @@ function RoutineSection({ title, sub, icon, items, routineKey, routineLog, onUpd
           <div>
             <div className="serif" style={{ fontSize:18, color:'var(--sand)', fontWeight:600 }}>{title}</div>
             <div style={{ fontSize:11, color:'var(--green-mid)', marginTop:1 }}>
-              {sub} · {doneCount}/{localItems.length} done today
+              {editMode
+                ? <input value={localSub} onChange={e=>setLocalSub(e.target.value)}
+                    onClick={e=>e.stopPropagation()}
+                    style={{ fontSize:11, background:'rgba(255,255,255,.08)', border:'1px solid rgba(255,255,255,.2)', borderRadius:6, padding:'2px 8px', color:'var(--green-light)', fontFamily:'DM Sans,sans-serif', width:200 }}/>
+                : <>{localSub} · {doneCount}/{localItems.length} done today</>}
             </div>
           </div>
         </div>
@@ -208,6 +214,7 @@ function RoutineSection({ title, sub, icon, items, routineKey, routineLog, onUpd
                 done={doneSet.has(`${routineKey}-${item.habit}`)}
                 onToggle={() => toggleItem(item.habit)}
                 onChange={() => {}} onDelete={() => {}}
+                hideCheck={settingsMode}
               />
             ))
           )}
@@ -221,6 +228,8 @@ function RoutineSection({ title, sub, icon, items, routineKey, routineLog, onUpd
 export default function Routines() {
   const [morningItems, setMorningItems] = useState(MORNING_ROUTINE)
   const [nightItems,   setNightItems]   = useState(NIGHT_ROUTINE)
+  const [morningSub,   setMorningSub]   = useState('6:00 – 7:50 AM · Weekdays')
+  const [nightSub,     setNightSub]     = useState('5:00 PM – 10:30 PM')
   const [routineLog,   setRoutineLog_]  = useState({})
   const [morningIsDefault, setMorningIsDefault] = useState(true)
   const [nightIsDefault,   setNightIsDefault]   = useState(true)
@@ -230,6 +239,8 @@ export default function Routines() {
     Promise.all([getRoutines(), getRoutineLog()]).then(([routines, log]) => {
       if (routines.morning) { setMorningItems(routines.morning); setMorningIsDefault(false) }
       if (routines.night)   { setNightItems(routines.night);     setNightIsDefault(false)   }
+      if (routines.morningSub) setMorningSub(routines.morningSub)
+      if (routines.nightSub)   setNightSub(routines.nightSub)
       setRoutineLog_(log)
       setLoading(false)
     })
@@ -240,20 +251,20 @@ export default function Routines() {
     await setRoutineLog(next)
   }, [])
 
-  const updateItems = useCallback(async (key, items) => {
+  const updateItems = useCallback(async (key, items, sub) => {
     // items = null means reset to default
     if (key === 'morning') {
       const next = items ?? MORNING_ROUTINE
       setMorningItems(next)
       setMorningIsDefault(items === null)
       const cur = await getRoutines()
-      await setRoutines({ ...cur, morning: items })
+      await setRoutines({ ...cur, morning: items, morningSub: sub ?? cur.morningSub })
     } else {
       const next = items ?? NIGHT_ROUTINE
       setNightItems(next)
       setNightIsDefault(items === null)
       const cur = await getRoutines()
-      await setRoutines({ ...cur, night: items })
+      await setRoutines({ ...cur, night: items, nightSub: sub ?? cur.nightSub })
     }
   }, [])
 
@@ -264,16 +275,16 @@ export default function Routines() {
       <div className="page-title">Routines</div>
       <div className="page-sub">Tap ✏️ Edit to customize · changes save permanently</div>
       <RoutineSection
-        title="Morning Routine" sub="6:00 – 7:50 AM · Weekdays" icon="☀️"
+        title="Morning Routine" sub={morningSub} icon="☀️"
         items={morningItems} routineKey="morning"
         routineLog={routineLog} onUpdateLog={updateLog}
-        onUpdateItems={updateItems} isDefault={morningIsDefault}
+        onUpdateItems={updateItems} isDefault={morningIsDefault} settingsMode
       />
       <RoutineSection
-        title="Night Routine" sub="5:00 PM – 10:30 PM" icon="🌙"
+        title="Night Routine" sub={nightSub} icon="🌙"
         items={nightItems} routineKey="night"
         routineLog={routineLog} onUpdateLog={updateLog}
-        onUpdateItems={updateItems} isDefault={nightIsDefault}
+        onUpdateItems={updateItems} isDefault={nightIsDefault} settingsMode
       />
     </div>
   )
