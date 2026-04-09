@@ -7,6 +7,8 @@ const TAG_COLORS = {
   carried:'#F59E0B', polish:'#EC4899', meeting:'#3B82F6', deadline:'#EF4444',
 }
 const TAGS = ['class','lab','career','health','fitness','personal','urgent','sleep','polish']
+const INFLEXIBLE_TAGS = new Set(['class','meeting','deadline','urgent'])
+const END_OF_DAY_MINS = 22*60+30 // 10:30 PM
 
 function todayKey() {
   const d = new Date()
@@ -39,6 +41,61 @@ function extractLocation(label, note='') {
   const combined=`${label} ${note}`
   const m=combined.match(/(Youngchild\s*\d*|Steitz\s*\d*|Briggs\s*\d*|Commons|B3\s*\w*)/i)
   return m?m[0].trim():null
+}
+// Replace time portion in a label string with new formatted time
+function shiftLabelTime(label, newMins) {
+  const newTime = fmtTimeLabel(newMins)
+  // Replace leading time pattern like "9:50 AM — " or "~9:50 AM — "
+  return label.replace(/~?\d{1,2}:\d{2}\s*(?:AM|PM)\s*(?:—\s*)?/i, newTime + ' — ')
+}
+
+// ── Routine accordion with checkboxes ─────────────────────────
+function RoutineAccordion({ title, sub, icon, items, prefix, open, setOpen, routineDone, toggleRoutine }) {
+  const doneCount = items.filter(item => routineDone[prefix+'-'+item.habit]).length
+  return (
+    <div style={{background:'white',borderRadius:12,border:'1px solid var(--border)',marginBottom:20,overflow:'hidden'}}>
+      <div onClick={()=>setOpen(o=>!o)}
+        style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'12px 16px',cursor:'pointer',userSelect:'none'}}>
+        <div style={{display:'flex',alignItems:'center',gap:10}}>
+          <span style={{fontSize:18}}>{icon}</span>
+          <div>
+            <div className="serif" style={{fontSize:15,fontWeight:600}}>{title}</div>
+            <div style={{fontSize:11,color:'var(--muted)',marginTop:1}}>
+              {sub} · {doneCount}/{items.length} done · {open?'collapse':'expand'}
+            </div>
+          </div>
+        </div>
+        <span style={{color:'var(--muted)',fontSize:13,transform:open?'rotate(180deg)':'',transition:'transform .2s'}}>▾</span>
+      </div>
+      {open&&(
+        <div onClick={e=>e.stopPropagation()} style={{borderTop:'1px solid var(--border)',padding:'6px 16px 14px'}}>
+          {items.map(item=>{
+            const key=prefix+'-'+item.habit
+            const done=!!routineDone[key]
+            return (
+              <div key={item.habit}
+                style={{display:'flex',gap:12,alignItems:'flex-start',padding:'10px 0',borderBottom:'1px solid #F5F3EF',opacity:done?.4:1,transition:'opacity .2s'}}>
+                <div onClick={()=>toggleRoutine(key)}
+                  style={{width:20,height:20,borderRadius:'50%',flexShrink:0,marginTop:2,cursor:'pointer',
+                    border:done?'none':'2px solid #D1D5DB', background:done?'#52B788':'transparent',
+                    display:'flex',alignItems:'center',justifyContent:'center',transition:'all .2s'}}>
+                  {done&&<span style={{color:'white',fontSize:11,fontWeight:700}}>✓</span>}
+                </div>
+                <div style={{fontSize:18,minWidth:24,textAlign:'center'}}>{item.icon}</div>
+                <div style={{flex:1}}>
+                  <div style={{display:'flex',alignItems:'baseline',gap:8,flexWrap:'wrap'}}>
+                    <span style={{fontSize:10,color:'var(--muted)',letterSpacing:.3}}>{item.time}</span>
+                    <span className="serif" style={{fontSize:14,color:'var(--text)',fontWeight:600,textDecoration:done?'line-through':'none'}}>{item.habit}</span>
+                  </div>
+                  <div style={{fontSize:11,color:'var(--muted)',marginTop:2,lineHeight:1.4}}>{item.detail}</div>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
 }
 
 // ── Manage modal ───────────────────────────────────────────────
@@ -118,8 +175,22 @@ function QuickAdd({ onAdd, onClose }) {
   )
 }
 
+// ── Shift result toast ─────────────────────────────────────────
+function ShiftToast({ result, onClose }) {
+  useEffect(()=>{ const t=setTimeout(onClose,6000); return ()=>clearTimeout(t) },[])
+  return (
+    <div style={{position:'fixed',bottom:100,left:'50%',transform:'translateX(-50%)',background:'var(--forest)',color:'var(--green-light)',borderRadius:12,padding:'12px 18px',maxWidth:340,width:'90%',zIndex:200,boxShadow:'0 8px 32px rgba(0,0,0,.3)',fontSize:12,lineHeight:1.6}}>
+      <div style={{fontWeight:700,marginBottom:4}}>⏱ Schedule shifted</div>
+      {result.shifted>0&&<div>✓ {result.shifted} task{result.shifted>1?'s':''} moved forward</div>}
+      {result.committed>0&&<div>📋 {result.committed} task{result.committed>1?'s':''} sent to Commitments (overflowed day)</div>}
+      {result.fixed>0&&<div>📌 {result.fixed} fixed task{result.fixed>1?'s':''} (class/meeting) left in place</div>}
+      <button onClick={onClose} style={{marginTop:8,fontSize:11,padding:'3px 10px',borderRadius:6,border:'1px solid rgba(255,255,255,.2)',background:'transparent',color:'var(--green-light)',cursor:'pointer',fontFamily:'DM Sans,sans-serif'}}>Dismiss</button>
+    </div>
+  )
+}
+
 // ── Timeline task block ────────────────────────────────────────
-function TimelineBlock({ task, status, now, minutesUntilNext, isDone, onToggle, onManage }) {
+function TimelineBlock({ task, status, now, minutesUntilNext, isDone, onToggle, onManage, onShiftToNow }) {
   const dot = TAG_COLORS[task.tag]||'#9CA3AF'
   const location = extractLocation(task.label, task.note)
   const timeMins = parseTimeMins(task.label)
@@ -127,29 +198,18 @@ function TimelineBlock({ task, status, now, minutesUntilNext, isDone, onToggle, 
     ? minutesUntilNext - (now - timeMins)
     : null
 
-  // Visual state
-  const isPast    = status === 'past'    || isDone
-  const isCurrent = status === 'current' && !isDone
-  const isOverdue = status === 'overdue' && !isDone
+  const isPast    = status==='past' || isDone
+  const isCurrent = status==='current' && !isDone
+  const isOverdue = status==='overdue' && !isDone
+  const canShift  = (isCurrent || isOverdue) && !INFLEXIBLE_TAGS.has(task.tag) && timeMins!==null && !isDone
 
-  const blockBg = isCurrent ? 'white'
-    : isOverdue ? '#FFF5F5'
-    : isPast    ? '#FAFAF7'
-    : 'white'
-  const blockBorder = isCurrent ? '2px solid #52B788'
-    : isOverdue ? '1.5px solid #FECACA'
-    : '1.5px solid var(--border)'
-  const dotBg = isDone ? '#52B788'
-    : isCurrent ? 'white'
-    : isOverdue ? '#FCA5A5'
-    : 'white'
-  const dotBorderColor = isDone ? '#52B788'
-    : isCurrent ? '#52B788'
-    : isOverdue ? '#FCA5A5'
-    : '#D1D5DB'
+  const blockBg = isCurrent?'white': isOverdue?'#FFF5F5': isPast?'#FAFAF7':'white'
+  const blockBorder = isCurrent?'2px solid #52B788': isOverdue?'1.5px solid #FECACA':'1.5px solid var(--border)'
+  const dotBg = isDone?'#52B788': isCurrent?'white': isOverdue?'#FCA5A5':'white'
+  const dotBorderColor = isDone?'#52B788': isCurrent?'#52B788': isOverdue?'#FCA5A5':'#D1D5DB'
 
   return (
-    <div style={{display:'flex',gap:0,marginBottom:0,opacity:isPast&&!isCurrent?0.45:1,transition:'opacity .3s'}}>
+    <div style={{display:'flex',gap:0,marginBottom:0,opacity:isPast&&!isCurrent?.45:1,transition:'opacity .3s'}}>
       {/* Time label */}
       <div style={{width:68,flexShrink:0,paddingTop:14,textAlign:'right',paddingRight:12}}>
         {timeMins!==null&&(
@@ -158,12 +218,9 @@ function TimelineBlock({ task, status, now, minutesUntilNext, isDone, onToggle, 
           </span>
         )}
       </div>
-
       {/* Spine + dot */}
       <div style={{width:28,flexShrink:0,display:'flex',flexDirection:'column',alignItems:'center'}}>
-        {/* top line */}
         <div style={{width:2,height:14,background:isPast?'#52B78866':'#E5E0D9',flexShrink:0}}/>
-        {/* dot */}
         <div onClick={onToggle}
           style={{width:18,height:18,borderRadius:'50%',flexShrink:0,cursor:'pointer',
             border:`2px solid ${dotBorderColor}`,background:dotBg,
@@ -173,21 +230,14 @@ function TimelineBlock({ task, status, now, minutesUntilNext, isDone, onToggle, 
           {isDone&&<span style={{color:'white',fontSize:10,fontWeight:700}}>✓</span>}
           {isCurrent&&!isDone&&<div style={{width:6,height:6,borderRadius:'50%',background:'#52B788'}}/>}
         </div>
-        {/* bottom line — extends down */}
         <div style={{width:2,flex:1,minHeight:8,background:isPast?'#52B78866':'#E5E0D9'}}/>
       </div>
-
-      {/* Task card */}
+      {/* Card */}
       <div style={{flex:1,paddingTop:6,paddingBottom:10,paddingLeft:10,paddingRight:4}}>
-        {/* Countdown badge for current */}
-        {isCurrent && minsRemaining!==null && minsRemaining>0 && (
-          <div style={{fontSize:10,color:'var(--teal)',fontWeight:700,letterSpacing:.5,marginBottom:4}}>
-            {fmtMins(minsRemaining)} remaining
-          </div>
+        {isCurrent&&minsRemaining!==null&&minsRemaining>0&&(
+          <div style={{fontSize:10,color:'var(--teal)',fontWeight:700,letterSpacing:.5,marginBottom:4}}>{fmtMins(minsRemaining)} remaining</div>
         )}
-        {isOverdue && (
-          <div style={{fontSize:10,color:'#EF4444',fontWeight:700,letterSpacing:.5,marginBottom:4}}>overdue</div>
-        )}
+        {isOverdue&&<div style={{fontSize:10,color:'#EF4444',fontWeight:700,letterSpacing:.5,marginBottom:4}}>overdue</div>}
 
         <div style={{background:blockBg,borderRadius:12,border:blockBorder,padding:'10px 12px',transition:'all .2s'}}>
           <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',gap:8}}>
@@ -201,28 +251,30 @@ function TimelineBlock({ task, status, now, minutesUntilNext, isDone, onToggle, 
                 {location&&!isDone&&<span style={{fontSize:9,padding:'2px 6px',borderRadius:6,background:'#EFF6FF',color:'#1E3A8A',fontWeight:600}}>📍 {location}</span>}
               </div>
             </div>
-            {/* Actions */}
-            <div style={{display:'flex',gap:4,flexShrink:0,alignItems:'center'}}>
-              {!isDone&&<button onClick={e=>{e.stopPropagation();onManage()}} style={{fontSize:11,padding:'3px 7px',borderRadius:7,border:'1px solid var(--border)',background:'white',color:'var(--muted)',cursor:'pointer'}}>···</button>}
-            </div>
+            {!isDone&&<button onClick={e=>{e.stopPropagation();onManage()}} style={{fontSize:11,padding:'3px 7px',borderRadius:7,border:'1px solid var(--border)',background:'white',color:'var(--muted)',cursor:'pointer',flexShrink:0}}>···</button>}
           </div>
+
+          {/* Shift to now button */}
+          {canShift&&(
+            <button onClick={e=>{e.stopPropagation();onShiftToNow()}}
+              style={{marginTop:8,width:'100%',padding:'7px',borderRadius:8,border:'1px solid var(--teal)',background:'#F0FDFB',color:'var(--teal)',cursor:'pointer',fontFamily:'DM Sans,sans-serif',fontSize:11,fontWeight:600,letterSpacing:.5}}>
+              ⏱ Set start time to now · cascade remaining tasks
+            </button>
+          )}
         </div>
 
-        {/* "Next in X" gap label */}
-        {minutesUntilNext!==null && minutesUntilNext>10 && !isDone && !isCurrent && status==='upcoming' && (
-          <div style={{fontSize:10,color:'#C4BAAD',marginTop:4,marginBottom:0,paddingLeft:4}}>
-            — {fmtMins(minutesUntilNext)} until next
-          </div>
+        {minutesUntilNext!==null&&minutesUntilNext>10&&!isDone&&!isCurrent&&status==='upcoming'&&(
+          <div style={{fontSize:10,color:'#C4BAAD',marginTop:4,paddingLeft:4}}>— {fmtMins(minutesUntilNext)} until next</div>
         )}
       </div>
     </div>
   )
 }
 
-// ── "You are here" marker ──────────────────────────────────────
+// ── NOW marker ─────────────────────────────────────────────────
 function NowMarker({ now }) {
   return (
-    <div style={{display:'flex',gap:0,alignItems:'center',margin:'0 0'}}>
+    <div style={{display:'flex',gap:0,alignItems:'center'}}>
       <div style={{width:68,flexShrink:0,textAlign:'right',paddingRight:12}}>
         <span style={{fontSize:10,color:'var(--teal)',fontWeight:700}}>{fmtTimeLabel(now)}</span>
       </div>
@@ -239,30 +291,56 @@ function NowMarker({ now }) {
 }
 
 // ── Main ───────────────────────────────────────────────────────
-export default function Today({ todos, weekState, syncToggle, commitments, appendLog, dailyTodos }) {
-  const [now,        setNow]        = useState(nowMins())
-  const [managing,   setManaging]   = useState(null)
-  const [addingTask, setAddingTask] = useState(false)
-  const [morningOpen,setMorningOpen]= useState(false)
-  const [nightOpen,  setNightOpen]  = useState(false)
-  const [customTasks,setCustomTasks]= useState(()=>{
+export default function Today({ todos, weekState, syncToggle, commitments, addCommitment, appendLog, dailyTodos }) {
+  const [now,         setNow]         = useState(nowMins())
+  const [managing,    setManaging]    = useState(null)
+  const [addingTask,  setAddingTask]  = useState(false)
+  const [morningOpen, setMorningOpen] = useState(false)
+  const [nightOpen,   setNightOpen]   = useState(false)
+  const [shiftResult, setShiftResult] = useState(null)
+  const [customTasks, setCustomTasks] = useState(()=>{
     try { return JSON.parse(localStorage.getItem('vivian_custom_'+todayKey())||'[]') } catch { return [] }
   })
-  const [deleted,setDeleted]=useState(()=>{
+  const [deleted, setDeleted] = useState(()=>{
     try { return JSON.parse(localStorage.getItem('vivian_deleted_'+todayKey())||'[]') } catch { return [] }
+  })
+  // time overrides: { taskId: newMins } — applied when user shifts a task
+  const [timeOverrides, setTimeOverrides] = useState(()=>{
+    try { return JSON.parse(localStorage.getItem('vivian_timeshift_'+todayKey())||'{}') } catch { return {} }
+  })
+  // routine completion tracking
+  const [routineDone, setRoutineDone] = useState(()=>{
+    try { return JSON.parse(localStorage.getItem('vivian_routine_'+todayKey())||'{}') } catch { return {} }
   })
 
   useEffect(()=>{ const t=setInterval(()=>setNow(nowMins()),30000); return ()=>clearInterval(t) },[])
 
   const dateKey = todayKey()
+
+  const toggleRoutine = (key) => {
+    setRoutineDone(prev=>{
+      const next={...prev,[key]:!prev[key]}
+      localStorage.setItem('vivian_routine_'+dateKey, JSON.stringify(next))
+      return next
+    })
+  }
+
   const templateTodos = getDailyTodos(dateKey, dailyTodos).filter(t=>!deleted.includes(t.id))
   const todayCommitments = (commitments||[]).filter(c=>c.date===dateKey&&!c.done)
 
-  const isDone = (id, isCommitment) => isCommitment
+  const isDoneCheck = (id, isCommitment) => isCommitment
     ? !!(todos[id]||weekState[id])
     : !!(todos[dateKey+'_'+id]||weekState[dateKey+'_'+id])
 
-  const allTasks = [
+  // Apply time overrides to task labels
+  const applyOverrides = (tasks) => tasks.map(t=>{
+    if (timeOverrides[t.id]!==undefined) {
+      return { ...t, label: shiftLabelTime(t.label, timeOverrides[t.id]) }
+    }
+    return t
+  })
+
+  const rawTasks = [
     ...todayCommitments.map(c=>({
       id:c.id, label:c.time?`${fmt12(c.time)} — ${c.text}`:c.text,
       note:[c.person&&`With: ${c.person}`,c.prepMin&&`Leave ${c.prepMin} min early`].filter(Boolean).join(' · '),
@@ -271,46 +349,96 @@ export default function Today({ todos, weekState, syncToggle, commitments, appen
     ...templateTodos,
     ...customTasks,
   ]
+  const allTasks = applyOverrides(rawTasks)
 
-  // Classify status
-  const timedTasks = allTasks.map(t=>({ ...t, _mins:parseTimeMins(t.label) }))
-  const timedSorted = [...timedTasks].filter(t=>t._mins!==null).sort((a,b)=>a._mins-b._mins)
+  const timedSorted = allTasks
+    .map(t=>({...t,_mins:parseTimeMins(t.label)}))
+    .filter(t=>t._mins!==null)
+    .sort((a,b)=>a._mins-b._mins)
 
   function getStatus(task) {
-    if (isDone(task.id, task.isCommitment)) return 'past'
+    if (isDoneCheck(task.id, task.isCommitment)) return 'past'
     if (task._mins===null) return 'anytime'
-    if (task._mins > now) return 'upcoming'
-    // is this the most recent started task?
-    const nextTimed = timedSorted.find(t=>t._mins>now)
-    if (!nextTimed || task._mins===timedSorted.filter(t=>t._mins<=now).at(-1)?._mins) return 'current'
+    if (task._mins>now) return 'upcoming'
+    const lastStarted = timedSorted.filter(t=>t._mins<=now&&!isDoneCheck(t.id,t.isCommitment)).at(-1)
+    if (task._mins===lastStarted?._mins) return 'current'
     return 'overdue'
   }
 
-  // Sort: overdue/current first (by time), then upcoming (by time), then anytime, then done
-  const statusOrder = { overdue:0, current:1, upcoming:2, anytime:3, past:4 }
+  const statusOrder = {overdue:0,current:1,upcoming:2,anytime:3,past:4}
   const tasksWithStatus = allTasks
     .filter(t=>!deleted.includes(t.id))
-    .map(t=>({ ...t, _mins:parseTimeMins(t.label), _status:getStatus({ ...t, _mins:parseTimeMins(t.label) }) }))
+    .map(t=>({...t,_mins:parseTimeMins(t.label),_status:getStatus({...t,_mins:parseTimeMins(t.label)})}))
     .sort((a,b)=>{
-      const so = statusOrder[a._status]-statusOrder[b._status]
+      const so=statusOrder[a._status]-statusOrder[b._status]
       if (so!==0) return so
       return (a._mins??9999)-(b._mins??9999)
     })
 
   const doneCount = tasksWithStatus.filter(t=>t._status==='past').length
-  const totalCount = tasksWithStatus.length
-
-  // Find where NOW marker inserts (before first upcoming)
   const nowInsertIdx = tasksWithStatus.findIndex(t=>t._status==='upcoming'||t._status==='anytime')
 
-  // Gap between consecutive timed tasks
   function minsUntilNext(i) {
-    const cur = tasksWithStatus[i]
+    const cur=tasksWithStatus[i]
     if (cur._mins===null) return null
-    for (let j=i+1; j<tasksWithStatus.length; j++) {
-      if (tasksWithStatus[j]._mins!==null) return tasksWithStatus[j]._mins - cur._mins
+    for (let j=i+1;j<tasksWithStatus.length;j++) {
+      if (tasksWithStatus[j]._mins!==null) return tasksWithStatus[j]._mins-cur._mins
     }
     return null
+  }
+
+  // ── Shift to now ──────────────────────────────────────────────
+  const handleShiftToNow = (pivotTask) => {
+    const pivotMins = parseTimeMins(pivotTask.label)
+    if (pivotMins===null) return
+    const offset = now - pivotMins // how late we are in minutes
+
+    const newOverrides = { ...timeOverrides }
+    let shifted=0, committed=0, fixed=0
+
+    // Get all undone timed tasks at or after the pivot, sorted by time
+    const candidates = tasksWithStatus
+      .filter(t=>!isDoneCheck(t.id,t.isCommitment) && t._mins!==null && t._mins>=pivotMins)
+      .sort((a,b)=>a._mins-b._mins)
+
+    candidates.forEach(task=>{
+      if (INFLEXIBLE_TAGS.has(task.tag)) {
+        fixed++
+        return // leave inflexible tasks where they are
+      }
+      const newTime = task._mins + offset
+      if (newTime > END_OF_DAY_MINS) {
+        // Task overflows day → send to commitments
+        committed++
+        // Add to commitments for tomorrow
+        const tomorrow = new Date(); tomorrow.setDate(tomorrow.getDate()+1)
+        const tomorrowKey = `${tomorrow.getFullYear()}-${String(tomorrow.getMonth()+1).padStart(2,'0')}-${String(tomorrow.getDate()).padStart(2,'0')}`
+        if (addCommitment) {
+          addCommitment({
+            id: 'shifted-'+task.id+'-'+Date.now(),
+            text: task.label.replace(/^~?\d{1,2}:\d{2}\s*(?:AM|PM)\s*(?:—\s*)?/i,'').trim(),
+            date: tomorrowKey,
+            cat: task.tag,
+            note: `Shifted from ${dateKey} — ran out of day`,
+            done: false,
+          })
+        }
+        // Mark as deleted from today since it moved
+        setDeleted(prev=>{
+          const next=[...prev, task.id]
+          localStorage.setItem('vivian_deleted_'+dateKey, JSON.stringify(next))
+          return next
+        })
+      } else {
+        // Shift forward
+        newOverrides[task.id] = newTime
+        shifted++
+      }
+    })
+
+    setTimeOverrides(newOverrides)
+    localStorage.setItem('vivian_timeshift_'+dateKey, JSON.stringify(newOverrides))
+    setShiftResult({ shifted, committed, fixed })
   }
 
   const handleAdd = (task) => {
@@ -340,64 +468,19 @@ export default function Today({ todos, weekState, syncToggle, commitments, appen
       <div style={{marginBottom:20}}>
         <div className="page-title">{todayLabel()}</div>
         <div style={{display:'flex',alignItems:'center',gap:10,marginTop:4}}>
-          <span style={{fontSize:12,color:'var(--muted)'}}>{doneCount} of {totalCount} done</span>
+          <span style={{fontSize:12,color:'var(--muted)'}}>{doneCount} of {tasksWithStatus.length} done</span>
           <div style={{flex:1,height:3,background:'var(--border)',borderRadius:2,overflow:'hidden'}}>
-            <div style={{height:'100%',width:`${totalCount>0?(doneCount/totalCount)*100:0}%`,background:'#52B788',borderRadius:2,transition:'width .4s'}}/>
+            <div style={{height:'100%',width:`${tasksWithStatus.length>0?(doneCount/tasksWithStatus.length)*100:0}%`,background:'#52B788',borderRadius:2,transition:'width .4s'}}/>
           </div>
         </div>
       </div>
 
-      {/* Morning routine accordion */}
-      <div style={{background:'white',borderRadius:12,border:'1px solid var(--border)',marginBottom:20,overflow:'hidden'}}>
-        <div onClick={()=>setMorningOpen(o=>!o)}
-          style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'12px 16px',cursor:'pointer',userSelect:'none'}}>
-          <div style={{display:'flex',alignItems:'center',gap:10}}>
-            <span style={{fontSize:18}}>☀️</span>
-            <div>
-              <div className="serif" style={{fontSize:15,fontWeight:600}}>Morning Routine</div>
-              <div style={{fontSize:11,color:'var(--muted)',marginTop:1}}>6:00 – 7:50 AM · {morningOpen?'collapse':'expand'}</div>
-            </div>
-          </div>
-          <span style={{color:'var(--muted)',fontSize:13,transform:morningOpen?'rotate(180deg)':'',transition:'transform .2s'}}>▾</span>
-        </div>
-        {morningOpen&&(
-          <div onClick={e=>e.stopPropagation()} style={{borderTop:'1px solid var(--border)',padding:'10px 16px 14px'}}>
-            {MORNING_ROUTINE.map(item=>(
-              <div key={item.habit} className="routine-item">
-                <div className="routine-time">{item.time}</div>
-                <div className="routine-icon">{item.icon}</div>
-                <div><div className="routine-habit">{item.habit}</div><div className="routine-detail">{item.detail}</div></div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* Night routine accordion */}
-      <div style={{background:'white',borderRadius:12,border:'1px solid var(--border)',marginBottom:20,overflow:'hidden'}}>
-        <div onClick={()=>setNightOpen(o=>!o)}
-          style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'12px 16px',cursor:'pointer',userSelect:'none'}}>
-          <div style={{display:'flex',alignItems:'center',gap:10}}>
-            <span style={{fontSize:18}}>🌙</span>
-            <div>
-              <div className="serif" style={{fontSize:15,fontWeight:600}}>Night Routine</div>
-              <div style={{fontSize:11,color:'var(--muted)',marginTop:1}}>5:00 PM – 10:30 PM · {nightOpen?'collapse':'expand'}</div>
-            </div>
-          </div>
-          <span style={{color:'var(--muted)',fontSize:13,transform:nightOpen?'rotate(180deg)':'',transition:'transform .2s'}}>▾</span>
-        </div>
-        {nightOpen&&(
-          <div onClick={e=>e.stopPropagation()} style={{borderTop:'1px solid var(--border)',padding:'10px 16px 14px'}}>
-            {NIGHT_ROUTINE.map(item=>(
-              <div key={item.habit} className="routine-item">
-                <div className="routine-time">{item.time}</div>
-                <div className="routine-icon">{item.icon}</div>
-                <div><div className="routine-habit">{item.habit}</div><div className="routine-detail">{item.detail}</div></div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
+      {/* Morning routine */}
+      <RoutineAccordion
+        title="Morning Routine" sub="6:00 – 7:50 AM" icon="☀️"
+        items={MORNING_ROUTINE} prefix="morning"
+        open={morningOpen} setOpen={setMorningOpen}
+        routineDone={routineDone} toggleRoutine={toggleRoutine} />
 
       {/* Timeline */}
       {tasksWithStatus.length===0 ? (
@@ -407,18 +490,17 @@ export default function Today({ todos, weekState, syncToggle, commitments, appen
           {' '}or set up recurring tasks in the Recurring tab.
         </div>
       ) : (
-        <div style={{position:'relative',paddingBottom:8}}>
+        <div style={{paddingBottom:8}}>
           {tasksWithStatus.map((task,i)=>(
             <div key={task.id}>
-              {i===nowInsertIdx && <NowMarker now={now}/>}
+              {i===nowInsertIdx&&<NowMarker now={now}/>}
               <TimelineBlock
-                task={task}
-                status={task._status}
-                now={now}
+                task={task} status={task._status} now={now}
                 minutesUntilNext={minsUntilNext(i)}
                 isDone={task._status==='past'}
                 onToggle={()=>syncToggle(task.id,task.label,task.tag,task.isCommitment?null:dateKey)}
                 onManage={()=>setManaging(task)}
+                onShiftToNow={()=>handleShiftToNow(task)}
               />
             </div>
           ))}
@@ -426,7 +508,14 @@ export default function Today({ todos, weekState, syncToggle, commitments, appen
         </div>
       )}
 
-      {/* Add task FAB */}
+      {/* Night routine — end of day */}
+      <RoutineAccordion
+        title="Night Routine" sub="9:00 PM – 10:30 PM" icon="🌙"
+        items={NIGHT_ROUTINE} prefix="night"
+        open={nightOpen} setOpen={setNightOpen}
+        routineDone={routineDone} toggleRoutine={toggleRoutine} />
+
+      {/* FAB */}
       <button onClick={()=>setAddingTask(true)}
         style={{position:'fixed',bottom:28,right:24,width:52,height:52,borderRadius:'50%',border:'none',
           background:'var(--forest)',color:'var(--green-light)',fontSize:24,cursor:'pointer',
@@ -434,6 +523,7 @@ export default function Today({ todos, weekState, syncToggle, commitments, appen
         +
       </button>
 
+      {shiftResult&&<ShiftToast result={shiftResult} onClose={()=>setShiftResult(null)}/>}
       {addingTask&&<QuickAdd onAdd={handleAdd} onClose={()=>setAddingTask(false)}/>}
       {managing&&<ManageModal task={managing} dateKey={dateKey} onClose={()=>setManaging(null)} onDelete={handleDelete} onReschedule={handleReschedule}/>}
     </div>
