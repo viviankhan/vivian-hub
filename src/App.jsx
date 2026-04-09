@@ -11,7 +11,7 @@ import Log         from './components/Log.jsx'
 import Info        from './components/Info.jsx'
 import Edits       from './components/Edits.jsx'
 import Scheduler   from './components/Scheduler.jsx'
-import RecurringTasksManager from './components/RecurringTasksManager.jsx'
+import RecurringTasksManager, { flatToPerDay } from './components/RecurringTasksManager.jsx'
 import Routines from './components/Routines.jsx'
 
 const TABS = [
