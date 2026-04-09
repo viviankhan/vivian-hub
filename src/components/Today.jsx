@@ -453,13 +453,29 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
     if (appendLog&&reason) appendLog({date:dateKey,dateLabel:todayLabel(),label:`Deleted: ${task.label} — ${reason}`,tag:'deleted',ts:new Date().toISOString()})
   }
   const handleReschedule = (task, date, time) => {
-    handleDelete(task, null)
-    try {
-      const key='vivian_rescheduled_'+date
-      const existing=JSON.parse(localStorage.getItem(key)||'[]')
-      localStorage.setItem(key, JSON.stringify([...existing,{...task,rescheduledTime:time,rescheduledFrom:dateKey}]))
-    } catch {}
-    if (appendLog) appendLog({date:dateKey,dateLabel:todayLabel(),label:`Rescheduled: ${task.label} → ${date}${time?' @ '+fmt12(time):''}`,tag:'rescheduled',ts:new Date().toISOString()})
+    if (date === dateKey && time) {
+      // Same-day: apply time override so task stays visible at new time
+      const [h, m] = time.split(':').map(Number)
+      const newMins = h * 60 + m
+      setTimeOverrides(prev => {
+        const next = { ...prev, [task.id]: newMins }
+        localStorage.setItem('vivian_timeshift_' + dateKey, JSON.stringify(next))
+        return next
+      })
+    } else {
+      // Different day: remove from today, create Commitment on target date
+      handleDelete(task, null)
+      if (addCommitment) {
+        addCommitment({
+          id: 'rescheduled-' + task.id + '-' + Date.now(),
+          text: task.label.replace(/^~?\d{1,2}:\d{2}\s*(?:AM|PM)\s*(?:—\s*)?/i, '').trim() || task.label,
+          date, cat: task.tag, done: false,
+          note: 'Rescheduled from ' + dateKey,
+          ...(time ? { time } : {}),
+        })
+      }
+    }
+    if (appendLog) appendLog({ date:dateKey, dateLabel:todayLabel(), label:'Rescheduled: ' + task.label + ' → ' + date + (time ? ' @ ' + fmt12(time) : ''), tag:'rescheduled', ts:new Date().toISOString() })
   }
 
   return (
