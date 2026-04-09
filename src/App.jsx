@@ -12,6 +12,7 @@ import Info        from './components/Info.jsx'
 import Edits       from './components/Edits.jsx'
 import Scheduler   from './components/Scheduler.jsx'
 import RecurringTasksManager from './components/RecurringTasksManager.jsx'
+import Routines from './components/Routines.jsx'
 
 const TABS = [
   { id:'today',       label:'Today'       },
@@ -21,6 +22,7 @@ const TABS = [
   { id:'study',       label:'Study'       },
   { id:'log',         label:'Log'         },
   { id:'info',        label:'Info'        },
+  { id:'recurring',   label:'Recurring'   },
 ]
 
 function todayStr() {
@@ -57,7 +59,7 @@ function SettingsDrawer({ open, onClose, settingsTab, setSettingsTab, recurringT
 
         {/* Settings tabs */}
         <div style={{ display:'flex', borderBottom:'1px solid var(--border)', background:'white' }}>
-          {[['recurring','Recurring Tasks'],['scheduler','Scheduler'],['edits','Edits']].map(([id,label]) => (
+          {[['routines','Routines'],['scheduler','Scheduler'],['edits','Edits']].map(([id,label]) => (
             <button key={id} onClick={()=>setSettingsTab(id)}
               style={{ flex:1, padding:'11px 8px', border:'none', borderBottom:`2px solid ${settingsTab===id?'var(--teal)':'transparent'}`,
                 background:'transparent', color:settingsTab===id?'var(--teal)':'var(--muted)', cursor:'pointer',
@@ -68,13 +70,7 @@ function SettingsDrawer({ open, onClose, settingsTab, setSettingsTab, recurringT
         </div>
 
         <div style={{ padding:'20px 24px' }}>
-          {settingsTab==='recurring' && (
-            <RecurringTasksManager
-              recurringTasks={recurringTasks}
-              updateRecurringTasks={updateRecurringTasks}
-              defaultWeekTasks={DEFAULT_RECURRING_TASKS}
-              defaultDailyTodos={DEFAULT_DAILY_TODOS} />
-          )}
+          {settingsTab==='routines' && <Routines />}
           {settingsTab==='scheduler' && (
             <Scheduler scheduled={scheduled} addScheduledTask={addScheduledTask} commitments={commitments} />
           )}
@@ -237,6 +233,7 @@ export default function App() {
         {tab==='study'       && <Study       {...sharedProps} />}
         {tab==='log'         && <Log log={log} notes={notes} updateNotes={updateNotes} />}
         {tab==='info'        && <Info />}
+        {tab==='recurring'   && <RecurringTasksManager recurringTasks={recurringTasks} updateRecurringTasks={updateRecurringTasks} defaultWeekTasks={DEFAULT_RECURRING_TASKS} defaultDailyTodos={DEFAULT_DAILY_TODOS} />}
       </main>
 
       <SettingsDrawer
