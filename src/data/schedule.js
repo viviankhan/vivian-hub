@@ -298,16 +298,19 @@ export const CALENDAR_EVENTS = [
 ]
 
 // ── MORNING / NIGHT ROUTINES ───────────────────────────────────
+// Morning routine — times are computed from startMins + cumulative durationMins.
+// Edit durationMins to change how long each step takes.
+// The 'time' field is auto-computed at render — do not edit it directly.
 export const MORNING_ROUTINE = [
-  { time:'6:00 AM', habit:'Wake up',                  icon:'☀️', cat:'sleep',   detail:'Weekdays only. 7.5 hours from 10:30 PM. Weekends 8:30 AM.' },
-  { time:'6:02 AM', habit:'16 oz water',               icon:'💧', cat:'health',  detail:'Before coffee, before phone. Non-negotiable.' },
-  { time:'6:04 AM', habit:'Brush teeth + skincare',    icon:'✨', cat:'polish',  detail:'Brush teeth, cleanser, moisturizer with SPF. CeraVe. 10 minutes.' },
-  { time:'6:14 AM', habit:'Get dressed intentionally', icon:'👗', cat:'polish',  detail:'Laid out the night before. Well-fitted basics only. 5 minutes.' },
-  { time:'6:19 AM', habit:'MCAT review',               icon:'📚', cat:'career',  detail:'30 min. One focused concept block.' },
-  { time:'6:49 AM', habit:'Assignment & lab review',   icon:'🗒️', cat:'career',  detail:'15 min. Check what is due, what experiments are running, what needs prepping today.' },
-  { time:'7:04 AM', habit:'Out the door',              icon:'🚪', cat:'sleep',   detail:'3 min to get ready. 15 min walk to Andrew Commons.' },
-  { time:'7:30 AM', habit:'Breakfast at Commons',      icon:'🥚', cat:'health',  detail:'Load up on protein — eggs, yogurt, whatever is hot. 20 minutes.' },
-  { time:'7:50 AM', habit:'Walk to lab',               icon:'🔬', cat:'career',  detail:'10 min to get there. At bench by 8:00 AM.' },
+  { habit:'Wake up',                  icon:'☀️', cat:'sleep',   durationMins:2,  detail:'Weekdays only. 7.5 hours from 10:30 PM. Weekends 8:30 AM.' },
+  { habit:'16 oz water',               icon:'💧', cat:'health',  durationMins:2,  detail:'Before coffee, before phone. Non-negotiable.' },
+  { habit:'Brush teeth + skincare',    icon:'✨', cat:'polish',  durationMins:10, detail:'Brush teeth, cleanser, moisturizer with SPF. CeraVe. 10 minutes.' },
+  { habit:'Get dressed intentionally', icon:'👗', cat:'polish',  durationMins:5,  detail:'Laid out the night before. Well-fitted basics only. 5 minutes.' },
+  { habit:'MCAT review',               icon:'📚', cat:'career',  durationMins:30, detail:'30 min. One focused concept block.' },
+  { habit:'Assignment & lab review',   icon:'🗒️', cat:'career',  durationMins:15, detail:'15 min. Check what is due, what experiments are running, what needs prepping today.' },
+  { habit:'Out the door',              icon:'🚪', cat:'sleep',   durationMins:26, detail:'3 min to get ready. 15 min walk to Andrew Commons.' },
+  { habit:'Breakfast at Commons',      icon:'🥚', cat:'health',  durationMins:20, detail:'Load up on protein — eggs, yogurt, whatever is hot. 20 minutes.' },
+  { habit:'Walk to lab',               icon:'🔬', cat:'career',  durationMins:10, detail:'10 min to get there. At bench by 8:00 AM.' },
 ]
 
 export const NIGHT_ROUTINE = [

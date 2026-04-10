@@ -15,6 +15,33 @@ const CAT_COLORS = {
 }
 const DEFAULT_EMOJIS = ['☀️','💧','✨','👗','📚','🗒️','🚪','🥚','🔬','🌙','📞','📝','📵','🗂️','🎹','💤','🏃‍♀️','⏰','🍽️','📖','💊','🧘','🪥','🛁']
 
+// ── Compute times from start + durations ──────────────────────
+// If items have durationMins, compute their times dynamically.
+// Otherwise fall back to stored time strings.
+export function computeItemTimes(items, startMins) {
+  let cursor = startMins
+  return items.map(item => {
+    const dur = item.durationMins ?? null
+    if (dur !== null) {
+      const h = Math.floor(cursor / 60), m = cursor % 60
+      const label = `${h%12||12}:${String(m).padStart(2,'0')} ${h>=12?'PM':'AM'}`
+      const out = { ...item, time: label }
+      cursor += dur
+      return out
+    }
+    return item
+  })
+}
+
+function parseMorningStart(timeStr) {
+  if (!timeStr) return null
+  const m = timeStr.match(/(\d{1,2}):(\d{2})\s*(AM|PM)/i)
+  if (!m) return null
+  let h = parseInt(m[1]); const min = parseInt(m[2]); const ap = m[3].toUpperCase()
+  if (ap==='PM' && h!==12) h+=12; if (ap==='AM' && h===12) h=0
+  return h*60+min
+}
+
 function todayKey() {
   const d = new Date()
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
@@ -52,10 +79,18 @@ function ItemRow({ item, editMode, done, onToggle, onChange, onDelete, hideCheck
       <div style={{ display:'flex', gap:8, alignItems:'flex-start', flexWrap:'wrap' }}>
         {/* Emoji */}
         <EmojiPicker value={item.icon} onChange={v => onChange({ ...item, icon: v })} />
-        {/* Time */}
-        <input value={item.time} onChange={e => onChange({ ...item, time: e.target.value })}
-          placeholder="Time"
-          style={{ width:90, fontSize:12, padding:'6px 8px', borderRadius:8, border:'1px solid var(--border)', background:'rgba(255,255,255,.06)', color:'var(--text)', fontFamily:'DM Sans, sans-serif' }} />
+        {/* Duration or time */}
+        {item.durationMins !== undefined
+          ? <div style={{ display:'flex', alignItems:'center', gap:4 }}>
+              <input type="number" min={1} max={180} value={item.durationMins}
+                onChange={e => onChange({ ...item, durationMins: Math.max(1, parseInt(e.target.value)||1) })}
+                style={{ width:54, fontSize:12, padding:'6px 8px', borderRadius:8, border:'1px solid var(--border)', background:'rgba(255,255,255,.06)', color:'var(--text)', fontFamily:'DM Sans, sans-serif', textAlign:'center' }} />
+              <span style={{ fontSize:10, color:'var(--muted)' }}>min</span>
+            </div>
+          : <input value={item.time||''} onChange={e => onChange({ ...item, time: e.target.value })}
+              placeholder="Time"
+              style={{ width:90, fontSize:12, padding:'6px 8px', borderRadius:8, border:'1px solid var(--border)', background:'rgba(255,255,255,.06)', color:'var(--text)', fontFamily:'DM Sans, sans-serif' }} />
+        }
         {/* Habit name */}
         <input value={item.habit} onChange={e => onChange({ ...item, habit: e.target.value })}
           placeholder="Habit name"
@@ -102,18 +137,27 @@ function ItemRow({ item, editMode, done, onToggle, onChange, onDelete, hideCheck
 }
 
 // ── Single routine section ─────────────────────────────────────
-function RoutineSection({ title, sub, icon, items, routineKey, routineLog, onUpdateItems, onUpdateLog, isDefault, settingsMode }) {
+function RoutineSection({ title, sub, icon, items, routineKey, routineLog, onUpdateItems, onUpdateLog, isDefault, settingsMode, startMins, onStartMinsChange }) {
   const [editMode, setEditMode] = useState(false)
   const [localItems, setLocalItems] = useState(items)
   const [localSub, setLocalSub] = useState(sub)
   const [open, setOpen] = useState(false)
+
+  // Compute displayed times if items use durationMins
+  const hasDurations = items.some(i => i.durationMins !== undefined)
+  const displayItems = hasDurations && startMins != null
+    ? computeItemTimes(items, startMins)
+    : items
+  const displayLocalItems = hasDurations && startMins != null
+    ? computeItemTimes(localItems, startMins)
+    : localItems
   const today = todayKey()
   const doneSet = new Set(Object.keys(routineLog[today] || {}).filter(k => routineLog[today][k]))
 
   // Keep in sync when items prop changes
-  useEffect(() => { setLocalItems(items) }, [items])
+  useEffect(() => { setLocalItems(items); setLocalSub(sub) }, [items, sub])
 
-  const doneCount = localItems.filter(it => doneSet.has(`${routineKey}-${it.habit}`)).length
+  const doneCount = displayItems.filter(it => doneSet.has(`${routineKey}-${it.habit}`)).length
 
   const toggleItem = async (habit) => {
     const key = `${routineKey}-${habit}`
@@ -152,10 +196,17 @@ function RoutineSection({ title, sub, icon, items, routineKey, routineLog, onUpd
             <div className="serif" style={{ fontSize:18, color:'var(--sand)', fontWeight:600 }}>{title}</div>
             <div style={{ fontSize:11, color:'var(--green-mid)', marginTop:1 }}>
               {editMode
-                ? <input value={localSub} onChange={e=>setLocalSub(e.target.value)}
-                    onClick={e=>e.stopPropagation()}
-                    style={{ fontSize:11, background:'rgba(255,255,255,.08)', border:'1px solid rgba(255,255,255,.2)', borderRadius:6, padding:'2px 8px', color:'var(--green-light)', fontFamily:'DM Sans,sans-serif', width:200 }}/>
-                : <>{localSub} · {doneCount}/{localItems.length} done today</>}
+                ? <div style={{ display:'flex', alignItems:'center', gap:6 }} onClick={e=>e.stopPropagation()}>
+                    {hasDurations && onStartMinsChange && (
+                      <input type="time"
+                        defaultValue={startMins != null ? `${String(Math.floor(startMins/60)).padStart(2,'0')}:${String(startMins%60).padStart(2,'0')}` : '06:00'}
+                        onChange={e => { const [h,m]=e.target.value.split(':').map(Number); onStartMinsChange(h*60+m) }}
+                        style={{ fontSize:11, background:'rgba(255,255,255,.08)', border:'1px solid rgba(255,255,255,.2)', borderRadius:6, padding:'2px 6px', color:'var(--green-light)', fontFamily:'DM Sans,sans-serif' }}/>
+                    )}
+                    <input value={localSub} onChange={e=>setLocalSub(e.target.value)}
+                      style={{ fontSize:11, background:'rgba(255,255,255,.08)', border:'1px solid rgba(255,255,255,.2)', borderRadius:6, padding:'2px 8px', color:'var(--green-light)', fontFamily:'DM Sans,sans-serif', width:160 }}/>
+                  </div>
+                : <>{localSub || (hasDurations && displayItems.length ? displayItems[0].time + (displayItems.length>1?' – '+displayItems[displayItems.length-1].time:'') : sub)} · {doneCount}/{displayItems.length} done today</>}
             </div>
           </div>
         </div>
@@ -188,8 +239,8 @@ function RoutineSection({ title, sub, icon, items, routineKey, routineLog, onUpd
         <div style={{ background:'rgba(7,26,62,.8)', borderRadius:'0 0 14px 14px', border:'1px solid var(--border)', borderTop:'none' }}>
           {editMode ? (
             <div style={{ padding:'14px 14px 8px' }}>
-              {localItems.map((item, i) => (
-                <ItemRow key={i} item={item} editMode
+              {displayLocalItems.map((item, i) => (
+                <ItemRow key={i} item={localItems[i]} editMode
                   onChange={updated => setLocalItems(prev => prev.map((it,j) => j===i ? updated : it))}
                   onDelete={() => setLocalItems(prev => prev.filter((_,j) => j!==i))}
                   done={false} onToggle={() => {}}
@@ -209,7 +260,7 @@ function RoutineSection({ title, sub, icon, items, routineKey, routineLog, onUpd
               </div>
             </div>
           ) : (
-            localItems.map((item, i) => (
+            displayItems.map((item, i) => (
               <ItemRow key={i} item={item} editMode={false}
                 done={doneSet.has(`${routineKey}-${item.habit}`)}
                 onToggle={() => toggleItem(item.habit)}
@@ -230,6 +281,7 @@ export default function Routines() {
   const [nightItems,   setNightItems]   = useState(NIGHT_ROUTINE)
   const [morningSub,   setMorningSub]   = useState('6:00 – 7:50 AM · Weekdays')
   const [nightSub,     setNightSub]     = useState('5:00 PM – 10:30 PM')
+  const [morningStartMins, setMorningStartMins] = useState(6*60) // 6:00 AM default
   const [routineLog,   setRoutineLog_]  = useState({})
   const [morningIsDefault, setMorningIsDefault] = useState(true)
   const [nightIsDefault,   setNightIsDefault]   = useState(true)
@@ -241,6 +293,7 @@ export default function Routines() {
       if (routines.night)   { setNightItems(routines.night);     setNightIsDefault(false)   }
       if (routines.morningSub) setMorningSub(routines.morningSub)
       if (routines.nightSub)   setNightSub(routines.nightSub)
+      if (routines.morningStartMins != null) setMorningStartMins(routines.morningStartMins)
       setRoutineLog_(log)
       setLoading(false)
     })
@@ -251,6 +304,12 @@ export default function Routines() {
     await setRoutineLog(next)
   }, [])
 
+  const updateMorningStart = useCallback(async (mins) => {
+    setMorningStartMins(mins)
+    const cur = await getRoutines()
+    await setRoutines({ ...cur, morningStartMins: mins })
+  }, [])
+
   const updateItems = useCallback(async (key, items, sub) => {
     // items = null means reset to default
     if (key === 'morning') {
@@ -258,7 +317,7 @@ export default function Routines() {
       setMorningItems(next)
       setMorningIsDefault(items === null)
       const cur = await getRoutines()
-      await setRoutines({ ...cur, morning: items, morningSub: sub ?? cur.morningSub })
+      await setRoutines({ ...cur, morning: items, morningSub: sub ?? cur.morningSub, morningStartMins: cur.morningStartMins ?? morningStartMins })
     } else {
       const next = items ?? NIGHT_ROUTINE
       setNightItems(next)
@@ -279,6 +338,7 @@ export default function Routines() {
         items={morningItems} routineKey="morning"
         routineLog={routineLog} onUpdateLog={updateLog}
         onUpdateItems={updateItems} isDefault={morningIsDefault} settingsMode
+        startMins={morningStartMins} onStartMinsChange={updateMorningStart}
       />
       <RoutineSection
         title="Night Routine" sub={nightSub} icon="🌙"
