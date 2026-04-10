@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { getDailyTodos, MORNING_ROUTINE, NIGHT_ROUTINE } from '../data/schedule.js'
+import { getRoutines } from '../lib/storage.js'
 
 const TAG_COLORS = {
   health:'#E07B2E', class:'#7C3AED', lab:'#059669', career:'#D97706',
@@ -313,7 +314,26 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
     try { return JSON.parse(localStorage.getItem('vivian_routine_'+todayKey())||'{}') } catch { return {} }
   })
 
+  // Load custom routines from storage (may differ from schedule.js defaults)
+  const [morningItems, setMorningItems] = useState(MORNING_ROUTINE)
+  const [nightItems,   setNightItems]   = useState(NIGHT_ROUTINE)
+  const [morningSub,   setMorningSub]   = useState('')
+  const [nightSub,     setNightSub]     = useState('')
+
+  useEffect(()=>{
+    getRoutines().then(r => {
+      if (r?.morning) setMorningItems(r.morning)
+      if (r?.night)   setNightItems(r.night)
+      if (r?.morningSub) setMorningSub(r.morningSub)
+      if (r?.nightSub)   setNightSub(r.nightSub)
+    })
+  }, [])
+
   useEffect(()=>{ const t=setInterval(()=>setNow(nowMins()),30000); return ()=>clearInterval(t) },[])
+
+  // Global day-start shift modal
+  const [shiftDayOpen, setShiftDayOpen] = useState(false)
+  const [shiftDayTime, setShiftDayTime] = useState('')
 
   const dateKey = todayKey()
 
@@ -385,6 +405,52 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
       if (tasksWithStatus[j]._mins!==null) return tasksWithStatus[j]._mins-cur._mins
     }
     return null
+  }
+
+  // ── Shift whole day to new start ─────────────────────────────
+  const handleShiftDay = (newStartTime) => {
+    if (!newStartTime) return
+    const [h, m] = newStartTime.split(':').map(Number)
+    const newStartMins = h * 60 + m
+
+    // Find earliest timed undone task to use as anchor
+    const timedUndone = tasksWithStatus
+      .filter(t => t._mins !== null && t._status !== 'past')
+      .sort((a, b) => a._mins - b._mins)
+    if (!timedUndone.length) return
+
+    const earliestMins = timedUndone[0]._mins
+    const offset = newStartMins - earliestMins
+
+    const newOverrides = { ...timeOverrides }
+    let shifted = 0, committed = 0, fixed = 0
+    timedUndone.forEach(task => {
+      if (INFLEXIBLE_TAGS.has(task.tag)) { fixed++; return }
+      const newTime = task._mins + offset
+      if (newTime > END_OF_DAY_MINS) {
+        committed++
+        const tomorrow = new Date(); tomorrow.setDate(tomorrow.getDate() + 1)
+        const tomorrowKey = `${tomorrow.getFullYear()}-${String(tomorrow.getMonth()+1).padStart(2,'0')}-${String(tomorrow.getDate()).padStart(2,'0')}`
+        if (addCommitment) addCommitment({
+          id: 'shifted-' + task.id + '-' + Date.now(),
+          text: task.label.replace(/^~?\d{1,2}:\d{2}\s*(?:AM|PM)\s*(?:—\s*)?/i, '').trim(),
+          date: tomorrowKey, cat: task.tag, done: false,
+          note: 'Shifted from ' + dateKey + ' — ran out of day',
+        })
+        setDeleted(prev => {
+          const next = [...prev, task.id]
+          localStorage.setItem('vivian_deleted_' + dateKey, JSON.stringify(next))
+          return next
+        })
+      } else {
+        newOverrides[task.id] = newTime
+        shifted++
+      }
+    })
+    setTimeOverrides(newOverrides)
+    localStorage.setItem('vivian_timeshift_' + dateKey, JSON.stringify(newOverrides))
+    setShiftResult({ shifted, committed, fixed })
+    setShiftDayOpen(false)
   }
 
   // ── Shift to now ──────────────────────────────────────────────
@@ -493,10 +559,33 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
 
       {/* Morning routine */}
       <RoutineAccordion
-        title="Morning Routine" sub="6:00 – 7:50 AM" icon="☀️"
-        items={MORNING_ROUTINE} prefix="morning"
+        title="Morning Routine"
+        sub={morningSub || (morningItems.length ? (morningItems[0].time || '') + (morningItems.length > 1 ? ' – ' + morningItems[morningItems.length-1].time : '') : '')} icon="☀️"
+        items={morningItems} prefix="morning"
         open={morningOpen} setOpen={setMorningOpen}
         routineDone={routineDone} toggleRoutine={toggleRoutine} />
+
+      {/* Day start shift button */}
+      <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:14}}>
+        <button onClick={()=>setShiftDayOpen(o=>!o)}
+          style={{fontSize:11,padding:'6px 14px',borderRadius:9,border:'1px solid var(--border)',background:'white',color:'var(--muted)',cursor:'pointer',fontFamily:'DM Sans,sans-serif',fontWeight:600,letterSpacing:.5}}>
+          ⏰ Set day start time
+        </button>
+        {shiftDayOpen&&(
+          <div style={{display:'flex',gap:8,alignItems:'center'}}>
+            <input type="time" value={shiftDayTime} onChange={e=>setShiftDayTime(e.target.value)} autoFocus
+              style={{fontSize:12,padding:'5px 10px',borderRadius:9,border:'1px solid var(--teal)',fontFamily:'DM Sans,sans-serif',outline:'none'}}/>
+            <button onClick={()=>handleShiftDay(shiftDayTime)}
+              style={{fontSize:11,padding:'6px 12px',borderRadius:9,border:'none',background:'var(--forest)',color:'var(--green-light)',cursor:'pointer',fontFamily:'DM Sans,sans-serif',fontWeight:600}}>
+              Shift all
+            </button>
+            <button onClick={()=>setShiftDayOpen(false)}
+              style={{fontSize:11,padding:'6px 10px',borderRadius:9,border:'1px solid var(--border)',background:'white',color:'var(--muted)',cursor:'pointer',fontFamily:'DM Sans,sans-serif'}}>
+              Cancel
+            </button>
+          </div>
+        )}
+      </div>
 
       {/* Timeline */}
       {tasksWithStatus.length===0 ? (
@@ -526,8 +615,9 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
 
       {/* Night routine — end of day */}
       <RoutineAccordion
-        title="Night Routine" sub="9:00 PM – 10:30 PM" icon="🌙"
-        items={NIGHT_ROUTINE} prefix="night"
+        title="Night Routine"
+        sub={nightSub || (nightItems.length ? (nightItems[0].time || '') + (nightItems.length > 1 ? ' – ' + nightItems[nightItems.length-1].time : '') : '')} icon="🌙"
+        items={nightItems} prefix="night"
         open={nightOpen} setOpen={setNightOpen}
         routineDone={routineDone} toggleRoutine={toggleRoutine} />
 
