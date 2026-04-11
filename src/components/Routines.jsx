@@ -142,6 +142,7 @@ function RoutineSection({ title, sub, icon, items, routineKey, routineLog, onUpd
   const [localItems, setLocalItems] = useState(items)
   const [localSub, setLocalSub] = useState(sub)
   const [open, setOpen] = useState(false)
+  const [localStartMins, setLocalStartMins] = useState(startMins ?? 6*60)
 
   // Compute displayed times if items use durationMins
   const hasDurations = items.some(i => i.durationMins !== undefined)
@@ -155,7 +156,7 @@ function RoutineSection({ title, sub, icon, items, routineKey, routineLog, onUpd
   const doneSet = new Set(Object.keys(routineLog[today] || {}).filter(k => routineLog[today][k]))
 
   // Keep in sync when items prop changes
-  useEffect(() => { setLocalItems(items); setLocalSub(sub) }, [items, sub])
+  useEffect(() => { setLocalItems(items); setLocalSub(sub); setLocalStartMins(startMins ?? 6*60) }, [items, sub, startMins])
 
   const doneCount = displayItems.filter(it => doneSet.has(`${routineKey}-${it.habit}`)).length
 
@@ -170,6 +171,9 @@ function RoutineSection({ title, sub, icon, items, routineKey, routineLog, onUpd
   }
 
   const saveEdits = async () => {
+    if (onStartMinsChange && localStartMins !== startMins) {
+      await onStartMinsChange(localStartMins)
+    }
     await onUpdateItems(routineKey, localItems, localSub)
     setEditMode(false)
   }
@@ -177,6 +181,7 @@ function RoutineSection({ title, sub, icon, items, routineKey, routineLog, onUpd
   const cancelEdits = () => {
     setLocalItems(items)
     setLocalSub(sub)
+    setLocalStartMins(startMins ?? 6*60)
     setEditMode(false)
   }
 
@@ -198,15 +203,31 @@ function RoutineSection({ title, sub, icon, items, routineKey, routineLog, onUpd
               {editMode
                 ? <div style={{ display:'flex', alignItems:'center', gap:6 }} onClick={e=>e.stopPropagation()}>
                     {hasDurations && onStartMinsChange && (
-                      <input type="time"
-                        defaultValue={startMins != null ? `${String(Math.floor(startMins/60)).padStart(2,'0')}:${String(startMins%60).padStart(2,'0')}` : '06:00'}
-                        onChange={e => { const [h,m]=e.target.value.split(':').map(Number); onStartMinsChange(h*60+m) }}
-                        style={{ fontSize:11, background:'rgba(255,255,255,.08)', border:'1px solid rgba(255,255,255,.2)', borderRadius:6, padding:'2px 6px', color:'var(--green-light)', fontFamily:'DM Sans,sans-serif' }}/>
+                      <div style={{ display:'flex', alignItems:'center', gap:4 }}>
+                        <span style={{ fontSize:10, color:'rgba(255,255,255,.5)' }}>Start:</span>
+                        <input type="time"
+                          value={`${String(Math.floor(localStartMins/60)).padStart(2,'0')}:${String(localStartMins%60).padStart(2,'0')}`}
+                          onChange={e => { const [h,m]=e.target.value.split(':').map(Number); setLocalStartMins(h*60+m) }}
+                          style={{ fontSize:11, background:'rgba(255,255,255,.08)', border:'1px solid rgba(255,255,255,.2)', borderRadius:6, padding:'2px 6px', color:'var(--green-light)', fontFamily:'DM Sans,sans-serif' }}/>
+                      </div>
                     )}
                     <input value={localSub} onChange={e=>setLocalSub(e.target.value)}
                       style={{ fontSize:11, background:'rgba(255,255,255,.08)', border:'1px solid rgba(255,255,255,.2)', borderRadius:6, padding:'2px 8px', color:'var(--green-light)', fontFamily:'DM Sans,sans-serif', width:160 }}/>
                   </div>
-                : <>{localSub || (hasDurations && displayItems.length ? displayItems[0].time + (displayItems.length>1?' – '+displayItems[displayItems.length-1].time:'') : sub)} · {doneCount}/{displayItems.length} done today</>}
+                : (() => {
+                    if (hasDurations && displayItems.length) {
+                      const first = displayItems[0].time || ''
+                      const lastD = displayItems[displayItems.length-1]
+                      const lastItems = items[items.length-1]
+                      // compute end = last item start + duration
+                      const parseT = s => { if (!s) return null; const m = s.match(/(\d{1,2}):(\d{2})\s*(AM|PM)/i); if (!m) return null; let h=parseInt(m[1]); const mn=parseInt(m[2]); const ap=m[3].toUpperCase(); if(ap==='PM'&&h!==12)h+=12; if(ap==='AM'&&h===12)h=0; return h*60+mn }
+                      const lastStart = parseT(lastD?.time)
+                      const endM = lastStart !== null ? lastStart + (lastD?.durationMins || lastItems?.durationMins || 0) : null
+                      const endStr = endM !== null ? `${Math.floor(endM/60)%12||12}:${String(endM%60).padStart(2,'0')} ${endM>=720?'PM':'AM'}` : ''
+                      return <>{first}{endStr ? ` – ${endStr}` : ''} · {doneCount}/{displayItems.length} done today</>
+                    }
+                    return <>{localSub} · {doneCount}/{displayItems.length} done today</>
+                  })()}
             </div>
           </div>
         </div>
