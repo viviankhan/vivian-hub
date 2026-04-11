@@ -149,8 +149,8 @@ function RoutineSection({ title, sub, icon, items, routineKey, routineLog, onUpd
   const displayItems = hasDurations && startMins != null
     ? computeItemTimes(items, startMins)
     : items
-  const displayLocalItems = hasDurations && startMins != null
-    ? computeItemTimes(localItems, startMins)
+  const displayLocalItems = hasDurations
+    ? computeItemTimes(localItems, localStartMins)
     : localItems
   const today = todayKey()
   const doneSet = new Set(Object.keys(routineLog[today] || {}).filter(k => routineLog[today][k]))

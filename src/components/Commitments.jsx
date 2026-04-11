@@ -322,7 +322,10 @@ export default function Commitments({ commitments, addCommitment, updateCommitme
     if (aDone !== bDone) return aDone ? 1 : -1
     if (!a.date && !b.date) return 0
     if (!a.date) return 1; if (!b.date) return -1
-    return a.date.localeCompare(b.date)
+    const dateCmp = a.date.localeCompare(b.date)
+    if (dateCmp !== 0) return dateCmp
+    // Same date — sort by time
+    return (a.time || '99:99').localeCompare(b.time || '99:99')
   })
 
   const visible = sorted.filter(c => {

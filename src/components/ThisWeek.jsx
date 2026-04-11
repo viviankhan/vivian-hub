@@ -141,11 +141,11 @@ export default function ThisWeek({ todos, weekState, syncToggle, commitments, ad
         const customTasks = customByDay[day.date] || []
 
         const allTasks = [
-          ...dayCommitments.map(c=>({ id:c.id, text:c.time?`${fmt12(c.time)} — ${c.text}`:c.text, cat:c.cat||'personal', isCommitment:true })),
-          ...carriedFromPrev.map(t=>({ ...t, carried:true, carriedFrom:weekPlan[i-1].dayLabel })),
-          ...templateTasks,
-          ...customTasks,
-        ]
+          ...dayCommitments.map(c=>({ id:c.id, text:c.time?`${fmt12(c.time)} — ${c.text}`:c.text, cat:c.cat||'personal', isCommitment:true, _sortTime:c.time||'99:99' })),
+          ...carriedFromPrev.map(t=>({ ...t, carried:true, carriedFrom:weekPlan[i-1].dayLabel, _sortTime:'00:00' })),
+          ...templateTasks.map(t=>({ ...t, _sortTime: (() => { const m=t.text?.match(/(\d{1,2}):(\d{2})\s*(AM|PM)/i); if(!m)return'50:00'; let h=parseInt(m[1]); if(m[3].toUpperCase()==='PM'&&h!==12)h+=12; if(m[3].toUpperCase()==='AM'&&h===12)h=0; return `${String(h).padStart(2,'0')}:${m[2]}`; })() })),
+          ...customTasks.map(t=>({ ...t, _sortTime: (() => { const m=t.text?.match(/(\d{1,2}):(\d{2})\s*(AM|PM)/i); if(!m)return'50:00'; let h=parseInt(m[1]); if(m[3].toUpperCase()==='PM'&&h!==12)h+=12; if(m[3].toUpperCase()==='AM'&&h===12)h=0; return `${String(h).padStart(2,'0')}:${m[2]}`; })() })),
+        ].sort((a,b) => (a._sortTime||'99:99').localeCompare(b._sortTime||'99:99'))
 
         const doneCount = allTasks.filter(t=>isDone(t.id, day.date, t.isCommitment)).length
 
