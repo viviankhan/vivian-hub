@@ -1,12 +1,15 @@
 import { useState } from 'react'
 import { CALENDAR_EVENTS } from '../data/schedule.js'
 
-const MONTHS = [
-  { year:2026, month:2, name:'March' },
-  { year:2026, month:3, name:'April' },
-  { year:2026, month:4, name:'May'   },
-  { year:2026, month:5, name:'June'  },
-]
+// Dynamic: current month + 5 ahead
+function buildMonths() {
+  const now = new Date()
+  return Array.from({ length: 6 }, (_, i) => {
+    const d = new Date(now.getFullYear(), now.getMonth() + i, 1)
+    return { year: d.getFullYear(), month: d.getMonth(), name: d.toLocaleString('en-US', { month:'long' }) }
+  })
+}
+const MONTHS = buildMonths()
 
 const TYPE_STYLES = {
   capstone:   { bg:'#EFF6FF', border:'#3B82F6', text:'#1E3A8A', dot:'#2563EB', label:'Capstone' },
@@ -35,7 +38,7 @@ function fmt12(t) {
 }
 
 export default function Calendar({ commitments }) {
-  const [monthIdx, setMonthIdx] = useState(1)
+  const [monthIdx, setMonthIdx] = useState(0)
   const [selected, setSelected] = useState(null)
   const today = todayStr()
 
@@ -60,7 +63,7 @@ export default function Calendar({ commitments }) {
   return (
     <div>
       <div className="page-title">Calendar</div>
-      <div className="page-sub">Spring 2026 · includes your commitments</div>
+      <div className="page-sub">{MONTHS[0].name} {MONTHS[0].year} → {MONTHS[MONTHS.length-1].name} · includes your commitments</div>
 
       <div className="cal-month-btns">
         {MONTHS.map((m, i) => (
