@@ -259,8 +259,8 @@ export default function App() {
       </header>
 
       <main className="content">
-        {tab==='today'       && <Today       {...sharedProps} appendLog={appendLog} weekPlan={weekPlan} dailyTodos={activeDailyTodos} scheduled={scheduled} />}
-        {tab==='week'        && <ThisWeek    {...sharedProps} weekPlan={weekPlan} />}
+        {tab==='today'       && <Today       {...sharedProps} appendLog={appendLog} weekPlan={weekPlan} dailyTodos={activeDailyTodos} scheduled={scheduled} deleteCommitment={deleteCommitment} />}
+        {tab==='week'        && <ThisWeek    {...sharedProps} weekPlan={weekPlan} deleteCommitment={deleteCommitment} />}
         {tab==='commitments' && <Commitments {...sharedProps} />}
         {tab==='calendar'    && <Calendar    {...sharedProps} />}
         {tab==='study'       && <Study       {...sharedProps} />}

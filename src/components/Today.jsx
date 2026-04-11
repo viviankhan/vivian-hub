@@ -445,7 +445,7 @@ function NowMarker({ now }) {
 }
 
 // ── Main ───────────────────────────────────────────────────────
-export default function Today({ todos, weekState, syncToggle, commitments, addCommitment, appendLog, dailyTodos, scheduled }) {
+export default function Today({ todos, weekState, syncToggle, commitments, addCommitment, deleteCommitment, appendLog, dailyTodos, scheduled }) {
   const [now,         setNow]         = useState(nowMins())
   const [managing,    setManaging]    = useState(null)
   const [addingTask,  setAddingTask]  = useState(false)
@@ -678,10 +678,16 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
     localStorage.setItem('vivian_custom_'+dateKey, JSON.stringify(next))
   }
   const handleDelete = (task, reason) => {
-    const next=[...deleted,task.id]
-    setDeleted(next)
-    localStorage.setItem('vivian_deleted_'+dateKey, JSON.stringify(next))
-    if (appendLog&&reason) appendLog({date:dateKey,dateLabel:todayLabel(),label:`Deleted: ${task.label} — ${reason}`,tag:'deleted',ts:new Date().toISOString()})
+    if (task.isCommitment && deleteCommitment) {
+      // Commitment — remove from commitments array (syncs to Week, Calendar, Commitments tabs)
+      deleteCommitment(task.id)
+    } else {
+      // Template or custom task — add to local deleted list for today only
+      const next=[...deleted,task.id]
+      setDeleted(next)
+      localStorage.setItem('vivian_deleted_'+dateKey, JSON.stringify(next))
+    }
+    if (appendLog&&reason) appendLog({date:dateKey,dateLabel:todayLabel(),label:`Deleted: ${task.label||task.text} — ${reason}`,tag:'deleted',ts:new Date().toISOString()})
   }
   const handleReschedule = (task, date, time) => {
     if (date === dateKey) {

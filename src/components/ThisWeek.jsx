@@ -76,7 +76,7 @@ function DayQuickAdd({ onAdd, onClose }) {
 }
 
 // ── Main ───────────────────────────────────────────────────────
-export default function ThisWeek({ todos, weekState, syncToggle, commitments, addCommitment, weekPlan }) {
+export default function ThisWeek({ todos, weekState, syncToggle, commitments, addCommitment, deleteCommitment, weekPlan }) {
   const today = todayStr()
   const [addingDay, setAddingDay] = useState(null)
   // Custom tasks per day stored in localStorage (keyed by date)
@@ -179,11 +179,12 @@ export default function ThisWeek({ todos, weekState, syncToggle, commitments, ad
                   done={isDone(t.id, day.date, t.isCommitment)}
                   carried={t.carried} carriedFrom={t.carriedFrom}
                   onToggle={()=>syncToggle(t.id, t.text, t.cat, t.isCommitment?null:day.date)}
-                  onDelete={!t.isCommitment&&!t.carried
-                    ? ()=>customByDay[day.date]?.find(c=>c.id===t.id)
-                        ? handleDeleteCustom(day.date, t.id)
-                        : handleDeleteTemplate(day.date, t.id)
-                    : null}
+                  onDelete={t.carried ? null
+                    : t.isCommitment
+                      ? ()=>deleteCommitment&&deleteCommitment(t.id)
+                      : ()=>customByDay[day.date]?.find(c=>c.id===t.id)
+                          ? handleDeleteCustom(day.date, t.id)
+                          : handleDeleteTemplate(day.date, t.id)}
                 />
               ))}
 
