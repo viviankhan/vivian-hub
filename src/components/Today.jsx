@@ -57,7 +57,23 @@ function MorningRoutineCard({ items, startMins, onStartChange, sub, open, setOpe
   const [inputVal, setInputVal] = useState('')
 
   const hasDurations = items.some(i => i.durationMins !== undefined)
-  const computedItems = hasDurations ? computeItemTimes(items, startMins) : items
+  // If items have time strings but no durations, infer durations from gaps
+  const resolvedItems = !hasDurations ? (() => {
+    const parseT = s => {
+      if (!s) return null
+      const m = s.match(/(\d{1,2}):(\d{2})\s*(AM|PM)/i)
+      if (!m) return null
+      let h = parseInt(m[1]); const min = parseInt(m[2]); const ap = m[3].toUpperCase()
+      if (ap==='PM' && h!==12) h+=12; if (ap==='AM' && h===12) h=0
+      return h*60+min
+    }
+    return items.map((item, i) => {
+      const t0 = parseT(item.time)
+      const t1 = i+1 < items.length ? parseT(items[i+1].time) : null
+      return { ...item, durationMins: (t0!==null && t1!==null) ? t1-t0 : (t0!==null ? 10 : 10) }
+    })
+  })() : items
+  const computedItems = computeItemTimes(resolvedItems, startMins)
   const doneCount = computedItems.filter(item => routineDone['morning-'+item.habit]).length
 
   const startLabel = (() => {
