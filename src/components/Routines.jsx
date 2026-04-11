@@ -144,14 +144,26 @@ function RoutineSection({ title, sub, icon, items, routineKey, routineLog, onUpd
   const [open, setOpen] = useState(false)
   const [localStartMins, setLocalStartMins] = useState(startMins ?? 6*60)
 
-  // Compute displayed times if items use durationMins
-  const hasDurations = items.some(i => i.durationMins !== undefined)
-  const displayItems = hasDurations && startMins != null
-    ? computeItemTimes(items, startMins)
-    : items
-  const displayLocalItems = hasDurations
-    ? computeItemTimes(localItems, localStartMins)
-    : localItems
+  // Resolve durations — if stored items lack durationMins, infer from time string gaps
+  const resolveWithDurations = (arr) => {
+    if (arr.some(i => i.durationMins !== undefined)) return arr
+    const parseT = s => {
+      if (!s) return null
+      const m = s.match(/(\d{1,2}):(\d{2})\s*(AM|PM)/i)
+      if (!m) return null
+      let h = parseInt(m[1]); const min = parseInt(m[2]); const ap = m[3].toUpperCase()
+      if (ap === 'PM' && h !== 12) h += 12; if (ap === 'AM' && h === 12) h = 0
+      return h * 60 + min
+    }
+    return arr.map((item, i) => {
+      const t0 = parseT(item.time), t1 = i + 1 < arr.length ? parseT(arr[i+1].time) : null
+      return { ...item, durationMins: (t0 !== null && t1 !== null) ? t1 - t0 : 10 }
+    })
+  }
+  const resolvedItems      = resolveWithDurations(items)
+  const resolvedLocalItems = resolveWithDurations(localItems)
+  const displayItems      = startMins != null ? computeItemTimes(resolvedItems, startMins) : resolvedItems
+  const displayLocalItems = computeItemTimes(resolvedLocalItems, localStartMins)
   const today = todayKey()
   const doneSet = new Set(Object.keys(routineLog[today] || {}).filter(k => routineLog[today][k]))
 
@@ -202,7 +214,7 @@ function RoutineSection({ title, sub, icon, items, routineKey, routineLog, onUpd
             <div style={{ fontSize:11, color:'var(--green-mid)', marginTop:1 }}>
               {editMode
                 ? <div style={{ display:'flex', alignItems:'center', gap:6 }} onClick={e=>e.stopPropagation()}>
-                    {hasDurations && onStartMinsChange && (
+                    {resolvedItems.some(i => i.durationMins !== undefined) && onStartMinsChange && (
                       <div style={{ display:'flex', alignItems:'center', gap:4 }}>
                         <span style={{ fontSize:10, color:'rgba(255,255,255,.5)' }}>Start:</span>
                         <input type="time"
@@ -215,14 +227,13 @@ function RoutineSection({ title, sub, icon, items, routineKey, routineLog, onUpd
                       style={{ fontSize:11, background:'rgba(255,255,255,.08)', border:'1px solid rgba(255,255,255,.2)', borderRadius:6, padding:'2px 8px', color:'var(--green-light)', fontFamily:'DM Sans,sans-serif', width:160 }}/>
                   </div>
                 : (() => {
-                    if (hasDurations && displayItems.length) {
+                    if (displayItems.length) {
                       const first = displayItems[0].time || ''
                       const lastD = displayItems[displayItems.length-1]
-                      const lastItems = items[items.length-1]
-                      // compute end = last item start + duration
+                      const lastR = resolvedItems[resolvedItems.length-1]
                       const parseT = s => { if (!s) return null; const m = s.match(/(\d{1,2}):(\d{2})\s*(AM|PM)/i); if (!m) return null; let h=parseInt(m[1]); const mn=parseInt(m[2]); const ap=m[3].toUpperCase(); if(ap==='PM'&&h!==12)h+=12; if(ap==='AM'&&h===12)h=0; return h*60+mn }
                       const lastStart = parseT(lastD?.time)
-                      const endM = lastStart !== null ? lastStart + (lastD?.durationMins || lastItems?.durationMins || 0) : null
+                      const endM = lastStart !== null ? lastStart + (lastR?.durationMins || 0) : null
                       const endStr = endM !== null ? `${Math.floor(endM/60)%12||12}:${String(endM%60).padStart(2,'0')} ${endM>=720?'PM':'AM'}` : ''
                       return <>{first}{endStr ? ` – ${endStr}` : ''} · {doneCount}/{displayItems.length} done today</>
                     }
