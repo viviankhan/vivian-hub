@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { getDailyTodos, MORNING_ROUTINE, NIGHT_ROUTINE } from '../data/schedule.js'
+import { findSlots } from '../lib/scheduler.js'
 import { getRoutines } from '../lib/storage.js'
 import { computeItemTimes } from './Routines.jsx'
 
@@ -216,16 +217,30 @@ function RoutineAccordion({ title, sub, icon, items, prefix, open, setOpen, rout
   )
 }
 
-// ── Manage modal ───────────────────────────────────────────────
-function ManageModal({ task, dateKey, onClose, onDelete, onReschedule }) {
-  const [view,setView]=useState('main')
-  const [reason,setReason]=useState('')
-  const [date,setDate]=useState(dateKey)
-  const [time,setTime]=useState('')
-  const s={width:'100%',fontSize:13,padding:'8px 10px',borderRadius:9,border:'1px solid var(--border)',fontFamily:'DM Sans,sans-serif',outline:'none',boxSizing:'border-box'}
+// ── Manage modal with smart scheduling ────────────────────────
+function ManageModal({ task, dateKey, onClose, onDelete, onReschedule, scheduled }) {
+  const [view,setView]     = useState('main')
+  const [reason,setReason] = useState('')
+  const [date,setDate]     = useState(dateKey)
+  const [time,setTime]     = useState('')
+  const [slots,setSlots]   = useState([])
+  const s = { width:'100%',fontSize:13,padding:'8px 10px',borderRadius:9,border:'1px solid var(--border)',fontFamily:'DM Sans,sans-serif',outline:'none',boxSizing:'border-box' }
+
+  // When user picks a date, auto-find smart slots for that day
+  const handleDateChange = (d) => {
+    setDate(d)
+    setTime('')
+    if (d) {
+      const results = findSlots(60, scheduled||[], d)
+      setSlots(results.filter(r => r.date === d))
+    } else {
+      setSlots([])
+    }
+  }
+
   return (
     <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,.5)',zIndex:600,display:'flex',alignItems:'center',justifyContent:'center',padding:16}}>
-      <div style={{background:'white',borderRadius:16,padding:22,maxWidth:360,width:'100%',boxShadow:'0 24px 64px rgba(0,0,0,.3)'}}>
+      <div style={{background:'white',borderRadius:16,padding:22,maxWidth:380,width:'100%',boxShadow:'0 24px 64px rgba(0,0,0,.3)',maxHeight:'90vh',overflowY:'auto'}}>
         {view==='main'&&<>
           <div className="serif" style={{fontSize:17,fontWeight:600,color:'var(--text)',marginBottom:8}}>Manage</div>
           <div style={{fontSize:13,color:'var(--muted)',marginBottom:16,padding:'9px 12px',background:'#F7F6F3',borderRadius:9,lineHeight:1.5}}>{task.label||task.text}</div>
@@ -245,10 +260,31 @@ function ManageModal({ task, dateKey, onClose, onDelete, onReschedule }) {
         </>}
         {view==='reschedule'&&<>
           <div className="serif" style={{fontSize:17,fontWeight:600,color:'var(--text)',marginBottom:12}}>Reschedule</div>
-          <div style={{display:'flex',gap:8,marginBottom:14}}>
-            <div style={{flex:1}}><div style={{fontSize:10,color:'var(--muted)',letterSpacing:1,textTransform:'uppercase',marginBottom:4}}>Date</div><input type="date" value={date} onChange={e=>setDate(e.target.value)} style={{...s}}/></div>
-            <div style={{flex:1}}><div style={{fontSize:10,color:'var(--muted)',letterSpacing:1,textTransform:'uppercase',marginBottom:4}}>Time</div><input type="time" value={time} onChange={e=>setTime(e.target.value)} style={{...s}}/></div>
+          <div style={{display:'flex',gap:8,marginBottom:10}}>
+            <div style={{flex:1}}>
+              <div style={{fontSize:10,color:'var(--muted)',letterSpacing:1,textTransform:'uppercase',marginBottom:4}}>Date</div>
+              <input type="date" value={date} onChange={e=>handleDateChange(e.target.value)} style={{...s}}/>
+            </div>
+            <div style={{flex:1}}>
+              <div style={{fontSize:10,color:'var(--muted)',letterSpacing:1,textTransform:'uppercase',marginBottom:4}}>Time</div>
+              <input type="time" value={time} onChange={e=>setTime(e.target.value)} style={{...s}}/>
+            </div>
           </div>
+
+          {/* Smart slot suggestions */}
+          {slots.length>0&&(
+            <div style={{marginBottom:12}}>
+              <div style={{fontSize:10,color:'var(--muted)',letterSpacing:1,textTransform:'uppercase',marginBottom:6}}>🧠 Best open windows</div>
+              {slots.slice(0,3).map((slot,i)=>(
+                <button key={i} onClick={()=>setTime(slot.startTime)}
+                  style={{display:'block',width:'100%',textAlign:'left',padding:'8px 12px',borderRadius:9,border:`1.5px solid ${time===slot.startTime?'var(--teal)':'var(--border)'}`,background:time===slot.startTime?'#F0FDFB':'white',marginBottom:5,cursor:'pointer',fontFamily:'DM Sans,sans-serif'}}>
+                  <span style={{fontSize:13,color:'var(--text)',fontWeight:500}}>{slot.startDisplay} – {slot.endDisplay}</span>
+                  <span style={{fontSize:11,color:'var(--muted)',marginLeft:8}}>{slot.context}</span>
+                </button>
+              ))}
+            </div>
+          )}
+
           <div style={{display:'flex',gap:8}}>
             <button onClick={()=>{onReschedule(task,date,time);onClose()}} style={{flex:1,padding:'10px',borderRadius:10,border:'none',background:'var(--forest)',color:'var(--green-light)',cursor:'pointer',fontFamily:'DM Sans,sans-serif',fontWeight:600,fontSize:13}}>Reschedule</button>
             <button onClick={()=>setView('main')} style={{padding:'10px 14px',borderRadius:10,border:'1px solid var(--border)',background:'white',color:'var(--muted)',cursor:'pointer',fontSize:12,fontFamily:'DM Sans,sans-serif'}}>Back</button>
@@ -409,7 +445,7 @@ function NowMarker({ now }) {
 }
 
 // ── Main ───────────────────────────────────────────────────────
-export default function Today({ todos, weekState, syncToggle, commitments, addCommitment, appendLog, dailyTodos }) {
+export default function Today({ todos, weekState, syncToggle, commitments, addCommitment, appendLog, dailyTodos, scheduled }) {
   const [now,         setNow]         = useState(nowMins())
   const [managing,    setManaging]    = useState(null)
   const [addingTask,  setAddingTask]  = useState(false)
@@ -740,7 +776,7 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
 
       {shiftResult&&<ShiftToast result={shiftResult} onClose={()=>setShiftResult(null)}/>}
       {addingTask&&<QuickAdd onAdd={handleAdd} onClose={()=>setAddingTask(false)}/>}
-      {managing&&<ManageModal task={managing} dateKey={dateKey} onClose={()=>setManaging(null)} onDelete={handleDelete} onReschedule={handleReschedule}/>}
+      {managing&&<ManageModal task={managing} dateKey={dateKey} onClose={()=>setManaging(null)} onDelete={handleDelete} onReschedule={handleReschedule} scheduled={scheduled}/>}
     </div>
   )
 }

@@ -188,10 +188,25 @@ export default function App() {
     await Promise.all([setTodos(nextTodos), setWeekState(nextWeek)])
 
     if (nowDone) {
+      // Add log entry on check
       const d = new Date()
       const dateKey   = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
       const dateLabel = d.toLocaleDateString('en-US', { weekday:'long', month:'long', day:'numeric' })
-      setLog_(prev => { const next = [...prev, { date:dateKey, dateLabel, label, tag, ts:d.toISOString() }]; setLog(next); return next })
+      setLog_(prev => { const next = [...prev, { date:dateKey, dateLabel, label, tag, ts:d.toISOString(), storageKey }]; setLog(next); return next })
+    } else {
+      // Remove log entry on uncheck — match by label + storageKey
+      setLog_(prev => {
+        const next = prev.filter(e => !(e.label === label && e.storageKey === storageKey))
+        // Also try matching just by label (older entries may not have storageKey)
+        const next2 = next.length < prev.length ? next : prev.filter((e, i) => {
+          if (e.label !== label) return true
+          // Remove only the most recent matching entry
+          const laterIdx = prev.findIndex((e2, i2) => i2 > i && e2.label === label)
+          return laterIdx !== -1
+        })
+        setLog(next2)
+        return next2
+      })
     }
   }, [todos, weekState, commitments])
 
@@ -244,7 +259,7 @@ export default function App() {
       </header>
 
       <main className="content">
-        {tab==='today'       && <Today       {...sharedProps} appendLog={appendLog} weekPlan={weekPlan} dailyTodos={activeDailyTodos} />}
+        {tab==='today'       && <Today       {...sharedProps} appendLog={appendLog} weekPlan={weekPlan} dailyTodos={activeDailyTodos} scheduled={scheduled} />}
         {tab==='week'        && <ThisWeek    {...sharedProps} weekPlan={weekPlan} />}
         {tab==='commitments' && <Commitments {...sharedProps} />}
         {tab==='calendar'    && <Calendar    {...sharedProps} />}
