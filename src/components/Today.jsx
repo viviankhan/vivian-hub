@@ -81,9 +81,23 @@ function MorningRoutineCard({ items, startMins, onStartChange, sub, open, setOpe
     const h = Math.floor(startMins/60), m = startMins%60
     return `${h%12||12}:${String(m).padStart(2,'0')} ${h>=12?'PM':'AM'}`
   })()
-  const endItem = computedItems[computedItems.length-1]
-  const endLabel = endItem?.time || ''
-  const displaySub = sub || (endLabel ? `${startLabel} – ${endLabel}` : startLabel)
+  // End time = start of last item + its duration
+  const lastItem = resolvedItems[resolvedItems.length-1]
+  const lastComputedItem = computedItems[computedItems.length-1]
+  const endMins = lastComputedItem
+    ? (() => {
+        const m = lastComputedItem.time?.match(/(\d{1,2}):(\d{2})\s*(AM|PM)/i)
+        if (!m) return null
+        let h = parseInt(m[1]); const min = parseInt(m[2]); const ap = m[3].toUpperCase()
+        if (ap==='PM' && h!==12) h+=12; if (ap==='AM' && h===12) h=0
+        return h*60 + min + (lastItem?.durationMins || 0)
+      })()
+    : null
+  const endLabel = endMins !== null
+    ? `${Math.floor(endMins/60)%12||12}:${String(endMins%60).padStart(2,'0')} ${endMins>=720?'PM':'AM'}`
+    : ''
+  // Always compute from startMins — never use the stored sub string
+  const displaySub = endLabel ? `${startLabel} – ${endLabel}` : startLabel
 
   const openStartEdit = (e) => {
     e.stopPropagation()
