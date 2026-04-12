@@ -45,13 +45,13 @@ function isSoon(dateStr) {
 }
 
 const CATEGORIES = [
-  { id:'meeting',  label:'Meeting',       color:'#3B82F6', bg:'#EFF6FF' },
-  { id:'deadline', label:'Deadline',      color:'#EF4444', bg:'#FEF2F2' },
-  { id:'social',   label:'Social',        color:'#A855F7', bg:'#F5F3FF' },
-  { id:'lab',      label:'Lab/Research',  color:'#059669', bg:'#ECFDF5' },
-  { id:'class',    label:'Class/Study',   color:'#7C3AED', bg:'#EDE9FE' },
-  { id:'personal', label:'Personal',      color:'#D97706', bg:'#FEF9E7' },
-  { id:'other',    label:'Other',         color:'#6B7280', bg:'#F3F4F6' },
+  { id:'meeting',  label:'Meeting',       color:'#4A9EB5', bg:'#EAF5F8' },
+  { id:'deadline', label:'Deadline',      color:'#C4728E', bg:'#FBF0F4' },
+  { id:'social',   label:'Social',        color:'#9A7CC4', bg:'#F2EEF9' },
+  { id:'lab',      label:'Lab/Research',  color:'#4A9E8E', bg:'#EAF5F3' },
+  { id:'class',    label:'Class/Study',   color:'#7A8EC4', bg:'#EEF0F9' },
+  { id:'personal', label:'Personal',      color:'#C4976E', bg:'#FAF3EC' },
+  { id:'other',    label:'Other',         color:'#8899AA', bg:'#EEF1F4' },
 ]
 
 const DURATIONS = [
@@ -87,8 +87,8 @@ function SlotPicker({ commitmentId, commitmentLabel, scheduled, onPick, onCancel
   useState(() => { if (targetDate) search() }, [])
 
   return (
-    <div style={{ background:'#F7F9F5', border:'1px solid #D1E8D0', borderRadius:10, padding:'12px 14px', marginTop:10 }}>
-      <div style={{ fontSize:11, color:'#52B788', fontWeight:600, letterSpacing:1, textTransform:'uppercase', marginBottom:10 }}>
+    <div style={{ background:'#EAF5F8', border:'1px solid #A8D8E4', borderRadius:10, padding:'12px 14px', marginTop:10 }}>
+      <div style={{ fontSize:11, color:'#2A7A90', fontWeight:600, letterSpacing:1, textTransform:'uppercase', marginBottom:10 }}>
         {targetDate
           ? `Find a time on ${new Date(targetDate+'T12:00:00').toLocaleDateString('en-US',{weekday:'long',month:'short',day:'numeric'})}`
           : 'Find a time slot'}
@@ -118,7 +118,7 @@ function SlotPicker({ commitmentId, commitmentLabel, scheduled, onPick, onCancel
         <div
           key={i}
           onClick={() => onPick(slot, duration)}
-          style={{ background:'white', border:'1px solid #D1E8D0', borderRadius:8, padding:'9px 12px', marginBottom:6, cursor:'pointer', display:'flex', justifyContent:'space-between', alignItems:'center' }}
+          style={{ background:'white', border:'1px solid #C4DDE8', borderRadius:8, padding:'9px 12px', marginBottom:6, cursor:'pointer', display:'flex', justifyContent:'space-between', alignItems:'center' }}
         >
           <div>
             <div style={{ fontFamily:'Cormorant Garamond, serif', fontSize:15, color:'var(--text)', fontWeight:600 }}>
@@ -126,7 +126,7 @@ function SlotPicker({ commitmentId, commitmentLabel, scheduled, onPick, onCancel
             </div>
             <div style={{ fontSize:11, color:'var(--muted)', marginTop:1 }}>{slot.context}</div>
           </div>
-          <span style={{ fontSize:10, letterSpacing:1, textTransform:'uppercase', padding:'4px 10px', borderRadius:12, border:'none', background:'var(--forest)', color:'var(--green-light)', cursor:'pointer' }}>
+          <span style={{ fontSize:10, letterSpacing:1, textTransform:'uppercase', padding:'4px 10px', borderRadius:12, border:'none', background:'#4A9EB5', color:'white', cursor:'pointer' }}>
             Pick →
           </span>
         </div>
@@ -168,14 +168,14 @@ function QuickAdd({ onAdd }) {
 
   if (!open) return (
     <button onClick={() => setOpen(true)}
-      style={{ width:'100%', background:'var(--forest)', border:'none', borderRadius:14, padding:'14px 18px', cursor:'pointer', display:'flex', alignItems:'center', gap:10, marginBottom:16 }}>
+      style={{ width:'100%', background:'linear-gradient(135deg, #7BBFD4, #C8BFDF)', border:'none', borderRadius:14, padding:'14px 18px', cursor:'pointer', display:'flex', alignItems:'center', gap:10, marginBottom:16 }}>
       <span style={{ fontSize:20 }}>+</span>
-      <span style={{ fontFamily:'DM Sans, sans-serif', fontSize:13, color:'var(--green-light)', fontWeight:600 }}>Add a commitment</span>
+      <span style={{ fontFamily:'DM Sans, sans-serif', fontSize:13, color:'#1A3A4E', fontWeight:600 }}>Add a commitment</span>
     </button>
   )
 
   return (
-    <div style={{ background:'white', borderRadius:14, border:'2px solid var(--forest)', padding:'18px', marginBottom:16 }}>
+    <div style={{ background:'white', borderRadius:14, border:'2px solid #A8D0E0', padding:'18px', marginBottom:16 }}>
       <div className="serif" style={{ fontSize:18, fontWeight:600, color:'var(--text)', marginBottom:14 }}>New Commitment</div>
 
       {overlap && (
@@ -249,7 +249,7 @@ function QuickAdd({ onAdd }) {
 
       <div style={{ display:'flex', gap:8 }}>
         <button onClick={submit} disabled={!text.trim()}
-          style={{ flex:1, background: text.trim() ? 'var(--forest)' : '#E5E7EB', color: text.trim() ? 'var(--green-light)' : '#9CA3AF', border:'none', borderRadius:10, padding:'10px', fontSize:13, fontWeight:600, cursor: text.trim() ? 'pointer' : 'default', fontFamily:'DM Sans, sans-serif' }}>
+          style={{ flex:1, background: text.trim() ? 'linear-gradient(135deg, #4A9EB5, #7BBFD4)' : '#E5E7EB', color: text.trim() ? 'white' : '#9CA3AF', border:'none', borderRadius:10, padding:'10px', fontSize:13, fontWeight:600, cursor: text.trim() ? 'pointer' : 'default', fontFamily:'DM Sans, sans-serif' }}>
           Save commitment
         </button>
         <button onClick={reset}
@@ -273,11 +273,11 @@ function CommitCard({ c, todos, weekState, syncToggle, onDelete, onSchedule, sch
   const unscheduled = !c.date
 
   let borderColor = 'var(--border)', bg = 'white'
-  if (done)         { bg = '#FAFAF7'; borderColor = '#E5E7EB' }
-  else if (past)    { bg = '#FFF5F5'; borderColor = '#FECACA' }
-  else if (today)   { bg = '#F0FDF4'; borderColor = '#86EFAC' }
-  else if (soon)    { bg = '#FFFBEB'; borderColor = '#FDE68A' }
-  else if (unscheduled) { borderColor = '#E5E7EB' }
+  if (done)         { bg = '#F8F6F8'; borderColor = '#E0D4DC' }
+  else if (past)    { bg = '#FDF4F6'; borderColor = '#F0C4CC' }
+  else if (today)   { bg = '#EAF5F8'; borderColor = '#A8D8E4' }
+  else if (soon)    { bg = '#FAF5EC'; borderColor = '#E4D0A8' }
+  else if (unscheduled) { borderColor = '#E0D4DC' }
 
   const handlePickSlot = (slot, duration) => {
     onSchedule(c.id, { date: slot.date, time: slot.startTime })
@@ -299,17 +299,17 @@ function CommitCard({ c, todos, weekState, syncToggle, onDelete, onSchedule, sch
           {c.person && <div style={{ fontSize:11, color:'var(--muted)', marginBottom:4 }}>With: {c.person}</div>}
           <div style={{ display:'flex', gap:8, flexWrap:'wrap', alignItems:'center' }}>
             {c.date && (
-              <span style={{ fontSize:11, color: past ? '#DC2626' : today ? '#059669' : 'var(--muted)', fontWeight: (today||past) ? 600 : 400 }}>
+              <span style={{ fontSize:11, color: past ? '#B44A6A' : today ? '#2A7A90' : 'var(--muted)', fontWeight: (today||past) ? 600 : 400 }}>
                 {formatDate(c.date)}{c.time ? ` @ ${fmt12(c.time)}` : ''}
               </span>
             )}
             {c.durationMins && <span style={{ fontSize:11, color:'var(--muted)' }}>~{c.durationMins < 60 ? c.durationMins+'min' : (c.durationMins/60 % 1 === 0 ? c.durationMins/60+'h' : (c.durationMins/60).toFixed(1)+'h')}</span>}
             {c.prepMin && <span style={{ fontSize:11, color:'var(--muted)' }}>Leave {c.prepMin} min early</span>}
             <span style={{ fontSize:10, padding:'2px 8px', borderRadius:10, background:cat.bg, color:cat.color, fontWeight:500 }}>{cat.label}</span>
-            {past  && !done && <span style={{ fontSize:10, padding:'2px 8px', borderRadius:10, background:'#FEE2E2', color:'#DC2626', fontWeight:600 }}>PAST DUE</span>}
-            {today && !done && <span style={{ fontSize:10, padding:'2px 8px', borderRadius:10, background:'#DCFCE7', color:'#059669', fontWeight:600 }}>TODAY</span>}
+            {past  && !done && <span style={{ fontSize:10, padding:'2px 8px', borderRadius:10, background:'#FBF0F4', color:'#B44A6A', fontWeight:600 }}>PAST DUE</span>}
+            {today && !done && <span style={{ fontSize:10, padding:'2px 8px', borderRadius:10, background:'#D4EEF4', color:'#2A7A90', fontWeight:600 }}>TODAY</span>}
             {unscheduled && !done && <span style={{ fontSize:10, padding:'2px 8px', borderRadius:10, background:'#F3F4F6', color:'#6B7280' }}>Unscheduled</span>}
-            {!unscheduled && !c.time && !done && <span style={{ fontSize:10, padding:'2px 8px', borderRadius:10, background:'#FEF9C3', color:'#854D0E', fontWeight:500 }}>⏰ No time set</span>}
+            {!unscheduled && !c.time && !done && <span style={{ fontSize:10, padding:'2px 8px', borderRadius:10, background:'#FAF3EC', color:'#8A6030', fontWeight:500 }}>⏰ No time set</span>}
           </div>
         </div>
 
@@ -319,7 +319,7 @@ function CommitCard({ c, todos, weekState, syncToggle, onDelete, onSchedule, sch
             <button
               onClick={e => { e.stopPropagation(); setShowScheduler(s => !s) }}
               title="Find a time slot for this"
-              style={{ fontSize:10, letterSpacing:.5, textTransform:'uppercase', padding:'4px 10px', borderRadius:10, border:'1px solid #D1E8D0', background: showScheduler ? 'var(--forest)' : '#F7F9F5', color: showScheduler ? 'var(--green-light)' : '#52B788', cursor:'pointer', fontFamily:'DM Sans, sans-serif', fontWeight:600, whiteSpace:'nowrap' }}
+              style={{ fontSize:10, letterSpacing:.5, textTransform:'uppercase', padding:'4px 10px', borderRadius:10, border:'1px solid #A8D8E4', background: showScheduler ? '#4A9EB5' : '#EAF5F8', color: showScheduler ? 'white' : '#2A7A90', cursor:'pointer', fontFamily:'DM Sans, sans-serif', fontWeight:600, whiteSpace:'nowrap' }}
             >
               {showScheduler ? 'Cancel' : unscheduled ? '🗓 Find time' : '⏰ Find time'}
             </button>
@@ -387,13 +387,13 @@ export default function Commitments({ commitments, addCommitment, updateCommitme
         <div style={{ display:'flex', gap:8, marginBottom:16, flexWrap:'wrap', alignItems:'center' }}>
           {[['upcoming','Upcoming'], ['all','All'], ['done','Done']].map(([id, label]) => (
             <button key={id} onClick={() => setFilter(id)}
-              style={{ fontSize:11, padding:'5px 14px', borderRadius:20, border:'none', cursor:'pointer', fontFamily:'DM Sans, sans-serif', fontWeight:600, background: filter===id ? 'var(--forest)' : '#F3F4F6', color: filter===id ? 'white' : 'var(--muted)' }}>
+              style={{ fontSize:11, padding:'5px 14px', borderRadius:20, border:'none', cursor:'pointer', fontFamily:'DM Sans, sans-serif', fontWeight:600, background: filter===id ? 'linear-gradient(135deg, #7BBFD4, #C8BFDF)' : '#EEF1F4', color: filter===id ? '#1A3A4E' : 'var(--muted)' }}>
               {label}
             </button>
           ))}
           {pastCount > 0 && <span style={{ fontSize:11, padding:'5px 12px', borderRadius:20, background:'#FEE2E2', color:'#DC2626', fontWeight:600 }}>{pastCount} past due</span>}
-          {unscheduled > 0 && <span style={{ fontSize:11, padding:'5px 12px', borderRadius:20, background:'#F0FDF4', color:'#059669', fontWeight:600 }}>🗓 {unscheduled} unscheduled</span>}
-          {needsTimeCount > 0 && <span style={{ fontSize:11, padding:'5px 12px', borderRadius:20, background:'#FEF9C3', color:'#854D0E', fontWeight:600 }}>⏰ {needsTimeCount} need a time</span>}
+          {unscheduled > 0 && <span style={{ fontSize:11, padding:'5px 12px', borderRadius:20, background:'#E4F5F8', color:'#2A7A90', fontWeight:600 }}>🗓 {unscheduled} unscheduled</span>}
+          {needsTimeCount > 0 && <span style={{ fontSize:11, padding:'5px 12px', borderRadius:20, background:'#FAF3EC', color:'#8A6030', fontWeight:600 }}>⏰ {needsTimeCount} need a time</span>}
         </div>
       )}
 
