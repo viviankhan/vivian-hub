@@ -233,7 +233,7 @@ export default function App() {
         <div className="header-top">
           <div>
             <p className="header-eyebrow">Vivian Khan — Spring 2026</p>
-            <h1 className="header-title">Your Becoming</h1>
+            <h1 className="header-title">Bloom</h1>
           </div>
           <div className="header-badges">
             Lawrence University<br/>
