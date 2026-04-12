@@ -64,20 +64,19 @@ const DURATIONS = [
 function getCat(id) { return CATEGORIES.find(c => c.id === id) || CATEGORIES[CATEGORIES.length-1] }
 
 // ── Inline slot picker ─────────────────────────────────────────
-function SlotPicker({ commitmentId, commitmentLabel, scheduled, onPick, onCancel, targetDate }) {
+function SlotPicker({ commitmentId, commitmentLabel, scheduled, onPick, onCancel, targetDate, commitmentDuration }) {
   const [duration, setDuration] = useState(30)
   const [slots, setSlots] = useState(null)
   const [loading, setLoading] = useState(false)
 
   const search = () => {
     setLoading(true)
+    const dur = commitmentDuration || duration
     if (targetDate) {
-      // Date is set but no time — find slots on that specific day only
-      const all = findSlots(duration, scheduled || [], null, 30)
+      const all = findSlots(dur, scheduled || [], null, 30)
       setSlots(all.filter(s => s.date === targetDate))
     } else {
-      // No date — search next 7 days
-      const results = findSlots(duration, scheduled || [], null, 7)
+      const results = findSlots(dur, scheduled || [], null, 7)
       setSlots(results)
     }
     setLoading(false)
@@ -96,7 +95,8 @@ function SlotPicker({ commitmentId, commitmentLabel, scheduled, onPick, onCancel
       </div>
 
       <div style={{ display:'flex', gap:8, alignItems:'center', marginBottom:10, flexWrap:'wrap' }}>
-        <select value={duration} onChange={e => setDuration(Number(e.target.value))}
+        {commitmentDuration && <span style={{ fontSize:11, color:'var(--muted)' }}>Using estimated duration: <strong>{commitmentDuration < 60 ? commitmentDuration+'min' : commitmentDuration/60+'h'}</strong></span>}
+        <select value={duration} onChange={e => setDuration(Number(e.target.value))} style={{ display: commitmentDuration ? 'none' : undefined }}
           style={{ fontSize:12, padding:'6px 10px', borderRadius:8, border:'1px solid var(--border)', flex:1, minWidth:100 }}>
           {DURATIONS.map(d => <option key={d.value} value={d.value}>{d.label}</option>)}
         </select>
@@ -137,16 +137,17 @@ function SlotPicker({ commitmentId, commitmentLabel, scheduled, onPick, onCancel
 
 // ── Quick-add form ─────────────────────────────────────────────
 function QuickAdd({ onAdd }) {
-  const [open,    setOpen]    = useState(false)
-  const [text,    setText]    = useState('')
-  const [date,    setDate]    = useState('')
-  const [time,    setTime]    = useState('')
-  const [prepMin, setPrepMin] = useState('')
-  const [cat,     setCat]     = useState('meeting')
-  const [person,  setPerson]  = useState('')
-  const [overlap, setOverlap] = useState(null)
+  const [open,        setOpen]        = useState(false)
+  const [text,        setText]        = useState('')
+  const [date,        setDate]        = useState('')
+  const [time,        setTime]        = useState('')
+  const [prepMin,     setPrepMin]     = useState('')
+  const [durationMins,setDurationMins]= useState('')
+  const [cat,         setCat]         = useState('meeting')
+  const [person,      setPerson]      = useState('')
+  const [overlap,     setOverlap]     = useState(null)
 
-  const reset = () => { setText(''); setDate(''); setTime(''); setPrepMin(''); setPerson(''); setCat('meeting'); setOverlap(null); setOpen(false) }
+  const reset = () => { setText(''); setDate(''); setTime(''); setPrepMin(''); setDurationMins(''); setPerson(''); setCat('meeting'); setOverlap(null); setOpen(false) }
 
   const submit = async () => {
     if (!text.trim()) return
@@ -154,6 +155,7 @@ function QuickAdd({ onAdd }) {
     const warning = await onAdd({
       id, text: text.trim(), date: date || null, time: time || null,
       prepMin: prepMin ? parseInt(prepMin) : null,
+      durationMins: durationMins ? parseInt(durationMins) : null,
       cat, person: person.trim() || null,
       done: false, createdAt: new Date().toISOString()
     })
@@ -205,6 +207,20 @@ function QuickAdd({ onAdd }) {
           <div style={{ fontSize:10, color:'var(--muted)', letterSpacing:1, textTransform:'uppercase', marginBottom:4 }}>Time</div>
           <input type="time" value={time} onChange={e => setTime(e.target.value)}
             style={{ width:'100%', fontSize:12, padding:'7px 10px', borderRadius:10, border:'1px solid var(--border)', fontFamily:'DM Sans, sans-serif' }} />
+        </div>
+        <div style={{ flex:1, minWidth:110 }}>
+          <div style={{ fontSize:10, color:'var(--muted)', letterSpacing:1, textTransform:'uppercase', marginBottom:4 }}>Duration</div>
+          <select value={durationMins} onChange={e => setDurationMins(e.target.value)}
+            style={{ width:'100%', fontSize:12, padding:'7px 10px', borderRadius:10, border:'1px solid var(--border)', fontFamily:'DM Sans, sans-serif', background:'white' }}>
+            <option value=''>Unknown</option>
+            <option value='15'>15 min</option>
+            <option value='30'>30 min</option>
+            <option value='60'>1 hour</option>
+            <option value='90'>1.5 hrs</option>
+            <option value='120'>2 hours</option>
+            <option value='180'>3 hours</option>
+            <option value='240'>4 hours</option>
+          </select>
         </div>
         <div style={{ flex:1, minWidth:110 }}>
           <div style={{ fontSize:10, color:'var(--muted)', letterSpacing:1, textTransform:'uppercase', marginBottom:4 }}>Prep time</div>
@@ -287,6 +303,7 @@ function CommitCard({ c, todos, weekState, syncToggle, onDelete, onSchedule, sch
                 {formatDate(c.date)}{c.time ? ` @ ${fmt12(c.time)}` : ''}
               </span>
             )}
+            {c.durationMins && <span style={{ fontSize:11, color:'var(--muted)' }}>~{c.durationMins < 60 ? c.durationMins+'min' : (c.durationMins/60 % 1 === 0 ? c.durationMins/60+'h' : (c.durationMins/60).toFixed(1)+'h')}</span>}
             {c.prepMin && <span style={{ fontSize:11, color:'var(--muted)' }}>Leave {c.prepMin} min early</span>}
             <span style={{ fontSize:10, padding:'2px 8px', borderRadius:10, background:cat.bg, color:cat.color, fontWeight:500 }}>{cat.label}</span>
             {past  && !done && <span style={{ fontSize:10, padding:'2px 8px', borderRadius:10, background:'#FEE2E2', color:'#DC2626', fontWeight:600 }}>PAST DUE</span>}
@@ -321,6 +338,7 @@ function CommitCard({ c, todos, weekState, syncToggle, onDelete, onSchedule, sch
           onPick={handlePickSlot}
           onCancel={() => setShowScheduler(false)}
           targetDate={c.date || null}
+          commitmentDuration={c.durationMins || null}
         />
       )}
     </div>
