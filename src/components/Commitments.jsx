@@ -44,7 +44,7 @@ function isSoon(dateStr) {
   return diff >= 0 && diff <= 2
 }
 
-const CATEGORIES = [
+const DEFAULT_CATEGORIES = [
   { id:'meeting',  label:'Meeting',       color:'#4A9EB5', bg:'#EAF5F8' },
   { id:'deadline', label:'Deadline',      color:'#C4728E', bg:'#FBF0F4' },
   { id:'social',   label:'Social',        color:'#9A7CC4', bg:'#F2EEF9' },
@@ -54,6 +54,29 @@ const CATEGORIES = [
   { id:'other',    label:'Other',         color:'#8899AA', bg:'#EEF1F4' },
 ]
 
+function hexToBg(hex) {
+  // Lighten hex color for background by mixing with white
+  const r=parseInt(hex.slice(1,3),16), g=parseInt(hex.slice(3,5),16), b=parseInt(hex.slice(5,7),16)
+  const lr=Math.round(r+(.85*(255-r))), lg=Math.round(g+(.85*(255-g))), lb=Math.round(b+(.85*(255-b)))
+  return `rgb(${lr},${lg},${lb})`
+}
+
+function loadCategories() {
+  try {
+    const stored = localStorage.getItem('vivian_cat_colors')
+    if (!stored) return DEFAULT_CATEGORIES
+    const overrides = JSON.parse(stored)
+    return DEFAULT_CATEGORIES.map(c => overrides[c.id] ? { ...c, color: overrides[c.id], bg: hexToBg(overrides[c.id]) } : c)
+  } catch { return DEFAULT_CATEGORIES }
+}
+function saveCategoryColor(id, color) {
+  try {
+    const stored = JSON.parse(localStorage.getItem('vivian_cat_colors')||'{}')
+    stored[id] = color
+    localStorage.setItem('vivian_cat_colors', JSON.stringify(stored))
+  } catch {}
+}
+
 const DURATIONS = [
   { label:'15 min', value:15 },
   { label:'30 min', value:30 },
@@ -61,7 +84,7 @@ const DURATIONS = [
   { label:'2 hours', value:120 },
 ]
 
-function getCat(id) { return CATEGORIES.find(c => c.id === id) || CATEGORIES[CATEGORIES.length-1] }
+function getCat(id, categories) { return (categories||DEFAULT_CATEGORIES).find(c => c.id === id) || (categories||DEFAULT_CATEGORIES)[DEFAULT_CATEGORIES.length-1] }
 
 // ── Inline slot picker ─────────────────────────────────────────
 function SlotPicker({ commitmentId, commitmentLabel, scheduled, onPick, onCancel, targetDate, commitmentDuration }) {
@@ -136,7 +159,7 @@ function SlotPicker({ commitmentId, commitmentLabel, scheduled, onPick, onCancel
 }
 
 // ── Quick-add form ─────────────────────────────────────────────
-function QuickAdd({ onAdd }) {
+function QuickAdd({ onAdd, categories }) {
   const [open,        setOpen]        = useState(false)
   const [text,        setText]        = useState('')
   const [date,        setDate]        = useState('')
@@ -238,7 +261,7 @@ function QuickAdd({ onAdd }) {
       <div style={{ marginBottom:14 }}>
         <div style={{ fontSize:10, color:'var(--muted)', letterSpacing:1, textTransform:'uppercase', marginBottom:6 }}>Category</div>
         <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
-          {CATEGORIES.map(c => (
+          {(categories||DEFAULT_CATEGORIES).map(c => (
             <button key={c.id} onClick={() => setCat(c.id)}
               style={{ fontSize:11, padding:'4px 12px', borderRadius:20, border: cat === c.id ? 'none' : '1px solid var(--border)', background: cat === c.id ? c.color : 'white', color: cat === c.id ? 'white' : 'var(--muted)', cursor:'pointer', fontFamily:'DM Sans, sans-serif', fontWeight: cat === c.id ? 600 : 400 }}>
               {c.label}
@@ -262,9 +285,9 @@ function QuickAdd({ onAdd }) {
 }
 
 // ── Commitment card ────────────────────────────────────────────
-function CommitCard({ c, todos, weekState, syncToggle, onDelete, onSchedule, scheduled }) {
+function CommitCard({ c, todos, weekState, syncToggle, onDelete, onSchedule, scheduled, categories }) {
   const [showScheduler, setShowScheduler] = useState(false)
-  const cat = getCat(c.cat)
+  const cat = getCat(c.cat, categories)
   const done = !!(todos[c.id] || weekState[c.id] || c.done)
   const past = isPast(c.date) && !done
   const today = c.date === todayStr()
@@ -348,6 +371,13 @@ function CommitCard({ c, todos, weekState, syncToggle, onDelete, onSchedule, sch
 // ── Main ───────────────────────────────────────────────────────
 export default function Commitments({ commitments, addCommitment, updateCommitment, deleteCommitment, todos, weekState, syncToggle, scheduled }) {
   const [filter, setFilter] = useState('upcoming')
+  const [categories, setCategories] = useState(() => loadCategories())
+  const [editingColors, setEditingColors] = useState(false)
+
+  const handleColorChange = (id, color) => {
+    saveCategoryColor(id, color)
+    setCategories(loadCategories())
+  }
 
   const isDone = c => !!(todos[c.id] || weekState[c.id] || c.done)
 
@@ -381,6 +411,27 @@ export default function Commitments({ commitments, addCommitment, updateCommitme
       <div className="page-title">Commitments</div>
       <div className="page-sub">Things you said yes to. Tap 🗓 Find time on unscheduled items to auto-schedule them.</div>
 
+      {/* Category color editor */}
+      {editingColors && (
+        <div style={{ background:'white', borderRadius:12, border:'1px solid var(--border)', padding:'14px 16px', marginBottom:14 }}>
+          <div style={{ fontSize:11, color:'var(--muted)', letterSpacing:1.5, textTransform:'uppercase', marginBottom:10 }}>Customize category colors</div>
+          <div style={{ display:'flex', flexWrap:'wrap', gap:10 }}>
+            {categories.map(cat => (
+              <div key={cat.id} style={{ display:'flex', alignItems:'center', gap:6 }}>
+                <input type="color" value={cat.color}
+                  onChange={e => handleColorChange(cat.id, e.target.value)}
+                  style={{ width:28, height:28, border:'none', borderRadius:6, cursor:'pointer', padding:0, background:'none' }} />
+                <span style={{ fontSize:12, color:'var(--text)' }}>{cat.label}</span>
+              </div>
+            ))}
+          </div>
+          <button onClick={() => { localStorage.removeItem('vivian_cat_colors'); setCategories(DEFAULT_CATEGORIES); setEditingColors(false) }}
+            style={{ marginTop:10, fontSize:11, color:'var(--muted)', background:'none', border:'none', cursor:'pointer', textDecoration:'underline' }}>
+            Reset to defaults
+          </button>
+        </div>
+      )}
+
       <QuickAdd onAdd={addCommitment} />
 
       {(commitments||[]).length > 0 && (
@@ -394,6 +445,10 @@ export default function Commitments({ commitments, addCommitment, updateCommitme
           {pastCount > 0 && <span style={{ fontSize:11, padding:'5px 12px', borderRadius:20, background:'#FEE2E2', color:'#DC2626', fontWeight:600 }}>{pastCount} past due</span>}
           {unscheduled > 0 && <span style={{ fontSize:11, padding:'5px 12px', borderRadius:20, background:'#E4F5F8', color:'#2A7A90', fontWeight:600 }}>🗓 {unscheduled} unscheduled</span>}
           {needsTimeCount > 0 && <span style={{ fontSize:11, padding:'5px 12px', borderRadius:20, background:'#FAF3EC', color:'#8A6030', fontWeight:600 }}>⏰ {needsTimeCount} need a time</span>}
+          <button onClick={() => setEditingColors(e => !e)}
+            style={{ fontSize:11, padding:'5px 12px', borderRadius:20, background: editingColors ? '#E4EEF4' : 'transparent', border:'1px solid var(--border)', color:'var(--muted)', cursor:'pointer', fontFamily:'DM Sans,sans-serif' }}>
+            🎨 Colors
+          </button>
         </div>
       )}
 

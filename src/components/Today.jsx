@@ -240,16 +240,22 @@ function ManageModal({ task, dateKey, onClose, onDelete, onReschedule, scheduled
   const [slots,setSlots]   = useState([])
   const s = { width:'100%',fontSize:13,padding:'8px 10px',borderRadius:9,border:'1px solid var(--border)',fontFamily:'DM Sans,sans-serif',outline:'none',boxSizing:'border-box' }
 
-  // When user picks a date, auto-find smart slots for that day
+  const searchSlots = (d) => {
+    if (!d) { setSlots([]); return }
+    const results = findSlots(60, scheduled||[], d, 30)
+    setSlots(results.filter(r => r.date === d))
+  }
+
+  // Search immediately when switching to reschedule view
+  const handleViewReschedule = () => {
+    setView('reschedule')
+    searchSlots(date)
+  }
+
   const handleDateChange = (d) => {
     setDate(d)
     setTime('')
-    if (d) {
-      const results = findSlots(60, scheduled||[], d)
-      setSlots(results.filter(r => r.date === d))
-    } else {
-      setSlots([])
-    }
+    searchSlots(d)
   }
 
   return (
@@ -259,7 +265,7 @@ function ManageModal({ task, dateKey, onClose, onDelete, onReschedule, scheduled
           <div className="serif" style={{fontSize:17,fontWeight:600,color:'var(--text)',marginBottom:8}}>Manage</div>
           <div style={{fontSize:13,color:'var(--muted)',marginBottom:16,padding:'9px 12px',background:'#F7F6F3',borderRadius:9,lineHeight:1.5}}>{task.label||task.text}</div>
           <div style={{display:'flex',flexDirection:'column',gap:8}}>
-            <button onClick={()=>setView('reschedule')} style={{padding:'10px',borderRadius:10,border:'1px solid var(--border)',background:'white',cursor:'pointer',textAlign:'left',fontSize:13,color:'var(--text)',fontFamily:'DM Sans,sans-serif'}}>📅 Reschedule</button>
+            <button onClick={handleViewReschedule} style={{padding:'10px',borderRadius:10,border:'1px solid var(--border)',background:'white',cursor:'pointer',textAlign:'left',fontSize:13,color:'var(--text)',fontFamily:'DM Sans,sans-serif'}}>📅 Reschedule</button>
             <button onClick={()=>setView('delete')} style={{padding:'10px',borderRadius:10,border:'1px solid #FECACA',background:'#FFF5F5',cursor:'pointer',textAlign:'left',fontSize:13,color:'#991B1B',fontFamily:'DM Sans,sans-serif'}}>🗑️ Delete & log why</button>
           </div>
           <button onClick={onClose} style={{marginTop:10,width:'100%',padding:'8px',borderRadius:10,border:'1px solid var(--border)',background:'white',color:'var(--muted)',cursor:'pointer',fontSize:12,fontFamily:'DM Sans,sans-serif'}}>Cancel</button>
