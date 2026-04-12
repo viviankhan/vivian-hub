@@ -64,22 +64,35 @@ const DURATIONS = [
 function getCat(id) { return CATEGORIES.find(c => c.id === id) || CATEGORIES[CATEGORIES.length-1] }
 
 // ── Inline slot picker ─────────────────────────────────────────
-function SlotPicker({ commitmentId, commitmentLabel, scheduled, onPick, onCancel }) {
+function SlotPicker({ commitmentId, commitmentLabel, scheduled, onPick, onCancel, targetDate }) {
   const [duration, setDuration] = useState(30)
-  const [slots, setSlots] = useState(null) // null = not searched yet
+  const [slots, setSlots] = useState(null)
   const [loading, setLoading] = useState(false)
 
   const search = () => {
     setLoading(true)
-    const results = findSlots(duration, scheduled || [], null, 7)
-    setSlots(results)
+    if (targetDate) {
+      // Date is set but no time — find slots on that specific day only
+      const all = findSlots(duration, scheduled || [], null, 30)
+      setSlots(all.filter(s => s.date === targetDate))
+    } else {
+      // No date — search next 7 days
+      const results = findSlots(duration, scheduled || [], null, 7)
+      setSlots(results)
+    }
     setLoading(false)
   }
+
+  // Auto-search when targetDate is provided (date-only commitments)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useState(() => { if (targetDate) search() }, [])
 
   return (
     <div style={{ background:'#F7F9F5', border:'1px solid #D1E8D0', borderRadius:10, padding:'12px 14px', marginTop:10 }}>
       <div style={{ fontSize:11, color:'#52B788', fontWeight:600, letterSpacing:1, textTransform:'uppercase', marginBottom:10 }}>
-        Find a time slot
+        {targetDate
+          ? `Find a time on ${new Date(targetDate+'T12:00:00').toLocaleDateString('en-US',{weekday:'long',month:'short',day:'numeric'})}`
+          : 'Find a time slot'}
       </div>
 
       <div style={{ display:'flex', gap:8, alignItems:'center', marginBottom:10, flexWrap:'wrap' }}>
@@ -109,7 +122,7 @@ function SlotPicker({ commitmentId, commitmentLabel, scheduled, onPick, onCancel
         >
           <div>
             <div style={{ fontFamily:'Cormorant Garamond, serif', fontSize:15, color:'var(--text)', fontWeight:600 }}>
-              {slot.dayLabel} · {slot.startDisplay} – {slot.endDisplay}
+              {targetDate ? '' : slot.dayLabel + ' · '}{slot.startDisplay} – {slot.endDisplay}
             </div>
             <div style={{ fontSize:11, color:'var(--muted)', marginTop:1 }}>{slot.context}</div>
           </div>
@@ -240,6 +253,7 @@ function CommitCard({ c, todos, weekState, syncToggle, onDelete, onSchedule, sch
   const past = isPast(c.date) && !done
   const today = c.date === todayStr()
   const soon = isSoon(c.date) && !past
+  const needsTime = !c.time  // has date but no time, OR has no date at all
   const unscheduled = !c.date
 
   let borderColor = 'var(--border)', bg = 'white'
@@ -278,18 +292,19 @@ function CommitCard({ c, todos, weekState, syncToggle, onDelete, onSchedule, sch
             {past  && !done && <span style={{ fontSize:10, padding:'2px 8px', borderRadius:10, background:'#FEE2E2', color:'#DC2626', fontWeight:600 }}>PAST DUE</span>}
             {today && !done && <span style={{ fontSize:10, padding:'2px 8px', borderRadius:10, background:'#DCFCE7', color:'#059669', fontWeight:600 }}>TODAY</span>}
             {unscheduled && !done && <span style={{ fontSize:10, padding:'2px 8px', borderRadius:10, background:'#F3F4F6', color:'#6B7280' }}>Unscheduled</span>}
+            {!unscheduled && !c.time && !done && <span style={{ fontSize:10, padding:'2px 8px', borderRadius:10, background:'#FEF9C3', color:'#854D0E', fontWeight:500 }}>⏰ No time set</span>}
           </div>
         </div>
 
         <div style={{ display:'flex', gap:6, flexShrink:0, alignItems:'flex-start' }}>
-          {/* Find time button for unscheduled commitments */}
-          {unscheduled && !done && (
+          {/* Find time — show when no date, or has date but no time */}
+          {needsTime && !done && (
             <button
               onClick={e => { e.stopPropagation(); setShowScheduler(s => !s) }}
               title="Find a time slot for this"
               style={{ fontSize:10, letterSpacing:.5, textTransform:'uppercase', padding:'4px 10px', borderRadius:10, border:'1px solid #D1E8D0', background: showScheduler ? 'var(--forest)' : '#F7F9F5', color: showScheduler ? 'var(--green-light)' : '#52B788', cursor:'pointer', fontFamily:'DM Sans, sans-serif', fontWeight:600, whiteSpace:'nowrap' }}
             >
-              {showScheduler ? 'Cancel' : '🗓 Find time'}
+              {showScheduler ? 'Cancel' : unscheduled ? '🗓 Find time' : '⏰ Find time'}
             </button>
           )}
           <button onClick={() => onDelete(c.id)}
@@ -305,6 +320,7 @@ function CommitCard({ c, todos, weekState, syncToggle, onDelete, onSchedule, sch
           scheduled={scheduled}
           onPick={handlePickSlot}
           onCancel={() => setShowScheduler(false)}
+          targetDate={c.date || null}
         />
       )}
     </div>
@@ -335,7 +351,8 @@ export default function Commitments({ commitments, addCommitment, updateCommitme
   })
 
   const pastCount = (commitments||[]).filter(c => !isDone(c) && isPast(c.date)).length
-  const unscheduled = (commitments||[]).filter(c => !isDone(c) && !c.date).length
+  const unscheduled    = (commitments||[]).filter(c => !isDone(c) && !c.date).length
+  const needsTimeCount = (commitments||[]).filter(c => !isDone(c) && c.date && !c.time).length
 
   const handleSchedule = (id, { date, time }) => {
     updateCommitment(id, { date, time })
@@ -358,6 +375,7 @@ export default function Commitments({ commitments, addCommitment, updateCommitme
           ))}
           {pastCount > 0 && <span style={{ fontSize:11, padding:'5px 12px', borderRadius:20, background:'#FEE2E2', color:'#DC2626', fontWeight:600 }}>{pastCount} past due</span>}
           {unscheduled > 0 && <span style={{ fontSize:11, padding:'5px 12px', borderRadius:20, background:'#F0FDF4', color:'#059669', fontWeight:600 }}>🗓 {unscheduled} unscheduled</span>}
+          {needsTimeCount > 0 && <span style={{ fontSize:11, padding:'5px 12px', borderRadius:20, background:'#FEF9C3', color:'#854D0E', fontWeight:600 }}>⏰ {needsTimeCount} need a time</span>}
         </div>
       )}
 
