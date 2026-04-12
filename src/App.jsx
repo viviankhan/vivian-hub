@@ -106,8 +106,10 @@ export default function App() {
         getRecurringTasks(),
       ])
       // Use localStorage cache as fallback if cloud returns empty
-      const t = (t_raw && Object.keys(t_raw).length > 0) ? t_raw : (lsCacheGet('todos') ?? {})
-      const w = (w_raw && Object.keys(w_raw).length > 0) ? w_raw : (lsCacheGet('weekstate') ?? {})
+      // Always trust Supabase when it's configured — localStorage is write-through
+      // cache only, never a fallback that could cause cross-device divergence
+      const t = t_raw ?? {}
+      const w = w_raw ?? {}
       setTodos_(t); setWeekState_(w); setLog_(l); setNotes_(n)
       setFcProgress_(fcp); setFcStudied_(fcs); setScheduled_(sch)
       setCommitments_(com); setRecurringTasks_(rt)
