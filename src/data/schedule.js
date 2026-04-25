@@ -297,6 +297,30 @@ export const CALENDAR_EVENTS = [
   { date:'2026-06-05', label:'Group Research Paper due', type:'deadline' },
 ]
 
+// ── RECURRING EVENT EXPANSION ─────────────────────────────────
+// Expands DEFAULT_RECURRING_TASKS into dated calendar events
+// for the full semester window (class + lab only).
+export const SEMESTER_START = '2026-03-30'
+export const SEMESTER_END   = '2026-06-05'
+
+export function generateRecurringEvents(startStr, endStr) {
+  const events = []
+  const end = new Date(endStr + 'T12:00:00')
+  const cur = new Date(startStr + 'T12:00:00')
+  while (cur <= end) {
+    const dayName = DAY_NAMES[cur.getDay()]
+    const tasks   = DEFAULT_RECURRING_TASKS[dayName] || []
+    const dateStr = toDateStr(cur)
+    for (const task of tasks) {
+      if (task.cat === 'class' || task.cat === 'lab') {
+        events.push({ date: dateStr, label: task.text, type: task.cat })
+      }
+    }
+    cur.setDate(cur.getDate() + 1)
+  }
+  return events
+}
+
 // ── MORNING / NIGHT ROUTINES ───────────────────────────────────
 // Morning routine — times are computed from startMins + cumulative durationMins.
 // Edit durationMins to change how long each step takes.

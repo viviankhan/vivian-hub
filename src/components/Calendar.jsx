@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { CALENDAR_EVENTS } from '../data/schedule.js'
+import { CALENDAR_EVENTS, generateRecurringEvents, SEMESTER_START, SEMESTER_END } from '../data/schedule.js'
 
 // Dynamic: current month + 5 ahead
 function buildMonths() {
@@ -46,7 +46,9 @@ export default function Calendar({ commitments }) {
   const daysInMonth = new Date(year, month+1, 0).getDate()
   const firstDay = new Date(year, month, 1).getDay()
 
-  // Merge static events + commitments (with date)
+  // Merge static events + recurring weekly events + commitments (with date)
+  const recurringEvents = generateRecurringEvents(SEMESTER_START, SEMESTER_END)
+
   const commitmentEvents = (commitments || [])
     .filter(c => c.date)
     .map(c => ({
@@ -56,7 +58,7 @@ export default function Calendar({ commitments }) {
       done: c.done,
     }))
 
-  const allEvents = [...CALENDAR_EVENTS, ...commitmentEvents]
+  const allEvents = [...CALENDAR_EVENTS, ...recurringEvents, ...commitmentEvents]
   const selectedEvents = selected ? allEvents.filter(e => e.date === selected) : []
   const sortedAll = [...allEvents].sort((a,b) => a.date.localeCompare(b.date))
 
