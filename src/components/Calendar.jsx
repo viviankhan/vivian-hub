@@ -37,7 +37,12 @@ function fmt12(t) {
   return `${h % 12 || 12}:${String(m).padStart(2,'0')} ${h >= 12 ? 'PM' : 'AM'}`
 }
 
-export default function Calendar({ commitments }) {
+function isInVacation(dateStr, vacations) {
+  if (!vacations || vacations.length === 0) return false
+  return vacations.some(v => dateStr >= v.startDate && dateStr <= v.endDate)
+}
+
+export default function Calendar({ commitments, vacations }) {
   const [monthIdx, setMonthIdx] = useState(0)
   const [selected, setSelected] = useState(null)
   const today = todayStr()
@@ -46,8 +51,9 @@ export default function Calendar({ commitments }) {
   const daysInMonth = new Date(year, month+1, 0).getDate()
   const firstDay = new Date(year, month, 1).getDay()
 
-  // Merge static events + recurring weekly events + commitments (with date)
+  // Merge static events + recurring weekly events (paused during vacations) + commitments (with date)
   const recurringEvents = generateRecurringEvents(SEMESTER_START, SEMESTER_END)
+    .filter(e => !isInVacation(e.date, vacations))
 
   const commitmentEvents = (commitments || [])
     .filter(c => c.date)

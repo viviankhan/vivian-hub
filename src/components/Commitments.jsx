@@ -158,6 +158,82 @@ function SlotPicker({ commitmentId, commitmentLabel, scheduled, onPick, onCancel
   )
 }
 
+// ── Vacation / Time Off section ────────────────────────────────
+function VacationSection({ vacations, addVacation, deleteVacation }) {
+  const [open,      setOpen]      = useState(false)
+  const [label,     setLabel]     = useState('')
+  const [startDate, setStartDate] = useState('')
+  const [endDate,   setEndDate]   = useState('')
+
+  const reset = () => { setLabel(''); setStartDate(''); setEndDate(''); setOpen(false) }
+
+  const submit = () => {
+    if (!startDate || !endDate) return
+    addVacation({ id: 'v-' + Date.now(), label: label.trim() || 'Time off', startDate, endDate })
+    reset()
+  }
+
+  const fmtRange = (s, e) => {
+    const sd = new Date(s + 'T12:00:00').toLocaleDateString('en-US', { month:'short', day:'numeric' })
+    const ed = new Date(e + 'T12:00:00').toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' })
+    return `${sd} – ${ed}`
+  }
+
+  const canSave = startDate && endDate && endDate >= startDate
+
+  return (
+    <div style={{ marginBottom:16 }}>
+      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:8 }}>
+        <div style={{ fontSize:11, color:'var(--muted)', letterSpacing:1.5, textTransform:'uppercase', fontWeight:600 }}>
+          🏝 Vacation / Time Off
+        </div>
+        <button onClick={() => setOpen(o => !o)}
+          style={{ fontSize:11, padding:'4px 12px', borderRadius:20, border:'1px solid var(--border)', background: open ? '#4A9EB5' : 'white', color: open ? 'white' : 'var(--muted)', cursor:'pointer', fontFamily:'DM Sans, sans-serif', fontWeight:600 }}>
+          {open ? 'Cancel' : '+ Add block'}
+        </button>
+      </div>
+
+      {(vacations || []).map(v => (
+        <div key={v.id} style={{ display:'flex', alignItems:'center', gap:10, padding:'9px 14px', background:'#EAF5F8', borderRadius:10, border:'1px solid #A8D8E4', marginBottom:6 }}>
+          <div style={{ flex:1 }}>
+            <div style={{ fontSize:13, fontWeight:600, color:'var(--text)' }}>{v.label}</div>
+            <div style={{ fontSize:11, color:'#2A7A90', marginTop:2 }}>{fmtRange(v.startDate, v.endDate)} · recurring tasks paused</div>
+          </div>
+          <button onClick={() => deleteVacation(v.id)}
+            style={{ background:'none', border:'none', cursor:'pointer', color:'#9CA3AF', fontSize:16, padding:'0 2px' }}>✕</button>
+        </div>
+      ))}
+
+      {open && (
+        <div style={{ background:'white', borderRadius:12, border:'1px solid #A8D8E4', padding:'14px 16px', marginTop:4 }}>
+          <input value={label} onChange={e => setLabel(e.target.value)}
+            placeholder='Label (e.g. Bonaire Trip, Spring Break)'
+            style={{ width:'100%', fontSize:12, padding:'8px 12px', borderRadius:10, border:'1px solid var(--border)', marginBottom:10, fontFamily:'DM Sans, sans-serif' }} />
+          <div style={{ display:'flex', gap:8, marginBottom:12 }}>
+            <div style={{ flex:1 }}>
+              <div style={{ fontSize:10, color:'var(--muted)', letterSpacing:1, textTransform:'uppercase', marginBottom:4 }}>Start</div>
+              <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)}
+                style={{ width:'100%', fontSize:12, padding:'7px 10px', borderRadius:10, border:'1px solid var(--border)', fontFamily:'DM Sans, sans-serif' }} />
+            </div>
+            <div style={{ flex:1 }}>
+              <div style={{ fontSize:10, color:'var(--muted)', letterSpacing:1, textTransform:'uppercase', marginBottom:4 }}>End</div>
+              <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)}
+                style={{ width:'100%', fontSize:12, padding:'7px 10px', borderRadius:10, border:'1px solid var(--border)', fontFamily:'DM Sans, sans-serif' }} />
+            </div>
+          </div>
+          {endDate && startDate && endDate < startDate && (
+            <div style={{ fontSize:11, color:'#DC2626', marginBottom:8 }}>End date must be on or after start date.</div>
+          )}
+          <button onClick={submit} disabled={!canSave}
+            style={{ width:'100%', background: canSave ? 'linear-gradient(135deg, #4A9EB5, #7BBFD4)' : '#E5E7EB', color: canSave ? 'white' : '#9CA3AF', border:'none', borderRadius:10, padding:'9px', fontSize:13, fontWeight:600, cursor: canSave ? 'pointer' : 'default', fontFamily:'DM Sans, sans-serif' }}>
+            Save vacation block
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── Quick-add form ─────────────────────────────────────────────
 function QuickAdd({ onAdd, categories }) {
   const [open,        setOpen]        = useState(false)
@@ -369,7 +445,7 @@ function CommitCard({ c, todos, weekState, syncToggle, onDelete, onSchedule, sch
 }
 
 // ── Main ───────────────────────────────────────────────────────
-export default function Commitments({ commitments, addCommitment, updateCommitment, deleteCommitment, todos, weekState, syncToggle, scheduled }) {
+export default function Commitments({ commitments, addCommitment, updateCommitment, deleteCommitment, todos, weekState, syncToggle, scheduled, vacations, addVacation, deleteVacation }) {
   const [filter, setFilter] = useState('upcoming')
   const [categories, setCategories] = useState(() => loadCategories())
   const [editingColors, setEditingColors] = useState(false)
@@ -432,6 +508,7 @@ export default function Commitments({ commitments, addCommitment, updateCommitme
         </div>
       )}
 
+      <VacationSection vacations={vacations} addVacation={addVacation} deleteVacation={deleteVacation} />
       <QuickAdd onAdd={addCommitment} />
 
       {(commitments||[]).length > 0 && (

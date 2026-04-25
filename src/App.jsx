@@ -95,15 +95,17 @@ export default function App() {
   const [scheduled,      setScheduled_]      = useState([])
   const [commitments,    setCommitments_]    = useState([])
   const [recurringTasks, setRecurringTasks_] = useState(null)
+  const [vacations,      setVacations_]      = useState([])
   const [loading,        setLoading]         = useState(true)
 
   useEffect(() => {
     async function load() {
-      const [t_raw, w_raw, l, n, fcp, fcs, sch, com, rt] = await Promise.all([
+      const [t_raw, w_raw, l, n, fcp, fcs, sch, com, rt, vac] = await Promise.all([
         getTodos(), getWeekState(), getLog(), getNotes(),
         getFcProgress(), getFcStudied(), getScheduledTasks(),
         dbGet('commitments').then(v => v ?? []),
         getRecurringTasks(),
+        dbGet('vacations').then(v => v ?? []),
       ])
       // Use localStorage cache as fallback if cloud returns empty
       // Always trust Supabase when it's configured — localStorage is write-through
@@ -112,7 +114,7 @@ export default function App() {
       const w = w_raw ?? {}
       setTodos_(t); setWeekState_(w); setLog_(l); setNotes_(n)
       setFcProgress_(fcp); setFcStudied_(fcs); setScheduled_(sch)
-      setCommitments_(com); setRecurringTasks_(rt)
+      setCommitments_(com); setRecurringTasks_(rt); setVacations_(vac)
       setLoading(false)
     }
     load()
@@ -166,6 +168,14 @@ export default function App() {
     setCommitments_(prev => { const next = prev.filter(c => c.id!==id); dbSet('commitments', next); return next })
     setTodos_(prev    => { const n = {...prev}; delete n[id]; setTodos(n); return n })
     setWeekState_(prev => { const n = {...prev}; delete n[id]; setWeekState(n); return n })
+  }, [])
+
+  // ── Vacations CRUD ──────────────────────────────────────────
+  const addVacation = useCallback(async v => {
+    setVacations_(prev => { const next = [...prev, v]; dbSet('vacations', next); return next })
+  }, [])
+  const deleteVacation = useCallback(async id => {
+    setVacations_(prev => { const next = prev.filter(v => v.id !== id); dbSet('vacations', next); return next })
   }, [])
 
   // ── Unified toggle — dual write ────────────────────────────
@@ -227,6 +237,7 @@ export default function App() {
     fcProgress, updateFcProgress, fcStudied, updateFcStudied,
     scheduled, addScheduledTask,
     commitments, addCommitment, updateCommitment, deleteCommitment,
+    vacations, addVacation, deleteVacation,
   }
 
   return (
