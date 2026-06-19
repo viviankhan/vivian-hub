@@ -8,6 +8,10 @@ const CAT_COLORS = {
   urgent:'#EF4444', health:'#E07B2E', fitness:'#3B82F6', sleep:'#52B788', polish:'#EC4899', carried:'#F59E0B',
 }
 
+// Current day-of-week name. JS getDay(): 0=Sun…6=Sat → mapped to DAYS (Mon-indexed)
+const JS_DAY_TO_NAME = ['sunday','monday','tuesday','wednesday','thursday','friday','saturday']
+function todayName() { return JS_DAY_TO_NAME[new Date().getDay()] }
+
 // ── Convert old per-day format → flat array ────────────────────
 export function migrateLegacyTasks(recurringTasks) {
   if (!recurringTasks) return null
@@ -201,21 +205,16 @@ function TaskModal({ initial, onSave, onDelete, onClose }) {
 }
 
 // ── Task list row ──────────────────────────────────────────────
-function TaskListRow({ task, onEdit }) {
+function TaskListRow({ task, onEdit, today }) {
   const text = task.text||task.label||''
   const cat  = task.cat||task.tag||'lab'
   const hasDateRange = task.startDate || task.endDate
+  const isToday = task.days?.includes(today)
   return (
     <div onClick={onEdit}
-      style={{ display:'flex', gap:10, alignItems:'center', background:'white', borderRadius:11, border:'1px solid var(--border)', padding:'11px 14px', marginBottom:7, cursor:'pointer', transition:'border-color .15s' }}
+      style={{ display:'flex', gap:10, alignItems:'center', background:isToday?'#F0FDFB':'white', borderRadius:11, border:`1px solid ${isToday?'var(--teal)':'var(--border)'}`, borderLeft:isToday?'3px solid var(--teal)':'1px solid var(--border)', padding:'11px 14px', marginBottom:7, cursor:'pointer', transition:'border-color .15s' }}
       onMouseEnter={e=>e.currentTarget.style.borderColor='#52B788'}
-      onMouseLeave={e=>e.currentTarget.style.borderColor='var(--border)'}>
-      {/* Day pills */}
-      <div style={{ display:'flex', gap:3, flexWrap:'wrap', minWidth:140 }}>
-        {DAYS.filter(d=>task.days?.includes(d)).map(d=>(
-          <span key={d} style={{ fontSize:9, padding:'2px 6px', borderRadius:6, background:'var(--forest)', color:'var(--green-light)', fontWeight:700, letterSpacing:.5 }}>{DAY_SHORT[d]}</span>
-        ))}
-      </div>
+      onMouseLeave={e=>e.currentTarget.style.borderColor=isToday?'var(--teal)':'var(--border)'}>
       {/* Text */}
       <div style={{ flex:1, minWidth:0 }}>
         <div style={{ fontSize:13, color:'var(--text)', fontWeight:500, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{text}</div>
@@ -230,6 +229,12 @@ function TaskListRow({ task, onEdit }) {
       </div>
       <Tag value={cat} />
       <TypeBadge type={task.type} />
+      {/* Day labels — to the right of the title; current day highlighted in teal */}
+      <div style={{ display:'flex', gap:3, flexWrap:'wrap', justifyContent:'flex-end', maxWidth:150, flexShrink:0 }}>
+        {DAYS.filter(d=>task.days?.includes(d)).map(d=>(
+          <span key={d} style={{ fontSize:9, padding:'2px 6px', borderRadius:6, background:d===today?'var(--teal)':'var(--forest)', color:d===today?'white':'var(--green-light)', fontWeight:700, letterSpacing:.5 }}>{DAY_SHORT[d]}</span>
+        ))}
+      </div>
       <span style={{ fontSize:11, color:'var(--muted)', flexShrink:0 }}>›</span>
     </div>
   )
@@ -238,9 +243,10 @@ function TaskListRow({ task, onEdit }) {
 // ── Main ───────────────────────────────────────────────────────
 export default function RecurringTasksManager({ recurringTasks, updateRecurringTasks, defaultWeekTasks, defaultDailyTodos }) {
   const [editing,     setEditing]     = useState(null) // null | 'new' | task object
-  const [filterDay,   setFilterDay]   = useState('all')
+  const [filterDay,   setFilterDay]   = useState(todayName())
   const [filterType,  setFilterType]  = useState('all')
-  const [confirmReset, setConfirmReset] = useState(false)
+  const [confirmClear, setConfirmClear] = useState(false)
+  const today = todayName()
 
   // Build flat tasks array — migrate legacy format if needed
   // Deduplicates tasks with the same text+type into one entry with merged days
@@ -316,14 +322,25 @@ export default function RecurringTasksManager({ recurringTasks, updateRecurringT
           + New Task
         </button>
       </div>
-      <div className="page-sub">{flatData.length} recurring tasks across the week</div>
+      <div className="page-sub">
+        {filterDay==='all'
+          ? `${flatData.length} recurring tasks across the week`
+          : `${sorted.length} on ${DAY_SHORT[filterDay]}${filterDay===today?' — Today':''} · ${flatData.length} total across the week`}
+      </div>
 
       {/* Filters */}
       <div style={{ display:'flex', gap:5, flexWrap:'wrap', marginBottom:8 }}>
         <button onClick={()=>setFilterDay('all')} style={filterPill(filterDay==='all')}>All days</button>
-        {DAYS.map(d=>(
-          <button key={d} onClick={()=>setFilterDay(filterDay===d?'all':d)} style={filterPill(filterDay===d)}>{DAY_SHORT[d]}</button>
-        ))}
+        {DAYS.map(d=>{
+          const isToday = d===today
+          return (
+            <button key={d} onClick={()=>setFilterDay(filterDay===d?'all':d)}
+              title={isToday?'Today':undefined}
+              style={{ ...filterPill(filterDay===d), ...(isToday ? { borderColor:'var(--teal)', boxShadow:'0 0 0 2px rgba(74,158,181,.3)' } : {}) }}>
+              {isToday?'• ':''}{DAY_SHORT[d]}
+            </button>
+          )
+        })}
       </div>
       <div style={{ display:'flex', gap:5, marginBottom:16 }}>
         {[['all','All types'],['week','Week only'],['today','Today only']].map(([v,l])=>(
@@ -340,23 +357,23 @@ export default function RecurringTasksManager({ recurringTasks, updateRecurringT
           No tasks match this filter.
         </div>
       ) : sorted.map(task=>(
-        <TaskListRow key={task.id+task.type+(task.days||[]).join('')} task={task} onEdit={()=>setEditing(task)} />
+        <TaskListRow key={task.id+task.type+(task.days||[]).join('')} task={task} onEdit={()=>setEditing(task)} today={today} />
       ))}
 
-      {/* Reset */}
+      {/* Clear all */}
       <div style={{ marginTop:24, paddingTop:16, borderTop:'1px solid var(--border)' }}>
-        {!confirmReset ? (
-          <button onClick={()=>setConfirmReset(true)}
+        {!confirmClear ? (
+          <button onClick={()=>setConfirmClear(true)}
             style={{ fontSize:11, padding:'7px 14px', borderRadius:8, border:'1px solid #FECACA', background:'#FFF5F5', color:'#991B1B', cursor:'pointer', fontFamily:'DM Sans,sans-serif' }}>
-            Reset to built-in defaults
+            Clear all recurring events
           </button>
         ) : (
           <div style={{ background:'#FFF5F5', borderRadius:10, border:'1px solid #FECACA', padding:12 }}>
-            <div style={{ fontSize:13, color:'#991B1B', marginBottom:8 }}>Discard all custom tasks and restore defaults?</div>
+            <div style={{ fontSize:13, color:'#991B1B', marginBottom:8 }}>Remove every recurring event? This cannot be undone.</div>
             <div style={{ display:'flex', gap:8 }}>
-              <button onClick={()=>{ updateRecurringTasks(null); setConfirmReset(false) }}
-                style={{ fontSize:12, padding:'6px 14px', borderRadius:8, border:'none', background:'#EF4444', color:'white', cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:600 }}>Yes, reset</button>
-              <button onClick={()=>setConfirmReset(false)}
+              <button onClick={()=>{ saveTasks([]); setConfirmClear(false); setFilterDay(todayName()) }}
+                style={{ fontSize:12, padding:'6px 14px', borderRadius:8, border:'none', background:'#EF4444', color:'white', cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:600 }}>Yes, clear all</button>
+              <button onClick={()=>setConfirmClear(false)}
                 style={{ fontSize:12, padding:'6px 12px', borderRadius:8, border:'1px solid var(--border)', background:'white', color:'var(--muted)', cursor:'pointer', fontFamily:'DM Sans,sans-serif' }}>Cancel</button>
             </div>
           </div>
