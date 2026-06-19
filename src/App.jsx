@@ -6,11 +6,9 @@ import Today       from './components/Today.jsx'
 import ThisWeek    from './components/ThisWeek.jsx'
 import Commitments from './components/Commitments.jsx'
 import Calendar    from './components/Calendar.jsx'
-import Study       from './components/Study.jsx'
 import Log         from './components/Log.jsx'
 import Info        from './components/Info.jsx'
 import Edits       from './components/Edits.jsx'
-import Scheduler   from './components/Scheduler.jsx'
 import RecurringTasksManager, { flatToPerDay } from './components/RecurringTasksManager.jsx'
 import Routines from './components/Routines.jsx'
 
@@ -19,7 +17,6 @@ const TABS = [
   { id:'week',        label:'Week'        },
   { id:'commitments', label:'Commitments' },
   { id:'calendar',    label:'Calendar'    },
-  { id:'study',       label:'Study'       },
   { id:'log',         label:'Log'         },
   { id:'info',        label:'Info'        },
   { id:'recurring',   label:'Recurring'   },
@@ -62,7 +59,7 @@ function SettingsDrawer({ open, onClose, settingsTab, setSettingsTab, scheduled,
           <button onClick={onClose} style={{ background:'rgba(255,255,255,.1)', border:'none', color:'var(--green-light)', borderRadius:8, width:32, height:32, cursor:'pointer', fontSize:18, fontFamily:'DM Sans,sans-serif' }}>✕</button>
         </div>
         <div style={{ display:'flex', borderBottom:'1px solid var(--border)', background:'white' }}>
-          {[['routines','Routines'],['scheduler','Scheduler'],['edits','Edits']].map(([id,label]) => (
+          {[['routines','Routines'],['edits','Edits']].map(([id,label]) => (
             <button key={id} onClick={()=>setSettingsTab(id)}
               style={{ flex:1, padding:'11px 8px', border:'none', borderBottom:`2px solid ${settingsTab===id?'var(--teal)':'transparent'}`,
                 background:'transparent', color:settingsTab===id?'var(--teal)':'var(--muted)', cursor:'pointer',
@@ -73,7 +70,6 @@ function SettingsDrawer({ open, onClose, settingsTab, setSettingsTab, scheduled,
         </div>
         <div style={{ padding:'20px 24px' }}>
           {settingsTab==='routines'   && <Routines />}
-          {settingsTab==='scheduler'  && <Scheduler scheduled={scheduled} addScheduledTask={addScheduledTask} commitments={commitments} />}
           {settingsTab==='edits'      && <Edits />}
         </div>
       </div>
@@ -276,7 +272,6 @@ export default function App() {
         {tab==='week'        && <ThisWeek    {...sharedProps} weekPlan={weekPlan} deleteCommitment={deleteCommitment} />}
         {tab==='commitments' && <Commitments {...sharedProps} />}
         {tab==='calendar'    && <Calendar    {...sharedProps} />}
-        {tab==='study'       && <Study       {...sharedProps} />}
         {tab==='log'         && <Log log={log} notes={notes} updateNotes={updateNotes} />}
         {tab==='info'        && <Info />}
         {tab==='recurring'   && <RecurringTasksManager recurringTasks={recurringTasks} updateRecurringTasks={updateRecurringTasks} defaultWeekTasks={DEFAULT_RECURRING_TASKS} defaultDailyTodos={DEFAULT_DAILY_TODOS} />}
