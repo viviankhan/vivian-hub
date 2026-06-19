@@ -246,6 +246,7 @@ export default function RecurringTasksManager({ recurringTasks, updateRecurringT
   const [filterDay,   setFilterDay]   = useState(todayName())
   const [filterType,  setFilterType]  = useState('all')
   const [confirmClear, setConfirmClear] = useState(false)
+  const [clearing,     setClearing]     = useState(false)
   const today = todayName()
 
   // Build flat tasks array — migrate legacy format if needed
@@ -295,6 +296,18 @@ export default function RecurringTasksManager({ recurringTasks, updateRecurringT
   const handleDelete = () => {
     saveTasks(flatData.filter(t => t.id !== editing.id))
     setEditing(null)
+  }
+  // Wait for the cloud write to finish before closing — prevents a fast refresh
+  // from canceling the save and letting old data reload.
+  const handleClearAll = async () => {
+    setClearing(true)
+    try {
+      await saveTasks([])
+      setConfirmClear(false)
+      setFilterDay(todayName())
+    } finally {
+      setClearing(false)
+    }
   }
 
   // Filter
@@ -371,10 +384,10 @@ export default function RecurringTasksManager({ recurringTasks, updateRecurringT
           <div style={{ background:'#FFF5F5', borderRadius:10, border:'1px solid #FECACA', padding:12 }}>
             <div style={{ fontSize:13, color:'#991B1B', marginBottom:8 }}>Remove every recurring event? This cannot be undone.</div>
             <div style={{ display:'flex', gap:8 }}>
-              <button onClick={()=>{ saveTasks([]); setConfirmClear(false); setFilterDay(todayName()) }}
-                style={{ fontSize:12, padding:'6px 14px', borderRadius:8, border:'none', background:'#EF4444', color:'white', cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:600 }}>Yes, clear all</button>
-              <button onClick={()=>setConfirmClear(false)}
-                style={{ fontSize:12, padding:'6px 12px', borderRadius:8, border:'1px solid var(--border)', background:'white', color:'var(--muted)', cursor:'pointer', fontFamily:'DM Sans,sans-serif' }}>Cancel</button>
+              <button onClick={handleClearAll} disabled={clearing}
+                style={{ fontSize:12, padding:'6px 14px', borderRadius:8, border:'none', background:'#EF4444', color:'white', cursor:clearing?'default':'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:600, opacity:clearing?.6:1 }}>{clearing ? 'Clearing…' : 'Yes, clear all'}</button>
+              <button onClick={()=>setConfirmClear(false)} disabled={clearing}
+                style={{ fontSize:12, padding:'6px 12px', borderRadius:8, border:'1px solid var(--border)', background:'white', color:'var(--muted)', cursor:clearing?'default':'pointer', fontFamily:'DM Sans,sans-serif' }}>Cancel</button>
             </div>
           </div>
         )}
