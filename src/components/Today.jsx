@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react'
-import { getDailyTodos, MORNING_ROUTINE, NIGHT_ROUTINE } from '../data/schedule.js'
+import { getDailyTodos } from '../data/schedule.js'
 import { findSlots } from '../lib/scheduler.js'
 import { getRoutines } from '../lib/storage.js'
-import { computeItemTimes } from './Routines.jsx'
+import { normalizeRoutineItems, sortByTime, to12 } from './Routines.jsx'
 
 const TAG_COLORS = {
   health:'#E07B2E', class:'#7C3AED', lab:'#059669', career:'#D97706',
@@ -52,139 +52,16 @@ function shiftLabelTime(label, newMins) {
   return label.replace(/~?\d{1,2}:\d{2}\s*(?:AM|PM)\s*(?:—\s*)?/i, newTime + ' — ')
 }
 
-// ── Morning routine card with start-time control ──────────────
-function MorningRoutineCard({ items, startMins, onStartChange, sub, open, setOpen, routineDone, toggleRoutine }) {
-  const [editingStart, setEditingStart] = useState(false)
-  const [inputVal, setInputVal] = useState('')
-
-  const hasDurations = items.some(i => i.durationMins !== undefined)
-  // If items have time strings but no durations, infer durations from gaps
-  const resolvedItems = !hasDurations ? (() => {
-    const parseT = s => {
-      if (!s) return null
-      const m = s.match(/(\d{1,2}):(\d{2})\s*(AM|PM)/i)
-      if (!m) return null
-      let h = parseInt(m[1]); const min = parseInt(m[2]); const ap = m[3].toUpperCase()
-      if (ap==='PM' && h!==12) h+=12; if (ap==='AM' && h===12) h=0
-      return h*60+min
-    }
-    return items.map((item, i) => {
-      const t0 = parseT(item.time)
-      const t1 = i+1 < items.length ? parseT(items[i+1].time) : null
-      return { ...item, durationMins: (t0!==null && t1!==null) ? t1-t0 : (t0!==null ? 10 : 10) }
-    })
-  })() : items
-  const computedItems = computeItemTimes(resolvedItems, startMins)
-  const doneCount = computedItems.filter(item => routineDone['morning-'+item.habit]).length
-
-  const startLabel = (() => {
-    const h = Math.floor(startMins/60), m = startMins%60
-    return `${h%12||12}:${String(m).padStart(2,'0')} ${h>=12?'PM':'AM'}`
-  })()
-  // End time = start of last item + its duration
-  const lastItem = resolvedItems[resolvedItems.length-1]
-  const lastComputedItem = computedItems[computedItems.length-1]
-  const endMins = lastComputedItem
-    ? (() => {
-        const m = lastComputedItem.time?.match(/(\d{1,2}):(\d{2})\s*(AM|PM)/i)
-        if (!m) return null
-        let h = parseInt(m[1]); const min = parseInt(m[2]); const ap = m[3].toUpperCase()
-        if (ap==='PM' && h!==12) h+=12; if (ap==='AM' && h===12) h=0
-        return h*60 + min + (lastItem?.durationMins || 0)
-      })()
-    : null
-  const endLabel = endMins !== null
-    ? `${Math.floor(endMins/60)%12||12}:${String(endMins%60).padStart(2,'0')} ${endMins>=720?'PM':'AM'}`
+// ── Routine card — unified morning/night, explicit per-item times ──
+function RoutineCard({ title, icon, items, prefix, open, setOpen, routineDone, toggleRoutine }) {
+  const sorted = sortByTime(items)
+  const doneCount = sorted.filter(item => routineDone[prefix+'-'+item.id]).length
+  const withT = sorted.filter(i => i.time)
+  const range = withT.length
+    ? (to12(withT[0].time) === to12(withT[withT.length-1].time)
+        ? to12(withT[0].time)
+        : `${to12(withT[0].time)} – ${to12(withT[withT.length-1].time)}`)
     : ''
-  // Always compute from startMins — never use the stored sub string
-  const displaySub = endLabel ? `${startLabel} – ${endLabel}` : startLabel
-
-  const openStartEdit = (e) => {
-    e.stopPropagation()
-    const h = Math.floor(startMins/60), m = startMins%60
-    setInputVal(`${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`)
-    setEditingStart(true)
-  }
-  const commitStart = (e) => {
-    e.stopPropagation()
-    if (inputVal) {
-      const [h, m] = inputVal.split(':').map(Number)
-      onStartChange(h*60+m)
-    }
-    setEditingStart(false)
-  }
-
-  return (
-    <div style={{background:'white',borderRadius:12,border:'1px solid var(--border)',marginBottom:20,overflow:'hidden'}}>
-      <div onClick={()=>setOpen(o=>!o)}
-        style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'12px 16px',cursor:'pointer',userSelect:'none'}}>
-        <div style={{display:'flex',alignItems:'center',gap:10}}>
-          <span style={{fontSize:18}}>☀️</span>
-          <div>
-            <div className="serif" style={{fontSize:15,fontWeight:600}}>Morning Routine</div>
-            <div style={{display:'flex',alignItems:'center',gap:6,marginTop:1}}>
-              {editingStart ? (
-                <div onClick={e=>e.stopPropagation()} style={{display:'flex',gap:6,alignItems:'center'}}>
-                  <input type="time" value={inputVal} onChange={e=>setInputVal(e.target.value)} autoFocus
-                    style={{fontSize:12,padding:'3px 7px',borderRadius:7,border:'1px solid var(--teal)',fontFamily:'DM Sans,sans-serif',outline:'none'}}/>
-                  <button onClick={commitStart}
-                    style={{fontSize:11,padding:'3px 10px',borderRadius:7,border:'none',background:'var(--forest)',color:'var(--green-light)',cursor:'pointer',fontFamily:'DM Sans,sans-serif',fontWeight:600}}>
-                    Set
-                  </button>
-                  <button onClick={e=>{e.stopPropagation();setEditingStart(false)}}
-                    style={{fontSize:11,padding:'3px 8px',borderRadius:7,border:'1px solid var(--border)',background:'white',color:'var(--muted)',cursor:'pointer',fontFamily:'DM Sans,sans-serif'}}>
-                    Cancel
-                  </button>
-                </div>
-              ) : (
-                <>
-                  <span style={{fontSize:11,color:'var(--muted)'}}>{displaySub} · {doneCount}/{computedItems.length} done · {open?'collapse':'expand'}</span>
-                  <button onClick={openStartEdit}
-                    style={{fontSize:9,padding:'2px 7px',borderRadius:6,border:'1px solid var(--border)',background:'white',color:'var(--muted)',cursor:'pointer',fontFamily:'DM Sans,sans-serif',letterSpacing:.5}}>
-                    ⏰ change start
-                  </button>
-                </>
-              )}
-            </div>
-          </div>
-        </div>
-        <span style={{color:'var(--muted)',fontSize:13,transform:open?'rotate(180deg)':'',transition:'transform .2s'}}>▾</span>
-      </div>
-      {open&&(
-        <div onClick={e=>e.stopPropagation()} style={{borderTop:'1px solid var(--border)',padding:'6px 16px 14px'}}>
-          {computedItems.map(item=>{
-            const key='morning-'+item.habit
-            const done=!!routineDone[key]
-            return (
-              <div key={item.habit}
-                style={{display:'flex',gap:12,alignItems:'flex-start',padding:'10px 0',borderBottom:'1px solid #F5F3EF',opacity:done?.4:1,transition:'opacity .2s'}}>
-                <div onClick={()=>toggleRoutine(key)}
-                  style={{width:20,height:20,borderRadius:'50%',flexShrink:0,marginTop:2,cursor:'pointer',
-                    border:done?'none':'2px solid #D1D5DB',background:done?'#52B788':'transparent',
-                    display:'flex',alignItems:'center',justifyContent:'center',transition:'all .2s'}}>
-                  {done&&<span style={{color:'white',fontSize:11,fontWeight:700}}>✓</span>}
-                </div>
-                <div style={{fontSize:18,minWidth:24,textAlign:'center'}}>{item.icon}</div>
-                <div style={{flex:1}}>
-                  <div style={{display:'flex',alignItems:'baseline',gap:8,flexWrap:'wrap'}}>
-                    <span style={{fontSize:10,color:'var(--teal)',fontWeight:600}}>{item.time}</span>
-                    {item.durationMins&&<span style={{fontSize:9,color:'var(--muted)'}}>{item.durationMins}min</span>}
-                    <span className="serif" style={{fontSize:14,color:'var(--text)',fontWeight:600,textDecoration:done?'line-through':'none'}}>{item.habit}</span>
-                  </div>
-                  <div style={{fontSize:11,color:'var(--muted)',marginTop:2,lineHeight:1.4}}>{item.detail}</div>
-                </div>
-              </div>
-            )
-          })}
-        </div>
-      )}
-    </div>
-  )
-}
-
-// ── Routine accordion with checkboxes ─────────────────────────
-function RoutineAccordion({ title, sub, icon, items, prefix, open, setOpen, routineDone, toggleRoutine }) {
-  const doneCount = items.filter(item => routineDone[prefix+'-'+item.habit]).length
   return (
     <div style={{background:'white',borderRadius:12,border:'1px solid var(--border)',marginBottom:20,overflow:'hidden'}}>
       <div onClick={()=>setOpen(o=>!o)}
@@ -194,7 +71,7 @@ function RoutineAccordion({ title, sub, icon, items, prefix, open, setOpen, rout
           <div>
             <div className="serif" style={{fontSize:15,fontWeight:600}}>{title}</div>
             <div style={{fontSize:11,color:'var(--muted)',marginTop:1}}>
-              {sub} · {doneCount}/{items.length} done · {open?'collapse':'expand'}
+              {range && `${range} · `}{doneCount}/{sorted.length} done · {open?'collapse':'expand'}
             </div>
           </div>
         </div>
@@ -202,25 +79,30 @@ function RoutineAccordion({ title, sub, icon, items, prefix, open, setOpen, rout
       </div>
       {open&&(
         <div onClick={e=>e.stopPropagation()} style={{borderTop:'1px solid var(--border)',padding:'6px 16px 14px'}}>
-          {items.map(item=>{
-            const key=prefix+'-'+item.habit
+          {sorted.length===0 && (
+            <div style={{fontSize:12,color:'var(--muted)',padding:'10px 0',fontStyle:'italic'}}>
+              No items yet — add them in Settings ⚙️ → Routines.
+            </div>
+          )}
+          {sorted.map(item=>{
+            const key=prefix+'-'+item.id
             const done=!!routineDone[key]
             return (
-              <div key={item.habit}
+              <div key={item.id}
                 style={{display:'flex',gap:12,alignItems:'flex-start',padding:'10px 0',borderBottom:'1px solid #F5F3EF',opacity:done?.4:1,transition:'opacity .2s'}}>
                 <div onClick={()=>toggleRoutine(key)}
                   style={{width:20,height:20,borderRadius:'50%',flexShrink:0,marginTop:2,cursor:'pointer',
-                    border:done?'none':'2px solid #D1D5DB', background:done?'#52B788':'transparent',
+                    border:done?'none':`2px solid ${item.color||'#D1D5DB'}`, background:done?(item.color||'#52B788'):'transparent',
                     display:'flex',alignItems:'center',justifyContent:'center',transition:'all .2s'}}>
                   {done&&<span style={{color:'white',fontSize:11,fontWeight:700}}>✓</span>}
                 </div>
                 <div style={{fontSize:18,minWidth:24,textAlign:'center'}}>{item.icon}</div>
                 <div style={{flex:1}}>
                   <div style={{display:'flex',alignItems:'baseline',gap:8,flexWrap:'wrap'}}>
-                    <span style={{fontSize:10,color:'var(--muted)',letterSpacing:.3}}>{item.time}</span>
-                    <span className="serif" style={{fontSize:14,color:'var(--text)',fontWeight:600,textDecoration:done?'line-through':'none'}}>{item.habit}</span>
+                    {item.time && <span style={{fontSize:10,color:item.color||'var(--muted)',fontWeight:600}}>{to12(item.time)}</span>}
+                    <span className="serif" style={{fontSize:14,color:'var(--text)',fontWeight:600,textDecoration:done?'line-through':'none'}}>{item.label}</span>
                   </div>
-                  <div style={{fontSize:11,color:'var(--muted)',marginTop:2,lineHeight:1.4}}>{item.detail}</div>
+                  {item.detail && <div style={{fontSize:11,color:'var(--muted)',marginTop:2,lineHeight:1.4}}>{item.detail}</div>}
                 </div>
               </div>
             )
@@ -487,32 +369,20 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
     try { return JSON.parse(localStorage.getItem('vivian_routine_'+todayKey())||'{}') } catch { return {} }
   })
 
-  // Load custom routines from storage (may differ from schedule.js defaults)
-  const [morningItems, setMorningItems] = useState(MORNING_ROUTINE)
-  const [nightItems,   setNightItems]   = useState(NIGHT_ROUTINE)
-  const [morningSub,   setMorningSub]   = useState('')
-  const [nightSub,     setNightSub]     = useState('')
-  const [morningStartMins, setMorningStartMins] = useState(() => {
-    // Per-day override takes priority, else fall back to stored default
-    try { const v = localStorage.getItem('vivian_morning_start_'+todayKey()); return v ? parseInt(v) : 6*60 } catch { return 6*60 }
-  })
+  // Load routines from storage
+  const [morningItems, setMorningItems] = useState([])
+  const [nightItems,   setNightItems]   = useState([])
+  const [morningEnabled, setMorningEnabled] = useState(true)
+  const [nightEnabled,   setNightEnabled]   = useState(true)
 
   useEffect(()=>{
     getRoutines().then(r => {
-      if (r?.morning) setMorningItems(r.morning)
-      if (r?.night)   setNightItems(r.night)
-      if (r?.morningSub) setMorningSub(r.morningSub)
-      if (r?.nightSub)   setNightSub(r.nightSub)
-      // Use stored default start time if no per-day override
-      const perDay = localStorage.getItem('vivian_morning_start_'+todayKey())
-      if (!perDay && r?.morningStartMins != null) setMorningStartMins(r.morningStartMins)
+      setMorningItems(normalizeRoutineItems(r?.morning))
+      setNightItems(normalizeRoutineItems(r?.night))
+      setMorningEnabled(r?.morningEnabled !== false)
+      setNightEnabled(r?.nightEnabled !== false)
     })
   }, [])
-
-  const handleMorningStartChange = (newMins) => {
-    setMorningStartMins(newMins)
-    localStorage.setItem('vivian_morning_start_'+todayKey(), String(newMins))
-  }
 
   useEffect(()=>{ const t=setInterval(()=>setNow(nowMins()),30000); return ()=>clearInterval(t) },[])
 
@@ -750,13 +620,14 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
         </div>
       </div>
 
-      {/* Morning routine — with start time control */}
-      <MorningRoutineCard
-        items={morningItems} startMins={morningStartMins}
-        onStartChange={handleMorningStartChange}
-        sub={morningSub}
-        open={morningOpen} setOpen={setMorningOpen}
-        routineDone={routineDone} toggleRoutine={toggleRoutine} />
+      {/* Morning routine */}
+      {morningEnabled && (
+        <RoutineCard
+          title="Morning Routine" icon="☀️"
+          items={morningItems} prefix="morning"
+          open={morningOpen} setOpen={setMorningOpen}
+          routineDone={routineDone} toggleRoutine={toggleRoutine} />
+      )}
 
       {/* Timeline */}
       {tasksWithStatus.length===0 ? (
@@ -785,12 +656,13 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
       )}
 
       {/* Night routine — end of day */}
-      <RoutineAccordion
-        title="Night Routine"
-        sub={nightSub || (nightItems.length ? (nightItems[0].time || '') + (nightItems.length > 1 ? ' – ' + nightItems[nightItems.length-1].time : '') : '')} icon="🌙"
-        items={nightItems} prefix="night"
-        open={nightOpen} setOpen={setNightOpen}
-        routineDone={routineDone} toggleRoutine={toggleRoutine} />
+      {nightEnabled && (
+        <RoutineCard
+          title="Night Routine" icon="🌙"
+          items={nightItems} prefix="night"
+          open={nightOpen} setOpen={setNightOpen}
+          routineDone={routineDone} toggleRoutine={toggleRoutine} />
+      )}
 
       {/* FAB */}
       <button onClick={()=>setAddingTask(true)}

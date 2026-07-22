@@ -1,306 +1,202 @@
-import { useState, useEffect, useCallback } from 'react'
-import { MORNING_ROUTINE, NIGHT_ROUTINE } from '../data/schedule.js'
-import { getRoutines, setRoutines, getRoutineLog, setRoutineLog } from '../lib/storage.js'
+import { useState, useEffect, useRef, useCallback } from 'react'
+import { getRoutines, setRoutines } from '../lib/storage.js'
 
-// ── Constants ──────────────────────────────────────────────────
-const CATS = ['sleep','health','polish','fitness','career','personal','lab']
-const CAT_COLORS = {
-  sleep:   { bg:'#E8F4F0', text:'#2D6A4F', dot:'#52B788' },
-  health:  { bg:'#FFF3E4', text:'#7B4F1E', dot:'#E07B2E' },
-  polish:  { bg:'#F5EEF8', text:'#6B3FA0', dot:'#A855F7' },
-  fitness: { bg:'#EDF2FB', text:'#1E3A8A', dot:'#3B82F6' },
-  career:  { bg:'#FEF9E7', text:'#78350F', dot:'#D97706' },
-  personal:{ bg:'#F0FDF4', text:'#065F46', dot:'#06D6A0' },
-  lab:     { bg:'#ECFDF5', text:'#065F46', dot:'#059669' },
+// ── Shared helpers (also used by Today's routine cards) ─────────
+export const ROUTINE_PRESET_COLORS = [
+  '#059669','#7C3AED','#4A9EB5','#C4728E','#D97706','#7A8EC4',
+  '#E07B2E','#3B82F6','#A855F7','#9A7CC4','#EF4444','#52B788','#8899AA',
+]
+const QUICK_EMOJIS = ['☀️','🌙','💧','☕','🏃‍♀️','🧘','📚','📝','💊','🪥','🛁','🍽️','📵','🎹','💤','✨','🚪','🔬']
+
+// Old category → color, for one-time normalization of any legacy items.
+const LEGACY_CAT_COLOR = { sleep:'#52B788', health:'#E07B2E', polish:'#A855F7', fitness:'#3B82F6', career:'#D97706', personal:'#06D6A0', lab:'#059669' }
+
+let _idc = 0
+export const newRoutineId = () => `r-${Date.now().toString(36)}-${_idc++}`
+
+// 12h "5:00 PM" or 24h "17:00" → 24h "HH:MM" (for <input type="time">)
+export function to24(s) {
+  if (!s) return ''
+  const ampm = s.match(/(\d{1,2}):(\d{2})\s*(AM|PM)/i)
+  if (ampm) {
+    let h = parseInt(ampm[1]); const mn = ampm[2]; const ap = ampm[3].toUpperCase()
+    if (ap === 'PM' && h !== 12) h += 12
+    if (ap === 'AM' && h === 12) h = 0
+    return `${String(h).padStart(2,'0')}:${mn}`
+  }
+  const h24 = s.match(/^(\d{1,2}):(\d{2})$/)
+  if (h24) return `${String(parseInt(h24[1])).padStart(2,'0')}:${h24[2]}`
+  return ''
 }
-const DEFAULT_EMOJIS = ['☀️','💧','✨','👗','📚','🗒️','🚪','🥚','🔬','🌙','📞','📝','📵','🗂️','🎹','💤','🏃‍♀️','⏰','🍽️','📖','💊','🧘','🪥','🛁']
-
-// ── Compute times from start + durations ──────────────────────
-// If items have durationMins, compute their times dynamically.
-// Otherwise fall back to stored time strings.
-export function computeItemTimes(items, startMins) {
-  let cursor = startMins
-  return items.map(item => {
-    const dur = item.durationMins ?? null
-    if (dur !== null) {
-      const h = Math.floor(cursor / 60), m = cursor % 60
-      const label = `${h%12||12}:${String(m).padStart(2,'0')} ${h>=12?'PM':'AM'}`
-      const out = { ...item, time: label }
-      cursor += dur
-      return out
-    }
-    return item
-  })
-}
-
-function parseMorningStart(timeStr) {
-  if (!timeStr) return null
-  const m = timeStr.match(/(\d{1,2}):(\d{2})\s*(AM|PM)/i)
-  if (!m) return null
-  let h = parseInt(m[1]); const min = parseInt(m[2]); const ap = m[3].toUpperCase()
-  if (ap==='PM' && h!==12) h+=12; if (ap==='AM' && h===12) h=0
-  return h*60+min
+// 24h "HH:MM" → 12h "H:MM AM/PM" for display
+export function to12(s) {
+  if (!s) return ''
+  const [h, m] = s.split(':').map(Number)
+  if (isNaN(h)) return ''
+  return `${h % 12 || 12}:${String(m).padStart(2,'0')} ${h >= 12 ? 'PM' : 'AM'}`
 }
 
-function todayKey() {
-  const d = new Date()
-  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
+// Normalize any stored items (including legacy shapes) to the current model:
+// { id, time (24h ''), label, icon, color, detail }
+export function normalizeRoutineItems(items) {
+  return (items || []).map(it => ({
+    id:     it.id || newRoutineId(),
+    time:   to24(it.time),
+    label:  it.label ?? it.habit ?? '',
+    icon:   it.icon || '⭐',
+    color:  it.color || LEGACY_CAT_COLOR[it.cat] || '#52B788',
+    detail: it.detail || '',
+  }))
 }
 
-// ── Emoji picker ───────────────────────────────────────────────
-function EmojiPicker({ value, onChange }) {
+// Sort by time for display; timeless items keep their order, at the end.
+export function sortByTime(items) {
+  return [...items]
+    .map((it, i) => ({ it, i }))
+    .sort((a, b) => {
+      const ta = a.it.time || '99:99', tb = b.it.time || '99:99'
+      if (ta !== tb) return ta.localeCompare(tb)
+      return a.i - b.i
+    })
+    .map(x => x.it)
+}
+
+// Close a popover when clicking anywhere outside its wrapper.
+function useOutsideClose(open, setOpen) {
+  const ref = useRef(null)
+  useEffect(() => {
+    if (!open) return
+    const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false) }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [open, setOpen])
+  return ref
+}
+
+// ── Emoji input — type/paste ANY emoji, plus quick picks ───────
+function EmojiInput({ value, onChange }) {
   const [open, setOpen] = useState(false)
+  const ref = useOutsideClose(open, setOpen)
   return (
-    <div style={{ position:'relative', display:'inline-block' }}>
-      <button onClick={() => setOpen(o=>!o)}
-        style={{ fontSize:22, background:'rgba(255,255,255,.08)', border:'1px solid var(--border)', borderRadius:8, padding:'4px 8px', cursor:'pointer' }}>
-        {value}
-      </button>
+    <div ref={ref} style={{ position:'relative', flexShrink:0 }}>
+      <input value={value} onChange={e => onChange(e.target.value)} onFocus={() => setOpen(true)}
+        maxLength={4} aria-label="Emoji"
+        style={{ width:44, fontSize:20, textAlign:'center', padding:'5px 4px', borderRadius:8, border:'1px solid var(--border)', background:'white', cursor:'pointer' }} />
       {open && (
-        <div style={{ position:'absolute', top:'110%', left:0, background:'var(--forest)', border:'1px solid var(--border)', borderRadius:10, padding:8, display:'flex', flexWrap:'wrap', gap:4, zIndex:50, width:180 }}>
-          {DEFAULT_EMOJIS.map(e => (
+        <div style={{ position:'absolute', top:'110%', left:0, background:'white', border:'1px solid var(--border)', borderRadius:10, padding:8, boxShadow:'0 8px 24px rgba(0,0,0,.12)', display:'flex', flexWrap:'wrap', gap:4, zIndex:60, width:200 }}>
+          <div style={{ width:'100%', fontSize:10, color:'var(--muted)', marginBottom:2 }}>Pick one, or type any emoji in the box.</div>
+          {QUICK_EMOJIS.map(e => (
             <button key={e} onClick={() => { onChange(e); setOpen(false) }}
-              style={{ fontSize:18, background:'none', border:'none', cursor:'pointer', padding:3, borderRadius:4, opacity: e===value ? 1 : .6 }}>
-              {e}
-            </button>
+              style={{ fontSize:18, background:'none', border:'none', cursor:'pointer', padding:3, borderRadius:4 }}>{e}</button>
           ))}
+          <button onClick={() => setOpen(false)} style={{ width:'100%', marginTop:4, fontSize:11, background:'none', border:'1px solid var(--border)', borderRadius:6, padding:'4px', cursor:'pointer', color:'var(--muted)' }}>Done</button>
         </div>
       )}
     </div>
   )
 }
 
-// ── Single editable item ───────────────────────────────────────
-function ItemRow({ item, editMode, done, onToggle, onChange, onDelete, hideCheck }) {
-  const c = CAT_COLORS[item.cat] || CAT_COLORS.career
-
-  if (editMode) return (
-    <div style={{ background:'rgba(255,255,255,.04)', borderRadius:12, padding:'12px 14px', marginBottom:8, border:'1px solid var(--border)' }}>
-      <div style={{ display:'flex', gap:8, alignItems:'flex-start', flexWrap:'wrap' }}>
-        {/* Emoji */}
-        <EmojiPicker value={item.icon} onChange={v => onChange({ ...item, icon: v })} />
-        {/* Duration or time */}
-        {item.durationMins !== undefined
-          ? <div style={{ display:'flex', alignItems:'center', gap:4 }}>
-              <input type="number" min={1} max={180} value={item.durationMins}
-                onChange={e => onChange({ ...item, durationMins: Math.max(1, parseInt(e.target.value)||1) })}
-                style={{ width:54, fontSize:12, padding:'6px 8px', borderRadius:8, border:'1px solid var(--border)', background:'rgba(255,255,255,.06)', color:'var(--text)', fontFamily:'DM Sans, sans-serif', textAlign:'center' }} />
-              <span style={{ fontSize:10, color:'var(--muted)' }}>min</span>
-            </div>
-          : <input value={item.time||''} onChange={e => onChange({ ...item, time: e.target.value })}
-              placeholder="Time"
-              style={{ width:90, fontSize:12, padding:'6px 8px', borderRadius:8, border:'1px solid var(--border)', background:'rgba(255,255,255,.06)', color:'var(--text)', fontFamily:'DM Sans, sans-serif' }} />
-        }
-        {/* Habit name */}
-        <input value={item.habit} onChange={e => onChange({ ...item, habit: e.target.value })}
-          placeholder="Habit name"
-          style={{ flex:1, minWidth:120, fontSize:13, padding:'6px 10px', borderRadius:8, border:'1px solid var(--border)', background:'rgba(255,255,255,.06)', color:'var(--text)', fontFamily:'DM Sans, sans-serif' }} />
-        {/* Category */}
-        <select value={item.cat} onChange={e => onChange({ ...item, cat: e.target.value })}
-          style={{ fontSize:11, padding:'6px 8px', borderRadius:8, border:'1px solid var(--border)', background:'var(--forest)', color:'var(--green-light)', fontFamily:'DM Sans, sans-serif', cursor:'pointer' }}>
-          {CATS.map(c => <option key={c} value={c}>{c}</option>)}
-        </select>
-        {/* Delete */}
-        <button onClick={onDelete}
-          style={{ background:'rgba(255,100,100,.1)', border:'1px solid rgba(255,100,100,.3)', color:'#FF9494', borderRadius:8, padding:'6px 10px', cursor:'pointer', fontSize:12 }}>
-          ✕
-        </button>
-      </div>
-      {/* Detail text */}
-      <textarea value={item.detail} onChange={e => onChange({ ...item, detail: e.target.value })}
-        placeholder="Detail / reminder text…"
-        style={{ width:'100%', marginTop:8, fontSize:12, padding:'8px 10px', borderRadius:8, border:'1px solid var(--border)', background:'rgba(255,255,255,.04)', color:'var(--muted)', fontFamily:'DM Sans, sans-serif', resize:'vertical', minHeight:48, lineHeight:1.5 }} />
-    </div>
-  )
-
+// ── Color input — full picker + preset swatches ────────────────
+function ColorInput({ value, onChange }) {
+  const [open, setOpen] = useState(false)
+  const ref = useOutsideClose(open, setOpen)
   return (
-    <div style={{ display:'flex', gap:12, alignItems:'flex-start', padding:'12px 16px', borderBottom:'1px solid rgba(255,255,255,.05)', opacity: done ? .45 : 1 }}>
-      {/* Checkoff circle — only shown in Today, not in settings */}
-      {!hideCheck && <div onClick={onToggle}
-        style={{ width:20, height:20, borderRadius:'50%', flexShrink:0, marginTop:3, cursor:'pointer',
-          border: done ? 'none' : `2px solid ${c.dot}`,
-          background: done ? c.dot : 'transparent',
-          display:'flex', alignItems:'center', justifyContent:'center', transition:'all .2s' }}>
-        {done && <span style={{ color:'white', fontSize:11, fontWeight:700 }}>✓</span>}
-      </div>}
-      <div style={{ fontSize:20, minWidth:26, textAlign:'center' }}>{item.icon}</div>
-      <div style={{ flex:1 }}>
-        <div style={{ display:'flex', alignItems:'baseline', gap:8, marginBottom:3, flexWrap:'wrap' }}>
-          <span style={{ fontFamily:'DM Sans, sans-serif', fontSize:11, color:'var(--muted)', letterSpacing:.5 }}>{item.time}</span>
-          <span className="serif" style={{ fontSize:15, color:'var(--sand)', fontWeight:600, textDecoration: done ? 'line-through' : 'none' }}>{item.habit}</span>
+    <div ref={ref} style={{ position:'relative', flexShrink:0 }}>
+      <button onClick={() => setOpen(o => !o)} title="Color"
+        style={{ width:28, height:28, borderRadius:8, border:'1px solid var(--border)', background:value, cursor:'pointer' }} />
+      {open && (
+        <div style={{ position:'absolute', top:'110%', left:0, background:'white', border:'1px solid var(--border)', borderRadius:10, padding:10, boxShadow:'0 8px 24px rgba(0,0,0,.12)', zIndex:60, width:180 }}>
+          <div style={{ display:'flex', flexWrap:'wrap', gap:5, marginBottom:8 }}>
+            {ROUTINE_PRESET_COLORS.map(c => (
+              <button key={c} onClick={() => onChange(c)}
+                style={{ width:22, height:22, borderRadius:6, background:c, cursor:'pointer', border: value===c ? '2px solid var(--text)' : '2px solid transparent' }} />
+            ))}
+          </div>
+          <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+            <input type="color" value={value} onChange={e => onChange(e.target.value)}
+              style={{ width:32, height:28, border:'none', borderRadius:6, cursor:'pointer', padding:0, background:'none' }} />
+            <span style={{ fontSize:11, color:'var(--muted)' }}>Custom</span>
+            <button onClick={() => setOpen(false)} style={{ marginLeft:'auto', fontSize:11, background:'none', border:'1px solid var(--border)', borderRadius:6, padding:'4px 8px', cursor:'pointer', color:'var(--muted)' }}>Done</button>
+          </div>
         </div>
-        <div style={{ fontSize:12, color:'var(--muted)', lineHeight:1.5, marginBottom:4 }}>{item.detail}</div>
-        <span style={{ fontSize:9, letterSpacing:1.5, textTransform:'uppercase', padding:'2px 7px', borderRadius:10, background:c.bg, color:c.text, fontWeight:600 }}>{item.cat}</span>
-      </div>
+      )}
     </div>
   )
 }
 
-// ── Single routine section ─────────────────────────────────────
-function RoutineSection({ title, sub, icon, items, routineKey, routineLog, onUpdateItems, onUpdateLog, isDefault, settingsMode, startMins, onStartMinsChange }) {
-  const [editMode, setEditMode] = useState(false)
-  const [localItems, setLocalItems] = useState(items)
-  const [localSub, setLocalSub] = useState(sub)
-  const [open, setOpen] = useState(false)
-  const [localStartMins, setLocalStartMins] = useState(startMins ?? 6*60)
+// ── One editable routine item row ──────────────────────────────
+function ItemEditor({ item, onChange, onDelete }) {
+  return (
+    <div style={{ background:'white', border:'1px solid var(--border)', borderRadius:12, padding:'12px', marginBottom:8 }}>
+      <div style={{ display:'flex', gap:8, alignItems:'center', flexWrap:'wrap' }}>
+        <EmojiInput value={item.icon} onChange={v => onChange({ ...item, icon: v })} />
+        <ColorInput value={item.color} onChange={v => onChange({ ...item, color: v })} />
+        <input type="time" value={item.time} onChange={e => onChange({ ...item, time: e.target.value })}
+          style={{ fontSize:12, padding:'6px 8px', borderRadius:8, border:'1px solid var(--border)', fontFamily:'DM Sans,sans-serif', color:'var(--text)' }} />
+        <input value={item.label} onChange={e => onChange({ ...item, label: e.target.value })}
+          placeholder="What is it?"
+          style={{ flex:1, minWidth:120, fontSize:13, padding:'6px 10px', borderRadius:8, border:'1px solid var(--border)', fontFamily:'DM Sans,sans-serif', color:'var(--text)' }} />
+        <button onClick={onDelete} title="Delete"
+          style={{ background:'#FFF5F5', border:'1px solid #FECACA', color:'#EF4444', borderRadius:8, padding:'6px 10px', cursor:'pointer', fontSize:12, flexShrink:0 }}>✕</button>
+      </div>
+      <input value={item.detail} onChange={e => onChange({ ...item, detail: e.target.value })}
+        placeholder="Note (optional)"
+        style={{ width:'100%', marginTop:8, fontSize:12, padding:'7px 10px', borderRadius:8, border:'1px solid var(--border)', fontFamily:'DM Sans,sans-serif', color:'var(--muted)', boxSizing:'border-box' }} />
+    </div>
+  )
+}
 
-  // Resolve durations — if stored items lack durationMins, infer from time string gaps
-  const resolveWithDurations = (arr) => {
-    if (arr.some(i => i.durationMins !== undefined)) return arr
-    const parseT = s => {
-      if (!s) return null
-      const m = s.match(/(\d{1,2}):(\d{2})\s*(AM|PM)/i)
-      if (!m) return null
-      let h = parseInt(m[1]); const min = parseInt(m[2]); const ap = m[3].toUpperCase()
-      if (ap === 'PM' && h !== 12) h += 12; if (ap === 'AM' && h === 12) h = 0
-      return h * 60 + min
-    }
-    return arr.map((item, i) => {
-      const t0 = parseT(item.time), t1 = i + 1 < arr.length ? parseT(arr[i+1].time) : null
-      return { ...item, durationMins: (t0 !== null && t1 !== null) ? t1 - t0 : 10 }
-    })
-  }
-  const resolvedItems      = resolveWithDurations(items)
-  const resolvedLocalItems = resolveWithDurations(localItems)
-  const displayItems      = startMins != null ? computeItemTimes(resolvedItems, startMins) : resolvedItems
-  const displayLocalItems = computeItemTimes(resolvedLocalItems, localStartMins)
-  const today = todayKey()
-  const doneSet = new Set(Object.keys(routineLog[today] || {}).filter(k => routineLog[today][k]))
+// ── One routine (morning / night) editor section ───────────────
+function RoutineEditor({ title, icon, items, enabled, onChangeItems, onSetEnabled }) {
+  const timed = sortByTime(items)
+  const range = (() => {
+    const withT = timed.filter(i => i.time)
+    if (!withT.length) return ''
+    const first = to12(withT[0].time), last = to12(withT[withT.length-1].time)
+    return first === last ? first : `${first} – ${last}`
+  })()
 
-  // Keep in sync when items prop changes
-  useEffect(() => { setLocalItems(items); setLocalSub(sub); setLocalStartMins(startMins ?? 6*60) }, [items, sub, startMins])
-
-  const doneCount = displayItems.filter(it => doneSet.has(`${routineKey}-${it.habit}`)).length
-
-  const toggleItem = async (habit) => {
-    const key = `${routineKey}-${habit}`
-    const isNowDone = !doneSet.has(key)
-    const updated = {
-      ...routineLog,
-      [today]: { ...(routineLog[today] || {}), [key]: isNowDone }
-    }
-    await onUpdateLog(updated)
-  }
-
-  const saveEdits = async () => {
-    if (onStartMinsChange && localStartMins !== startMins) {
-      await onStartMinsChange(localStartMins)
-    }
-    await onUpdateItems(routineKey, localItems, localSub)
-    setEditMode(false)
-  }
-
-  const cancelEdits = () => {
-    setLocalItems(items)
-    setLocalSub(sub)
-    setLocalStartMins(startMins ?? 6*60)
-    setEditMode(false)
-  }
-
-  const addItem = () => {
-    setLocalItems(prev => [...prev, {
-      time: '', habit: 'New habit', icon: '⭐', cat: 'health', detail: ''
-    }])
-  }
+  const updateItem = (id, next) => onChangeItems(items.map(it => it.id === id ? next : it))
+  const deleteItem = (id) => onChangeItems(items.filter(it => it.id !== id))
+  const addItem = () => onChangeItems([...items, { id: newRoutineId(), time:'', label:'', icon:'⭐', color:'#52B788', detail:'' }])
 
   return (
-    <div style={{ marginBottom:12 }}>
-      {/* Header */}
-      <div style={{ background:'var(--forest)', borderRadius: open ? '14px 14px 0 0' : 14, padding:'14px 18px', display:'flex', alignItems:'center', gap:10, justifyContent:'space-between' }}>
-        <div style={{ display:'flex', alignItems:'center', gap:10, cursor:'pointer', flex:1 }} onClick={() => setOpen(o=>!o)}>
+    <div style={{ marginBottom:18, background:'var(--forest)', borderRadius:14, overflow:'hidden' }}>
+      {/* Header with enable toggle */}
+      <div style={{ padding:'14px 18px', display:'flex', alignItems:'center', justifyContent:'space-between', gap:10 }}>
+        <div style={{ display:'flex', alignItems:'center', gap:10 }}>
           <span style={{ fontSize:22 }}>{icon}</span>
           <div>
             <div className="serif" style={{ fontSize:18, color:'var(--sand)', fontWeight:600 }}>{title}</div>
             <div style={{ fontSize:11, color:'var(--green-mid)', marginTop:1 }}>
-              {editMode
-                ? <div style={{ display:'flex', alignItems:'center', gap:6 }} onClick={e=>e.stopPropagation()}>
-                    {resolvedItems.some(i => i.durationMins !== undefined) && onStartMinsChange && (
-                      <div style={{ display:'flex', alignItems:'center', gap:4 }}>
-                        <span style={{ fontSize:10, color:'rgba(255,255,255,.5)' }}>Start:</span>
-                        <input type="time"
-                          value={`${String(Math.floor(localStartMins/60)).padStart(2,'0')}:${String(localStartMins%60).padStart(2,'0')}`}
-                          onChange={e => { const [h,m]=e.target.value.split(':').map(Number); setLocalStartMins(h*60+m) }}
-                          style={{ fontSize:11, background:'rgba(255,255,255,.08)', border:'1px solid rgba(255,255,255,.2)', borderRadius:6, padding:'2px 6px', color:'var(--green-light)', fontFamily:'DM Sans,sans-serif' }}/>
-                      </div>
-                    )}
-                    <input value={localSub} onChange={e=>setLocalSub(e.target.value)}
-                      style={{ fontSize:11, background:'rgba(255,255,255,.08)', border:'1px solid rgba(255,255,255,.2)', borderRadius:6, padding:'2px 8px', color:'var(--green-light)', fontFamily:'DM Sans,sans-serif', width:160 }}/>
-                  </div>
-                : (() => {
-                    if (displayItems.length) {
-                      const first = displayItems[0].time || ''
-                      const lastD = displayItems[displayItems.length-1]
-                      const lastR = resolvedItems[resolvedItems.length-1]
-                      const parseT = s => { if (!s) return null; const m = s.match(/(\d{1,2}):(\d{2})\s*(AM|PM)/i); if (!m) return null; let h=parseInt(m[1]); const mn=parseInt(m[2]); const ap=m[3].toUpperCase(); if(ap==='PM'&&h!==12)h+=12; if(ap==='AM'&&h===12)h=0; return h*60+mn }
-                      const lastStart = parseT(lastD?.time)
-                      const endM = lastStart !== null ? lastStart + (lastR?.durationMins || 0) : null
-                      const endStr = endM !== null ? `${Math.floor(endM/60)%12||12}:${String(endM%60).padStart(2,'0')} ${endM>=720?'PM':'AM'}` : ''
-                      return <>{first}{endStr ? ` – ${endStr}` : ''} · {doneCount}/{displayItems.length} done today</>
-                    }
-                    return <>{localSub} · {doneCount}/{displayItems.length} done today</>
-                  })()}
+              {enabled ? (range || `${items.length} item${items.length===1?'':'s'}`) : 'Turned off'}
             </div>
           </div>
         </div>
-        <div style={{ display:'flex', gap:8, alignItems:'center' }}>
-          {!editMode ? (
-            <button onClick={(e) => { e.stopPropagation(); setOpen(true); setEditMode(true) }}
-              style={{ fontSize:12, padding:'5px 12px', borderRadius:20, border:'1px solid rgba(255,255,255,.15)', background:'none', color:'var(--green-light)', cursor:'pointer', fontFamily:'DM Sans, sans-serif' }}>
-              ✏️ Edit
-            </button>
-          ) : (
-            <>
-              <button onClick={saveEdits}
-                style={{ fontSize:12, padding:'5px 12px', borderRadius:20, border:'none', background:'var(--teal)', color:'var(--ocean)', cursor:'pointer', fontFamily:'DM Sans, sans-serif', fontWeight:600 }}>
-                Save
-              </button>
-              <button onClick={cancelEdits}
-                style={{ fontSize:12, padding:'5px 12px', borderRadius:20, border:'1px solid rgba(255,255,255,.15)', background:'none', color:'var(--muted)', cursor:'pointer', fontFamily:'DM Sans, sans-serif' }}>
-                Cancel
-              </button>
-            </>
-          )}
-          <span style={{ color:'var(--green-mid)', cursor:'pointer' }} onClick={() => setOpen(o=>!o)}>
-            {open ? '▴' : '▾'}
-          </span>
-        </div>
+        {/* Toggle switch */}
+        <button onClick={() => onSetEnabled(!enabled)} title={enabled ? 'Turn off' : 'Turn on'}
+          style={{ width:44, height:24, borderRadius:12, border:'none', cursor:'pointer', position:'relative',
+            background: enabled ? 'var(--teal)' : 'rgba(255,255,255,.2)', transition:'background .2s', flexShrink:0 }}>
+          <span style={{ position:'absolute', top:2, left: enabled ? 22 : 2, width:20, height:20, borderRadius:'50%', background:'white', transition:'left .2s' }} />
+        </button>
       </div>
 
-      {/* Body */}
-      {open && (
-        <div style={{ background:'rgba(7,26,62,.8)', borderRadius:'0 0 14px 14px', border:'1px solid var(--border)', borderTop:'none' }}>
-          {editMode ? (
-            <div style={{ padding:'14px 14px 8px' }}>
-              {displayLocalItems.map((item, i) => (
-                <ItemRow key={i} item={localItems[i]} editMode
-                  onChange={updated => setLocalItems(prev => prev.map((it,j) => j===i ? updated : it))}
-                  onDelete={() => setLocalItems(prev => prev.filter((_,j) => j!==i))}
-                  done={false} onToggle={() => {}}
-                />
-              ))}
-              <div style={{ display:'flex', gap:8, padding:'8px 0 4px', flexWrap:'wrap' }}>
-                <button onClick={addItem}
-                  style={{ fontSize:11, padding:'7px 16px', borderRadius:20, border:'1px solid var(--border)', background:'none', color:'var(--teal)', cursor:'pointer', fontFamily:'DM Sans, sans-serif' }}>
-                  + Add item
-                </button>
-                {!isDefault && (
-                  <button onClick={() => onUpdateItems(routineKey, null)}
-                    style={{ fontSize:11, padding:'7px 16px', borderRadius:20, border:'1px solid rgba(255,100,100,.3)', background:'none', color:'#FF9494', cursor:'pointer', fontFamily:'DM Sans, sans-serif' }}>
-                    ↩ Reset to defaults
-                  </button>
-                )}
-              </div>
-            </div>
-          ) : (
-            displayItems.map((item, i) => (
-              <ItemRow key={i} item={item} editMode={false}
-                done={doneSet.has(`${routineKey}-${item.habit}`)}
-                onToggle={() => toggleItem(item.habit)}
-                onChange={() => {}} onDelete={() => {}}
-                hideCheck={settingsMode}
-              />
-            ))
+      {/* Body — only editable when enabled */}
+      {enabled && (
+        <div style={{ background:'var(--cream)', padding:'14px' }}>
+          {items.length === 0 && (
+            <div style={{ fontSize:12, color:'var(--muted)', padding:'4px 2px 12px' }}>No items yet — add your first below.</div>
           )}
+          {/* Edit in insertion order so time fields don't jump around while typing */}
+          {items.map(item => (
+            <ItemEditor key={item.id} item={item}
+              onChange={next => updateItem(item.id, next)}
+              onDelete={() => deleteItem(item.id)} />
+          ))}
+          <button onClick={addItem}
+            style={{ fontSize:12, padding:'8px 16px', borderRadius:20, border:'1px solid var(--border)', background:'white', color:'var(--teal)', cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:600 }}>
+            + Add item
+          </button>
         </div>
       )}
     </div>
@@ -309,75 +205,59 @@ function RoutineSection({ title, sub, icon, items, routineKey, routineLog, onUpd
 
 // ── Main ───────────────────────────────────────────────────────
 export default function Routines() {
-  const [morningItems, setMorningItems] = useState(MORNING_ROUTINE)
-  const [nightItems,   setNightItems]   = useState(NIGHT_ROUTINE)
-  const [morningSub,   setMorningSub]   = useState('')
-  const [nightSub,     setNightSub]     = useState('')
-  const [morningStartMins, setMorningStartMins] = useState(6*60) // 6:00 AM default
-  const [routineLog,   setRoutineLog_]  = useState({})
-  const [morningIsDefault, setMorningIsDefault] = useState(true)
-  const [nightIsDefault,   setNightIsDefault]   = useState(true)
+  const [morning, setMorning] = useState([])
+  const [night,   setNight]   = useState([])
+  const [morningEnabled, setMorningEnabled] = useState(true)
+  const [nightEnabled,   setNightEnabled]   = useState(true)
   const [loading, setLoading] = useState(true)
+  // latest holds the full current routines state so the debounced flush always
+  // writes everything at once — a single shared timer must never write a
+  // partial payload, or a quick edit to one field clobbers another.
+  const latest = useRef({ morning:[], night:[], morningEnabled:true, nightEnabled:true })
+  const saveTimer = useRef(null)
 
   useEffect(() => {
-    Promise.all([getRoutines(), getRoutineLog()]).then(([routines, log]) => {
-      if (routines.morning) { setMorningItems(routines.morning); setMorningIsDefault(false) }
-      if (routines.night)   { setNightItems(routines.night);     setNightIsDefault(false)   }
-      if (routines.morningSub) setMorningSub(routines.morningSub)
-      if (routines.nightSub)   setNightSub(routines.nightSub)
-      if (routines.morningStartMins != null) setMorningStartMins(routines.morningStartMins)
-      setRoutineLog_(log)
+    getRoutines().then(r => {
+      const m = normalizeRoutineItems(r?.morning)
+      const n = normalizeRoutineItems(r?.night)
+      const me = r?.morningEnabled !== false
+      const ne = r?.nightEnabled !== false
+      setMorning(m); setNight(n); setMorningEnabled(me); setNightEnabled(ne)
+      latest.current = { morning:m, night:n, morningEnabled:me, nightEnabled:ne }
       setLoading(false)
     })
   }, [])
 
-  const updateLog = useCallback(async (next) => {
-    setRoutineLog_(next)
-    await setRoutineLog(next)
+  // Debounced persistence — writes the complete routines object 500ms after
+  // the last edit. dbSet serializes writes per key, so this can't race itself.
+  const scheduleSave = useCallback(() => {
+    if (saveTimer.current) clearTimeout(saveTimer.current)
+    saveTimer.current = setTimeout(async () => {
+      try {
+        const cur = await getRoutines()
+        await setRoutines({ ...cur, ...latest.current })
+      } catch (e) {
+        console.error(e)
+        alert(`⚠️ ${e.message || e}\n\nRoutine change was NOT saved. Check your connection and try again.`)
+      }
+    }, 500)
   }, [])
 
-  const updateMorningStart = useCallback(async (mins) => {
-    setMorningStartMins(mins)
-    const cur = await getRoutines()
-    await setRoutines({ ...cur, morningStartMins: mins })
-  }, [])
-
-  const updateItems = useCallback(async (key, items, sub) => {
-    // items = null means reset to default
-    if (key === 'morning') {
-      const next = items ?? MORNING_ROUTINE
-      setMorningItems(next)
-      setMorningIsDefault(items === null)
-      const cur = await getRoutines()
-      await setRoutines({ ...cur, morning: items, morningSub: sub ?? cur.morningSub, morningStartMins: cur.morningStartMins ?? morningStartMins })
-    } else {
-      const next = items ?? NIGHT_ROUTINE
-      setNightItems(next)
-      setNightIsDefault(items === null)
-      const cur = await getRoutines()
-      await setRoutines({ ...cur, night: items, nightSub: sub ?? cur.nightSub })
-    }
-  }, [])
+  const changeMorning = (items) => { setMorning(items); latest.current.morning = items; scheduleSave() }
+  const changeNight   = (items) => { setNight(items);   latest.current.night = items;   scheduleSave() }
+  const enableMorning = (on)    => { setMorningEnabled(on); latest.current.morningEnabled = on; scheduleSave() }
+  const enableNight   = (on)    => { setNightEnabled(on);   latest.current.nightEnabled = on;   scheduleSave() }
 
   if (loading) return <div style={{ padding:20, color:'var(--muted)', fontSize:13 }}>Loading…</div>
 
   return (
     <div>
       <div className="page-title">Routines</div>
-      <div className="page-sub">Tap ✏️ Edit to customize · changes save permanently</div>
-      <RoutineSection
-        title="Morning Routine" sub={morningSub} icon="☀️"
-        items={morningItems} routineKey="morning"
-        routineLog={routineLog} onUpdateLog={updateLog}
-        onUpdateItems={updateItems} isDefault={morningIsDefault} settingsMode
-        startMins={morningStartMins} onStartMinsChange={updateMorningStart}
-      />
-      <RoutineSection
-        title="Night Routine" sub={nightSub} icon="🌙"
-        items={nightItems} routineKey="night"
-        routineLog={routineLog} onUpdateLog={updateLog}
-        onUpdateItems={updateItems} isDefault={nightIsDefault} settingsMode
-      />
+      <div className="page-sub">Set a time, emoji, and color for each step. Toggle a routine off if you don't use it. Changes save automatically.</div>
+      <RoutineEditor title="Morning Routine" icon="☀️" items={morning} enabled={morningEnabled}
+        onChangeItems={changeMorning} onSetEnabled={enableMorning} />
+      <RoutineEditor title="Night Routine" icon="🌙" items={night} enabled={nightEnabled}
+        onChangeItems={changeNight} onSetEnabled={enableNight} />
     </div>
   )
 }
