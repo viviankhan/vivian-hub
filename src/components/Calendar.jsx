@@ -66,7 +66,6 @@ export default function Calendar({ commitments, vacations }) {
 
   const allEvents = [...CALENDAR_EVENTS, ...recurringEvents, ...commitmentEvents]
   const selectedEvents = selected ? allEvents.filter(e => e.date === selected) : []
-  const sortedAll = [...allEvents].sort((a,b) => a.date.localeCompare(b.date))
 
   return (
     <div>
@@ -128,19 +127,6 @@ export default function Calendar({ commitments, vacations }) {
       )}
 
       <div className="divider" />
-      <p className="section-label">All Events</p>
-      {sortedAll.map((e, i) => {
-        const s = TYPE_STYLES[e.type] || TYPE_STYLES.class
-        const d = new Date(e.date+'T12:00:00')
-        return (
-          <div key={i} style={{ display:'flex', gap:12, alignItems:'flex-start', padding:'8px 0', borderBottom:'1px solid #F0EBE0', opacity: e.done ? .45 : 1 }}>
-            <div style={{ fontSize:11, color:'var(--muted)', minWidth:56, flexShrink:0 }}>{d.toLocaleDateString('en-US',{month:'short',day:'numeric'})}</div>
-            <div style={{ width:7, height:7, borderRadius:'50%', background:s.dot, marginTop:4, flexShrink:0 }} />
-            <div style={{ fontSize:12, color:'var(--text)', textDecoration: e.done ? 'line-through' : 'none' }}>{e.label}</div>
-          </div>
-        )
-      })}
-
       <div style={{ display:'flex', flexWrap:'wrap', gap:10, marginTop:18 }}>
         {Object.entries(TYPE_STYLES).map(([type, s]) => (
           <div key={type} style={{ display:'flex', alignItems:'center', gap:5 }}>
