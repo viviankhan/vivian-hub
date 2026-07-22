@@ -137,7 +137,10 @@ export default function App() {
   // ── Persist helpers — dual write: cloud + localStorage cache ─
   // Cloud write failures are surfaced instead of swallowed — otherwise a delete
   // looks like it worked (local state updates) but silently reverts on next load.
+  // (In-flight writes themselves are tracked centrally in storage.js's dbSet,
+  // which warns before the tab closes/reloads while a save is still pending.)
   const reportSaveError = err => { console.error(err); alert(`⚠️ ${err.message || err}\n\nThis change was NOT saved to the cloud and may revert. Check your connection and try again.`) }
+
   const updateTodos      = useCallback(async v => { setTodos_(v);      lsCache('todos', v);      try { await setTodos(v) }      catch (e) { reportSaveError(e) } }, [])
   const updateWeekState  = useCallback(async v => { setWeekState_(v);  lsCache('weekstate', v);  try { await setWeekState(v) }  catch (e) { reportSaveError(e) } }, [])
   const updateNotes      = useCallback(async v => { setNotes_(v);      try { await setNotes(v) }      catch (e) { reportSaveError(e) } }, [])

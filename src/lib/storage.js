@@ -16,6 +16,17 @@ async function lsSet(key, value) {
   try { localStorage.setItem('vivian_'+key, JSON.stringify(value)) } catch {}
 }
 
+// ── In-flight write tracking ────────────────────────────────────
+// Cloud writes are async — refreshing or closing the tab right after an edit
+// can cancel the request mid-flight, which looks exactly like "my delete
+// didn't save". Warn before the tab closes/reloads while any dbSet is pending.
+let pendingWrites = 0
+if (typeof window !== 'undefined') {
+  window.addEventListener('beforeunload', e => {
+    if (pendingWrites > 0) { e.preventDefault(); e.returnValue = '' }
+  })
+}
+
 // ── KV store ───────────────────────────────────────────────────
 export async function dbGet(key) {
   if (USE_SUPABASE) {
@@ -27,8 +38,13 @@ export async function dbGet(key) {
 }
 export async function dbSet(key, value) {
   if (USE_SUPABASE) {
-    const { error } = await supabase.from('kv_store').upsert({ key, value, updated_at: new Date().toISOString() })
-    if (error) throw new Error(`Cloud save failed for "${key}": ${error.message}`)
+    pendingWrites++
+    try {
+      const { error } = await supabase.from('kv_store').upsert({ key, value, updated_at: new Date().toISOString() })
+      if (error) throw new Error(`Cloud save failed for "${key}": ${error.message}`)
+    } finally {
+      pendingWrites--
+    }
     return
   }
   lsSet(key, value)
