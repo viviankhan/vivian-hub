@@ -3,6 +3,7 @@ import { getDailyTodos } from '../data/schedule.js'
 import { findSlots } from '../lib/scheduler.js'
 import { getRoutines } from '../lib/storage.js'
 import { normalizeRoutineItems, sortByTime, to12 } from './Routines.jsx'
+import { Icon } from './IconPicker.jsx'
 
 const TAG_COLORS = {
   health:'#E07B2E', class:'#7C3AED', lab:'#059669', career:'#D97706',
@@ -96,7 +97,7 @@ function RoutineCard({ title, icon, items, prefix, open, setOpen, routineDone, t
                     display:'flex',alignItems:'center',justifyContent:'center',transition:'all .2s'}}>
                   {done&&<span style={{color:'white',fontSize:11,fontWeight:700}}>✓</span>}
                 </div>
-                <div style={{fontSize:18,minWidth:24,textAlign:'center'}}>{item.icon}</div>
+                <div style={{minWidth:24,textAlign:'center'}}><Icon value={item.icon} size={18} /></div>
                 <div style={{flex:1}}>
                   <div style={{display:'flex',alignItems:'baseline',gap:8,flexWrap:'wrap'}}>
                     {item.time && <span style={{fontSize:10,color:item.color||'var(--muted)',fontWeight:600}}>{to12(item.time)}</span>}
@@ -246,8 +247,11 @@ function ShiftToast({ result, onClose }) {
 }
 
 // ── Timeline task block ────────────────────────────────────────
-function TimelineBlock({ task, status, now, minutesUntilNext, isDone, onToggle, onManage, onShiftToNow }) {
-  const dot = TAG_COLORS[task.tag]||'#9CA3AF'
+function TimelineBlock({ task, categories, status, now, minutesUntilNext, isDone, onToggle, onManage, onShiftToNow }) {
+  const catFound = (categories || []).find(x => x.id === task.tag)
+  const dot = catFound?.color || TAG_COLORS[task.tag] || '#9CA3AF'
+  const catLabel = catFound?.label || task.tag
+  const catIcon = catFound?.icon || ''
   const location = extractLocation(task.label, task.note)
   const timeMins = parseTimeMins(task.label)
   const minsRemaining = timeMins !== null && minutesUntilNext !== null
@@ -298,12 +302,15 @@ function TimelineBlock({ task, status, now, minutesUntilNext, isDone, onToggle, 
         <div style={{background:blockBg,borderRadius:12,border:blockBorder,padding:'10px 12px',transition:'all .2s'}}>
           <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',gap:8}}>
             <div style={{flex:1}}>
-              <div style={{fontSize:14,fontWeight:isCurrent?600:500,color:isDone?'var(--muted)':'var(--text)',textDecoration:isDone?'line-through':'none',lineHeight:1.3}}>
-                {task.label}
+              <div style={{display:'flex',alignItems:'center',gap:6,lineHeight:1.3}}>
+                {catIcon&&<Icon value={catIcon} size={15} />}
+                <span style={{fontSize:14,fontWeight:isCurrent?600:500,color:isDone?'var(--muted)':'var(--text)',textDecoration:isDone?'line-through':'none'}}>
+                  {task.label}
+                </span>
               </div>
               {task.note&&<div style={{fontSize:11,color:'var(--muted)',marginTop:3,lineHeight:1.4}}>{task.note}</div>}
               <div style={{display:'flex',gap:5,marginTop:6,flexWrap:'wrap',alignItems:'center'}}>
-                <span style={{fontSize:9,padding:'2px 6px',borderRadius:6,background:`${dot}18`,color:dot,fontWeight:700,letterSpacing:.8,textTransform:'uppercase'}}>{task.tag}</span>
+                <span style={{display:'inline-flex',alignItems:'center',gap:3,fontSize:9,padding:'2px 6px',borderRadius:6,background:`${dot}18`,color:dot,fontWeight:700,letterSpacing:.8,textTransform:'uppercase'}}>{catIcon&&<Icon value={catIcon} size={11} />}{catLabel}</span>
                 {location&&!isDone&&<span style={{fontSize:9,padding:'2px 6px',borderRadius:6,background:'#EFF6FF',color:'#1E3A8A',fontWeight:600}}>📍 {location}</span>}
               </div>
             </div>
@@ -347,7 +354,7 @@ function NowMarker({ now }) {
 }
 
 // ── Main ───────────────────────────────────────────────────────
-export default function Today({ todos, weekState, syncToggle, commitments, addCommitment, deleteCommitment, appendLog, dailyTodos, scheduled }) {
+export default function Today({ todos, weekState, syncToggle, commitments, addCommitment, deleteCommitment, appendLog, dailyTodos, scheduled, categories }) {
   const [now,         setNow]         = useState(nowMins())
   const [managing,    setManaging]    = useState(null)
   const [addingTask,  setAddingTask]  = useState(false)
@@ -642,7 +649,7 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
             <div key={task.id}>
               {i===nowInsertIdx&&<NowMarker now={now}/>}
               <TimelineBlock
-                task={task} status={task._status} now={now}
+                task={task} categories={categories} status={task._status} now={now}
                 minutesUntilNext={minsUntilNext(i)}
                 isDone={task._status==='past'}
                 onToggle={()=>syncToggle(task.id,task.label,task.tag,task.isCommitment?null:dateKey)}

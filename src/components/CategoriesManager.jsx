@@ -2,6 +2,7 @@
 // Add / rename / recolor / delete the shared task categories used by both
 // Commitments and Recurring tasks. Lives in Settings → Categories.
 import { useState } from 'react'
+import { IconPicker, Icon } from './IconPicker.jsx'
 
 const PRESET_COLORS = [
   '#059669','#7C3AED','#4A9EB5','#C4728E','#D97706','#7A8EC4',
@@ -15,6 +16,7 @@ function slugify(label) {
 export default function CategoriesManager({ categories, addCategory, updateCategory, deleteCategory }) {
   const [newLabel, setNewLabel] = useState('')
   const [newColor, setNewColor] = useState(PRESET_COLORS[0])
+  const [newIcon,  setNewIcon]  = useState('')
   const [confirmDelete, setConfirmDelete] = useState(null)
 
   const existingIds = new Set((categories || []).map(c => c.id))
@@ -25,27 +27,30 @@ export default function CategoriesManager({ categories, addCategory, updateCateg
     let id = slugify(label) || 'cat'
     if (existingIds.has(id)) id = `${id}-${Date.now().toString().slice(-4)}`
     const sortOrder = (categories || []).reduce((m, c) => Math.max(m, c.sortOrder ?? 0), 0) + 1
-    await addCategory({ id, label, color: newColor, sortOrder })
-    setNewLabel('')
+    await addCategory({ id, label, color: newColor, icon: newIcon, sortOrder })
+    setNewLabel(''); setNewIcon('')
   }
 
   return (
     <div>
       <div className="page-title">Categories</div>
-      <div className="page-sub">Your own labels for tasks and commitments — used everywhere you pick a category.</div>
+      <div className="page-sub">Your own labels for tasks and commitments. Give each an emoji or uploaded image — it shows everywhere that category is used.</div>
 
       {/* Existing categories */}
       <div style={{ marginBottom:18 }}>
         {(categories || []).map(cat => (
           <div key={cat.id} style={{ display:'flex', alignItems:'center', gap:10, background:'white', border:'1px solid var(--border)', borderRadius:11, padding:'9px 12px', marginBottom:7 }}>
+            <IconPicker value={cat.icon} onChange={v => updateCategory(cat.id, { icon: v })} allowClear size={32} />
             <input type="color" value={cat.color}
               onChange={e => updateCategory(cat.id, { color: e.target.value })}
               title="Change color"
               style={{ width:28, height:28, border:'none', borderRadius:6, cursor:'pointer', padding:0, background:'none', flexShrink:0 }} />
             <input value={cat.label}
               onChange={e => updateCategory(cat.id, { label: e.target.value })}
-              style={{ flex:1, fontSize:13, padding:'6px 10px', borderRadius:8, border:'1px solid var(--border)', fontFamily:'DM Sans,sans-serif', color:'var(--text)', background:'white' }} />
-            <span style={{ fontSize:9, letterSpacing:1, textTransform:'uppercase', padding:'3px 8px', borderRadius:10, background:`${cat.color}20`, color:cat.color, fontWeight:700, flexShrink:0 }}>{cat.label}</span>
+              style={{ flex:1, minWidth:80, fontSize:13, padding:'6px 10px', borderRadius:8, border:'1px solid var(--border)', fontFamily:'DM Sans,sans-serif', color:'var(--text)', background:'white' }} />
+            <span style={{ display:'flex', alignItems:'center', gap:4, fontSize:9, letterSpacing:1, textTransform:'uppercase', padding:'3px 8px', borderRadius:10, background:`${cat.color}20`, color:cat.color, fontWeight:700, flexShrink:0 }}>
+              {cat.icon && <Icon value={cat.icon} size={12} />}{cat.label}
+            </span>
             {confirmDelete === cat.id ? (
               <div style={{ display:'flex', gap:4, flexShrink:0 }}>
                 <button onClick={() => { deleteCategory(cat.id); setConfirmDelete(null) }}
@@ -69,12 +74,13 @@ export default function CategoriesManager({ categories, addCategory, updateCateg
       <div style={{ background:'white', border:'1px solid var(--border)', borderRadius:12, padding:'14px 16px' }}>
         <div style={{ fontSize:10, color:'var(--muted)', letterSpacing:1.5, textTransform:'uppercase', marginBottom:10, fontWeight:600 }}>New category</div>
         <div style={{ display:'flex', gap:8, alignItems:'center', marginBottom:10 }}>
+          <IconPicker value={newIcon} onChange={setNewIcon} allowClear size={32} />
           <input type="color" value={newColor} onChange={e => setNewColor(e.target.value)}
             style={{ width:32, height:32, border:'none', borderRadius:6, cursor:'pointer', padding:0, background:'none', flexShrink:0 }} />
           <input value={newLabel} onChange={e => setNewLabel(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter') handleAdd() }}
             placeholder="e.g. Work, Study, Errand…"
-            style={{ flex:1, fontSize:13, padding:'8px 12px', borderRadius:8, border:'1px solid var(--border)', fontFamily:'DM Sans,sans-serif', color:'var(--text)', background:'white' }} />
+            style={{ flex:1, minWidth:80, fontSize:13, padding:'8px 12px', borderRadius:8, border:'1px solid var(--border)', fontFamily:'DM Sans,sans-serif', color:'var(--text)', background:'white' }} />
         </div>
         <div style={{ display:'flex', gap:5, flexWrap:'wrap', marginBottom:12 }}>
           {PRESET_COLORS.map(c => (

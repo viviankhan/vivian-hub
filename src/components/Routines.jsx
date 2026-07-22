@@ -1,13 +1,12 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { getRoutines, setRoutines } from '../lib/storage.js'
+import { IconPicker, useOutsideClose } from './IconPicker.jsx'
 
 // ── Shared helpers (also used by Today's routine cards) ─────────
 export const ROUTINE_PRESET_COLORS = [
   '#059669','#7C3AED','#4A9EB5','#C4728E','#D97706','#7A8EC4',
   '#E07B2E','#3B82F6','#A855F7','#9A7CC4','#EF4444','#52B788','#8899AA',
 ]
-const QUICK_EMOJIS = ['☀️','🌙','💧','☕','🏃‍♀️','🧘','📚','📝','💊','🪥','🛁','🍽️','📵','🎹','💤','✨','🚪','🔬']
-
 // Old category → color, for one-time normalization of any legacy items.
 const LEGACY_CAT_COLOR = { sleep:'#52B788', health:'#E07B2E', polish:'#A855F7', fitness:'#3B82F6', career:'#D97706', personal:'#06D6A0', lab:'#059669' }
 
@@ -61,41 +60,6 @@ export function sortByTime(items) {
     .map(x => x.it)
 }
 
-// Close a popover when clicking anywhere outside its wrapper.
-function useOutsideClose(open, setOpen) {
-  const ref = useRef(null)
-  useEffect(() => {
-    if (!open) return
-    const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false) }
-    document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
-  }, [open, setOpen])
-  return ref
-}
-
-// ── Emoji input — type/paste ANY emoji, plus quick picks ───────
-function EmojiInput({ value, onChange }) {
-  const [open, setOpen] = useState(false)
-  const ref = useOutsideClose(open, setOpen)
-  return (
-    <div ref={ref} style={{ position:'relative', flexShrink:0 }}>
-      <input value={value} onChange={e => onChange(e.target.value)} onFocus={() => setOpen(true)}
-        maxLength={4} aria-label="Emoji"
-        style={{ width:44, fontSize:20, textAlign:'center', padding:'5px 4px', borderRadius:8, border:'1px solid var(--border)', background:'white', cursor:'pointer' }} />
-      {open && (
-        <div style={{ position:'absolute', top:'110%', left:0, background:'white', border:'1px solid var(--border)', borderRadius:10, padding:8, boxShadow:'0 8px 24px rgba(0,0,0,.12)', display:'flex', flexWrap:'wrap', gap:4, zIndex:60, width:200 }}>
-          <div style={{ width:'100%', fontSize:10, color:'var(--muted)', marginBottom:2 }}>Pick one, or type any emoji in the box.</div>
-          {QUICK_EMOJIS.map(e => (
-            <button key={e} onClick={() => { onChange(e); setOpen(false) }}
-              style={{ fontSize:18, background:'none', border:'none', cursor:'pointer', padding:3, borderRadius:4 }}>{e}</button>
-          ))}
-          <button onClick={() => setOpen(false)} style={{ width:'100%', marginTop:4, fontSize:11, background:'none', border:'1px solid var(--border)', borderRadius:6, padding:'4px', cursor:'pointer', color:'var(--muted)' }}>Done</button>
-        </div>
-      )}
-    </div>
-  )
-}
-
 // ── Color input — full picker + preset swatches ────────────────
 function ColorInput({ value, onChange }) {
   const [open, setOpen] = useState(false)
@@ -129,7 +93,7 @@ function ItemEditor({ item, onChange, onDelete }) {
   return (
     <div style={{ background:'white', border:'1px solid var(--border)', borderRadius:12, padding:'12px', marginBottom:8 }}>
       <div style={{ display:'flex', gap:8, alignItems:'center', flexWrap:'wrap' }}>
-        <EmojiInput value={item.icon} onChange={v => onChange({ ...item, icon: v })} />
+        <IconPicker value={item.icon} onChange={v => onChange({ ...item, icon: v })} />
         <ColorInput value={item.color} onChange={v => onChange({ ...item, color: v })} />
         <input type="time" value={item.time} onChange={e => onChange({ ...item, time: e.target.value })}
           style={{ fontSize:12, padding:'6px 8px', borderRadius:8, border:'1px solid var(--border)', fontFamily:'DM Sans,sans-serif', color:'var(--text)' }} />

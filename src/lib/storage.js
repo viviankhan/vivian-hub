@@ -483,7 +483,7 @@ export async function clearRecurringTasks() {
 // category by id, so making these first-class rows means adding/renaming/
 // recoloring one is a single atomic operation and shows up everywhere.
 function categoryFromDb(row) {
-  return { id: row.id, label: row.label, color: row.color, sortOrder: row.sort_order }
+  return { id: row.id, label: row.label, color: row.color, icon: row.icon || '', sortOrder: row.sort_order }
 }
 export async function getCategories() {
   if (USE_SUPABASE) {
@@ -496,7 +496,7 @@ export async function getCategories() {
 export async function addCategory(cat) {
   if (USE_SUPABASE) {
     const { data, error } = await supabase.from('categories')
-      .insert({ id: cat.id, label: cat.label, color: cat.color, sort_order: cat.sortOrder ?? 0 }).select().single()
+      .insert({ id: cat.id, label: cat.label, color: cat.color, icon: cat.icon || null, sort_order: cat.sortOrder ?? 0 }).select().single()
     if (error) throw new Error(`Failed to add category: ${error.message}`)
     return categoryFromDb(data)
   }
@@ -508,6 +508,7 @@ export async function updateCategory(id, changes) {
   const dbChanges = {}
   if ('label' in changes)     dbChanges.label = changes.label
   if ('color' in changes)     dbChanges.color = changes.color
+  if ('icon' in changes)      dbChanges.icon = changes.icon || null
   if ('sortOrder' in changes) dbChanges.sort_order = changes.sortOrder
   if (USE_SUPABASE) {
     const { data, error } = await supabase.from('categories').update(dbChanges).eq('id', id).select().single()

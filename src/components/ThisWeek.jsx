@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { buildWeekPlanFromTasks } from '../data/schedule.js'
+import { Icon } from './IconPicker.jsx'
 
 const CAT_COLORS = {
   lab:     { dot:'#059669', bg:'#ECFDF5', text:'#065F46' },
@@ -27,19 +28,24 @@ function fmt12(t) {
 }
 
 // ── Task row ───────────────────────────────────────────────────
-function TaskRow({ id, text, cat, done, carried, carriedFrom, onToggle, onDelete }) {
-  const c = CAT_COLORS[cat] || CAT_COLORS.career
+function TaskRow({ id, text, cat, categories, done, carried, carriedFrom, onToggle, onDelete }) {
+  const found = (categories || []).find(x => x.id === cat)
+  const fallback = CAT_COLORS[cat] || CAT_COLORS.career
+  const dot = found?.color || fallback.dot
+  const label = found?.label || cat
+  const icon = found?.icon || ''
   return (
     <div style={{ display:'flex', gap:10, alignItems:'center', padding:'8px 0', borderBottom:'1px solid #F5F3EF', opacity:done?.45:1 }}>
       <div onClick={onToggle}
         style={{ width:18, height:18, borderRadius:'50%', flexShrink:0, cursor:'pointer',
-          border:done?'none':`2px solid ${c.dot}`, background:done?c.dot:'transparent',
+          border:done?'none':`2px solid ${dot}`, background:done?dot:'transparent',
           display:'flex', alignItems:'center', justifyContent:'center', transition:'all .2s' }}>
         {done&&<span style={{ color:'white', fontSize:10, fontWeight:700 }}>✓</span>}
       </div>
       <div style={{ flex:1, display:'flex', alignItems:'center', gap:6, flexWrap:'wrap', cursor:'pointer' }} onClick={onToggle}>
+        {icon && <Icon value={icon} size={15} />}
         <span style={{ fontSize:13, color:done?'var(--muted)':'var(--text)', textDecoration:done?'line-through':'none' }}>{text}</span>
-        <span style={{ fontSize:9, letterSpacing:1, textTransform:'uppercase', padding:'1px 6px', borderRadius:10, background:c.bg, color:c.text }}>{cat}</span>
+        <span style={{ display:'inline-flex', alignItems:'center', gap:3, fontSize:9, letterSpacing:1, textTransform:'uppercase', padding:'1px 6px', borderRadius:10, background:`${dot}20`, color:dot }}>{label}</span>
         {carried&&<span style={{ fontSize:9, letterSpacing:1, textTransform:'uppercase', padding:'1px 6px', borderRadius:10, background:'#FEF3C7', color:'#92400E' }}>↩ {carriedFrom}</span>}
       </div>
       {onDelete&&<button onClick={onDelete} style={{ fontSize:10, padding:'2px 6px', borderRadius:6, border:'1px solid var(--border)', background:'white', color:'var(--muted)', cursor:'pointer', flexShrink:0 }}>✕</button>}
@@ -84,7 +90,7 @@ function fmtRange(startDate, endDate) {
   return `${s} – ${e}`
 }
 
-export default function ThisWeek({ todos, weekState, syncToggle, commitments, addCommitment, deleteCommitment, weekTasks }) {
+export default function ThisWeek({ todos, weekState, syncToggle, commitments, addCommitment, deleteCommitment, weekTasks, categories }) {
   const today = todayStr()
   const [weekOffset, setWeekOffset] = useState(0)
   const weekPlan = buildWeekPlanFromTasks(weekTasks || {}, weekOffset)
@@ -201,7 +207,7 @@ export default function ThisWeek({ todos, weekState, syncToggle, commitments, ad
               )}
 
               {allTasks.map(t => (
-                <TaskRow key={t.id} id={t.id} text={t.text} cat={t.cat}
+                <TaskRow key={t.id} id={t.id} text={t.text} cat={t.cat} categories={categories}
                   done={isDone(t.id, day.date, t.isCommitment)}
                   carried={t.carried} carriedFrom={t.carriedFrom}
                   onToggle={()=>syncToggle(t.id, t.text, t.cat, t.isCommitment?null:day.date)}

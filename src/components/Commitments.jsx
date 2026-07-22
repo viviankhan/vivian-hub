@@ -1,6 +1,7 @@
 // src/components/Commitments.jsx
 import { useState } from 'react'
 import { findSlots } from '../lib/scheduler.js'
+import { Icon } from './IconPicker.jsx'
 
 const DAYS = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday']
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
@@ -367,8 +368,11 @@ function CommitCard({ c, todos, weekState, syncToggle, onDelete, onSchedule, sch
         </div>
 
         <div style={{ flex:1, cursor:'pointer' }} onClick={() => syncToggle(c.id, c.text, c.cat)}>
-          <div style={{ fontSize:14, fontWeight:600, color: done ? 'var(--muted)' : 'var(--text)', textDecoration: done ? 'line-through' : 'none', lineHeight:1.4, marginBottom:4 }}>
-            {c.text}
+          <div style={{ display:'flex', alignItems:'center', gap:7, marginBottom:4 }}>
+            {cat.icon && <Icon value={cat.icon} size={16} />}
+            <span style={{ fontSize:14, fontWeight:600, color: done ? 'var(--muted)' : 'var(--text)', textDecoration: done ? 'line-through' : 'none', lineHeight:1.4 }}>
+              {c.text}
+            </span>
           </div>
           {c.person && <div style={{ fontSize:11, color:'var(--muted)', marginBottom:4 }}>With: {c.person}</div>}
           <div style={{ display:'flex', gap:8, flexWrap:'wrap', alignItems:'center' }}>
@@ -379,7 +383,7 @@ function CommitCard({ c, todos, weekState, syncToggle, onDelete, onSchedule, sch
             )}
             {c.durationMins && <span style={{ fontSize:11, color:'var(--muted)' }}>~{c.durationMins < 60 ? c.durationMins+'min' : (c.durationMins/60 % 1 === 0 ? c.durationMins/60+'h' : (c.durationMins/60).toFixed(1)+'h')}</span>}
             {c.prepMin && <span style={{ fontSize:11, color:'var(--muted)' }}>Leave {c.prepMin} min early</span>}
-            <span style={{ fontSize:10, padding:'2px 8px', borderRadius:10, background:cat.bg, color:cat.color, fontWeight:500 }}>{cat.label}</span>
+            <span style={{ display:'inline-flex', alignItems:'center', gap:3, fontSize:10, padding:'2px 8px', borderRadius:10, background:cat.bg, color:cat.color, fontWeight:500 }}>{cat.icon && <Icon value={cat.icon} size={11} />}{cat.label}</span>
             {past  && !done && <span style={{ fontSize:10, padding:'2px 8px', borderRadius:10, background:'#FBF0F4', color:'#B44A6A', fontWeight:600 }}>PAST DUE</span>}
             {today && !done && <span style={{ fontSize:10, padding:'2px 8px', borderRadius:10, background:'#D4EEF4', color:'#2A7A90', fontWeight:600 }}>TODAY</span>}
             {unscheduled && !done && <span style={{ fontSize:10, padding:'2px 8px', borderRadius:10, background:'#F3F4F6', color:'#6B7280' }}>Unscheduled</span>}

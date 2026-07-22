@@ -104,8 +104,12 @@ create table if not exists categories (
   id         text primary key,
   label      text not null,
   color      text not null,
+  icon       text,
   sort_order integer not null default 0
 );
+-- Add icon to any pre-existing categories table (create-if-not-exists above
+-- won't alter an existing table).
+alter table categories add column if not exists icon text;
 alter table categories enable row level security;
 drop policy if exists "Allow all" on categories;
 create policy "Allow all" on categories for all using (true) with check (true);

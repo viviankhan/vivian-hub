@@ -1,13 +1,14 @@
 import { useState, useMemo } from 'react'
+import { Icon } from './IconPicker.jsx'
 
 const DAYS = ['monday','tuesday','wednesday','thursday','friday','saturday','sunday']
 const DAY_SHORT = { monday:'Mon', tuesday:'Tue', wednesday:'Wed', thursday:'Thu', friday:'Fri', saturday:'Sat', sunday:'Sun' }
 
 // Categories are the shared, user-editable list (Settings → Categories),
-// passed in as a prop. This resolves a category id to its label + color.
+// passed in as a prop. This resolves a category id to its label + color + icon.
 function resolveCat(id, categories) {
   const found = (categories || []).find(c => c.id === id)
-  return { label: found?.label || id, color: found?.color || '#9CA3AF' }
+  return { label: found?.label || id, color: found?.color || '#9CA3AF', icon: found?.icon || '' }
 }
 
 // Current day-of-week name. JS getDay(): 0=Sun…6=Sat → mapped to DAYS (Mon-indexed)
@@ -63,9 +64,9 @@ export function flatToPerDay(flat, dateStr) {
 function slugify(t) { return t.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/(^-|-$)/g,'').slice(0,28) }
 function fmtDate(d) { if (!d) return ''; const [y,m,day]=d.split('-'); return `${m}/${day}/${y}` }
 
-function Tag({ label, color }) {
+function Tag({ label, color, icon }) {
   const c = color || '#9CA3AF'
-  return <span style={{ fontSize:9, padding:'2px 6px', borderRadius:6, background:`${c}20`, color:c, fontWeight:700, letterSpacing:.8, textTransform:'uppercase' }}>{label}</span>
+  return <span style={{ display:'inline-flex', alignItems:'center', gap:3, fontSize:9, padding:'2px 6px', borderRadius:6, background:`${c}20`, color:c, fontWeight:700, letterSpacing:.8, textTransform:'uppercase' }}>{icon && <Icon value={icon} size={11} />}{label}</span>
 }
 function TypeBadge({ type }) {
   return <span style={{ fontSize:9, padding:'2px 6px', borderRadius:6,
@@ -211,7 +212,7 @@ function TaskModal({ initial, onSave, onDelete, onClose, categories }) {
 function TaskListRow({ task, onEdit, today, categories }) {
   const text = task.text||task.label||''
   const catId = task.cat||task.tag||'other'
-  const { label: catLabel, color: catColor } = resolveCat(catId, categories)
+  const { label: catLabel, color: catColor, icon: catIcon } = resolveCat(catId, categories)
   const hasDateRange = task.startDate || task.endDate
   const isToday = task.days?.includes(today)
   return (
@@ -231,7 +232,7 @@ function TaskListRow({ task, onEdit, today, categories }) {
           </div>
         )}
       </div>
-      <Tag label={catLabel} color={catColor} />
+      <Tag label={catLabel} color={catColor} icon={catIcon} />
       <TypeBadge type={task.type} />
       {/* Day labels — to the right of the title; current day highlighted in teal */}
       <div style={{ display:'flex', gap:3, flexWrap:'wrap', justifyContent:'flex-end', maxWidth:150, flexShrink:0 }}>
