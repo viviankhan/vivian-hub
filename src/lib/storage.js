@@ -5,7 +5,14 @@ const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
 const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY
 const USE_SUPABASE = !!(SUPABASE_URL && SUPABASE_KEY)
 
-export const supabase = USE_SUPABASE ? createClient(SUPABASE_URL, SUPABASE_KEY) : null
+// Force every request to bypass HTTP caching — a cached GET response for a
+// kv_store row would silently show stale (pre-delete) data after a real write
+// already succeeded, which looks exactly like "my delete didn't stick".
+const noCacheFetch = (url, options) => fetch(url, { ...options, cache: 'no-store' })
+
+export const supabase = USE_SUPABASE
+  ? createClient(SUPABASE_URL, SUPABASE_KEY, { global: { fetch: noCacheFetch } })
+  : null
 export const isUsingSupabase = USE_SUPABASE
 
 // ── localStorage helpers ───────────────────────────────────────
