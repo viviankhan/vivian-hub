@@ -43,16 +43,32 @@ export async function dbGet(key) {
   }
   return lsGet(key)
 }
+// Two writes to the same key can be in flight at once (e.g. checking a
+// commitment off right as another edit is saving) with no guarantee the
+// network responses land in the same order they were sent — whichever
+// finishes last wins, even if its payload was built from older local state,
+// silently clobbering a newer write (like a delete) with stale data. Chain
+// writes per key so each one only starts once the previous one for that same
+// key has actually finished, which keeps them landing in the order they were
+// called in.
+const writeQueues = new Map()
+
 export async function dbSet(key, value) {
   if (USE_SUPABASE) {
-    pendingWrites++
-    try {
-      const { error } = await supabase.from('kv_store').upsert({ key, value, updated_at: new Date().toISOString() })
-      if (error) throw new Error(`Cloud save failed for "${key}": ${error.message}`)
-    } finally {
-      pendingWrites--
-    }
-    return
+    const prevWrite = writeQueues.get(key) || Promise.resolve()
+    const thisWrite = prevWrite.then(async () => {
+      pendingWrites++
+      try {
+        const { error } = await supabase.from('kv_store').upsert({ key, value, updated_at: new Date().toISOString() })
+        if (error) throw new Error(`Cloud save failed for "${key}": ${error.message}`)
+      } finally {
+        pendingWrites--
+      }
+    })
+    // Swallow errors here only so the queue keeps moving for the next write —
+    // the real error is still thrown to whoever called this dbSet, below.
+    writeQueues.set(key, thisWrite.catch(() => {}))
+    return thisWrite
   }
   lsSet(key, value)
 }
