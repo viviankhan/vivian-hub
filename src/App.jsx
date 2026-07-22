@@ -80,7 +80,17 @@ function SettingsDrawer({ open, onClose, settingsTab, setSettingsTab, scheduled,
 }
 
 export default function App() {
-  const [tab, setTab] = useState('today')
+  // Remember the last tab you were on across reloads — purely a local UI
+  // preference, not synced data, so plain localStorage is enough.
+  const [tab, setTab] = useState(() => {
+    try {
+      const saved = localStorage.getItem('vivian_last_tab')
+      return TABS.some(t => t.id === saved) ? saved : 'today'
+    } catch { return 'today' }
+  })
+  useEffect(() => {
+    try { localStorage.setItem('vivian_last_tab', tab) } catch {}
+  }, [tab])
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [settingsTab,  setSettingsTab]  = useState('routines')
 
