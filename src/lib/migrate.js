@@ -11,8 +11,38 @@
 // duplicating anything. Old blob rows are never modified or deleted here —
 // they stay as a frozen snapshot/safety net.
 import { supabase, isUsingSupabase, dbGet, dbSet, commitmentChangesToDb, recurringTaskToDb } from './storage.js'
+import { DEFAULT_CATEGORIES } from '../data/categories.js'
 
 const LEGACY_DAYS = ['monday','tuesday','wednesday','thursday','friday','saturday','sunday']
+
+// Seed the categories table from the built-in defaults the first time it's
+// empty. Gated on emptiness (not on the v2 flag) because existing users have
+// already flipped that flag, but still need their categories seeded once.
+// Idempotent: does nothing once any category row exists. Returns the
+// categories so the caller can use them without a second round trip.
+export async function seedCategoriesIfNeeded() {
+  if (isUsingSupabase) {
+    try {
+      const { data, error } = await supabase.from('categories').select('*').order('sort_order')
+      if (error) throw new Error(error.message)
+      if (data && data.length > 0) return data.map(r => ({ id:r.id, label:r.label, color:r.color, sortOrder:r.sort_order }))
+      const rows = DEFAULT_CATEGORIES.map(c => ({ id:c.id, label:c.label, color:c.color, sort_order:c.sortOrder }))
+      const { error: insErr } = await supabase.from('categories').upsert(rows, { onConflict: 'id' })
+      if (insErr) throw new Error(insErr.message)
+      return DEFAULT_CATEGORIES
+    } catch (e) {
+      console.error('[migrate] category seed failed, will retry next load:', e)
+      return DEFAULT_CATEGORIES
+    }
+  }
+  // localStorage mode
+  try {
+    const existing = JSON.parse(localStorage.getItem('vivian_categories') || 'null')
+    if (existing && existing.length > 0) return existing
+    localStorage.setItem('vivian_categories', JSON.stringify(DEFAULT_CATEGORIES))
+  } catch {}
+  return DEFAULT_CATEGORIES
+}
 
 async function migrateCommitments() {
   const old = await dbGet('commitments')

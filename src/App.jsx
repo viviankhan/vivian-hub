@@ -8,27 +8,26 @@ import {
   getCommitments, addCommitment as dbAddCommitment, updateCommitment as dbUpdateCommitment, deleteCommitment as dbDeleteCommitment,
   getVacations, addVacation as dbAddVacation, deleteVacation as dbDeleteVacation,
   getRecurringTasks, addRecurringTask, updateRecurringTask, deleteRecurringTask, clearRecurringTasks,
+  addCategory as dbAddCategory, updateCategory as dbUpdateCategory, deleteCategory as dbDeleteCategory,
 } from './lib/storage.js'
-import { runMigrationIfNeeded } from './lib/migrate.js'
+import { runMigrationIfNeeded, seedCategoriesIfNeeded } from './lib/migrate.js'
 import { FIXED_BLOCKS, DEFAULT_RECURRING_TASKS, DEFAULT_DAILY_TODOS, buildWeekPlanFromTasks } from './data/schedule.js'
 
 import Today       from './components/Today.jsx'
 import ThisWeek    from './components/ThisWeek.jsx'
 import Commitments from './components/Commitments.jsx'
 import Calendar    from './components/Calendar.jsx'
-import Log         from './components/Log.jsx'
-import Info        from './components/Info.jsx'
+import Notes       from './components/Notes.jsx'
 import Edits       from './components/Edits.jsx'
 import RecurringTasksManager, { flatToPerDay } from './components/RecurringTasksManager.jsx'
 import Routines from './components/Routines.jsx'
+import CategoriesManager from './components/CategoriesManager.jsx'
 
 const TABS = [
   { id:'today',       label:'Today'       },
   { id:'week',        label:'Week'        },
   { id:'commitments', label:'Commitments' },
   { id:'calendar',    label:'Calendar'    },
-  { id:'log',         label:'Log'         },
-  { id:'info',        label:'Info'        },
   { id:'recurring',   label:'Recurring'   },
 ]
 
@@ -50,7 +49,7 @@ function checkOverlap(date, time, prepMin, fixedBlocks) {
 }
 
 // ── Settings Drawer ────────────────────────────────────────────
-function SettingsDrawer({ open, onClose, settingsTab, setSettingsTab, scheduled, addScheduledTask, commitments }) {
+function SettingsDrawer({ open, onClose, settingsTab, setSettingsTab, notes, updateNotes, categories, addCategory, updateCategory, deleteCategory }) {
   if (!open) return null
   return (
     <>
@@ -61,7 +60,7 @@ function SettingsDrawer({ open, onClose, settingsTab, setSettingsTab, scheduled,
           <button onClick={onClose} style={{ background:'rgba(255,255,255,.1)', border:'none', color:'var(--green-light)', borderRadius:8, width:32, height:32, cursor:'pointer', fontSize:18, fontFamily:'DM Sans,sans-serif' }}>✕</button>
         </div>
         <div style={{ display:'flex', borderBottom:'1px solid var(--border)', background:'white' }}>
-          {[['routines','Routines'],['edits','Edits']].map(([id,label]) => (
+          {[['routines','Routines'],['categories','Categories'],['notes','Notes'],['edits','Edits']].map(([id,label]) => (
             <button key={id} onClick={()=>setSettingsTab(id)}
               style={{ flex:1, padding:'11px 8px', border:'none', borderBottom:`2px solid ${settingsTab===id?'var(--teal)':'transparent'}`,
                 background:'transparent', color:settingsTab===id?'var(--teal)':'var(--muted)', cursor:'pointer',
@@ -72,6 +71,8 @@ function SettingsDrawer({ open, onClose, settingsTab, setSettingsTab, scheduled,
         </div>
         <div style={{ padding:'20px 24px' }}>
           {settingsTab==='routines'   && <Routines />}
+          {settingsTab==='categories' && <CategoriesManager categories={categories} addCategory={addCategory} updateCategory={updateCategory} deleteCategory={deleteCategory} />}
+          {settingsTab==='notes'      && <Notes notes={notes} updateNotes={updateNotes} />}
           {settingsTab==='edits'      && <Edits />}
         </div>
       </div>
@@ -107,19 +108,22 @@ export default function App() {
   const [commitments,      setCommitments_]     = useState([])
   const [recurringTaskRows,setRecurringTaskRows]= useState([])
   const [vacations,        setVacations_]       = useState([])
+  const [categories,       setCategories_]      = useState([])
   const [loading,          setLoading]          = useState(true)
 
   useEffect(() => {
     async function load() {
       await runMigrationIfNeeded()
-      const [comp, l, n, fcp, fcs, sch, com, rt, vac] = await Promise.all([
+      const [comp, l, n, fcp, fcs, sch, com, rt, vac, cats] = await Promise.all([
         getCompletions(), getLogEntries(), getNotes(),
         getFcProgress(), getFcStudied(), getScheduledTasks(),
         getCommitments(), getRecurringTasks(), getVacations(),
+        seedCategoriesIfNeeded(),
       ])
       setCompletions_(comp); setLog_(l); setNotes_(n)
       setFcProgress_(fcp); setFcStudied_(fcs); setScheduled_(sch)
       setCommitments_(com); setRecurringTaskRows(rt); setVacations_(vac)
+      setCategories_(cats)
       setLoading(false)
     }
     load()
@@ -174,6 +178,24 @@ export default function App() {
   const clearRecurringTasksFn = useCallback(async () => {
     setRecurringTaskRows([])
     try { await clearRecurringTasks() } catch (e) { reportSaveError(e) }
+  }, [])
+
+  // ── Categories CRUD (shared, real per-row table) ─────────────
+  const addCategoryFn = useCallback(async cat => {
+    try {
+      const created = await dbAddCategory(cat)
+      setCategories_(prev => [...prev, created])
+    } catch (e) { reportSaveError(e) }
+  }, [])
+  const updateCategoryFn = useCallback(async (id, changes) => {
+    try {
+      const updated = await dbUpdateCategory(id, changes)
+      setCategories_(prev => prev.map(c => c.id===id ? updated : c))
+    } catch (e) { reportSaveError(e) }
+  }, [])
+  const deleteCategoryFn = useCallback(async id => {
+    setCategories_(prev => prev.filter(c => c.id !== id))
+    try { await dbDeleteCategory(id) } catch (e) { reportSaveError(e) }
   }, [])
 
   const addScheduledTask = useCallback(async task => {
@@ -278,6 +300,7 @@ export default function App() {
     scheduled, addScheduledTask,
     commitments, addCommitment, updateCommitment, deleteCommitment,
     vacations, addVacation, deleteVacation,
+    categories,
   }
 
   return (
@@ -312,19 +335,19 @@ export default function App() {
         {tab==='week'        && <ThisWeek    {...sharedProps} weekPlan={weekPlan} deleteCommitment={deleteCommitment} />}
         {tab==='commitments' && <Commitments {...sharedProps} />}
         {tab==='calendar'    && <Calendar    {...sharedProps} />}
-        {tab==='log'         && <Log log={log} notes={notes} updateNotes={updateNotes} />}
-        {tab==='info'        && <Info />}
         {tab==='recurring'   && <RecurringTasksManager recurringTasks={recurringTasksWrapped}
           addRecurringTask={addRecurringTaskFn} updateRecurringTask={updateRecurringTaskFn}
           deleteRecurringTask={deleteRecurringTaskFn} clearRecurringTasks={clearRecurringTasksFn}
+          categories={categories}
           defaultWeekTasks={DEFAULT_RECURRING_TASKS} defaultDailyTodos={DEFAULT_DAILY_TODOS} />}
       </main>
 
       <SettingsDrawer
         open={settingsOpen} onClose={() => setSettingsOpen(false)}
         settingsTab={settingsTab} setSettingsTab={setSettingsTab}
-        scheduled={scheduled} addScheduledTask={addScheduledTask}
-        commitments={commitments} />
+        notes={notes} updateNotes={updateNotes}
+        categories={categories} addCategory={addCategoryFn}
+        updateCategory={updateCategoryFn} deleteCategory={deleteCategoryFn} />
     </div>
   )
 }

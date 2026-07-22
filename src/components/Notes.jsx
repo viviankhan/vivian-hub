@@ -1,17 +1,14 @@
 // src/components/Notes.jsx
-import { useCallback } from 'react'
-
+// Freeform notes — moved out of the old Log tab (which also had Stats and
+// History sub-views) into Settings, since Log itself has been removed.
 export default function Notes({ notes, updateNotes }) {
-  const onChange = useCallback((e) => updateNotes(e.target.value), [updateNotes])
   return (
     <div>
       <div className="page-title">Notes</div>
-      <div className="page-sub">Tasks, critiques, setbacks — saved automatically · included in every Claude session</div>
-      <div style={{ background:'#FEF9E7', border:'1px solid #F59E0B', borderRadius:12, padding:'10px 14px', marginBottom:14, fontSize:12, color:'#92400E' }}>
-        Anything you write here is read by Claude at the start of each session. Use it to flag issues, requests, or schedule changes.
-      </div>
-      <textarea value={notes} onChange={onChange} placeholder="Write anything — schedule critiques, tasks that came up, things that didn't work..." />
-      <div style={{ fontSize:11, color:'var(--muted)', marginTop:6 }}>Saved automatically as you type.</div>
+      <div className="page-sub">Freeform notes — anything on your mind, ideas, reflections.</div>
+      <textarea value={notes || ''} onChange={e => updateNotes(e.target.value)}
+        placeholder="Start writing…"
+        style={{ width:'100%', minHeight:320, fontSize:13, padding:'14px 16px', borderRadius:12, border:'1px solid var(--border)', fontFamily:'DM Sans,sans-serif', outline:'none', lineHeight:1.7, resize:'vertical', color:'var(--text)', background:'white', boxSizing:'border-box' }} />
     </div>
   )
 }

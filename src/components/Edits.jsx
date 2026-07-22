@@ -4,6 +4,17 @@
 
 const EDIT_LOG = [
   {
+    date: '2026-07-22',
+    summary: 'Per-row cloud storage, custom categories, tab cleanup',
+    changes: [
+      'Fixed the recurring "deleted item comes back after refresh" bug at the root — every collection (commitments, vacations, recurring tasks, done-state, log) now lives in its own database table with one row per item, so deletes/edits are atomic and can no longer be clobbered by a competing save from another tab or device',
+      'Automatic one-time migration moves existing data into the new tables; nothing lost, no manual data entry',
+      'Custom categories — add / rename / recolor / delete your own task categories in Settings → Categories; used everywhere you pick a category (commitments + recurring tasks)',
+      'Removed the Log and Info tabs; Notes moved into Settings',
+      'Reloading now returns you to the tab you were on instead of jumping to Today',
+    ]
+  },
+  {
     date: '2026-04-09',
     summary: 'UX overhaul — Today timeline, Log analytics, nav restructure',
     changes: [

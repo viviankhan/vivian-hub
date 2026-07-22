@@ -96,3 +96,16 @@ create index if not exists idx_log_entries_date on log_entries (date);
 alter table log_entries enable row level security;
 drop policy if exists "Allow all" on log_entries;
 create policy "Allow all" on log_entries for all using (true) with check (true);
+
+-- ── Task categories (shared, user-editable) ──────────────────────
+-- Referenced by commitments.cat and recurring_tasks.cat. Seeded once
+-- from the app's built-in defaults on first load if the table is empty.
+create table if not exists categories (
+  id         text primary key,
+  label      text not null,
+  color      text not null,
+  sort_order integer not null default 0
+);
+alter table categories enable row level security;
+drop policy if exists "Allow all" on categories;
+create policy "Allow all" on categories for all using (true) with check (true);

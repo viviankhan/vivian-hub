@@ -2,10 +2,12 @@ import { useState, useMemo } from 'react'
 
 const DAYS = ['monday','tuesday','wednesday','thursday','friday','saturday','sunday']
 const DAY_SHORT = { monday:'Mon', tuesday:'Tue', wednesday:'Wed', thursday:'Thu', friday:'Fri', saturday:'Sat', sunday:'Sun' }
-const CATS = ['class','lab','career','health','fitness','personal','urgent','sleep','polish','carried']
-const CAT_COLORS = {
-  lab:'#059669', class:'#7C3AED', career:'#D97706', personal:'#A855F7',
-  urgent:'#EF4444', health:'#E07B2E', fitness:'#3B82F6', sleep:'#52B788', polish:'#EC4899', carried:'#F59E0B',
+
+// Categories are the shared, user-editable list (Settings → Categories),
+// passed in as a prop. This resolves a category id to its label + color.
+function resolveCat(id, categories) {
+  const found = (categories || []).find(c => c.id === id)
+  return { label: found?.label || id, color: found?.color || '#9CA3AF' }
 }
 
 // Current day-of-week name. JS getDay(): 0=Sun…6=Sat → mapped to DAYS (Mon-indexed)
@@ -61,9 +63,9 @@ export function flatToPerDay(flat, dateStr) {
 function slugify(t) { return t.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/(^-|-$)/g,'').slice(0,28) }
 function fmtDate(d) { if (!d) return ''; const [y,m,day]=d.split('-'); return `${m}/${day}/${y}` }
 
-function Tag({ value }) {
-  const c = CAT_COLORS[value]||'#9CA3AF'
-  return <span style={{ fontSize:9, padding:'2px 6px', borderRadius:6, background:`${c}20`, color:c, fontWeight:700, letterSpacing:.8, textTransform:'uppercase' }}>{value}</span>
+function Tag({ label, color }) {
+  const c = color || '#9CA3AF'
+  return <span style={{ fontSize:9, padding:'2px 6px', borderRadius:6, background:`${c}20`, color:c, fontWeight:700, letterSpacing:.8, textTransform:'uppercase' }}>{label}</span>
 }
 function TypeBadge({ type }) {
   return <span style={{ fontSize:9, padding:'2px 6px', borderRadius:6,
@@ -82,12 +84,13 @@ function DayPill({ day, active, onClick }) {
 }
 
 // ── Task editor modal ──────────────────────────────────────────
-function TaskModal({ initial, onSave, onDelete, onClose }) {
+function TaskModal({ initial, onSave, onDelete, onClose, categories }) {
   const isNew = !initial
+  const catList = (categories && categories.length) ? categories : [{ id:'other', label:'Other', color:'#8899AA' }]
   const [text,      setText]      = useState(initial?.text||initial?.label||'')
   const [note,      setNote]      = useState(initial?.note||'')
   const [type,      setType]      = useState(initial?.type||'week')
-  const [cat,       setCat]       = useState(initial?.cat||initial?.tag||'lab')
+  const [cat,       setCat]       = useState(initial?.cat||initial?.tag||catList[0].id)
   const [carry,     setCarry]     = useState(initial?.carry||false)
   const [days,      setDays]      = useState(initial?.days||['monday'])
   const [startDate, setStartDate] = useState(initial?.startDate||'')
@@ -142,7 +145,7 @@ function TaskModal({ initial, onSave, onDelete, onClose }) {
           <div style={{ display:'flex', gap:8, alignItems:'center', marginBottom:14, flexWrap:'wrap' }}>
             <select value={cat} onChange={e=>setCat(e.target.value)}
               style={{ fontSize:12, padding:'7px 10px', borderRadius:9, border:'1px solid var(--border)', fontFamily:'DM Sans,sans-serif', background:'white', cursor:'pointer' }}>
-              {CATS.map(c=><option key={c} value={c}>{c}</option>)}
+              {catList.map(c=><option key={c.id} value={c.id}>{c.label}</option>)}
             </select>
             {type==='week' && (
               <label style={{ display:'flex', alignItems:'center', gap:5, fontSize:12, color:'var(--muted)', cursor:'pointer' }}>
@@ -205,9 +208,10 @@ function TaskModal({ initial, onSave, onDelete, onClose }) {
 }
 
 // ── Task list row ──────────────────────────────────────────────
-function TaskListRow({ task, onEdit, today }) {
+function TaskListRow({ task, onEdit, today, categories }) {
   const text = task.text||task.label||''
-  const cat  = task.cat||task.tag||'lab'
+  const catId = task.cat||task.tag||'other'
+  const { label: catLabel, color: catColor } = resolveCat(catId, categories)
   const hasDateRange = task.startDate || task.endDate
   const isToday = task.days?.includes(today)
   return (
@@ -227,7 +231,7 @@ function TaskListRow({ task, onEdit, today }) {
           </div>
         )}
       </div>
-      <Tag value={cat} />
+      <Tag label={catLabel} color={catColor} />
       <TypeBadge type={task.type} />
       {/* Day labels — to the right of the title; current day highlighted in teal */}
       <div style={{ display:'flex', gap:3, flexWrap:'wrap', justifyContent:'flex-end', maxWidth:150, flexShrink:0 }}>
@@ -241,7 +245,7 @@ function TaskListRow({ task, onEdit, today }) {
 }
 
 // ── Main ───────────────────────────────────────────────────────
-export default function RecurringTasksManager({ recurringTasks, addRecurringTask, updateRecurringTask, deleteRecurringTask, clearRecurringTasks, defaultWeekTasks, defaultDailyTodos }) {
+export default function RecurringTasksManager({ recurringTasks, addRecurringTask, updateRecurringTask, deleteRecurringTask, clearRecurringTasks, categories, defaultWeekTasks, defaultDailyTodos }) {
   const [editing,     setEditing]     = useState(null) // null | 'new' | task object
   const [filterDay,   setFilterDay]   = useState(todayName())
   const [filterType,  setFilterType]  = useState('all')
@@ -372,7 +376,7 @@ export default function RecurringTasksManager({ recurringTasks, addRecurringTask
           No tasks match this filter.
         </div>
       ) : sorted.map(task=>(
-        <TaskListRow key={task.id+task.type+(task.days||[]).join('')} task={task} onEdit={()=>setEditing(task)} today={today} />
+        <TaskListRow key={task.id+task.type+(task.days||[]).join('')} task={task} onEdit={()=>setEditing(task)} today={today} categories={categories} />
       ))}
 
       {/* Clear all */}
@@ -401,7 +405,8 @@ export default function RecurringTasksManager({ recurringTasks, addRecurringTask
           initial={editing==='new' ? null : editing}
           onSave={handleSave}
           onDelete={handleDelete}
-          onClose={()=>setEditing(null)} />
+          onClose={()=>setEditing(null)}
+          categories={categories} />
       )}
     </div>
   )

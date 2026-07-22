@@ -478,6 +478,53 @@ export async function clearRecurringTasks() {
   await lsSet('recurring_tasks_v2', [])
 }
 
-// ── Personal Info (editable "About" page — no hardcoded content) ─
-export const getInfo = () => dbGet('profile_info').then(v => v ?? null)
-export const setInfo = v  => dbSet('profile_info', v)
+// ── Categories (shared task categories — user-editable) ─────────
+// Real per-row table. Commitments and recurring tasks both reference a
+// category by id, so making these first-class rows means adding/renaming/
+// recoloring one is a single atomic operation and shows up everywhere.
+function categoryFromDb(row) {
+  return { id: row.id, label: row.label, color: row.color, sortOrder: row.sort_order }
+}
+export async function getCategories() {
+  if (USE_SUPABASE) {
+    const { data, error } = await supabase.from('categories').select('*').order('sort_order')
+    if (error) { console.error('[storage] getCategories failed:', error.message); return [] }
+    return (data || []).map(categoryFromDb)
+  }
+  return (await lsGet('categories')) ?? []
+}
+export async function addCategory(cat) {
+  if (USE_SUPABASE) {
+    const { data, error } = await supabase.from('categories')
+      .insert({ id: cat.id, label: cat.label, color: cat.color, sort_order: cat.sortOrder ?? 0 }).select().single()
+    if (error) throw new Error(`Failed to add category: ${error.message}`)
+    return categoryFromDb(data)
+  }
+  const all = (await lsGet('categories')) ?? []
+  await lsSet('categories', [...all, cat])
+  return cat
+}
+export async function updateCategory(id, changes) {
+  const dbChanges = {}
+  if ('label' in changes)     dbChanges.label = changes.label
+  if ('color' in changes)     dbChanges.color = changes.color
+  if ('sortOrder' in changes) dbChanges.sort_order = changes.sortOrder
+  if (USE_SUPABASE) {
+    const { data, error } = await supabase.from('categories').update(dbChanges).eq('id', id).select().single()
+    if (error) throw new Error(`Failed to update category: ${error.message}`)
+    return categoryFromDb(data)
+  }
+  const all = (await lsGet('categories')) ?? []
+  const next = all.map(c => c.id===id ? { ...c, ...changes } : c)
+  await lsSet('categories', next)
+  return next.find(c => c.id===id)
+}
+export async function deleteCategory(id) {
+  if (USE_SUPABASE) {
+    const { error } = await supabase.from('categories').delete().eq('id', id)
+    if (error) throw new Error(`Failed to delete category: ${error.message}`)
+    return
+  }
+  const all = (await lsGet('categories')) ?? []
+  await lsSet('categories', all.filter(c => c.id !== id))
+}
