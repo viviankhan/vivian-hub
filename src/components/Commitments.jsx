@@ -107,8 +107,8 @@ function SlotPicker({ commitmentId, commitmentLabel, scheduled, onPick, onCancel
 
       <div style={{ display:'flex', gap:8, alignItems:'center', marginBottom:10, flexWrap:'wrap' }}>
         {commitmentDuration && <span style={{ fontSize:11, color:'var(--muted)' }}>Using estimated duration: <strong>{commitmentDuration < 60 ? commitmentDuration+'min' : commitmentDuration/60+'h'}</strong></span>}
-        <select value={duration} onChange={e => setDuration(Number(e.target.value))} style={{ display: commitmentDuration ? 'none' : undefined }}
-          style={{ fontSize:12, padding:'6px 10px', borderRadius:8, border:'1px solid var(--border)', flex:1, minWidth:100 }}>
+        <select value={duration} onChange={e => setDuration(Number(e.target.value))}
+          style={{ display: commitmentDuration ? 'none' : undefined, fontSize:12, padding:'6px 10px', borderRadius:8, border:'1px solid var(--border)', flex:1, minWidth:100 }}>
           {DURATIONS.map(d => <option key={d.value} value={d.value}>{d.label}</option>)}
         </select>
         <button className="btn-primary" onClick={search} style={{ padding:'6px 16px', fontSize:10 }}>
