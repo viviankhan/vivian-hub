@@ -1,5 +1,4 @@
 import { useState } from 'react'
-import { CALENDAR_EVENTS, generateRecurringEvents, SEMESTER_START, SEMESTER_END } from '../data/schedule.js'
 
 // Dynamic: current month + 5 ahead
 function buildMonths() {
@@ -37,11 +36,6 @@ function fmt12(t) {
   return `${h % 12 || 12}:${String(m).padStart(2,'0')} ${h >= 12 ? 'PM' : 'AM'}`
 }
 
-function isInVacation(dateStr, vacations) {
-  if (!vacations || vacations.length === 0) return false
-  return vacations.some(v => dateStr >= v.startDate && dateStr <= v.endDate)
-}
-
 export default function Calendar({ commitments, vacations }) {
   const [monthIdx, setMonthIdx] = useState(0)
   const [selected, setSelected] = useState(null)
@@ -51,11 +45,9 @@ export default function Calendar({ commitments, vacations }) {
   const daysInMonth = new Date(year, month+1, 0).getDate()
   const firstDay = new Date(year, month, 1).getDay()
 
-  // Merge static events + recurring weekly events (paused during vacations) + commitments (with date)
-  const recurringEvents = generateRecurringEvents(SEMESTER_START, SEMESTER_END)
-    .filter(e => !isInVacation(e.date, vacations))
-
-  const commitmentEvents = (commitments || [])
+  // The calendar shows your scheduled commitments. (Vacation blocks are set
+  // on the Commitments tab; nothing else is pre-populated here.)
+  const allEvents = (commitments || [])
     .filter(c => c.date)
     .map(c => ({
       date: c.date,
@@ -63,8 +55,6 @@ export default function Calendar({ commitments, vacations }) {
       type: 'commitment',
       done: c.done,
     }))
-
-  const allEvents = [...CALENDAR_EVENTS, ...recurringEvents, ...commitmentEvents]
   const selectedEvents = selected ? allEvents.filter(e => e.date === selected) : []
 
   return (

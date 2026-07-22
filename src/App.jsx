@@ -11,7 +11,7 @@ import {
   addCategory as dbAddCategory, updateCategory as dbUpdateCategory, deleteCategory as dbDeleteCategory,
 } from './lib/storage.js'
 import { runMigrationIfNeeded, seedCategoriesIfNeeded } from './lib/migrate.js'
-import { FIXED_BLOCKS, DEFAULT_RECURRING_TASKS, DEFAULT_DAILY_TODOS, buildWeekPlanFromTasks } from './data/schedule.js'
+import { DEFAULT_RECURRING_TASKS, DEFAULT_DAILY_TODOS, buildWeekPlanFromTasks } from './data/schedule.js'
 
 import Today       from './components/Today.jsx'
 import ThisWeek    from './components/ThisWeek.jsx'
@@ -35,19 +35,6 @@ function todayStr() {
   const d = new Date()
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
 }
-function checkOverlap(date, time, prepMin, fixedBlocks) {
-  if (!date || !time) return null
-  const dayName = ['sunday','monday','tuesday','wednesday','thursday','friday','saturday'][new Date(date+'T12:00:00').getDay()]
-  const blocks = fixedBlocks[dayName] || []
-  const [h, m] = time.split(':').map(Number)
-  const startMin = h*60+m, prepStart = prepMin ? startMin-prepMin : startMin, endMin = startMin+60
-  for (const block of blocks) {
-    const [bh,bm]=block.start.split(':').map(Number), [eh,em]=block.end.split(':').map(Number)
-    if (prepStart < eh*60+em && endMin > bh*60+bm) return block.label
-  }
-  return null
-}
-
 // ── Settings Drawer ────────────────────────────────────────────
 function SettingsDrawer({ open, onClose, settingsTab, setSettingsTab, notes, updateNotes, categories, addCategory, updateCategory, deleteCategory }) {
   if (!open) return null
@@ -206,12 +193,10 @@ export default function App() {
   // whole-array overwrite, so two edits in flight at once can't clobber
   // each other the way they used to. ──────────────────────────
   const addCommitment = useCallback(async c => {
-    const overlap = checkOverlap(c.date, c.time, c.prepMin, FIXED_BLOCKS)
     try {
       const created = await dbAddCommitment(c)
       setCommitments_(prev => [created, ...prev])
     } catch (e) { reportSaveError(e) }
-    return overlap
   }, [])
   const updateCommitment = useCallback(async (id, changes) => {
     try {

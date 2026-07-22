@@ -234,25 +234,20 @@ function QuickAdd({ onAdd, categories }) {
   const [durationMins,setDurationMins]= useState('')
   const [cat,         setCat]         = useState(defaultCat)
   const [person,      setPerson]      = useState('')
-  const [overlap,     setOverlap]     = useState(null)
 
-  const reset = () => { setText(''); setDate(''); setTime(''); setPrepMin(''); setDurationMins(''); setPerson(''); setCat(defaultCat); setOverlap(null); setOpen(false) }
+  const reset = () => { setText(''); setDate(''); setTime(''); setPrepMin(''); setDurationMins(''); setPerson(''); setCat(defaultCat); setOpen(false) }
 
   const submit = async () => {
     if (!text.trim()) return
     const id = 'c-' + Date.now()
-    const warning = await onAdd({
+    await onAdd({
       id, text: text.trim(), date: date || null, time: time || null,
       prepMin: prepMin ? parseInt(prepMin) : null,
       durationMins: durationMins ? parseInt(durationMins) : null,
       cat, person: person.trim() || null,
       done: false, createdAt: new Date().toISOString()
     })
-    if (warning) {
-      setOverlap(warning)
-    } else {
-      reset()
-    }
+    reset()
   }
 
   if (!open) return (
@@ -266,16 +261,6 @@ function QuickAdd({ onAdd, categories }) {
   return (
     <div style={{ background:'white', borderRadius:14, border:'2px solid #A8D0E0', padding:'18px', marginBottom:16 }}>
       <div className="serif" style={{ fontSize:18, fontWeight:600, color:'var(--text)', marginBottom:14 }}>New Commitment</div>
-
-      {overlap && (
-        <div style={{ background:'#FEF3C7', border:'1px solid #F59E0B', borderRadius:10, padding:'10px 14px', marginBottom:12, fontSize:12, color:'#92400E' }}>
-          <strong>Schedule overlap:</strong> This conflicts with <em>{overlap}</em>. Save anyway or pick a different time?
-          <div style={{ display:'flex', gap:8, marginTop:8 }}>
-            <button className="btn-primary" style={{ fontSize:11, padding:'5px 14px' }} onClick={reset}>Save anyway</button>
-            <button className="btn-ghost" style={{ fontSize:11, padding:'5px 14px' }} onClick={() => setOverlap(null)}>Change time</button>
-          </div>
-        </div>
-      )}
 
       <textarea value={text} onChange={e => setText(e.target.value)}
         placeholder="What did you commit to?"

@@ -311,8 +311,8 @@ function RoutineSection({ title, sub, icon, items, routineKey, routineLog, onUpd
 export default function Routines() {
   const [morningItems, setMorningItems] = useState(MORNING_ROUTINE)
   const [nightItems,   setNightItems]   = useState(NIGHT_ROUTINE)
-  const [morningSub,   setMorningSub]   = useState('6:00 – 7:50 AM · Weekdays')
-  const [nightSub,     setNightSub]     = useState('5:00 PM – 10:30 PM')
+  const [morningSub,   setMorningSub]   = useState('')
+  const [nightSub,     setNightSub]     = useState('')
   const [morningStartMins, setMorningStartMins] = useState(6*60) // 6:00 AM default
   const [routineLog,   setRoutineLog_]  = useState({})
   const [morningIsDefault, setMorningIsDefault] = useState(true)
