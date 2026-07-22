@@ -241,7 +241,7 @@ function TaskListRow({ task, onEdit, today }) {
 }
 
 // ── Main ───────────────────────────────────────────────────────
-export default function RecurringTasksManager({ recurringTasks, updateRecurringTasks, defaultWeekTasks, defaultDailyTodos }) {
+export default function RecurringTasksManager({ recurringTasks, addRecurringTask, updateRecurringTask, deleteRecurringTask, clearRecurringTasks, defaultWeekTasks, defaultDailyTodos }) {
   const [editing,     setEditing]     = useState(null) // null | 'new' | task object
   const [filterDay,   setFilterDay]   = useState(todayName())
   const [filterType,  setFilterType]  = useState('all')
@@ -282,20 +282,21 @@ export default function RecurringTasksManager({ recurringTasks, updateRecurringT
     return result
   }, [recurringTasks])
 
-  // updateRecurringTasks (in App.jsx) already surfaces cloud-write failures via
-  // alert, so a failed delete/clear no longer looks like it silently succeeded.
-  const saveTasks = (tasks) => updateRecurringTasks({ tasks })
-
+  // Each of these is now one atomic row operation (add/update/delete a single
+  // task, or delete every row) rather than a whole-array overwrite — and
+  // addRecurringTask/updateRecurringTask/etc. (in App.jsx) already surface
+  // cloud-write failures via alert, so a failed save no longer looks like it
+  // silently succeeded.
   const handleSave = async (task) => {
     if (editing === 'new') {
-      await saveTasks([...flatData, task])
+      await addRecurringTask(task)
     } else {
-      await saveTasks(flatData.map(t => t.id===editing.id ? task : t))
+      await updateRecurringTask(editing.id, task)
     }
     setEditing(null)
   }
   const handleDelete = async () => {
-    await saveTasks(flatData.filter(t => t.id !== editing.id))
+    await deleteRecurringTask(editing.id)
     setEditing(null)
   }
   // Wait for the cloud write to finish before closing — prevents a fast refresh
@@ -303,7 +304,7 @@ export default function RecurringTasksManager({ recurringTasks, updateRecurringT
   const handleClearAll = async () => {
     setClearing(true)
     try {
-      await saveTasks([])
+      await clearRecurringTasks()
       setConfirmClear(false)
       setFilterDay(todayName())
     } finally {

@@ -1,5 +1,15 @@
 import { useState, useEffect, useCallback } from 'react'
-import { isUsingSupabase, getTodos, setTodos, getWeekState, setWeekState, getLog, setLog, getNotes, setNotes, getFcProgress, setFcProgress, getFcStudied, setFcStudied, getScheduledTasks, setScheduledTasks, getRecurringTasks, setRecurringTasks, dbGet, dbSet } from './lib/storage.js'
+import {
+  isUsingSupabase,
+  getCompletions, setCompletion,
+  getLogEntries, addLogEntry, deleteLogEntry,
+  getNotes, setNotes, getFcProgress, setFcProgress, getFcStudied, setFcStudied,
+  getScheduledTasks, setScheduledTasks,
+  getCommitments, addCommitment as dbAddCommitment, updateCommitment as dbUpdateCommitment, deleteCommitment as dbDeleteCommitment,
+  getVacations, addVacation as dbAddVacation, deleteVacation as dbDeleteVacation,
+  getRecurringTasks, addRecurringTask, updateRecurringTask, deleteRecurringTask, clearRecurringTasks,
+} from './lib/storage.js'
+import { runMigrationIfNeeded } from './lib/migrate.js'
 import { FIXED_BLOCKS, DEFAULT_RECURRING_TASKS, DEFAULT_DAILY_TODOS, buildWeekPlanFromTasks } from './data/schedule.js'
 
 import Today       from './components/Today.jsx'
@@ -39,14 +49,6 @@ function checkOverlap(date, time, prepMin, fixedBlocks) {
   return null
 }
 
-// ── localStorage cache helpers (backup for Supabase) ──────────
-function lsCache(key, value) {
-  try { localStorage.setItem('vivian_cache_'+key, JSON.stringify(value)) } catch {}
-}
-function lsCacheGet(key) {
-  try { const v = localStorage.getItem('vivian_cache_'+key); return v ? JSON.parse(v) : null } catch { return null }
-}
-
 // ── Settings Drawer ────────────────────────────────────────────
 function SettingsDrawer({ open, onClose, settingsTab, setSettingsTab, scheduled, addScheduledTask, commitments }) {
   if (!open) return null
@@ -82,137 +84,145 @@ export default function App() {
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [settingsTab,  setSettingsTab]  = useState('routines')
 
-  const [todos,          setTodos_]          = useState({})
-  const [weekState,      setWeekState_]      = useState({})
-  const [log,            setLog_]            = useState([])
-  const [notes,          setNotes_]          = useState('')
-  const [fcProgress,     setFcProgress_]     = useState({})
-  const [fcStudied,      setFcStudied_]      = useState({})
-  const [scheduled,      setScheduled_]      = useState([])
-  const [commitments,    setCommitments_]    = useState([])
-  const [recurringTasks, setRecurringTasks_] = useState(null)
-  const [vacations,      setVacations_]      = useState([])
-  const [loading,        setLoading]         = useState(true)
+  // "completions" replaces the old separate todos/weekState blobs — every
+  // consumer already reads todos[k] || weekState[k], which were confirmed to
+  // always hold the identical value, so both props below point at this one
+  // object rather than keeping two copies in sync.
+  const [completions,     setCompletions_]     = useState({})
+  const [log,              setLog_]             = useState([])
+  const [notes,            setNotes_]           = useState('')
+  const [fcProgress,       setFcProgress_]      = useState({})
+  const [fcStudied,        setFcStudied_]       = useState({})
+  const [scheduled,        setScheduled_]       = useState([])
+  const [commitments,      setCommitments_]     = useState([])
+  const [recurringTaskRows,setRecurringTaskRows]= useState([])
+  const [vacations,        setVacations_]       = useState([])
+  const [loading,          setLoading]          = useState(true)
 
   useEffect(() => {
     async function load() {
-      const [t_raw, w_raw, l, n, fcp, fcs, sch, com, rt, vac] = await Promise.all([
-        getTodos(), getWeekState(), getLog(), getNotes(),
+      await runMigrationIfNeeded()
+      const [comp, l, n, fcp, fcs, sch, com, rt, vac] = await Promise.all([
+        getCompletions(), getLogEntries(), getNotes(),
         getFcProgress(), getFcStudied(), getScheduledTasks(),
-        dbGet('commitments').then(v => v ?? []),
-        getRecurringTasks(),
-        dbGet('vacations').then(v => v ?? []),
+        getCommitments(), getRecurringTasks(), getVacations(),
       ])
-      // Use localStorage cache as fallback if cloud returns empty
-      // Always trust Supabase when it's configured — localStorage is write-through
-      // cache only, never a fallback that could cause cross-device divergence
-      const t = t_raw ?? {}
-      const w = w_raw ?? {}
-      setTodos_(t); setWeekState_(w); setLog_(l); setNotes_(n)
+      setCompletions_(comp); setLog_(l); setNotes_(n)
       setFcProgress_(fcp); setFcStudied_(fcs); setScheduled_(sch)
-      setCommitments_(com); setRecurringTasks_(rt); setVacations_(vac)
+      setCommitments_(com); setRecurringTaskRows(rt); setVacations_(vac)
       setLoading(false)
     }
     load()
   }, [])
 
-  // ── Derived schedule — handle both flat and legacy formats ──
-  const getPerDay = () => {
-    if (!recurringTasks) return null
-    if (Array.isArray(recurringTasks.tasks)) {
-      // New flat format — convert via flatToPerDay
-      return flatToPerDay(recurringTasks, todayStr())
-    }
-    if (recurringTasks.weekTasks) {
-      // Legacy per-day format — use directly (but only day-name keys, not date-specific)
-      return recurringTasks
-    }
-    return null
-  }
-  const perDay = getPerDay()
+  // ── Derived schedule ─────────────────────────────────────────
+  // recurring_tasks is now a real table (one row per task) — always the flat
+  // format, so this just wraps the rows the way flatToPerDay expects. An
+  // empty table (nothing ever added, or everything cleared) means an empty
+  // schedule either way, consistent with how "Clear all recurring events"
+  // already worked — no defaults resurrecting themselves.
+  const recurringTasksWrapped = { tasks: recurringTaskRows }
+  const perDay = flatToPerDay(recurringTasksWrapped, todayStr())
   const activeWeekTasks  = perDay?.weekTasks  ?? DEFAULT_RECURRING_TASKS
   const activeDailyTodos = perDay?.dailyTodos ?? DEFAULT_DAILY_TODOS
   const weekPlan = buildWeekPlanFromTasks(activeWeekTasks)
 
-  // ── Persist helpers — dual write: cloud + localStorage cache ─
+  // ── Persist helpers ──────────────────────────────────────────
   // Cloud write failures are surfaced instead of swallowed — otherwise a delete
   // looks like it worked (local state updates) but silently reverts on next load.
-  // (In-flight writes themselves are tracked centrally in storage.js's dbSet,
+  // (In-flight kv_store writes are tracked centrally in storage.js's dbSet,
   // which warns before the tab closes/reloads while a save is still pending.)
   const reportSaveError = err => { console.error(err); alert(`⚠️ ${err.message || err}\n\nThis change was NOT saved to the cloud and may revert. Check your connection and try again.`) }
 
-  const updateTodos      = useCallback(async v => { setTodos_(v);      lsCache('todos', v);      try { await setTodos(v) }      catch (e) { reportSaveError(e) } }, [])
-  const updateWeekState  = useCallback(async v => { setWeekState_(v);  lsCache('weekstate', v);  try { await setWeekState(v) }  catch (e) { reportSaveError(e) } }, [])
   const updateNotes      = useCallback(async v => { setNotes_(v);      try { await setNotes(v) }      catch (e) { reportSaveError(e) } }, [])
   const updateFcProgress = useCallback(async v => { setFcProgress_(v); try { await setFcProgress(v) } catch (e) { reportSaveError(e) } }, [])
   const updateFcStudied  = useCallback(async v => { setFcStudied_(v);  try { await setFcStudied(v) }  catch (e) { reportSaveError(e) } }, [])
-  const updateRecurringTasks = useCallback(async v => { setRecurringTasks_(v); try { await setRecurringTasks(v) } catch (e) { reportSaveError(e) } }, [])
 
   const appendLog = useCallback(async entry => {
     const newEntry = { ...entry, ts: new Date().toISOString() }
-    setLog_(prev => { const next = [...prev, newEntry]; setLog(next); return next })
+    setLog_(prev => [...prev, newEntry])
+    try { await addLogEntry(newEntry) } catch (e) { reportSaveError(e) }
+  }, [])
+
+  // ── Recurring tasks CRUD (real per-row table) ────────────────
+  const addRecurringTaskFn = useCallback(async task => {
+    try {
+      const created = await addRecurringTask(task)
+      setRecurringTaskRows(prev => [...prev, created])
+    } catch (e) { reportSaveError(e) }
+  }, [])
+  const updateRecurringTaskFn = useCallback(async (id, task) => {
+    try {
+      const updated = await updateRecurringTask(id, task)
+      setRecurringTaskRows(prev => prev.map(t => t.id===id ? updated : t))
+    } catch (e) { reportSaveError(e) }
+  }, [])
+  const deleteRecurringTaskFn = useCallback(async id => {
+    setRecurringTaskRows(prev => prev.filter(t => t.id !== id))
+    try { await deleteRecurringTask(id) } catch (e) { reportSaveError(e) }
+  }, [])
+  const clearRecurringTasksFn = useCallback(async () => {
+    setRecurringTaskRows([])
+    try { await clearRecurringTasks() } catch (e) { reportSaveError(e) }
   }, [])
 
   const addScheduledTask = useCallback(async task => {
     setScheduled_(prev => { const next = [...prev, task]; setScheduledTasks(next); return next })
   }, [])
 
-  // ── Commitments CRUD ───────────────────────────────────────
+  // ── Commitments CRUD — each is one atomic row operation now, never a
+  // whole-array overwrite, so two edits in flight at once can't clobber
+  // each other the way they used to. ──────────────────────────
   const addCommitment = useCallback(async c => {
     const overlap = checkOverlap(c.date, c.time, c.prepMin, FIXED_BLOCKS)
-    let next
-    setCommitments_(prev => { next = [c, ...prev]; return next })
-    try { await dbSet('commitments', next) } catch (e) { reportSaveError(e) }
+    try {
+      const created = await dbAddCommitment(c)
+      setCommitments_(prev => [created, ...prev])
+    } catch (e) { reportSaveError(e) }
     return overlap
   }, [])
   const updateCommitment = useCallback(async (id, changes) => {
-    let next
-    setCommitments_(prev => { next = prev.map(c => c.id===id ? {...c,...changes} : c); return next })
-    try { await dbSet('commitments', next) } catch (e) { reportSaveError(e) }
+    try {
+      const updated = await dbUpdateCommitment(id, changes)
+      setCommitments_(prev => prev.map(c => c.id===id ? updated : c))
+    } catch (e) { reportSaveError(e) }
   }, [])
   const deleteCommitment = useCallback(async id => {
-    let next
-    setCommitments_(prev => { next = prev.filter(c => c.id!==id); return next })
-    setTodos_(prev    => { const n = {...prev}; delete n[id]; setTodos(n).catch(reportSaveError); return n })
-    setWeekState_(prev => { const n = {...prev}; delete n[id]; setWeekState(n).catch(reportSaveError); return n })
-    try { await dbSet('commitments', next) } catch (e) { reportSaveError(e) }
+    setCommitments_(prev => prev.filter(c => c.id !== id))
+    setCompletions_(prev => { const n = {...prev}; delete n[id]; return n })
+    try { await Promise.all([dbDeleteCommitment(id), setCompletion(id, false)]) }
+    catch (e) { reportSaveError(e) }
   }, [])
 
   // ── Vacations CRUD ──────────────────────────────────────────
   const addVacation = useCallback(async v => {
-    let next
-    setVacations_(prev => { next = [...prev, v]; return next })
-    try { await dbSet('vacations', next) } catch (e) { reportSaveError(e) }
+    try {
+      const created = await dbAddVacation(v)
+      setVacations_(prev => [...prev, created])
+    } catch (e) { reportSaveError(e) }
   }, [])
   const deleteVacation = useCallback(async id => {
-    let next
-    setVacations_(prev => { next = prev.filter(v => v.id !== id); return next })
-    try { await dbSet('vacations', next) } catch (e) { reportSaveError(e) }
+    setVacations_(prev => prev.filter(v => v.id !== id))
+    try { await dbDeleteVacation(id) } catch (e) { reportSaveError(e) }
   }, [])
 
-  // ── Unified toggle — dual write ────────────────────────────
+  // ── Unified toggle ───────────────────────────────────────────
   const syncToggle = useCallback(async (id, label, tag, date) => {
     const storageKey = date ? `${date}_${id}` : id
     const isCommitment = commitments.some(c => c.id===id)
     const currentDone = isCommitment
       ? commitments.find(c => c.id===id)?.done
-      : !!(todos[storageKey] || weekState[storageKey])
+      : !!completions[storageKey]
     const nowDone = !currentDone
 
     if (isCommitment) {
-      let nextCommitments
-      setCommitments_(prev => { nextCommitments = prev.map(c => c.id===id ? {...c, done:nowDone} : c); return nextCommitments })
-      dbSet('commitments', nextCommitments).catch(reportSaveError)
+      setCommitments_(prev => prev.map(c => c.id===id ? {...c, done:nowDone} : c))
+      dbUpdateCommitment(id, { done: nowDone }).catch(reportSaveError)
     }
-    const nextTodos = { ...todos, [storageKey]: nowDone }
-    const nextWeek  = { ...weekState, [storageKey]: nowDone }
-    setTodos_(nextTodos)
-    setWeekState_(nextWeek)
-    // Dual write — localStorage cache + cloud
-    lsCache('todos', nextTodos)
-    lsCache('weekstate', nextWeek)
+    const nextCompletions = { ...completions, [storageKey]: nowDone }
+    setCompletions_(nextCompletions)
     try {
-      await Promise.all([setTodos(nextTodos), setWeekState(nextWeek)])
+      await setCompletion(storageKey, nowDone)
     } catch (e) { reportSaveError(e) }
 
     if (nowDone) {
@@ -220,7 +230,9 @@ export default function App() {
       const d = new Date()
       const dateKey   = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
       const dateLabel = d.toLocaleDateString('en-US', { weekday:'long', month:'long', day:'numeric' })
-      setLog_(prev => { const next = [...prev, { date:dateKey, dateLabel, label, tag, ts:d.toISOString(), storageKey }]; setLog(next); return next })
+      const entry = { date:dateKey, dateLabel, label, tag, ts:d.toISOString(), storageKey }
+      setLog_(prev => [...prev, entry])
+      addLogEntry(entry).catch(reportSaveError)
     } else {
       // Remove log entry on uncheck — match by label + storageKey
       setLog_(prev => {
@@ -232,11 +244,11 @@ export default function App() {
           const laterIdx = prev.findIndex((e2, i2) => i2 > i && e2.label === label)
           return laterIdx !== -1
         })
-        setLog(next2)
         return next2
       })
+      deleteLogEntry(label, storageKey).catch(reportSaveError)
     }
-  }, [todos, weekState, commitments])
+  }, [completions, commitments])
 
   if (loading) return (
     <div style={{ minHeight:'100vh', background:'#FAFAF7', display:'flex', alignItems:'center', justifyContent:'center' }}>
@@ -248,7 +260,9 @@ export default function App() {
   )
 
   const sharedProps = {
-    todos, updateTodos, weekState, updateWeekState, syncToggle,
+    // Every consumer reads todos[k] || weekState[k] — both point at the same
+    // completions object rather than keeping two copies in sync.
+    todos: completions, weekState: completions, syncToggle,
     log, appendLog, notes, updateNotes,
     fcProgress, updateFcProgress, fcStudied, updateFcStudied,
     scheduled, addScheduledTask,
@@ -290,7 +304,10 @@ export default function App() {
         {tab==='calendar'    && <Calendar    {...sharedProps} />}
         {tab==='log'         && <Log log={log} notes={notes} updateNotes={updateNotes} />}
         {tab==='info'        && <Info />}
-        {tab==='recurring'   && <RecurringTasksManager recurringTasks={recurringTasks} updateRecurringTasks={updateRecurringTasks} defaultWeekTasks={DEFAULT_RECURRING_TASKS} defaultDailyTodos={DEFAULT_DAILY_TODOS} />}
+        {tab==='recurring'   && <RecurringTasksManager recurringTasks={recurringTasksWrapped}
+          addRecurringTask={addRecurringTaskFn} updateRecurringTask={updateRecurringTaskFn}
+          deleteRecurringTask={deleteRecurringTaskFn} clearRecurringTasks={clearRecurringTasksFn}
+          defaultWeekTasks={DEFAULT_RECURRING_TASKS} defaultDailyTodos={DEFAULT_DAILY_TODOS} />}
       </main>
 
       <SettingsDrawer
