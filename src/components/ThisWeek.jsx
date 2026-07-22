@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { buildWeekPlanFromTasks } from '../data/schedule.js'
 
 const CAT_COLORS = {
   lab:     { dot:'#059669', bg:'#ECFDF5', text:'#065F46' },
@@ -76,8 +77,17 @@ function DayQuickAdd({ onAdd, onClose }) {
 }
 
 // ── Main ───────────────────────────────────────────────────────
-export default function ThisWeek({ todos, weekState, syncToggle, commitments, addCommitment, deleteCommitment, weekPlan }) {
+function fmtRange(startDate, endDate) {
+  const opts = { month:'short', day:'numeric' }
+  const s = new Date(startDate+'T12:00:00').toLocaleDateString('en-US', opts)
+  const e = new Date(endDate+'T12:00:00').toLocaleDateString('en-US', { ...opts, year:'numeric' })
+  return `${s} – ${e}`
+}
+
+export default function ThisWeek({ todos, weekState, syncToggle, commitments, addCommitment, deleteCommitment, weekTasks }) {
   const today = todayStr()
+  const [weekOffset, setWeekOffset] = useState(0)
+  const weekPlan = buildWeekPlanFromTasks(weekTasks || {}, weekOffset)
   const [addingDay, setAddingDay] = useState(null)
   // Custom tasks per day stored in localStorage (keyed by date)
   const [customByDay, setCustomByDay] = useState(() => {
@@ -119,10 +129,26 @@ export default function ThisWeek({ todos, weekState, syncToggle, commitments, ad
     localStorage.setItem('vivian_week_deleted', JSON.stringify(next))
   }
 
+  const rangeLabel = fmtRange(weekPlan[0].date, weekPlan[6].date)
+  const weekTitle = weekOffset === 0 ? 'This Week' : weekOffset === -1 ? 'Last Week' : weekOffset === 1 ? 'Next Week' : rangeLabel
+  const navBtn = { fontSize:16, lineHeight:1, width:32, height:32, borderRadius:9, border:'1px solid var(--border)', background:'white', color:'var(--muted)', cursor:'pointer', fontFamily:'DM Sans,sans-serif', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }
+
   return (
     <div>
-      <div className="page-title">This Week</div>
-      <div className="page-sub">Today → next 7 days · tap any circle to mark done</div>
+      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:10, marginBottom:6, flexWrap:'wrap' }}>
+        <div className="page-title" style={{ marginBottom:0 }}>{weekTitle}</div>
+        <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+          {weekOffset !== 0 && (
+            <button onClick={()=>setWeekOffset(0)}
+              style={{ fontSize:11, padding:'7px 12px', borderRadius:9, border:'1px solid var(--teal)', background:'#F0FDFB', color:'var(--teal)', cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:600, flexShrink:0 }}>
+              This week
+            </button>
+          )}
+          <button onClick={()=>setWeekOffset(o=>o-1)} title="Previous week" style={navBtn}>‹</button>
+          <button onClick={()=>setWeekOffset(o=>o+1)} title="Next week" style={navBtn}>›</button>
+        </div>
+      </div>
+      <div className="page-sub">{rangeLabel} · tap any circle to mark done</div>
 
       {weekPlan.map((day, i) => {
         const isToday = day.date === today

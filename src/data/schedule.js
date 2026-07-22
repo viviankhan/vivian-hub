@@ -33,13 +33,18 @@ export function getFixedBlocksForDate(date) {
 // ── Recurring weekly tasks — empty defaults ───────────────────
 export const DEFAULT_RECURRING_TASKS = {}
 
-// ── Week plan — dynamic today → today+6 ───────────────────────
-export function buildWeekPlanFromTasks(recurringTasks) {
+// ── Week plan — a full Sun→Sat calendar week ──────────────────
+// weekOffset shifts by whole weeks: 0 = the current week, -1 = last week,
+// +1 = next week, etc. Aligning to Sunday makes each week a fixed unit you
+// can page through and jump back to.
+export function buildWeekPlanFromTasks(recurringTasks, weekOffset = 0) {
   const today = new Date()
   today.setHours(0, 0, 0, 0)
+  const start = new Date(today)
+  start.setDate(today.getDate() - today.getDay() + weekOffset * 7)
   return Array.from({ length: 7 }, (_, i) => {
-    const d = new Date(today)
-    d.setDate(today.getDate() + i)
+    const d = new Date(start)
+    d.setDate(start.getDate() + i)
     const dayName = DAY_NAMES[d.getDay()]
     return {
       date:     toDateStr(d),

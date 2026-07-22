@@ -1,15 +1,5 @@
 import { useState } from 'react'
 
-// Dynamic: current month + 5 ahead
-function buildMonths() {
-  const now = new Date()
-  return Array.from({ length: 6 }, (_, i) => {
-    const d = new Date(now.getFullYear(), now.getMonth() + i, 1)
-    return { year: d.getFullYear(), month: d.getMonth(), name: d.toLocaleString('en-US', { month:'long' }) }
-  })
-}
-const MONTHS = buildMonths()
-
 const TYPE_STYLES = {
   capstone:   { bg:'#EFF6FF', border:'#3B82F6', text:'#1E3A8A', dot:'#2563EB', label:'Capstone' },
   lab:        { bg:'#ECFDF5', border:'#10B981', text:'#065F46', dot:'#059669', label:'Lab'      },
@@ -22,6 +12,8 @@ const TYPE_STYLES = {
   optional:   { bg:'#FDF4FF', border:'#C084FC', text:'#581C87', dot:'#C084FC', label:'Optional' },
   commitment: { bg:'#FFF7ED', border:'#F97316', text:'#9A3412', dot:'#F97316', label:'Commitment'},
 }
+
+const calNavBtn = { fontSize:16, lineHeight:1, width:32, height:32, borderRadius:9, border:'1px solid var(--border)', background:'white', color:'var(--muted)', cursor:'pointer', fontFamily:'DM Sans,sans-serif', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }
 
 function ds(year, month, day) {
   return `${year}-${String(month+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`
@@ -37,13 +29,20 @@ function fmt12(t) {
 }
 
 export default function Calendar({ commitments, vacations }) {
-  const [monthIdx, setMonthIdx] = useState(0)
+  // monthOffset shifts by whole months from the current month: 0 = this month,
+  // -1 = last month, +1 = next month, and so on — unbounded either way.
+  const [monthOffset, setMonthOffset] = useState(0)
   const [selected, setSelected] = useState(null)
   const today = todayStr()
 
-  const { year, month } = MONTHS[monthIdx]
+  const now = new Date()
+  const base = new Date(now.getFullYear(), now.getMonth() + monthOffset, 1)
+  const year = base.getFullYear(), month = base.getMonth()
+  const monthName = base.toLocaleString('en-US', { month:'long' })
   const daysInMonth = new Date(year, month+1, 0).getDate()
   const firstDay = new Date(year, month, 1).getDay()
+
+  const goMonth = (delta) => { setMonthOffset(o => o + delta); setSelected(null) }
 
   // The calendar shows your scheduled commitments. (Vacation blocks are set
   // on the Commitments tab; nothing else is pre-populated here.)
@@ -60,13 +59,20 @@ export default function Calendar({ commitments, vacations }) {
   return (
     <div>
       <div className="page-title">Calendar</div>
-      <div className="page-sub">{MONTHS[0].name} {MONTHS[0].year} → {MONTHS[MONTHS.length-1].name} · includes your commitments</div>
+      <div className="page-sub">Your scheduled commitments</div>
 
-      <div className="cal-month-btns">
-        {MONTHS.map((m, i) => (
-          <button key={i} className={`cal-month-btn ${i===monthIdx ? 'active' : ''}`}
-            onClick={() => { setMonthIdx(i); setSelected(null) }}>{m.name}</button>
-        ))}
+      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:10, marginBottom:14, flexWrap:'wrap' }}>
+        <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+          <button onClick={()=>goMonth(-1)} title="Previous month" style={calNavBtn}>‹</button>
+          <div className="serif" style={{ fontSize:18, fontWeight:600, color:'var(--text)', minWidth:150, textAlign:'center' }}>{monthName} {year}</div>
+          <button onClick={()=>goMonth(1)} title="Next month" style={calNavBtn}>›</button>
+        </div>
+        {monthOffset !== 0 && (
+          <button onClick={()=>{ setMonthOffset(0); setSelected(null) }}
+            style={{ fontSize:11, padding:'7px 12px', borderRadius:9, border:'1px solid var(--teal)', background:'#F0FDFB', color:'var(--teal)', cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:600 }}>
+            This month
+          </button>
+        )}
       </div>
 
       <div className="cal-scroll">

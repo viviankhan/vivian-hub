@@ -317,7 +317,7 @@ export default function App() {
 
       <main className="content">
         {tab==='today'       && <Today       {...sharedProps} appendLog={appendLog} weekPlan={weekPlan} dailyTodos={activeDailyTodos} scheduled={scheduled} deleteCommitment={deleteCommitment} />}
-        {tab==='week'        && <ThisWeek    {...sharedProps} weekPlan={weekPlan} deleteCommitment={deleteCommitment} />}
+        {tab==='week'        && <ThisWeek    {...sharedProps} weekTasks={activeWeekTasks} deleteCommitment={deleteCommitment} />}
         {tab==='commitments' && <Commitments {...sharedProps} />}
         {tab==='calendar'    && <Calendar    {...sharedProps} />}
         {tab==='recurring'   && <RecurringTasksManager recurringTasks={recurringTasksWrapped}
