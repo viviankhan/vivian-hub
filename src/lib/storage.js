@@ -19,14 +19,16 @@ async function lsSet(key, value) {
 // ── KV store ───────────────────────────────────────────────────
 export async function dbGet(key) {
   if (USE_SUPABASE) {
-    const { data } = await supabase.from('kv_store').select('value').eq('key', key).maybeSingle()
+    const { data, error } = await supabase.from('kv_store').select('value').eq('key', key).maybeSingle()
+    if (error) console.error(`[storage] dbGet('${key}') failed:`, error.message)
     return data?.value ?? null
   }
   return lsGet(key)
 }
 export async function dbSet(key, value) {
   if (USE_SUPABASE) {
-    await supabase.from('kv_store').upsert({ key, value, updated_at: new Date().toISOString() })
+    const { error } = await supabase.from('kv_store').upsert({ key, value, updated_at: new Date().toISOString() })
+    if (error) throw new Error(`Cloud save failed for "${key}": ${error.message}`)
     return
   }
   lsSet(key, value)

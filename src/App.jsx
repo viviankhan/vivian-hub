@@ -135,12 +135,15 @@ export default function App() {
   const weekPlan = buildWeekPlanFromTasks(activeWeekTasks)
 
   // ── Persist helpers — dual write: cloud + localStorage cache ─
-  const updateTodos      = useCallback(async v => { setTodos_(v);      lsCache('todos', v);      await setTodos(v)      }, [])
-  const updateWeekState  = useCallback(async v => { setWeekState_(v);  lsCache('weekstate', v);  await setWeekState(v)  }, [])
-  const updateNotes      = useCallback(async v => { setNotes_(v);      await setNotes(v)      }, [])
-  const updateFcProgress = useCallback(async v => { setFcProgress_(v); await setFcProgress(v) }, [])
-  const updateFcStudied  = useCallback(async v => { setFcStudied_(v);  await setFcStudied(v)  }, [])
-  const updateRecurringTasks = useCallback(async v => { setRecurringTasks_(v); await setRecurringTasks(v) }, [])
+  // Cloud write failures are surfaced instead of swallowed — otherwise a delete
+  // looks like it worked (local state updates) but silently reverts on next load.
+  const reportSaveError = err => { console.error(err); alert(`⚠️ ${err.message || err}\n\nThis change was NOT saved to the cloud and may revert. Check your connection and try again.`) }
+  const updateTodos      = useCallback(async v => { setTodos_(v);      lsCache('todos', v);      try { await setTodos(v) }      catch (e) { reportSaveError(e) } }, [])
+  const updateWeekState  = useCallback(async v => { setWeekState_(v);  lsCache('weekstate', v);  try { await setWeekState(v) }  catch (e) { reportSaveError(e) } }, [])
+  const updateNotes      = useCallback(async v => { setNotes_(v);      try { await setNotes(v) }      catch (e) { reportSaveError(e) } }, [])
+  const updateFcProgress = useCallback(async v => { setFcProgress_(v); try { await setFcProgress(v) } catch (e) { reportSaveError(e) } }, [])
+  const updateFcStudied  = useCallback(async v => { setFcStudied_(v);  try { await setFcStudied(v) }  catch (e) { reportSaveError(e) } }, [])
+  const updateRecurringTasks = useCallback(async v => { setRecurringTasks_(v); try { await setRecurringTasks(v) } catch (e) { reportSaveError(e) } }, [])
 
   const appendLog = useCallback(async entry => {
     const newEntry = { ...entry, ts: new Date().toISOString() }
@@ -154,24 +157,34 @@ export default function App() {
   // ── Commitments CRUD ───────────────────────────────────────
   const addCommitment = useCallback(async c => {
     const overlap = checkOverlap(c.date, c.time, c.prepMin, FIXED_BLOCKS)
-    setCommitments_(prev => { const next = [c, ...prev]; dbSet('commitments', next); return next })
+    let next
+    setCommitments_(prev => { next = [c, ...prev]; return next })
+    try { await dbSet('commitments', next) } catch (e) { reportSaveError(e) }
     return overlap
   }, [])
   const updateCommitment = useCallback(async (id, changes) => {
-    setCommitments_(prev => { const next = prev.map(c => c.id===id ? {...c,...changes} : c); dbSet('commitments', next); return next })
+    let next
+    setCommitments_(prev => { next = prev.map(c => c.id===id ? {...c,...changes} : c); return next })
+    try { await dbSet('commitments', next) } catch (e) { reportSaveError(e) }
   }, [])
   const deleteCommitment = useCallback(async id => {
-    setCommitments_(prev => { const next = prev.filter(c => c.id!==id); dbSet('commitments', next); return next })
-    setTodos_(prev    => { const n = {...prev}; delete n[id]; setTodos(n); return n })
-    setWeekState_(prev => { const n = {...prev}; delete n[id]; setWeekState(n); return n })
+    let next
+    setCommitments_(prev => { next = prev.filter(c => c.id!==id); return next })
+    setTodos_(prev    => { const n = {...prev}; delete n[id]; setTodos(n).catch(reportSaveError); return n })
+    setWeekState_(prev => { const n = {...prev}; delete n[id]; setWeekState(n).catch(reportSaveError); return n })
+    try { await dbSet('commitments', next) } catch (e) { reportSaveError(e) }
   }, [])
 
   // ── Vacations CRUD ──────────────────────────────────────────
   const addVacation = useCallback(async v => {
-    setVacations_(prev => { const next = [...prev, v]; dbSet('vacations', next); return next })
+    let next
+    setVacations_(prev => { next = [...prev, v]; return next })
+    try { await dbSet('vacations', next) } catch (e) { reportSaveError(e) }
   }, [])
   const deleteVacation = useCallback(async id => {
-    setVacations_(prev => { const next = prev.filter(v => v.id !== id); dbSet('vacations', next); return next })
+    let next
+    setVacations_(prev => { next = prev.filter(v => v.id !== id); return next })
+    try { await dbSet('vacations', next) } catch (e) { reportSaveError(e) }
   }, [])
 
   // ── Unified toggle — dual write ────────────────────────────
@@ -184,7 +197,9 @@ export default function App() {
     const nowDone = !currentDone
 
     if (isCommitment) {
-      setCommitments_(prev => { const next = prev.map(c => c.id===id ? {...c, done:nowDone} : c); dbSet('commitments', next); return next })
+      let nextCommitments
+      setCommitments_(prev => { nextCommitments = prev.map(c => c.id===id ? {...c, done:nowDone} : c); return nextCommitments })
+      dbSet('commitments', nextCommitments).catch(reportSaveError)
     }
     const nextTodos = { ...todos, [storageKey]: nowDone }
     const nextWeek  = { ...weekState, [storageKey]: nowDone }
@@ -193,7 +208,9 @@ export default function App() {
     // Dual write — localStorage cache + cloud
     lsCache('todos', nextTodos)
     lsCache('weekstate', nextWeek)
-    await Promise.all([setTodos(nextTodos), setWeekState(nextWeek)])
+    try {
+      await Promise.all([setTodos(nextTodos), setWeekState(nextWeek)])
+    } catch (e) { reportSaveError(e) }
 
     if (nowDone) {
       // Add log entry on check

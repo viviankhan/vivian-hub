@@ -282,19 +282,20 @@ export default function RecurringTasksManager({ recurringTasks, updateRecurringT
     return result
   }, [recurringTasks])
 
-  // Save helpers
+  // updateRecurringTasks (in App.jsx) already surfaces cloud-write failures via
+  // alert, so a failed delete/clear no longer looks like it silently succeeded.
   const saveTasks = (tasks) => updateRecurringTasks({ tasks })
 
-  const handleSave = (task) => {
+  const handleSave = async (task) => {
     if (editing === 'new') {
-      saveTasks([...flatData, task])
+      await saveTasks([...flatData, task])
     } else {
-      saveTasks(flatData.map(t => t.id===editing.id ? task : t))
+      await saveTasks(flatData.map(t => t.id===editing.id ? task : t))
     }
     setEditing(null)
   }
-  const handleDelete = () => {
-    saveTasks(flatData.filter(t => t.id !== editing.id))
+  const handleDelete = async () => {
+    await saveTasks(flatData.filter(t => t.id !== editing.id))
     setEditing(null)
   }
   // Wait for the cloud write to finish before closing — prevents a fast refresh
