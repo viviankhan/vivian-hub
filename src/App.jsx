@@ -258,13 +258,9 @@ export default function App() {
       <header className="header">
         <div className="header-top">
           <div>
-            <p className="header-eyebrow">Vivian Khan — Spring 2026</p>
             <h1 className="header-title">Bloom</h1>
           </div>
           <div className="header-badges">
-            Lawrence University<br/>
-            Biology + YeastScreen<br/>
-            MD-PhD Immunology<br/>
             <span className={`storage-badge ${isUsingSupabase ? 'cloud' : 'local'}`}>
               {isUsingSupabase ? 'Cloud sync on' : 'Local storage'}
             </span>

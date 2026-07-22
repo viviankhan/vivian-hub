@@ -205,3 +205,7 @@ export async function deleteStudyFile(id, weekId, storagePath) {
 // ── Recurring Tasks (editable weekly schedule templates) ───────
 export const getRecurringTasks = () => dbGet('recurring_tasks').then(v => v ?? null)
 export const setRecurringTasks = v  => dbSet('recurring_tasks', v)
+
+// ── Personal Info (editable "About" page — no hardcoded content) ─
+export const getInfo = () => dbGet('profile_info').then(v => v ?? null)
+export const setInfo = v  => dbSet('profile_info', v)

@@ -1,72 +1,29 @@
 // src/components/Info.jsx
+// Fully editable "About" page — no hardcoded personal content. Every
+// section starts empty and is filled in / edited from the UI, persisted
+// to the cloud the same way Routines and Recurring Tasks are.
+import { useState, useEffect } from 'react'
+import { getInfo, setInfo } from '../lib/storage.js'
 
-const INFO = {
-  profile: {
-    name: 'Vivian Khan',
-    school: 'Lawrence University, Appleton WI',
-    year: 'Senior — graduating May 2026',
-    major: 'Biology (dropped Neuroscience)',
-    housing: 'Fox Commons',
-    goal: 'MD-PhD in immunology / autoimmune disease research',
-    boyfriend: 'Aidan — daily calls 7–9 PM, protect this block',
-  },
-  thesis: {
-    title: 'Using Yeast to Investigate a Promising Therapeutic Target for Hepatitis B',
-    advisor: 'Dr. Kim Dickson',
-    status: 'Statement of intent submitted 3/30/26',
-  },
-  classes: [
-    { code:'BIOL 505', name:'Coral Reef Environments', time:'MWF 9:50–11:00 AM + Thu lab 1–4 PM', room:'Youngchild 316 / 321', instructor:'Dr. Margaret Malone', email:'margaret.malone@lawrence.edu', office:'Youngchild 307, Wed 12:30–2:30 PM', note:'' },
-    { code:'BIOL 433', name:'Ecological Energetics', time:'Tu/Th 10:25–12:10 PM', room:'Youngchild 316', instructor:'Dr. Margaret Malone', email:'margaret.malone@lawrence.edu', office:'', note:'' },
-    { code:'BIOL 651', name:'Biology Senior Capstone II', time:'Mon 3:10–4:20 PM', room:'Steitz 202 (some weeks Briggs 420)', instructor:'Rose Theisen', email:'rose.theisen@lawrence.edu', office:'', note:'SE advisor meeting graded, due May 1 — NOT YET SCHEDULED ⚠️' },
-    { code:'YeastScreen', name:'Honors Thesis Research', time:'Daily ~8 AM, ~30 hrs/week', room:'Bench', instructor:'Dr. Kim Dickson', email:'kimberly.dickson@lawrence.edu', office:'Steitz 333', note:'' },
-  ],
-  contacts: [
-    { name:'Dr. Kim Dickson',    detail:'kimberly.dickson@lawrence.edu · 920-832-7039 · Steitz 333' },
-    { name:'Dr. Margaret Malone', detail:'margaret.malone@lawrence.edu · Youngchild 307 · Office hrs Wed 12:30–2:30 PM' },
-    { name:'Rose Theisen',       detail:'rose.theisen@lawrence.edu (Capstone advisor / SE advisor)' },
-    { name:'TA Ellie Carrothers', detail:'ellie.r.carrothers@lawrence.edu' },
-    { name:'Carla Molder (Honors)', detail:'carla.molder@lawrence.edu' },
-  ],
-  applications: ['Yale PREP', 'Fred Hutch', 'Stanford Medicine', 'WashU DCBRM', 'Broad Institute'],
-  logistics: [
-    'Walk Fox Commons → Andrew Commons: 15 min',
-    'Walk Youngchild → Commons: ~10 min',
-    'Commons M–F: 7:30 AM–2 PM, 4:30–9 PM',
-    'Commons Sat–Sun: 9 AM–2 PM, 4:30–7:30 PM',
-    'Sleep: 10:30 PM – 6:00 AM weekdays · 8:30 AM weekends',
-  ],
-  labProtocols: [
-    'PCR: ~30 min if recipe ready · ~2 hrs if setting up from scratch',
-    'Gel + purification: ~3 hrs total',
-    'Can leave samples in biomass buffer B3 during class',
-  ],
-  schedRules: [
-    'Always ≥10 min buffer between events requiring travel',
-    'Never end one event at the exact start of the next unless same room',
-    'Never assume tasks done unless Vivian explicitly confirms',
-    'Never pre-check anything she hasn\'t said she completed',
-    'Todo IDs must never be renamed once used — breaks persistence',
-    'Carry-forward only applies to tasks with carry:true — never daily repeats',
-    'Don\'t change visual style unless asked',
-  ],
-  bonaire: {
-    depart: 'Sat Apr 18, 2026 @ 1:30 AM',
-    return: 'Sun May 3, 2026 @ 1:30 AM',
-    note: 'No Lawrence classes during this period. Field work on Bonaire reefs.',
-  },
+const EMPTY_INFO = {
+  profile:      [], // [{key, value}]
+  thesis:       { title:'', advisor:'', status:'' },
+  classes:      [], // [{code,name,time,room,instructor,email,office,note}]
+  applications: [], // [{text}]
+  contacts:     [], // [{name,detail}]
+  trips:        [], // [{label,depart,return,note}]
+  logistics:    [], // [{text}]
+  labProtocols: [], // [{text}]
+  schedRules:   [], // [{text}]
 }
 
-function Section({ title, children }) {
-  return (
-    <div className="info-section" style={{ marginBottom:14 }}>
-      <div className="card-header">
-        <span className="card-header-title">{title}</span>
-      </div>
-      <div style={{ padding:'12px 18px' }}>{children}</div>
-    </div>
-  )
+function reportError(e) {
+  console.error(e)
+  alert(`⚠️ ${e.message || e}\n\nThis change was NOT saved to the cloud and may revert. Check your connection and try again.`)
 }
+
+const inputStyle = { fontSize:12, padding:'7px 10px', marginBottom:0 }
+const pillBtn = (bg, color, border) => ({ fontSize:11, padding:'5px 12px', borderRadius:20, border, background:bg, color, cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:600 })
 
 function Row({ k, v }) {
   return (
@@ -77,77 +34,259 @@ function Row({ k, v }) {
   )
 }
 
+// ── Card chrome shared by every section — Edit / Save / Cancel ───
+function Card({ title, editing, saving, onEdit, onSave, onCancel, children }) {
+  return (
+    <div className="info-section" style={{ marginBottom:14 }}>
+      <div className="card-header">
+        <span className="card-header-title">{title}</span>
+        <div style={{ display:'flex', gap:6 }}>
+          {!editing ? (
+            <button onClick={onEdit} style={pillBtn('rgba(255,255,255,.1)', 'var(--green-light)', '1px solid rgba(255,255,255,.25)')}>✏️ Edit</button>
+          ) : (
+            <>
+              <button onClick={onSave} disabled={saving} style={{ ...pillBtn('var(--teal)', 'white', 'none'), opacity:saving?.6:1, cursor:saving?'default':'pointer' }}>{saving?'Saving…':'Save'}</button>
+              <button onClick={onCancel} disabled={saving} style={pillBtn('rgba(255,255,255,.1)', 'var(--green-light)', '1px solid rgba(255,255,255,.25)')}>Cancel</button>
+            </>
+          )}
+        </div>
+      </div>
+      <div style={{ padding:'12px 18px' }}>{children}</div>
+    </div>
+  )
+}
+
+// ── Generic list-of-rows editor (used for classes, contacts, trips,
+//    and every plain string list — the latter as single-field rows) ──
+function ListSection({ title, value, fields, empty, onSave, renderView }) {
+  const [editing, setEditing] = useState(false)
+  const [local,   setLocal]   = useState(value)
+  const [saving,  setSaving]  = useState(false)
+
+  useEffect(() => { if (!editing) setLocal(value) }, [value, editing])
+
+  const startEdit = () => { setLocal(value); setEditing(true) }
+  const cancel    = () => { setLocal(value); setEditing(false) }
+  const save = async () => {
+    setSaving(true)
+    try { await onSave(local); setEditing(false) }
+    catch (e) { reportError(e) }
+    finally { setSaving(false) }
+  }
+  const updateRow = (i, patch) => setLocal(prev => prev.map((r,j) => j===i ? { ...r, ...patch } : r))
+  const deleteRow = (i) => setLocal(prev => prev.filter((_,j) => j!==i))
+  const addRow    = () => setLocal(prev => [...prev, Object.fromEntries(fields.map(f => [f.key, '']))])
+
+  return (
+    <Card title={title} editing={editing} saving={saving} onEdit={startEdit} onSave={save} onCancel={cancel}>
+      {editing ? (
+        <>
+          {local.map((row, i) => (
+            <div key={i} style={{ display:'flex', flexWrap:'wrap', gap:6, alignItems:'center', padding:'8px 0', borderBottom:'1px solid var(--border)', marginBottom:6 }}>
+              {fields.map(f => (
+                <input key={f.key} value={row[f.key]||''} placeholder={f.label}
+                  onChange={e => updateRow(i, { [f.key]: e.target.value })}
+                  style={{ ...inputStyle, flex:f.flex||1, minWidth:f.minWidth||90 }} />
+              ))}
+              <button onClick={() => deleteRow(i)}
+                style={{ fontSize:11, padding:'6px 10px', borderRadius:8, border:'1px solid #FECACA', background:'#FFF5F5', color:'#991B1B', cursor:'pointer' }}>✕</button>
+            </div>
+          ))}
+          <button onClick={addRow}
+            style={{ fontSize:11, padding:'7px 14px', borderRadius:20, border:'1px solid var(--border)', background:'white', color:'var(--teal)', cursor:'pointer', fontFamily:'DM Sans,sans-serif', marginTop:4 }}>
+            + Add
+          </button>
+        </>
+      ) : (
+        value.length===0
+          ? <div style={{ fontSize:12, color:'var(--muted)' }}>{empty}</div>
+          : renderView(value)
+      )}
+    </Card>
+  )
+}
+
+// ── Single fixed-shape object editor (used for Thesis) ────────────
+function ObjectSection({ title, value, fields, onSave, renderView, isEmpty }) {
+  const [editing, setEditing] = useState(false)
+  const [local,   setLocal]   = useState(value)
+  const [saving,  setSaving]  = useState(false)
+
+  useEffect(() => { if (!editing) setLocal(value) }, [value, editing])
+
+  const startEdit = () => { setLocal(value); setEditing(true) }
+  const cancel    = () => { setLocal(value); setEditing(false) }
+  const save = async () => {
+    setSaving(true)
+    try { await onSave(local); setEditing(false) }
+    catch (e) { reportError(e) }
+    finally { setSaving(false) }
+  }
+
+  return (
+    <Card title={title} editing={editing} saving={saving} onEdit={startEdit} onSave={save} onCancel={cancel}>
+      {editing ? fields.map(f => (
+        <div key={f.key} style={{ marginBottom:10 }}>
+          <div style={{ fontSize:10, color:'var(--muted)', letterSpacing:1, textTransform:'uppercase', marginBottom:4 }}>{f.label}</div>
+          {f.textarea
+            ? <textarea value={local[f.key]||''} onChange={e => setLocal(p => ({ ...p, [f.key]:e.target.value }))} style={{ ...inputStyle, minHeight:60, width:'100%', boxSizing:'border-box' }} />
+            : <input value={local[f.key]||''} onChange={e => setLocal(p => ({ ...p, [f.key]:e.target.value }))} style={{ ...inputStyle, width:'100%', boxSizing:'border-box' }} />}
+        </div>
+      )) : (
+        isEmpty(value) ? <div style={{ fontSize:12, color:'var(--muted)' }}>Nothing here yet — tap Edit to add it.</div> : renderView(value)
+      )}
+    </Card>
+  )
+}
+
 export default function Info() {
+  const [info, setInfoState] = useState(EMPTY_INFO)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    getInfo().then(v => {
+      setInfoState(v ? { ...EMPTY_INFO, ...v } : EMPTY_INFO)
+      setLoading(false)
+    })
+  }, [])
+
+  const saveSection = async (key, value) => {
+    const next = { ...info, [key]: value }
+    await setInfo(next)
+    setInfoState(next)
+  }
+
+  if (loading) return <div style={{ padding:20, color:'var(--muted)', fontSize:13 }}>Loading…</div>
+
   return (
     <div>
-      <div className="page-title">About Vivian</div>
-      <div className="page-sub">Accumulated profile — updated each session</div>
+      <div className="page-title">About You</div>
+      <div className="page-sub">Tap ✏️ Edit on any section to fill it in — everything saves to the cloud</div>
 
-      <Section title="Personal Profile">
-        {Object.entries(INFO.profile).map(([k, v]) => (
-          <Row key={k} k={k.replace(/([A-Z])/g,' $1').toLowerCase()} v={v} />
-        ))}
-      </Section>
+      <ListSection title="Personal Profile" value={info.profile}
+        fields={[{ key:'key', label:'Field (e.g. school)', flex:.8, minWidth:120 }, { key:'value', label:'Value', flex:1.6, minWidth:140 }]}
+        empty="No profile fields yet — tap Edit to add name, school, year, goal, etc."
+        onSave={v => saveSection('profile', v)}
+        renderView={rows => rows.map((r,i) => <Row key={i} k={r.key} v={r.value} />)}
+      />
 
-      <Section title="Honors Thesis">
-        <div style={{ fontFamily:'Cormorant Garamond, serif', fontSize:15, fontStyle:'italic', color:'var(--text)', marginBottom:8 }}>
-          "{INFO.thesis.title}"
-        </div>
-        <Row k="Advisor" v={INFO.thesis.advisor} />
-        <Row k="Status"  v={INFO.thesis.status}  />
-      </Section>
+      <ObjectSection title="Thesis / Research" value={info.thesis}
+        fields={[{ key:'title', label:'Title', textarea:true }, { key:'advisor', label:'Advisor' }, { key:'status', label:'Status' }]}
+        isEmpty={t => !t.title && !t.advisor && !t.status}
+        onSave={v => saveSection('thesis', v)}
+        renderView={t => (
+          <>
+            {t.title && <div style={{ fontFamily:'Cormorant Garamond, serif', fontSize:15, fontStyle:'italic', color:'var(--text)', marginBottom:8 }}>"{t.title}"</div>}
+            {t.advisor && <Row k="Advisor" v={t.advisor} />}
+            {t.status && <Row k="Status" v={t.status} />}
+          </>
+        )}
+      />
 
-      <Section title="Spring 2026 Classes">
-        {INFO.classes.map(c => (
-          <div key={c.code} style={{ paddingBottom:10, marginBottom:10, borderBottom:'1px solid var(--border)' }}>
-            <div style={{ fontSize:11, color:'#6B8060', letterSpacing:1 }}>{c.code}</div>
-            <div className="serif" style={{ fontSize:16, fontWeight:600, color:'var(--text)', margin:'2px 0' }}>{c.name}</div>
-            <div style={{ fontSize:12, color:'var(--text-light)' }}>{c.time} · {c.room}</div>
-            <div style={{ fontSize:12, color:'var(--text-light)' }}>{c.instructor} · <a href={`mailto:${c.email}`} style={{ color:'#6B8060' }}>{c.email}</a></div>
+      <ListSection title="Classes" value={info.classes}
+        fields={[
+          { key:'code', label:'Code', flex:.5, minWidth:80 },
+          { key:'name', label:'Class name', flex:1.6, minWidth:140 },
+          { key:'time', label:'Time', flex:1, minWidth:130 },
+          { key:'room', label:'Room', flex:.8, minWidth:100 },
+          { key:'instructor', label:'Instructor', flex:1, minWidth:120 },
+          { key:'email', label:'Email', flex:1.2, minWidth:150 },
+          { key:'office', label:'Office hours', flex:1.2, minWidth:130 },
+          { key:'note', label:'Note', flex:2, minWidth:160 },
+        ]}
+        empty="No classes added yet."
+        onSave={v => saveSection('classes', v)}
+        renderView={rows => rows.map((c,i) => (
+          <div key={i} style={{ paddingBottom:10, marginBottom:10, borderBottom:i<rows.length-1?'1px solid var(--border)':'none' }}>
+            {c.code && <div style={{ fontSize:11, color:'#6B8060', letterSpacing:1 }}>{c.code}</div>}
+            {c.name && <div className="serif" style={{ fontSize:16, fontWeight:600, color:'var(--text)', margin:'2px 0' }}>{c.name}</div>}
+            {(c.time || c.room) && <div style={{ fontSize:12, color:'var(--text-light)' }}>{c.time}{c.time && c.room ? ' · ' : ''}{c.room}</div>}
+            {(c.instructor || c.email) && (
+              <div style={{ fontSize:12, color:'var(--text-light)' }}>
+                {c.instructor}{c.instructor && c.email ? ' · ' : ''}
+                {c.email && <a href={`mailto:${c.email}`} style={{ color:'#6B8060' }}>{c.email}</a>}
+              </div>
+            )}
+            {c.office && <div style={{ fontSize:11, color:'var(--muted)' }}>{c.office}</div>}
             {c.note && <div style={{ fontSize:11, color:'#EF4444', marginTop:3 }}>⚠️ {c.note}</div>}
           </div>
         ))}
-      </Section>
+      />
 
-      <Section title="MD-PhD Applications">
-        {INFO.applications.map(a => (
-          <div key={a} style={{ display:'flex', gap:8, padding:'5px 0', borderBottom:'1px solid var(--border)' }}>
-            <span style={{ color:'#D97706' }}>→</span>
-            <span style={{ fontSize:13, color:'var(--text)' }}>{a}</span>
+      <ListSection title="Applications" value={info.applications}
+        fields={[{ key:'text', label:'Application / program name', flex:1 }]}
+        empty="No applications added yet."
+        onSave={v => saveSection('applications', v)}
+        renderView={rows => rows.map((r,i) => (
+          <div key={i} style={{ display:'flex', gap:8, padding:'5px 0', borderBottom:i<rows.length-1?'1px solid var(--border)':'none' }}>
+            <span style={{ color:'#D97706' }}>→</span><span style={{ fontSize:13, color:'var(--text)' }}>{r.text}</span>
           </div>
         ))}
-      </Section>
+      />
 
-      <Section title="Key Contacts">
-        {INFO.contacts.map(c => (
-          <div key={c.name} style={{ padding:'6px 0', borderBottom:'1px solid var(--border)' }}>
+      <ListSection title="Key Contacts" value={info.contacts}
+        fields={[{ key:'name', label:'Name', flex:1, minWidth:120 }, { key:'detail', label:'Email / phone / office / notes', flex:2, minWidth:200 }]}
+        empty="No contacts added yet."
+        onSave={v => saveSection('contacts', v)}
+        renderView={rows => rows.map((c,i) => (
+          <div key={i} style={{ padding:'6px 0', borderBottom:i<rows.length-1?'1px solid var(--border)':'none' }}>
             <div style={{ fontSize:12, fontWeight:600, color:'var(--text)' }}>{c.name}</div>
             <div style={{ fontSize:12, color:'var(--text-light)' }}>{c.detail}</div>
           </div>
         ))}
-      </Section>
+      />
 
-      <Section title="Bonaire Trip">
-        <Row k="Depart" v={INFO.bonaire.depart} />
-        <Row k="Return" v={INFO.bonaire.return} />
-        <Row k="Note"   v={INFO.bonaire.note}   />
-      </Section>
-
-      <Section title="Logistics">
-        {INFO.logistics.concat(INFO.labProtocols).map((item, i) => (
-          <div key={i} style={{ display:'flex', gap:8, padding:'5px 0', borderBottom:'1px solid var(--border)', fontSize:12, color:'#4A4035' }}>
-            <span style={{ color:'#52B788', flexShrink:0 }}>—</span>{item}
+      <ListSection title="Trips" value={info.trips}
+        fields={[
+          { key:'label', label:'Trip name', flex:1, minWidth:120 },
+          { key:'depart', label:'Depart', flex:1, minWidth:150 },
+          { key:'return', label:'Return', flex:1, minWidth:150 },
+          { key:'note', label:'Note', flex:1.4, minWidth:160 },
+        ]}
+        empty="No trips added yet."
+        onSave={v => saveSection('trips', v)}
+        renderView={rows => rows.map((t,i) => (
+          <div key={i} style={{ paddingBottom:8, marginBottom:8, borderBottom:i<rows.length-1?'1px solid var(--border)':'none' }}>
+            {t.label && <div style={{ fontSize:13, fontWeight:600, color:'var(--text)', marginBottom:4 }}>{t.label}</div>}
+            {t.depart && <Row k="Depart" v={t.depart} />}
+            {t.return && <Row k="Return" v={t.return} />}
+            {t.note && <Row k="Note" v={t.note} />}
           </div>
         ))}
-      </Section>
+      />
 
-      <Section title="Scheduling Rules Claude Must Follow">
-        {INFO.schedRules.map((r, i) => (
-          <div key={i} style={{ display:'flex', gap:8, padding:'5px 0', borderBottom:'1px solid var(--border)', fontSize:12, color:'#4A4035' }}>
-            <span style={{ color:'#EF4444', flexShrink:0 }}>✗</span>{r}
+      <ListSection title="Logistics" value={info.logistics}
+        fields={[{ key:'text', label:'Logistics note', flex:1 }]}
+        empty="No logistics notes yet."
+        onSave={v => saveSection('logistics', v)}
+        renderView={rows => rows.map((r,i) => (
+          <div key={i} style={{ display:'flex', gap:8, padding:'5px 0', borderBottom:i<rows.length-1?'1px solid var(--border)':'none', fontSize:12, color:'#4A4035' }}>
+            <span style={{ color:'#52B788', flexShrink:0 }}>—</span>{r.text}
           </div>
         ))}
-      </Section>
+      />
+
+      <ListSection title="Lab Protocols" value={info.labProtocols}
+        fields={[{ key:'text', label:'Protocol note', flex:1 }]}
+        empty="No lab protocol notes yet."
+        onSave={v => saveSection('labProtocols', v)}
+        renderView={rows => rows.map((r,i) => (
+          <div key={i} style={{ display:'flex', gap:8, padding:'5px 0', borderBottom:i<rows.length-1?'1px solid var(--border)':'none', fontSize:12, color:'#4A4035' }}>
+            <span style={{ color:'#52B788', flexShrink:0 }}>—</span>{r.text}
+          </div>
+        ))}
+      />
+
+      <ListSection title="Scheduling Rules Claude Must Follow" value={info.schedRules}
+        fields={[{ key:'text', label:'Rule', flex:1 }]}
+        empty="No rules added yet."
+        onSave={v => saveSection('schedRules', v)}
+        renderView={rows => rows.map((r,i) => (
+          <div key={i} style={{ display:'flex', gap:8, padding:'5px 0', borderBottom:i<rows.length-1?'1px solid var(--border)':'none', fontSize:12, color:'#4A4035' }}>
+            <span style={{ color:'#EF4444', flexShrink:0 }}>✗</span>{r.text}
+          </div>
+        ))}
+      />
     </div>
   )
 }
