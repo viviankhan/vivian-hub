@@ -2,6 +2,7 @@
 import { useState, useEffect } from 'react'
 import { findSlots } from '../lib/scheduler.js'
 import { Icon } from './IconPicker.jsx'
+import { bloomBurst } from '../lib/bloom.js'
 
 const DAYS = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday']
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
@@ -395,7 +396,7 @@ function CommitCard({ c, todos, weekState, syncToggle, onDelete, onSchedule, sch
   return (
     <div style={{ background:bg, borderRadius:12, border:`1px solid ${borderColor}`, padding:'14px 16px', marginBottom:8, opacity: done ? .55 : 1 }}>
       <div style={{ display:'flex', gap:10, alignItems:'flex-start' }}>
-        <div onClick={() => syncToggle(c.id, c.text, c.cat)}
+        <div onClick={e => { if (!done) bloomBurst(e.currentTarget); syncToggle(c.id, c.text, c.cat) }}
           style={{ width:20, height:20, borderRadius:'50%', flexShrink:0, marginTop:2, cursor:'pointer', border: done ? 'none' : `2px solid ${cat.color}`, background: done ? cat.color : 'transparent', display:'flex', alignItems:'center', justifyContent:'center' }}>
           {done && <span style={{ color:'white', fontSize:11, fontWeight:700 }}>✓</span>}
         </div>
