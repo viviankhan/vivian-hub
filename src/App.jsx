@@ -24,6 +24,8 @@ import RecurringTasksManager, { flatToPerDay } from './components/RecurringTasks
 import Routines from './components/Routines.jsx'
 import CategoriesManager from './components/CategoriesManager.jsx'
 import EventsManager from './components/EventsManager.jsx'
+import NotificationsSettings from './components/NotificationsSettings.jsx'
+import { registerServiceWorker, syncReminders } from './lib/notifications.js'
 
 const TABS = [
   { id:'today',       label:'Today'       },
@@ -39,7 +41,7 @@ function todayStr() {
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
 }
 // ── Settings Drawer ────────────────────────────────────────────
-function SettingsDrawer({ open, onClose, settingsTab, setSettingsTab, notes, updateNotes, categories, addCategory, updateCategory, deleteCategory }) {
+function SettingsDrawer({ open, onClose, settingsTab, setSettingsTab, notes, updateNotes, categories, addCategory, updateCategory, deleteCategory, events, commitments }) {
   if (!open) return null
   return (
     <>
@@ -50,17 +52,18 @@ function SettingsDrawer({ open, onClose, settingsTab, setSettingsTab, notes, upd
           <button onClick={onClose} style={{ background:'rgba(255,255,255,.1)', border:'none', color:'var(--green-light)', borderRadius:8, width:32, height:32, cursor:'pointer', fontSize:18, fontFamily:'DM Sans,sans-serif' }}>✕</button>
         </div>
         <div style={{ display:'flex', borderBottom:'1px solid var(--border)', background:'white' }}>
-          {[['routines','Routines'],['categories','Categories'],['notes','Notes'],['edits','Edits']].map(([id,label]) => (
+          {[['routines','Routines'],['reminders','Reminders'],['categories','Categories'],['notes','Notes'],['edits','Edits']].map(([id,label]) => (
             <button key={id} onClick={()=>setSettingsTab(id)}
-              style={{ flex:1, padding:'11px 8px', border:'none', borderBottom:`2px solid ${settingsTab===id?'var(--teal)':'transparent'}`,
+              style={{ flex:1, padding:'11px 6px', border:'none', borderBottom:`2px solid ${settingsTab===id?'var(--teal)':'transparent'}`,
                 background:'transparent', color:settingsTab===id?'var(--teal)':'var(--muted)', cursor:'pointer',
-                fontFamily:'DM Sans,sans-serif', fontSize:11, fontWeight:600, letterSpacing:1, textTransform:'uppercase', transition:'all .2s' }}>
+                fontFamily:'DM Sans,sans-serif', fontSize:10, fontWeight:600, letterSpacing:.5, textTransform:'uppercase', transition:'all .2s' }}>
               {label}
             </button>
           ))}
         </div>
         <div style={{ padding:'20px 24px' }}>
           {settingsTab==='routines'   && <Routines />}
+          {settingsTab==='reminders'  && <NotificationsSettings events={events} commitments={commitments} />}
           {settingsTab==='categories' && <CategoriesManager categories={categories} addCategory={addCategory} updateCategory={updateCategory} deleteCategory={deleteCategory} />}
           {settingsTab==='notes'      && <Notes notes={notes} updateNotes={updateNotes} />}
           {settingsTab==='edits'      && <Edits />}
@@ -119,6 +122,23 @@ export default function App() {
     }
     load()
   }, [])
+
+  // ── Reminders / PWA ──────────────────────────────────────────
+  // Register the service worker once (enables installability + lets reminders
+  // show even when the tab is backgrounded).
+  useEffect(() => { registerServiceWorker() }, [])
+
+  // Recompute reminders whenever the data that drives them changes, and again
+  // each time the app is brought back to the foreground (so it "catches up" on
+  // anything that came due while it was closed). No-ops unless the user has
+  // turned reminders on in Settings.
+  useEffect(() => {
+    if (loading) return
+    syncReminders(events, commitments)
+    const onVis = () => { if (!document.hidden) syncReminders(events, commitments) }
+    document.addEventListener('visibilitychange', onVis)
+    return () => document.removeEventListener('visibilitychange', onVis)
+  }, [loading, events, commitments])
 
   // ── Derived schedule ─────────────────────────────────────────
   // recurring_tasks is now a real table (one row per task) — always the flat
@@ -351,7 +371,8 @@ export default function App() {
         settingsTab={settingsTab} setSettingsTab={setSettingsTab}
         notes={notes} updateNotes={updateNotes}
         categories={categories} addCategory={addCategoryFn}
-        updateCategory={updateCategoryFn} deleteCategory={deleteCategoryFn} />
+        updateCategory={updateCategoryFn} deleteCategory={deleteCategoryFn}
+        events={events} commitments={commitments} />
     </div>
   )
 }

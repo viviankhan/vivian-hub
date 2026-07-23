@@ -1,0 +1,17 @@
+{
+  "name": "Bloom",
+  "short_name": "Bloom",
+  "description": "Your personal hub — commitments, events, routines, and reminders for what's coming up.",
+  "start_url": "/vivian-hub/?source=pwa",
+  "scope": "/vivian-hub/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#F8F4F0",
+  "theme_color": "#2A4858",
+  "categories": ["productivity", "lifestyle"],
+  "icons": [
+    { "src": "/vivian-hub/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/vivian-hub/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/vivian-hub/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
