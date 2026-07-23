@@ -158,7 +158,7 @@ function SlotPicker({ scheduled, onPick, onCancel, targetDate, commitmentDuratio
   })
 
   return (
-    <div style={{ background:'#FBF6E4', border:'1.5px solid var(--gold-line)', borderRadius:10, padding:'12px 14px', marginTop:10 }}>
+    <div style={{ background:'#EAF5F8', border:'1px solid #A8D8E4', borderRadius:10, padding:'12px 14px', marginTop:10 }}>
       <div style={{ display:'flex', gap:6, marginBottom:12, flexWrap:'wrap' }}>
         <button style={tabBtn(mode==='suggested')} onClick={() => { setMode('suggested'); if (!slots) search() }}>✦ Suggested times</button>
         <button style={tabBtn(mode==='manual')} onClick={() => setMode('manual')}>✎ Enter manually</button>
@@ -189,14 +189,14 @@ function SlotPicker({ scheduled, onPick, onCancel, targetDate, commitmentDuratio
           {slots && slots.map((slot, i) => (
             <div key={i}
               onClick={() => onPick({ date: slot.date, time: slot.startTime, durationMins: diffMinutes(slot.startTime, slot.endTime) })}
-              style={{ background:'white', border:'1px solid #E4D8A8', borderRadius:8, padding:'9px 12px', marginBottom:6, cursor:'pointer', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+              style={{ background:'white', border:'1px solid #C4DDE8', borderRadius:8, padding:'9px 12px', marginBottom:6, cursor:'pointer', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
               <div>
                 <div style={{ fontFamily:'Cormorant Garamond, serif', fontSize:15, color:'var(--text)', fontWeight:600 }}>
                   {targetDate && !reschedule ? '' : slot.dayLabel + ' · '}{slot.startDisplay} – {slot.endDisplay}
                 </div>
                 <div style={{ fontSize:11, color:'var(--muted)', marginTop:1 }}>{slot.context}</div>
               </div>
-              <span style={{ fontSize:10, letterSpacing:1, textTransform:'uppercase', padding:'4px 10px', borderRadius:12, background:'var(--gold)', color:'#4A3B08', fontWeight:700 }}>Pick →</span>
+              <span style={{ fontSize:10, letterSpacing:1, textTransform:'uppercase', padding:'4px 10px', borderRadius:12, background:'#4A9EB5', color:'white', fontWeight:600 }}>Pick →</span>
             </div>
           ))}
         </>
@@ -230,7 +230,7 @@ function SlotPicker({ scheduled, onPick, onCancel, targetDate, commitmentDuratio
             </div>
           )}
           <button onClick={saveManual} disabled={!canSaveManual}
-            style={{ width:'100%', background: canSaveManual ? 'linear-gradient(135deg, var(--gold-light), var(--gold))' : '#E5E7EB', color: canSaveManual ? '#4A3B08' : '#9CA3AF', border:'none', borderRadius:10, padding:'9px', fontSize:12, fontWeight:700, cursor: canSaveManual ? 'pointer' : 'default', fontFamily:'DM Sans,sans-serif' }}>
+            style={{ width:'100%', background: canSaveManual ? 'linear-gradient(135deg, #4A9EB5, #7BBFD4)' : '#E5E7EB', color: canSaveManual ? 'white' : '#9CA3AF', border:'none', borderRadius:10, padding:'9px', fontSize:12, fontWeight:600, cursor: canSaveManual ? 'pointer' : 'default', fontFamily:'DM Sans,sans-serif' }}>
             {reschedule ? 'Reschedule' : 'Set time'}
           </button>
         </>
@@ -275,14 +275,14 @@ function QuickAdd({ onAdd, categories }) {
 
   if (!open) return (
     <button onClick={() => setOpen(true)}
-      style={{ width:'100%', background:'linear-gradient(135deg, var(--gold-light), var(--gold))', border:'1px solid var(--gold-deep)', borderRadius:14, padding:'14px 18px', cursor:'pointer', display:'flex', alignItems:'center', gap:10, marginBottom:16 }}>
-      <span style={{ fontSize:20, color:'#4A3B08' }}>+</span>
-      <span style={{ fontFamily:'DM Sans, sans-serif', fontSize:13, color:'#4A3B08', fontWeight:700 }}>Add a commitment</span>
+      style={{ width:'100%', background:'linear-gradient(135deg, #7BBFD4, #C8BFDF)', border:'none', borderRadius:14, padding:'14px 18px', cursor:'pointer', display:'flex', alignItems:'center', gap:10, marginBottom:16 }}>
+      <span style={{ fontSize:20 }}>+</span>
+      <span style={{ fontFamily:'DM Sans, sans-serif', fontSize:13, color:'#1A3A4E', fontWeight:600 }}>Add a commitment</span>
     </button>
   )
 
   return (
-    <div style={{ background:'white', borderRadius:14, border:'1.5px solid var(--gold-line)', padding:'18px', marginBottom:16 }}>
+    <div style={{ background:'white', borderRadius:14, border:'2px solid #A8D0E0', padding:'18px', marginBottom:16 }}>
       <div className="serif" style={{ fontSize:18, fontWeight:600, color:'var(--text)', marginBottom:14 }}>New Commitment</div>
 
       <textarea value={text} onChange={e => setText(e.target.value)}
@@ -354,7 +354,7 @@ function QuickAdd({ onAdd, categories }) {
 
       <div style={{ display:'flex', gap:8 }}>
         <button onClick={submit} disabled={!text.trim()}
-          style={{ flex:1, background: text.trim() ? 'linear-gradient(135deg, var(--gold-light), var(--gold))' : '#E5E7EB', color: text.trim() ? '#4A3B08' : '#9CA3AF', border:'none', borderRadius:10, padding:'10px', fontSize:13, fontWeight:700, cursor: text.trim() ? 'pointer' : 'default', fontFamily:'DM Sans, sans-serif' }}>
+          style={{ flex:1, background: text.trim() ? 'linear-gradient(135deg, #4A9EB5, #7BBFD4)' : '#E5E7EB', color: text.trim() ? 'white' : '#9CA3AF', border:'none', borderRadius:10, padding:'10px', fontSize:13, fontWeight:600, cursor: text.trim() ? 'pointer' : 'default', fontFamily:'DM Sans, sans-serif' }}>
           Save commitment
         </button>
         <button onClick={reset}
@@ -381,7 +381,7 @@ function CommitCard({ c, todos, weekState, syncToggle, onDelete, onSchedule, sch
   let borderColor = 'var(--border)', bg = 'white'
   if (done)         { bg = '#F8F6F8'; borderColor = '#E0D4DC' }
   else if (past)    { bg = '#FDF4F6'; borderColor = '#F0C4CC' }
-  else if (today)   { bg = '#FBF6E4'; borderColor = 'var(--gold-line)' }
+  else if (today)   { bg = '#EAF5F8'; borderColor = '#A8D8E4' }
   else if (soon)    { bg = '#FAF5EC'; borderColor = '#E4D0A8' }
   else if (unscheduled) { borderColor = '#E0D4DC' }
 
@@ -410,7 +410,7 @@ function CommitCard({ c, todos, weekState, syncToggle, onDelete, onSchedule, sch
           {c.person && <div style={{ fontSize:11, color:'var(--muted)', marginBottom:4 }}>With: {c.person}</div>}
           <div style={{ display:'flex', gap:8, flexWrap:'wrap', alignItems:'center' }}>
             {c.date && (
-              <span style={{ fontSize:11, color: past ? '#B44A6A' : today ? '#8A6D1A' : 'var(--muted)', fontWeight: (today||past) ? 600 : 400 }}>
+              <span style={{ fontSize:11, color: past ? '#B44A6A' : today ? '#2A7A90' : 'var(--muted)', fontWeight: (today||past) ? 600 : 400 }}>
                 {formatDate(c.date)}{c.time ? ` @ ${fmt12(c.time)}${end ? '–'+fmt12(end) : ''}` : ''}
               </span>
             )}
@@ -418,7 +418,7 @@ function CommitCard({ c, todos, weekState, syncToggle, onDelete, onSchedule, sch
             {c.prepMin && <span style={{ fontSize:11, color:'var(--muted)' }}>Leave {c.prepMin} min early</span>}
             <span style={{ display:'inline-flex', alignItems:'center', gap:3, fontSize:10, padding:'2px 8px', borderRadius:10, background:cat.bg, color:cat.color, fontWeight:500 }}>{cat.icon && <Icon value={cat.icon} size={11} />}{cat.label}</span>
             {past  && !done && <span style={{ fontSize:10, padding:'2px 8px', borderRadius:10, background:'#FBF0F4', color:'#B44A6A', fontWeight:600 }}>PAST DUE</span>}
-            {today && !done && <span style={{ fontSize:10, padding:'2px 8px', borderRadius:10, background:'#F1E4B8', color:'#6B5210', fontWeight:600 }}>TODAY</span>}
+            {today && !done && <span style={{ fontSize:10, padding:'2px 8px', borderRadius:10, background:'#D4EEF4', color:'#2A7A90', fontWeight:600 }}>TODAY</span>}
             {unscheduled && !done && <span style={{ fontSize:10, padding:'2px 8px', borderRadius:10, background:'#F3F4F6', color:'#6B7280' }}>Unscheduled</span>}
             {needsTime && !done && <span style={{ fontSize:10, padding:'2px 8px', borderRadius:10, background:'#FAF3EC', color:'#8A6030', fontWeight:500 }}>⏰ No time set</span>}
           </div>
@@ -440,7 +440,7 @@ function CommitCard({ c, todos, weekState, syncToggle, onDelete, onSchedule, sch
             <button
               onClick={e => { e.stopPropagation(); setShowScheduler(s => !s) }}
               title="Find a time slot for this"
-              style={{ fontSize:10, letterSpacing:.5, textTransform:'uppercase', padding:'4px 10px', borderRadius:10, border:'1px solid var(--gold-line)', background: showScheduler ? 'var(--gold)' : '#FBF6E4', color: showScheduler ? '#4A3B08' : '#8A6D1A', cursor:'pointer', fontFamily:'DM Sans, sans-serif', fontWeight:700, whiteSpace:'nowrap' }}
+              style={{ fontSize:10, letterSpacing:.5, textTransform:'uppercase', padding:'4px 10px', borderRadius:10, border:'1px solid #A8D8E4', background: showScheduler ? '#4A9EB5' : '#EAF5F8', color: showScheduler ? 'white' : '#2A7A90', cursor:'pointer', fontFamily:'DM Sans, sans-serif', fontWeight:600, whiteSpace:'nowrap' }}
             >
               {showScheduler ? 'Cancel' : unscheduled ? '🗓 Find time' : '⏰ Find time'}
             </button>
@@ -518,7 +518,7 @@ export default function Commitments({ commitments, addCommitment, updateCommitme
 
   // Filter tabs: label, id, count, and an accent color when active.
   const TABS = [
-    { id:'toschedule',  label:'To schedule', count:toScheduleCount, active:'linear-gradient(135deg, var(--gold-light), var(--gold))', activeText:'#4A3B08' },
+    { id:'toschedule',  label:'To schedule', count:toScheduleCount, active:'linear-gradient(135deg, #7BBFD4, #C8BFDF)', activeText:'#1A3A4E' },
     { id:'pastdue',     label:'Past due',    count:pastCount,        active:'#FEE2E2', activeText:'#DC2626' },
     { id:'unscheduled', label:'Unscheduled', count:unscheduled,      active:'#E4F5F8', activeText:'#2A7A90' },
     { id:'scheduled',   label:'Scheduled',   count:scheduledCount,   active:'#DDF0E4', activeText:'#2F6B4F' },

@@ -83,10 +83,10 @@ function EventSection({ events, addEvent, deleteEvent }) {
 
       {/* Undo bar for the last deleted event */}
       {justDeleted && (
-        <div style={{ display:'flex', alignItems:'center', gap:10, padding:'9px 14px', background:'#FBF6E4', border:'1px solid var(--gold-line)', borderRadius:10, marginBottom:6 }}>
+        <div style={{ display:'flex', alignItems:'center', gap:10, padding:'9px 14px', background:'#EAF5F8', border:'1px solid #A8D8E4', borderRadius:10, marginBottom:6 }}>
           <span style={{ fontSize:12, color:'var(--text)', flex:1 }}>Deleted <b>{justDeleted.label}</b>.</span>
           <button onClick={undoDelete}
-            style={{ fontSize:11, padding:'5px 12px', borderRadius:16, border:'1px solid var(--gold-deep)', background:'var(--gold)', color:'#4A3B08', cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:700 }}>↩ Undo</button>
+            style={{ fontSize:11, padding:'5px 12px', borderRadius:16, border:'none', background:'#4A9EB5', color:'white', cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:600 }}>↩ Undo</button>
           <button onClick={() => setJustDeleted(null)}
             style={{ background:'none', border:'none', cursor:'pointer', color:'#9CA3AF', fontSize:15, padding:'0 2px' }}>✕</button>
         </div>

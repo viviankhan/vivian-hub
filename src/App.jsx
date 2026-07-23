@@ -133,67 +133,6 @@ export default function App() {
   // show even when the tab is backgrounded).
   useEffect(() => { registerServiceWorker() }, [])
 
-  // ── Gold shimmer ─────────────────────────────────────────────
-  // The gold outlines are static by default. They only come alive — a warm
-  // sheen travelling across them — while you're actively scrolling or right
-  // after you tap something. We do that by toggling a `shimmer` class on the
-  // root element; CSS keeps every shimmer animation paused until it's present.
-  // The pointer position (--mx/--my) still feeds the tap-point highlight.
-  useEffect(() => {
-    const root = document.documentElement
-    let raf = 0
-    let scrollOff = 0
-    let tapOff = 0
-
-    const startShimmer = () => root.classList.add('shimmer')
-    const stopShimmer  = () => root.classList.remove('shimmer')
-
-    // Scrolling → shimmer, and keep it on until ~600ms after motion stops.
-    const onScroll = () => {
-      startShimmer()
-      clearTimeout(scrollOff)
-      scrollOff = setTimeout(stopShimmer, 600)
-    }
-
-    // Tapping / clicking → a brief shimmer pulse from the point you touched.
-    const onDown = e => {
-      const p = e.touches?.[0] || e
-      if (p.clientX != null) {
-        root.style.setProperty('--mx', (p.clientX / window.innerWidth * 100) + '%')
-        root.style.setProperty('--my', (p.clientY / window.innerHeight * 100) + '%')
-      }
-      startShimmer()
-      clearTimeout(tapOff)
-      tapOff = setTimeout(stopShimmer, 900)
-    }
-
-    // Keep the tap-point highlight tracking the finger while it moves.
-    const onMove = e => {
-      const p = e.touches?.[0] || e
-      if (p.clientX == null || raf) return
-      raf = requestAnimationFrame(() => {
-        raf = 0
-        root.style.setProperty('--mx', (p.clientX / window.innerWidth * 100) + '%')
-        root.style.setProperty('--my', (p.clientY / window.innerHeight * 100) + '%')
-      })
-    }
-
-    window.addEventListener('scroll', onScroll, { passive: true })
-    window.addEventListener('pointerdown', onDown, { passive: true })
-    window.addEventListener('touchstart', onDown, { passive: true })
-    window.addEventListener('pointermove', onMove, { passive: true })
-    window.addEventListener('touchmove', onMove, { passive: true })
-    return () => {
-      window.removeEventListener('scroll', onScroll)
-      window.removeEventListener('pointerdown', onDown)
-      window.removeEventListener('touchstart', onDown)
-      window.removeEventListener('pointermove', onMove)
-      window.removeEventListener('touchmove', onMove)
-      clearTimeout(scrollOff); clearTimeout(tapOff)
-      if (raf) cancelAnimationFrame(raf)
-    }
-  }, [])
-
   // Recompute reminders whenever the data that drives them changes, and again
   // each time the app is brought back to the foreground (so it "catches up" on
   // anything that came due while it was closed). No-ops unless the user has

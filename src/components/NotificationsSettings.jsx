@@ -167,8 +167,8 @@ export default function NotificationsSettings({ events, commitments }) {
               <button key={opt.mins} onClick={() => toggleLead(opt.mins)}
                 style={{ fontSize:12, padding:'7px 14px', borderRadius:20, cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:600,
                   border: on ? 'none' : '1px solid var(--border)',
-                  background: on ? 'linear-gradient(135deg, var(--gold-light), var(--gold))' : 'white',
-                  color: on ? '#4A3B08' : 'var(--muted)',
+                  background: on ? 'var(--forest)' : 'white',
+                  color: on ? 'var(--green-light)' : 'var(--muted)',
                   display:'inline-flex', alignItems:'center', gap:6 }}>
                 {on && <span style={{ fontSize:11 }}>✓</span>}{opt.label}
               </button>
