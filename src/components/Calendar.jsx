@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Icon } from './IconPicker.jsx'
+import AddItemModal from './AddItemModal.jsx'
+import { setItemReminders } from '../lib/notifications.js'
 
 // Pastel shading for how busy a day is (number of events on it).
 const BUSY_SHADES = ['#F4F0FA', '#EAE1F4', '#DBC9EC', '#C9AEDF']
@@ -30,12 +32,20 @@ function endTimeFrom(start, mins) {
   return `${String(Math.floor(total/60)).padStart(2,'0')}:${String(total%60).padStart(2,'0')}`
 }
 
-export default function Calendar({ commitments, vacations, events, log, categories, jumpTo }) {
+export default function Calendar({ commitments, vacations, events, log, categories, jumpTo, addCommitment }) {
   // monthOffset shifts by whole months from the current month: 0 = this month,
   // -1 = last month, +1 = next month, and so on — unbounded either way.
   const [monthOffset, setMonthOffset] = useState(0)
   const [selected, setSelected] = useState(null)
+  const [adding, setAdding] = useState(false)
   const today = todayStr()
+
+  // Add a commitment on any date (long-term planning), with its own optional
+  // duration + reminder times. Shows immediately on the calendar + Week.
+  const handleAdd = (commitment, reminderMins) => {
+    if (addCommitment) addCommitment(commitment)
+    setItemReminders(commitment.id, reminderMins)
+  }
 
   // Jump the calendar to the month containing a given date and select it.
   const goToDate = (dateStr) => {
@@ -101,7 +111,7 @@ export default function Calendar({ commitments, vacations, events, log, categori
   return (
     <div>
       <div className="page-title">Calendar</div>
-      <div className="page-sub">Your commitments and events</div>
+      <div className="page-sub">Plan ahead — add anything to any day, with its own time, duration, and reminders.</div>
 
       <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:10, marginBottom:14, flexWrap:'wrap' }}>
         <div style={{ display:'flex', alignItems:'center', gap:8 }}>
@@ -109,12 +119,18 @@ export default function Calendar({ commitments, vacations, events, log, categori
           <div className="serif" style={{ fontSize:18, fontWeight:600, color:'var(--text)', minWidth:150, textAlign:'center' }}>{monthName} {year}</div>
           <button onClick={()=>goMonth(1)} title="Next month" style={calNavBtn}>›</button>
         </div>
-        {monthOffset !== 0 && (
-          <button onClick={()=>{ setMonthOffset(0); setSelected(null) }}
-            style={{ fontSize:11, padding:'7px 12px', borderRadius:9, border:'1px solid var(--teal)', background:'#F0FDFB', color:'var(--teal)', cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:600 }}>
-            This month
+        <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+          {monthOffset !== 0 && (
+            <button onClick={()=>{ setMonthOffset(0); setSelected(null) }}
+              style={{ fontSize:11, padding:'7px 12px', borderRadius:9, border:'1px solid var(--teal)', background:'#F0FDFB', color:'var(--teal)', cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:600 }}>
+              This month
+            </button>
+          )}
+          <button onClick={()=>setAdding(true)}
+            style={{ fontSize:11, padding:'7px 14px', borderRadius:9, border:'none', background:'var(--forest)', color:'var(--green-light)', cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:600 }}>
+            + Add
           </button>
-        )}
+        </div>
       </div>
 
       <div className="cal-scroll">
@@ -173,11 +189,20 @@ export default function Calendar({ commitments, vacations, events, log, categori
         </div>
       </div>
 
-      {selected && (selectedEvents.length > 0 || selectedSpans.length > 0 || (doneByDate[selected]?.length > 0)) && (
+      {selected && (
         <div style={{ marginTop:14, background:'white', borderRadius:14, border:'1px solid var(--border)', padding:'16px 20px' }}>
-          <div className="serif" style={{ fontSize:20, color:'var(--text)', fontWeight:600, marginBottom:10 }}>
-            {new Date(selected+'T12:00:00').toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'})}
+          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:10, marginBottom:10 }}>
+            <div className="serif" style={{ fontSize:20, color:'var(--text)', fontWeight:600 }}>
+              {new Date(selected+'T12:00:00').toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'})}
+            </div>
+            <button onClick={()=>setAdding(true)}
+              style={{ fontSize:11, padding:'6px 12px', borderRadius:9, border:'1px solid var(--teal)', background:'#F0FDFB', color:'var(--teal)', cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:600, whiteSpace:'nowrap' }}>
+              + Add to this day
+            </button>
           </div>
+          {selectedEvents.length === 0 && selectedSpans.length === 0 && !(doneByDate[selected]?.length > 0) && (
+            <div style={{ fontSize:12, color:'var(--muted)', fontStyle:'italic', paddingBottom:2 }}>Nothing scheduled yet. Use “+ Add to this day.”</div>
+          )}
           {/* Multi-day events covering this day */}
           {selectedSpans.map((ev, i) => (
             <div key={'sp'+i} style={{ display:'flex', gap:10, alignItems:'center', padding:'9px 12px', borderRadius:8, marginBottom:6, background:`${ev.color}18`, borderLeft:`4px solid ${ev.color}`, border:`1px solid ${ev.color}44` }}>
@@ -216,6 +241,15 @@ export default function Calendar({ commitments, vacations, events, log, categori
         {BUSY_SHADES.map(c => <div key={c} style={{ width:16, height:16, borderRadius:4, background:c }} />)}
         <span style={{ fontSize:11, color:'var(--muted)' }}>Busier</span>
       </div>
+
+      {adding && (
+        <AddItemModal
+          presetDate={selected || ''}
+          categories={categories}
+          onSave={handleAdd}
+          onClose={()=>setAdding(false)}
+          title="Add to calendar" />
+      )}
     </div>
   )
 }
