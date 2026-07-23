@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Icon } from './IconPicker.jsx'
 
 // Pastel shading for how busy a day is (number of events on it).
@@ -23,22 +23,27 @@ function fmt12(t) {
   return `${h % 12 || 12}:${String(m).padStart(2,'0')} ${h >= 12 ? 'PM' : 'AM'}`
 }
 
-export default function Calendar({ commitments, vacations, events, log, categories }) {
+export default function Calendar({ commitments, vacations, events, log, categories, jumpTo }) {
   // monthOffset shifts by whole months from the current month: 0 = this month,
   // -1 = last month, +1 = next month, and so on — unbounded either way.
   const [monthOffset, setMonthOffset] = useState(0)
   const [selected, setSelected] = useState(null)
-  const [query, setQuery] = useState('')
   const today = todayStr()
 
   // Jump the calendar to the month containing a given date and select it.
-  const jumpToDate = (dateStr) => {
+  const goToDate = (dateStr) => {
     const [y, m] = dateStr.split('-').map(Number)
     const nowD = new Date()
     setMonthOffset((y - nowD.getFullYear()) * 12 + (m - 1 - nowD.getMonth()))
     setSelected(dateStr)
-    setQuery('')
   }
+
+  // The global search overlay hands us a { date, nonce } when the user picks a
+  // suggestion — navigate there. The nonce makes re-picking the same date work.
+  useEffect(() => {
+    if (jumpTo && jumpTo.date) goToDate(jumpTo.date)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [jumpTo?.date, jumpTo?.nonce])
 
   // Completion history — each time a task was checked off it was logged
   // (date + label). This stays even after the task itself is deleted, so the
@@ -84,17 +89,6 @@ export default function Calendar({ commitments, vacations, events, log, categori
   const eventsOn = (dateStr) => (events || []).filter(ev => dateStr >= ev.startDate && dateStr <= ev.endDate)
   const selectedSpans = selected ? eventsOn(selected) : []
 
-  // Search across commitments, events, and completion history.
-  const q = query.trim().toLowerCase()
-  const searchResults = q ? [
-    ...(commitments || []).filter(c => c.date && (c.text||'').toLowerCase().includes(q))
-      .map(c => ({ date:c.date, label:c.text, kind:'Commitment', color:'#4A9EB5' })),
-    ...(events || []).filter(ev => (ev.label||'').toLowerCase().includes(q))
-      .map(ev => ({ date:ev.startDate, label:ev.label, kind:'Event', color:ev.color })),
-    ...(log || []).filter(e => (e.label||'').toLowerCase().includes(q))
-      .map(e => ({ date:e.date || (e.ts?e.ts.split('T')[0]:''), label:e.label, kind:'✓ Done', color:'#52B788' })),
-  ].filter(r => r.date).sort((a,b) => b.date.localeCompare(a.date)).slice(0, 20) : []
-
   return (
     <div>
       <div className="page-title">Calendar</div>
@@ -111,29 +105,6 @@ export default function Calendar({ commitments, vacations, events, log, categori
             style={{ fontSize:11, padding:'7px 12px', borderRadius:9, border:'1px solid var(--teal)', background:'#F0FDFB', color:'var(--teal)', cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:600 }}>
             This month
           </button>
-        )}
-      </div>
-
-      {/* Search across commitments, events, and completed history */}
-      <div style={{ position:'relative', marginBottom:14 }}>
-        <input value={query} onChange={e => setQuery(e.target.value)}
-          placeholder="🔍 Search events, commitments, or things you finished…"
-          style={{ width:'100%', fontSize:13, padding:'9px 12px', borderRadius:10, border:'1px solid var(--border)', fontFamily:'DM Sans,sans-serif', boxSizing:'border-box', color:'var(--text)', background:'white' }} />
-        {q && (
-          <div style={{ position:'absolute', top:'108%', left:0, right:0, background:'white', border:'1px solid var(--border)', borderRadius:10, boxShadow:'0 8px 24px rgba(0,0,0,.12)', zIndex:40, maxHeight:280, overflowY:'auto' }}>
-            {searchResults.length === 0 ? (
-              <div style={{ padding:'12px 14px', fontSize:12, color:'var(--muted)' }}>No matches.</div>
-            ) : searchResults.map((r, i) => (
-              <div key={i} onClick={() => jumpToDate(r.date)}
-                style={{ display:'flex', alignItems:'center', gap:10, padding:'9px 14px', cursor:'pointer', borderBottom:'1px solid #F0EBE0' }}
-                onMouseEnter={e=>e.currentTarget.style.background='#F7F6F3'}
-                onMouseLeave={e=>e.currentTarget.style.background='white'}>
-                <span style={{ fontSize:9, letterSpacing:.5, textTransform:'uppercase', color:r.color, fontWeight:700, minWidth:70 }}>{r.kind}</span>
-                <span style={{ flex:1, fontSize:13, color:'var(--text)' }}>{r.label}</span>
-                <span style={{ fontSize:11, color:'var(--muted)', whiteSpace:'nowrap' }}>{new Date(r.date+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}</span>
-              </div>
-            ))}
-          </div>
         )}
       </div>
 

@@ -25,6 +25,7 @@ import Routines from './components/Routines.jsx'
 import CategoriesManager from './components/CategoriesManager.jsx'
 import EventsManager from './components/EventsManager.jsx'
 import NotificationsSettings from './components/NotificationsSettings.jsx'
+import SearchOverlay, { SearchIcon } from './components/SearchOverlay.jsx'
 import { registerServiceWorker, syncReminders } from './lib/notifications.js'
 
 const TABS = [
@@ -87,6 +88,10 @@ export default function App() {
   }, [tab])
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [settingsTab,  setSettingsTab]  = useState('routines')
+  const [searchOpen,   setSearchOpen]   = useState(false)
+  // Set when a search suggestion is picked → Calendar navigates to this date.
+  // The nonce lets re-picking the same date re-trigger the jump.
+  const [jumpTo,       setJumpTo]       = useState(null)
 
   // "completions" replaces the old separate todos/weekState blobs — every
   // consumer already reads todos[k] || weekState[k], which were confirmed to
@@ -127,6 +132,40 @@ export default function App() {
   // Register the service worker once (enables installability + lets reminders
   // show even when the tab is backgrounded).
   useEffect(() => { registerServiceWorker() }, [])
+
+  // ── Iridescence ──────────────────────────────────────────────
+  // Feed pointer position (--mx/--my) and scroll progress (--iri hue shift)
+  // into CSS custom properties so the header sheen follows your finger and the
+  // ambient backdrop shifts color as you move down the page.
+  useEffect(() => {
+    const root = document.documentElement
+    let raf = 0
+    const onMove = e => {
+      const p = e.touches?.[0] || e
+      if (p.clientX == null) return
+      if (raf) return
+      raf = requestAnimationFrame(() => {
+        raf = 0
+        root.style.setProperty('--mx', (p.clientX / window.innerWidth * 100) + '%')
+        root.style.setProperty('--my', (p.clientY / window.innerHeight * 100) + '%')
+      })
+    }
+    const onScroll = () => {
+      const max = document.documentElement.scrollHeight - window.innerHeight
+      const prog = max > 0 ? Math.min(window.scrollY / max, 1) : 0
+      root.style.setProperty('--iri', (prog * 55).toFixed(1) + 'deg')
+    }
+    window.addEventListener('pointermove', onMove, { passive: true })
+    window.addEventListener('touchmove', onMove, { passive: true })
+    window.addEventListener('scroll', onScroll, { passive: true })
+    onScroll()
+    return () => {
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('touchmove', onMove)
+      window.removeEventListener('scroll', onScroll)
+      if (raf) cancelAnimationFrame(raf)
+    }
+  }, [])
 
   // Recompute reminders whenever the data that drives them changes, and again
   // each time the app is brought back to the foreground (so it "catches up" on
@@ -327,15 +366,22 @@ export default function App() {
 
   return (
     <div>
+      <div className="iridescent-bg" aria-hidden="true" />
       <header className="header">
         <div className="header-top">
-          <div>
-            <h1 className="header-title">Bloom</h1>
-          </div>
-          <div className="header-badges">
+          <h1 className="header-title">Bloom</h1>
+          <div className="header-actions">
             <span className={`storage-badge ${isUsingSupabase ? 'cloud' : 'local'}`}>
               {isUsingSupabase ? 'Cloud sync on' : 'Local storage'}
             </span>
+            <button className="icon-btn" onClick={() => setSearchOpen(true)}
+              title="Search" aria-label="Search">
+              <SearchIcon />
+            </button>
+            <button className="icon-btn" onClick={() => setSettingsOpen(true)}
+              title="Settings" aria-label="Settings" style={{ fontSize:17 }}>
+              ⚙️
+            </button>
           </div>
         </div>
         <nav className="nav">
@@ -344,11 +390,6 @@ export default function App() {
               {t.label}
             </button>
           ))}
-          <button className="nav-btn" onClick={() => setSettingsOpen(true)}
-            style={{ marginLeft:'auto', fontSize:16, paddingLeft:14, paddingRight:14, letterSpacing:0 }}
-            title="Settings">
-            ⚙️
-          </button>
         </nav>
       </header>
 
@@ -356,7 +397,7 @@ export default function App() {
         {tab==='today'       && <Today       {...sharedProps} appendLog={appendLog} weekPlan={weekPlan} dailyTodos={activeDailyTodos} scheduled={scheduled} deleteCommitment={deleteCommitment} />}
         {tab==='week'        && <ThisWeek    {...sharedProps} weekTasks={activeWeekTasks} deleteCommitment={deleteCommitment} />}
         {tab==='commitments' && <Commitments {...sharedProps} />}
-        {tab==='calendar'    && <Calendar    {...sharedProps} />}
+        {tab==='calendar'    && <Calendar    {...sharedProps} jumpTo={jumpTo} />}
         {tab==='events'      && <EventsManager events={events} addEvent={addEvent} deleteEvent={deleteEvent}
           vacations={vacations} addVacation={addVacation} deleteVacation={deleteVacation} />}
         {tab==='recurring'   && <RecurringTasksManager recurringTasks={recurringTasksWrapped}
@@ -373,6 +414,11 @@ export default function App() {
         categories={categories} addCategory={addCategoryFn}
         updateCategory={updateCategoryFn} deleteCategory={deleteCategoryFn}
         events={events} commitments={commitments} />
+
+      <SearchOverlay
+        open={searchOpen} onClose={() => setSearchOpen(false)}
+        commitments={commitments} events={events} log={log}
+        onJump={date => { setTab('calendar'); setJumpTo({ date, nonce: Date.now() }) }} />
     </div>
   )
 }
