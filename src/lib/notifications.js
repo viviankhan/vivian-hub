@@ -23,11 +23,25 @@ const SETTINGS_KEY = 'vivian_notif_settings'
 // for the service worker URL and for links opened from a notification.
 const BASE = import.meta.env.BASE_URL || '/'
 
-// Lead times, in minutes before start. Order matters only for readability.
-const LEADS = [
-  { mins: 24 * 60, label: 'day',  key: '24h' },   // ~a day before
-  { mins: 60,      label: 'hour', key: '1h'  },    // an hour before
+// The lead times a user can choose from, in minutes before an item starts.
+// Editable in Settings → Reminders; the chosen set is stored per-device.
+export const LEAD_OPTIONS = [
+  { mins: 5,        label: '5 min'  },
+  { mins: 15,       label: '15 min' },
+  { mins: 45,       label: '45 min' },
+  { mins: 60,       label: '1 hour' },
+  { mins: 24 * 60,  label: '1 day'  },
+  { mins: 7 * 24 * 60, label: '1 week' },
 ]
+// What's on by default (preserves the original "a day + an hour before").
+const DEFAULT_LEADS = [24 * 60, 60]
+
+// Resolve the saved lead-minute list into {mins, key} entries to schedule.
+function activeLeads() {
+  const raw = getSettings().leads
+  const mins = Array.isArray(raw) && raw.length ? raw : DEFAULT_LEADS
+  return mins.map(m => ({ mins: m, key: `m${m}` }))
+}
 
 // Reminders more than this far in the future aren't scheduled with a live
 // timer (setTimeout gets unreliable over long spans and the tab rarely stays
@@ -41,9 +55,9 @@ let swRegistration = null
 export function getSettings() {
   try {
     const raw = localStorage.getItem(SETTINGS_KEY)
-    return { enabled: false, ...(raw ? JSON.parse(raw) : {}) }
+    return { enabled: false, leads: [24 * 60, 60], ...(raw ? JSON.parse(raw) : {}) }
   } catch {
-    return { enabled: false }
+    return { enabled: false, leads: [24 * 60, 60] }
   }
 }
 export function saveSettings(patch) {
@@ -102,8 +116,9 @@ function buildReminders(events = [], commitments = []) {
   const out = []
   const now = Date.now()
 
+  const leads = activeLeads()
   const push = (item, startMs, name, body) => {
-    for (const lead of LEADS) {
+    for (const lead of leads) {
       const at = startMs - lead.mins * 60 * 1000
       out.push({
         id: `${item.id}:${lead.key}`,

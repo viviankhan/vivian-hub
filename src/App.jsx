@@ -133,36 +133,63 @@ export default function App() {
   // show even when the tab is backgrounded).
   useEffect(() => { registerServiceWorker() }, [])
 
-  // ── Iridescence ──────────────────────────────────────────────
-  // Feed pointer position (--mx/--my) and scroll progress (--iri hue shift)
-  // into CSS custom properties so the header sheen follows your finger and the
-  // ambient backdrop shifts color as you move down the page.
+  // ── Gold shimmer ─────────────────────────────────────────────
+  // The gold outlines are static by default. They only come alive — a warm
+  // sheen travelling across them — while you're actively scrolling or right
+  // after you tap something. We do that by toggling a `shimmer` class on the
+  // root element; CSS keeps every shimmer animation paused until it's present.
+  // The pointer position (--mx/--my) still feeds the tap-point highlight.
   useEffect(() => {
     const root = document.documentElement
     let raf = 0
+    let scrollOff = 0
+    let tapOff = 0
+
+    const startShimmer = () => root.classList.add('shimmer')
+    const stopShimmer  = () => root.classList.remove('shimmer')
+
+    // Scrolling → shimmer, and keep it on until ~600ms after motion stops.
+    const onScroll = () => {
+      startShimmer()
+      clearTimeout(scrollOff)
+      scrollOff = setTimeout(stopShimmer, 600)
+    }
+
+    // Tapping / clicking → a brief shimmer pulse from the point you touched.
+    const onDown = e => {
+      const p = e.touches?.[0] || e
+      if (p.clientX != null) {
+        root.style.setProperty('--mx', (p.clientX / window.innerWidth * 100) + '%')
+        root.style.setProperty('--my', (p.clientY / window.innerHeight * 100) + '%')
+      }
+      startShimmer()
+      clearTimeout(tapOff)
+      tapOff = setTimeout(stopShimmer, 900)
+    }
+
+    // Keep the tap-point highlight tracking the finger while it moves.
     const onMove = e => {
       const p = e.touches?.[0] || e
-      if (p.clientX == null) return
-      if (raf) return
+      if (p.clientX == null || raf) return
       raf = requestAnimationFrame(() => {
         raf = 0
         root.style.setProperty('--mx', (p.clientX / window.innerWidth * 100) + '%')
         root.style.setProperty('--my', (p.clientY / window.innerHeight * 100) + '%')
       })
     }
-    const onScroll = () => {
-      const max = document.documentElement.scrollHeight - window.innerHeight
-      const prog = max > 0 ? Math.min(window.scrollY / max, 1) : 0
-      root.style.setProperty('--iri', (prog * 55).toFixed(1) + 'deg')
-    }
+
+    window.addEventListener('scroll', onScroll, { passive: true })
+    window.addEventListener('pointerdown', onDown, { passive: true })
+    window.addEventListener('touchstart', onDown, { passive: true })
     window.addEventListener('pointermove', onMove, { passive: true })
     window.addEventListener('touchmove', onMove, { passive: true })
-    window.addEventListener('scroll', onScroll, { passive: true })
-    onScroll()
     return () => {
+      window.removeEventListener('scroll', onScroll)
+      window.removeEventListener('pointerdown', onDown)
+      window.removeEventListener('touchstart', onDown)
       window.removeEventListener('pointermove', onMove)
       window.removeEventListener('touchmove', onMove)
-      window.removeEventListener('scroll', onScroll)
+      clearTimeout(scrollOff); clearTimeout(tapOff)
       if (raf) cancelAnimationFrame(raf)
     }
   }, [])
@@ -366,7 +393,7 @@ export default function App() {
 
   return (
     <div>
-      <div className="iridescent-bg" aria-hidden="true" />
+      <div className="shimmer-bg" aria-hidden="true" />
       <header className="header">
         <div className="header-top">
           <h1 className="header-title">Bloom</h1>
