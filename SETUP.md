@@ -67,6 +67,40 @@ https://YOUR-GITHUB-USERNAME.github.io/vivian-hub/
 
 ---
 
+## Put Bloom on your phone (app + reminders)
+
+Bloom is a PWA — it installs to your Home Screen and looks/opens like a real app,
+and it can send you reminders before your commitments and events.
+
+**iPhone (iOS 16.4 or newer):**
+1. Open your Bloom URL in **Safari** (this must be Safari, not Chrome or an in-app browser).
+2. Tap the **Share** button (square with an up-arrow) → **Add to Home Screen** → **Add**.
+3. Open Bloom from its new Home Screen icon.
+4. Tap **⚙️ Settings → Reminders → Turn on**, and allow notifications when asked.
+
+**Android / desktop (Chrome):**
+1. Open Bloom in **Chrome**.
+2. Menu (**⋮**) → **Add to Home screen** / **Install app**.
+3. Open it, then **⚙️ Settings → Reminders → Turn on**.
+
+**What the reminders do:**
+- A nudge **the day before** each commitment and event.
+- A nudge **an hour before** anything with a set time.
+- Untimed items are reminded around **9:00 AM**.
+
+Reminders fire while Bloom is open, and "catch up" the moment you reopen it, so
+nothing gets missed on the day.
+
+**Note on fully-closed alerts:** because Bloom has no server of its own, reminders
+are scheduled by the app itself. That covers the common case (you open Bloom at
+least once a day), but it can't push an alert when the app has been closed for a
+long time. Adding true background push would mean running a small push service
+(e.g. a Supabase Edge Function on a schedule with Web Push / VAPID keys) that
+stores your notification subscription and sends alerts server-side. That's a
+larger, separate piece of work — ask Claude if you want it.
+
+---
+
 ## How updates work going forward
 
 **To update your schedule or add flashcards:**
