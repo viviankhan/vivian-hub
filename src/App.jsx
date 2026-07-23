@@ -7,6 +7,7 @@ import {
   getScheduledTasks, setScheduledTasks,
   getCommitments, addCommitment as dbAddCommitment, updateCommitment as dbUpdateCommitment, deleteCommitment as dbDeleteCommitment,
   getVacations, addVacation as dbAddVacation, deleteVacation as dbDeleteVacation,
+  getEvents, addEvent as dbAddEvent, deleteEvent as dbDeleteEvent,
   getRecurringTasks, addRecurringTask, updateRecurringTask, deleteRecurringTask, clearRecurringTasks,
   addCategory as dbAddCategory, updateCategory as dbUpdateCategory, deleteCategory as dbDeleteCategory,
 } from './lib/storage.js'
@@ -22,12 +23,14 @@ import Edits       from './components/Edits.jsx'
 import RecurringTasksManager, { flatToPerDay } from './components/RecurringTasksManager.jsx'
 import Routines from './components/Routines.jsx'
 import CategoriesManager from './components/CategoriesManager.jsx'
+import EventsManager from './components/EventsManager.jsx'
 
 const TABS = [
   { id:'today',       label:'Today'       },
   { id:'week',        label:'Week'        },
   { id:'commitments', label:'Commitments' },
   { id:'calendar',    label:'Calendar'    },
+  { id:'events',      label:'Events'      },
   { id:'recurring',   label:'Recurring'   },
 ]
 
@@ -95,21 +98,22 @@ export default function App() {
   const [commitments,      setCommitments_]     = useState([])
   const [recurringTaskRows,setRecurringTaskRows]= useState([])
   const [vacations,        setVacations_]       = useState([])
+  const [events,           setEvents_]          = useState([])
   const [categories,       setCategories_]      = useState([])
   const [loading,          setLoading]          = useState(true)
 
   useEffect(() => {
     async function load() {
       await runMigrationIfNeeded()
-      const [comp, l, n, fcp, fcs, sch, com, rt, vac, cats] = await Promise.all([
+      const [comp, l, n, fcp, fcs, sch, com, rt, vac, evs, cats] = await Promise.all([
         getCompletions(), getLogEntries(), getNotes(),
         getFcProgress(), getFcStudied(), getScheduledTasks(),
-        getCommitments(), getRecurringTasks(), getVacations(),
+        getCommitments(), getRecurringTasks(), getVacations(), getEvents(),
         seedCategoriesIfNeeded(),
       ])
       setCompletions_(comp); setLog_(l); setNotes_(n)
       setFcProgress_(fcp); setFcStudied_(fcs); setScheduled_(sch)
-      setCommitments_(com); setRecurringTaskRows(rt); setVacations_(vac)
+      setCommitments_(com); setRecurringTaskRows(rt); setVacations_(vac); setEvents_(evs)
       setCategories_(cats)
       setLoading(false)
     }
@@ -223,6 +227,18 @@ export default function App() {
     try { await dbDeleteVacation(id) } catch (e) { reportSaveError(e) }
   }, [])
 
+  // ── Events CRUD (multi-day spans, non-blocking) ─────────────
+  const addEvent = useCallback(async e => {
+    try {
+      const created = await dbAddEvent(e)
+      setEvents_(prev => [...prev, created])
+    } catch (err) { reportSaveError(err) }
+  }, [])
+  const deleteEvent = useCallback(async id => {
+    setEvents_(prev => prev.filter(e => e.id !== id))
+    try { await dbDeleteEvent(id) } catch (e) { reportSaveError(e) }
+  }, [])
+
   // ── Unified toggle ───────────────────────────────────────────
   const syncToggle = useCallback(async (id, label, tag, date) => {
     const storageKey = date ? `${date}_${id}` : id
@@ -285,6 +301,7 @@ export default function App() {
     scheduled, addScheduledTask,
     commitments, addCommitment, updateCommitment, deleteCommitment,
     vacations, addVacation, deleteVacation,
+    events, addEvent, deleteEvent,
     categories,
   }
 
@@ -320,6 +337,8 @@ export default function App() {
         {tab==='week'        && <ThisWeek    {...sharedProps} weekTasks={activeWeekTasks} deleteCommitment={deleteCommitment} />}
         {tab==='commitments' && <Commitments {...sharedProps} />}
         {tab==='calendar'    && <Calendar    {...sharedProps} />}
+        {tab==='events'      && <EventsManager events={events} addEvent={addEvent} deleteEvent={deleteEvent}
+          vacations={vacations} addVacation={addVacation} deleteVacation={deleteVacation} />}
         {tab==='recurring'   && <RecurringTasksManager recurringTasks={recurringTasksWrapped}
           addRecurringTask={addRecurringTaskFn} updateRecurringTask={updateRecurringTaskFn}
           deleteRecurringTask={deleteRecurringTaskFn} clearRecurringTasks={clearRecurringTasksFn}

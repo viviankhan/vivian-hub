@@ -409,6 +409,47 @@ export async function deleteVacation(id) {
   await lsSet('vacations', all.filter(v => v.id !== id))
 }
 
+// ── Multi-day events (colored spans that don't block tasks) ──────
+function eventFromDb(row) {
+  return {
+    id: row.id, label: row.label, startDate: row.start_date, endDate: row.end_date,
+    allDay: row.all_day, startTime: row.start_time, endTime: row.end_time,
+    color: row.color || '#7C9CBF', icon: row.icon || '',
+  }
+}
+export async function getEvents() {
+  if (USE_SUPABASE) {
+    const { data, error } = await supabase.from('events').select('*')
+    if (error) { console.error('[storage] getEvents failed:', error.message); return [] }
+    return (data || []).map(eventFromDb)
+  }
+  return (await lsGet('events')) ?? []
+}
+export async function addEvent(e) {
+  if (USE_SUPABASE) {
+    const { data, error } = await supabase.from('events').insert({
+      id: e.id, label: e.label, start_date: e.startDate, end_date: e.endDate,
+      all_day: e.allDay !== false, start_time: e.allDay === false ? (e.startTime || null) : null,
+      end_time: e.allDay === false ? (e.endTime || null) : null,
+      color: e.color || '#7C9CBF', icon: e.icon || null,
+    }).select().single()
+    if (error) throw new Error(`Failed to add event: ${error.message}`)
+    return eventFromDb(data)
+  }
+  const all = (await lsGet('events')) ?? []
+  await lsSet('events', [...all, e])
+  return e
+}
+export async function deleteEvent(id) {
+  if (USE_SUPABASE) {
+    const { error } = await supabase.from('events').delete().eq('id', id)
+    if (error) throw new Error(`Failed to delete event: ${error.message}`)
+    return
+  }
+  const all = (await lsGet('events')) ?? []
+  await lsSet('events', all.filter(e => e.id !== id))
+}
+
 // ── Recurring Tasks (editable weekly schedule templates) ────────
 // One row per task — "text" (week type) vs "label"+"note" (today type) both
 // map onto a single "label"/"note" pair of columns; "tag" is kept as an alias

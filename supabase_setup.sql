@@ -48,6 +48,27 @@ alter table vacations enable row level security;
 drop policy if exists "Allow all" on vacations;
 create policy "Allow all" on vacations for all using (true) with check (true);
 
+-- ── Multi-day events (e.g. "Immunology Retreat") ─────────────────
+-- A span of days shown as a colored band on the calendar. Unlike vacations
+-- these do NOT pause recurring tasks — you can still schedule tasks within
+-- them. all_day events span whole days; otherwise start_time/end_time apply.
+create table if not exists events (
+  id         text primary key,
+  label      text not null,
+  start_date date not null,
+  end_date   date not null,
+  all_day    boolean not null default true,
+  start_time time,
+  end_time   time,
+  color      text not null default '#7C9CBF',
+  icon       text,
+  created_at timestamptz not null default now()
+);
+create index if not exists idx_events_dates on events (start_date, end_date);
+alter table events enable row level security;
+drop policy if exists "Allow all" on events;
+create policy "Allow all" on events for all using (true) with check (true);
+
 -- ── Recurring task templates ─────────────────────────────────────
 create table if not exists recurring_tasks (
   id         text primary key,
