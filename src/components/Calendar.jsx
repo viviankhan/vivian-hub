@@ -22,6 +22,13 @@ function fmt12(t) {
   const [h, m] = t.split(':').map(Number)
   return `${h % 12 || 12}:${String(m).padStart(2,'0')} ${h >= 12 ? 'PM' : 'AM'}`
 }
+// End time from a start "HH:MM" + duration in minutes (for start–end display).
+function endTimeFrom(start, mins) {
+  if (!start || !mins) return ''
+  const [h, m] = start.split(':').map(Number)
+  const total = Math.min(h * 60 + m + mins, 23 * 60 + 59)
+  return `${String(Math.floor(total/60)).padStart(2,'0')}:${String(total%60).padStart(2,'0')}`
+}
 
 export default function Calendar({ commitments, vacations, events, log, categories, jumpTo }) {
   // monthOffset shifts by whole months from the current month: 0 = this month,
@@ -76,10 +83,12 @@ export default function Calendar({ commitments, vacations, events, log, categori
     .filter(c => c.date)
     .map(c => {
       const cat = resolveCat(c.cat)
+      const end = endTimeFrom(c.time, c.durationMins)
+      const timeLabel = c.time ? `${fmt12(c.time)}${end ? '–'+fmt12(end) : ''} ` : ''
       return {
         date: c.date,
         text: c.text,
-        label: c.time ? `${fmt12(c.time)} ${c.text}` : c.text,
+        label: `${timeLabel}${c.text}`,
         done: c.done,
         color: cat.color, icon: cat.icon, catLabel: cat.label,
       }

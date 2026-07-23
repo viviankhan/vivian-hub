@@ -33,6 +33,11 @@ function EventSection({ events, addEvent, deleteEvent }) {
   const [endTime, setEndTime] = useState('')
   const [color, setColor] = useState(EVENT_COLORS[0])
   const [icon, setIcon] = useState('')
+  // Events used to delete on a single ✕ tap — no confirm, no undo — which is
+  // the most likely way an event (like a retreat) vanished by accident. Now a
+  // delete asks first, and the last-deleted one can be brought straight back.
+  const [confirmId, setConfirmId] = useState(null)
+  const [justDeleted, setJustDeleted] = useState(null)
 
   const reset = () => { setLabel(''); setStartDate(''); setEndDate(''); setAllDay(true); setStartTime(''); setEndTime(''); setColor(EVENT_COLORS[0]); setIcon(''); setOpen(false) }
   const canSave = label.trim() && startDate && endDate && endDate >= startDate
@@ -47,6 +52,20 @@ function EventSection({ events, addEvent, deleteEvent }) {
     reset()
   }
 
+  const doDelete = (ev) => {
+    setConfirmId(null)
+    // Keep a full copy so Undo can re-add it exactly (minus the id, which is
+    // regenerated so it's a fresh row).
+    const { id, ...rest } = ev
+    setJustDeleted(rest)
+    deleteEvent(ev.id)
+  }
+  const undoDelete = () => {
+    if (!justDeleted) return
+    addEvent({ id: 'ev-' + Date.now(), ...justDeleted })
+    setJustDeleted(null)
+  }
+
   return (
     <div style={{ marginBottom:24 }}>
       <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:8 }}>
@@ -58,9 +77,21 @@ function EventSection({ events, addEvent, deleteEvent }) {
       </div>
       <div style={{ fontSize:11, color:'var(--muted)', marginBottom:10 }}>Multi-day happenings like a retreat or conference. Shown as a colored band on the calendar — you can still schedule tasks during them.</div>
 
-      {(events || []).length === 0 && !open && (
+      {(events || []).length === 0 && !open && !justDeleted && (
         <div style={{ fontSize:12, color:'var(--muted)', padding:'4px 0' }}>No events yet.</div>
       )}
+
+      {/* Undo bar for the last deleted event */}
+      {justDeleted && (
+        <div style={{ display:'flex', alignItems:'center', gap:10, padding:'9px 14px', background:'#FBF6E4', border:'1px solid var(--gold-line)', borderRadius:10, marginBottom:6 }}>
+          <span style={{ fontSize:12, color:'var(--text)', flex:1 }}>Deleted <b>{justDeleted.label}</b>.</span>
+          <button onClick={undoDelete}
+            style={{ fontSize:11, padding:'5px 12px', borderRadius:16, border:'1px solid var(--gold-deep)', background:'var(--gold)', color:'#4A3B08', cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:700 }}>↩ Undo</button>
+          <button onClick={() => setJustDeleted(null)}
+            style={{ background:'none', border:'none', cursor:'pointer', color:'#9CA3AF', fontSize:15, padding:'0 2px' }}>✕</button>
+        </div>
+      )}
+
       {(events || []).map(ev => (
         <div key={ev.id} style={{ display:'flex', alignItems:'center', gap:10, padding:'9px 14px', background:`${ev.color}12`, borderRadius:10, borderLeft:`4px solid ${ev.color}`, border:`1px solid ${ev.color}33`, marginBottom:6 }}>
           {ev.icon && <Icon value={ev.icon} size={18} />}
@@ -71,8 +102,18 @@ function EventSection({ events, addEvent, deleteEvent }) {
               {!ev.allDay && ev.startTime ? ` · ${fmt12(ev.startTime)}${ev.endTime ? '–'+fmt12(ev.endTime) : ''}` : ' · all day'}
             </div>
           </div>
-          <button onClick={() => deleteEvent(ev.id)}
-            style={{ background:'none', border:'none', cursor:'pointer', color:'#9CA3AF', fontSize:16, padding:'0 2px' }}>✕</button>
+          {confirmId === ev.id ? (
+            <span style={{ display:'inline-flex', alignItems:'center', gap:6 }}>
+              <span style={{ fontSize:11, color:'#991B1B' }}>Delete?</span>
+              <button onClick={() => doDelete(ev)}
+                style={{ fontSize:11, padding:'4px 10px', borderRadius:14, border:'none', background:'#EF4444', color:'white', cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:600 }}>Yes</button>
+              <button onClick={() => setConfirmId(null)}
+                style={{ fontSize:11, padding:'4px 10px', borderRadius:14, border:'1px solid var(--border)', background:'white', color:'var(--muted)', cursor:'pointer', fontFamily:'DM Sans,sans-serif' }}>No</button>
+            </span>
+          ) : (
+            <button onClick={() => setConfirmId(ev.id)} title="Delete event"
+              style={{ background:'none', border:'none', cursor:'pointer', color:'#9CA3AF', fontSize:16, padding:'0 2px' }}>✕</button>
+          )}
         </div>
       ))}
 
