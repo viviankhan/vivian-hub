@@ -27,6 +27,7 @@ import EventsManager from './components/EventsManager.jsx'
 import NotificationsSettings from './components/NotificationsSettings.jsx'
 import SearchOverlay, { SearchIcon } from './components/SearchOverlay.jsx'
 import { registerServiceWorker, syncReminders } from './lib/notifications.js'
+import { sparkleBurst } from './lib/bloom.js'
 
 const TABS = [
   { id:'today',       label:'Today'       },
@@ -352,7 +353,8 @@ export default function App() {
         </div>
         <nav className="nav">
           {TABS.map(t => (
-            <button key={t.id} className={`nav-btn ${tab===t.id ? 'active' : ''}`} onClick={() => setTab(t.id)}>
+            <button key={t.id} className={`nav-btn ${tab===t.id ? 'active' : ''}`}
+              onClick={e => { sparkleBurst(e.currentTarget); setTab(t.id) }}>
               {t.label}
             </button>
           ))}
