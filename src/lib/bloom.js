@@ -48,3 +48,38 @@ export function bloomBurst(anchorEl) {
   // Longest animation is ~950ms; remove a touch after it finishes.
   setTimeout(() => layer.remove(), 1100)
 }
+
+// A quick sparkle burst — used when a tab is pressed. A scatter of little
+// twinkles fly out from the element's center and fade.
+const SPARKLES = ['✨', '✦', '⋆', '❋', '✧']
+
+export function sparkleBurst(anchorEl) {
+  if (typeof document === 'undefined' || !anchorEl?.getBoundingClientRect) return
+
+  const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+  const rect = anchorEl.getBoundingClientRect()
+  const cx = rect.left + rect.width / 2
+  const cy = rect.top + rect.height / 2
+
+  const layer = document.createElement('div')
+  layer.className = 'sparkle-layer'
+  layer.style.left = `${cx}px`
+  layer.style.top = `${cy}px`
+
+  const count = reduce ? 4 : 10
+  for (let i = 0; i < count; i++) {
+    const s = document.createElement('span')
+    s.className = 'sparkle'
+    s.textContent = SPARKLES[Math.floor(Math.random() * SPARKLES.length)]
+    const angle = (i / count) * Math.PI * 2 + (Math.random() - 0.5) * 0.8
+    const dist = 16 + Math.random() * 30
+    s.style.setProperty('--dx', `${Math.cos(angle) * dist}px`)
+    s.style.setProperty('--dy', `${Math.sin(angle) * dist}px`)
+    s.style.fontSize = `${9 + Math.random() * 7}px`
+    s.style.animationDelay = `${Math.random() * 50}ms`
+    layer.appendChild(s)
+  }
+
+  document.body.appendChild(layer)
+  setTimeout(() => layer.remove(), 800)
+}
