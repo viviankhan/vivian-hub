@@ -5,6 +5,8 @@ import { getRoutines } from '../lib/storage.js'
 import { normalizeRoutineItems, sortByTime, to12 } from './Routines.jsx'
 import { Icon } from './IconPicker.jsx'
 import { bloomBurst } from '../lib/bloom.js'
+import AddItemModal from './AddItemModal.jsx'
+import { setItemReminders } from '../lib/notifications.js'
 
 const TAG_COLORS = {
   health:'#E07B2E', class:'#7C3AED', lab:'#059669', career:'#D97706',
@@ -194,40 +196,6 @@ function ManageModal({ task, dateKey, onClose, onDelete, onReschedule, scheduled
             <button onClick={()=>setView('main')} style={{padding:'10px 14px',borderRadius:10,border:'1px solid var(--border)',background:'white',color:'var(--muted)',cursor:'pointer',fontSize:12,fontFamily:'DM Sans,sans-serif'}}>Back</button>
           </div>
         </>}
-      </div>
-    </div>
-  )
-}
-
-// ── Quick add ──────────────────────────────────────────────────
-function QuickAdd({ onAdd, onClose }) {
-  const [label,setLabel]=useState('')
-  const [time,setTime]=useState('')
-  const [tag,setTag]=useState('personal')
-  const submit=()=>{
-    if (!label.trim()) return
-    onAdd({ id:'custom-'+Date.now(), label:time?`${fmt12(time)} — ${label.trim()}`:label.trim(), tag, note:'' })
-    onClose()
-  }
-  return (
-    <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,.4)',zIndex:500,display:'flex',alignItems:'flex-end',justifyContent:'center',padding:16}}>
-      <div style={{background:'white',borderRadius:16,padding:20,maxWidth:420,width:'100%',boxShadow:'0 -8px 40px rgba(0,0,0,.15)'}}>
-        <div className="serif" style={{fontSize:17,fontWeight:600,marginBottom:14,color:'var(--text)'}}>Add to Today</div>
-        <input value={label} onChange={e=>setLabel(e.target.value)} placeholder="What do you need to do?" autoFocus
-          onKeyDown={e=>e.key==='Enter'&&submit()}
-          style={{width:'100%',fontSize:14,padding:'10px 12px',borderRadius:10,border:'1px solid var(--border)',marginBottom:10,fontFamily:'DM Sans,sans-serif',outline:'none',boxSizing:'border-box'}}/>
-        <div style={{display:'flex',gap:8,flexWrap:'wrap',marginBottom:14}}>
-          <input type="time" value={time} onChange={e=>setTime(e.target.value)}
-            style={{fontSize:13,padding:'8px 10px',borderRadius:9,border:'1px solid var(--border)',fontFamily:'DM Sans,sans-serif'}}/>
-          <select value={tag} onChange={e=>setTag(e.target.value)}
-            style={{fontSize:13,padding:'8px 10px',borderRadius:9,border:'1px solid var(--border)',fontFamily:'DM Sans,sans-serif',background:'white',cursor:'pointer',flex:1}}>
-            {TAGS.map(t=><option key={t} value={t}>{t}</option>)}
-          </select>
-        </div>
-        <div style={{display:'flex',gap:8}}>
-          <button onClick={submit} style={{flex:1,padding:'11px',borderRadius:10,border:'none',background:'var(--forest)',color:'var(--green-light)',cursor:'pointer',fontFamily:'DM Sans,sans-serif',fontWeight:600,fontSize:14}}>Add Task</button>
-          <button onClick={onClose} style={{padding:'11px 16px',borderRadius:10,border:'1px solid var(--border)',background:'white',color:'var(--muted)',cursor:'pointer',fontSize:13,fontFamily:'DM Sans,sans-serif'}}>Cancel</button>
-        </div>
       </div>
     </div>
   )
@@ -570,10 +538,12 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
     setShiftResult({ shifted, committed, fixed })
   }
 
-  const handleAdd = (task) => {
-    const next=[...customTasks,task]
-    setCustomTasks(next)
-    localStorage.setItem('vivian_custom_'+dateKey, JSON.stringify(next))
+  // New items are real commitments dated today, so they show on the Calendar
+  // and Week and can carry their own reminder times. (Older local-only custom
+  // tasks still render from customTasks for backward compatibility.)
+  const handleAdd = (commitment, reminderMins) => {
+    if (addCommitment) addCommitment(commitment)
+    setItemReminders(commitment.id, reminderMins)
   }
   const handleDelete = (task, reason) => {
     if (task.isCommitment && deleteCommitment) {
@@ -681,7 +651,7 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
       </button>
 
       {shiftResult&&<ShiftToast result={shiftResult} onClose={()=>setShiftResult(null)}/>}
-      {addingTask&&<QuickAdd onAdd={handleAdd} onClose={()=>setAddingTask(false)}/>}
+      {addingTask&&<AddItemModal presetDate={dateKey} lockDate categories={categories} onSave={handleAdd} onClose={()=>setAddingTask(false)} title="Add to Today"/>}
       {managing&&<ManageModal task={managing} dateKey={dateKey} onClose={()=>setManaging(null)} onDelete={handleDelete} onReschedule={handleReschedule} scheduled={scheduled}/>}
     </div>
   )

@@ -43,6 +43,36 @@ function activeLeads() {
   return mins.map(m => ({ mins: m, key: `m${m}` }))
 }
 
+// ── Per-item reminder overrides ────────────────────────────────
+// A single item (one commitment/event) can opt out of the global lead times
+// and use its own. Stored locally, keyed by the item's id — consistent with
+// the rest of the reminder system, which is entirely device-local (so this
+// needs no database column). An empty array means "no reminders for this one";
+// null / missing means "use the global defaults".
+const ITEM_REMINDERS_KEY = 'vivian_item_reminders'
+export function getItemReminders(id) {
+  if (!id) return null
+  try {
+    const map = JSON.parse(localStorage.getItem(ITEM_REMINDERS_KEY) || '{}')
+    return Array.isArray(map[id]) ? map[id] : null
+  } catch { return null }
+}
+export function setItemReminders(id, mins) {
+  if (!id) return
+  try {
+    const map = JSON.parse(localStorage.getItem(ITEM_REMINDERS_KEY) || '{}')
+    if (mins == null) delete map[id]
+    else map[id] = mins
+    localStorage.setItem(ITEM_REMINDERS_KEY, JSON.stringify(map))
+  } catch {}
+}
+// Leads for a specific item: its override if set, otherwise the global list.
+function leadsForItem(id, globalLeads) {
+  const override = getItemReminders(id)
+  if (override) return override.map(m => ({ mins: m, key: `m${m}` }))
+  return globalLeads
+}
+
 // Reminders more than this far in the future aren't scheduled with a live
 // timer (setTimeout gets unreliable over long spans and the tab rarely stays
 // open that long). They still fire via catch-up whenever the app is reopened.
@@ -116,9 +146,9 @@ function buildReminders(events = [], commitments = []) {
   const out = []
   const now = Date.now()
 
-  const leads = activeLeads()
+  const globalLeads = activeLeads()
   const push = (item, startMs, name, body) => {
-    for (const lead of leads) {
+    for (const lead of leadsForItem(item.id, globalLeads)) {
       const at = startMs - lead.mins * 60 * 1000
       out.push({
         id: `${item.id}:${lead.key}`,
