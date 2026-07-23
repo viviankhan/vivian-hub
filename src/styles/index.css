@@ -124,12 +124,12 @@ body {
 .page-title { font-family: 'Cormorant Garamond', serif; font-size: 26px; color: var(--text); font-weight: 600; margin-bottom: 4px; }
 .page-sub { font-size: 12px; color: var(--muted); margin-bottom: 20px; }
 
-/* ── GOLD HOVER FOIL ────────────────────────────────────────── */
-/* A translucent golden sheen that glides across a surface only while you
-   hover it (Onmyoji-style foil). It sits ON TOP of the existing colors — a
-   pure accent, nothing underneath changes. No cursor tracking; it's driven
-   entirely by :hover, and only on devices that actually hover (so it never
-   sticks on touch). */
+/* ── PINK HOVER SHIMMER ──────────────────────────────────────── */
+/* A translucent light-pink sheen that keeps shimmering across a surface
+   while you hover it — the sweep loops, so it reads as a live shimmer rather
+   than a single pass. It sits ON TOP of the existing colors (pure accent,
+   nothing underneath changes). No cursor tracking; driven entirely by :hover,
+   and only on devices that actually hover so it never sticks on touch. */
 .card, .week-day-card, .cal-cell, .todo-item, .routine-item, .accordion-header {
   position: relative;
   overflow: hidden;
@@ -142,30 +142,74 @@ body {
   border-radius: inherit;
   pointer-events: none;
   background: linear-gradient(115deg,
-    transparent 34%,
-    rgba(233,212,140,.20) 46%,
-    rgba(255,247,209,.62) 50%,
-    rgba(233,212,140,.20) 54%,
-    transparent 66%);
+    transparent 30%,
+    rgba(255,192,214,.18) 42%,
+    rgba(255,214,228,.30) 47%,
+    rgba(255,235,243,.70) 50%,
+    rgba(255,214,228,.30) 53%,
+    rgba(255,192,214,.18) 58%,
+    transparent 70%);
   background-size: 250% 100%;
-  background-position: -60% 0;
+  background-position: 150% 0;
   opacity: 0;
-  transition: opacity .25s ease;
+  transition: opacity .3s ease;
 }
 @media (hover: hover) {
   .card:hover::after, .week-day-card:hover::after, .cal-cell:hover::after,
   .todo-item:hover::after, .routine-item:hover::after, .accordion-header:hover::after {
     opacity: 1;
-    animation: gold-foil 1.15s ease-out;
+    animation: pink-shimmer 1.6s linear infinite;
   }
 }
-@keyframes gold-foil {
-  from { background-position: -60% 0; }
-  to   { background-position: 160% 0; }
+@keyframes pink-shimmer {
+  from { background-position: 150% 0; }
+  to   { background-position: -150% 0; }
 }
 @media (prefers-reduced-motion: reduce) {
   .card::after, .week-day-card::after, .cal-cell::after,
   .todo-item::after, .routine-item::after, .accordion-header::after { animation: none !important; }
+}
+
+/* ── BLOOM BURST (task-completed flowers) ───────────────────── */
+.bloom-layer {
+  position: fixed;
+  z-index: 9000;
+  pointer-events: none;
+  transform: translate(-50%, -50%);
+  width: 0; height: 0;
+}
+.bloom-flower {
+  position: absolute;
+  left: 0; top: 0;
+  font-size: 22px;
+  line-height: 1;
+  transform: translate(-50%, -50%) scale(0);
+  animation: bloom-pop .72s cubic-bezier(.2,.9,.25,1) forwards;
+  filter: drop-shadow(0 1px 2px rgba(200,120,150,.35));
+}
+@keyframes bloom-pop {
+  0%   { transform: translate(-50%,-50%) scale(0)   rotate(-45deg); opacity: 0; }
+  35%  { opacity: 1; }
+  60%  { transform: translate(-50%,-50%) scale(1.25) rotate(8deg);  opacity: 1; }
+  100% { transform: translate(-50%,-50%) scale(1)    rotate(0deg);  opacity: 0; }
+}
+.bloom-petal {
+  position: absolute;
+  left: 0; top: 0;
+  font-size: 13px;
+  line-height: 1;
+  transform: translate(-50%, -50%) scale(.2);
+  opacity: 0;
+  animation: bloom-fly .92s ease-out forwards;
+}
+@keyframes bloom-fly {
+  0%   { transform: translate(-50%,-50%) scale(.2) rotate(0deg); opacity: 0; }
+  25%  { opacity: 1; }
+  100% { transform: translate(calc(-50% + var(--dx,0px)), calc(-50% + var(--dy,0px))) scale(.85) rotate(120deg); opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .bloom-flower { animation-duration: .4s; }
+  .bloom-petal { display: none; }
 }
 
 /* ── TAG COLORS ─────────────────────────────────────────────── */
@@ -293,10 +337,10 @@ textarea { resize: vertical; min-height: 160px; line-height: 1.6; }
 
 .btn-primary { position: relative; overflow: hidden; font-family: 'DM Sans', sans-serif; font-size: 11px; letter-spacing: 1.5px; text-transform: uppercase; padding: 10px 20px; border-radius: 24px; border: none; background: linear-gradient(135deg, #4A9EB5, #7C86C8 45%, #C88FB0 80%, #E8A98C); background-size: 200% 200%; color: white; cursor: pointer; font-weight: 600; transition: all .2s; box-shadow: 0 4px 14px rgba(90,140,180,.28); }
 .btn-primary:hover { background-position: 100% 0; box-shadow: 0 6px 18px rgba(120,120,200,.34); }
-/* translucent gold sheen — sweeps across only on hover */
-.btn-primary::after { content: ''; position: absolute; top: 0; left: -60%; width: 45%; height: 100%; background: linear-gradient(100deg, transparent, rgba(255,247,209,.7), transparent); transform: skewX(-18deg); opacity: 0; }
-@media (hover: hover) { .btn-primary:hover::after { animation: btn-sheen 1s ease-out; } }
-@keyframes btn-sheen { 0% { left: -60%; opacity: 1; } 100% { left: 130%; opacity: 1; } }
+/* translucent light-pink sheen — keeps shimmering across while hovered */
+.btn-primary::after { content: ''; position: absolute; top: 0; left: -60%; width: 45%; height: 100%; background: linear-gradient(100deg, transparent, rgba(255,224,235,.8), transparent); transform: skewX(-18deg); opacity: 0; }
+@media (hover: hover) { .btn-primary:hover::after { opacity: 1; animation: btn-sheen 1.5s linear infinite; } }
+@keyframes btn-sheen { 0% { left: -60%; } 100% { left: 160%; } }
 @media (prefers-reduced-motion: reduce) { .btn-primary:hover::after { animation: none; } }
 .btn-ghost { font-family: 'DM Sans', sans-serif; font-size: 11px; letter-spacing: 1.5px; text-transform: uppercase; padding: 8px 16px; border-radius: 24px; border: 1px solid var(--border); background: transparent; color: var(--muted); cursor: pointer; transition: all .2s; }
 .btn-ghost:hover { border-color: var(--sea); color: var(--text); }

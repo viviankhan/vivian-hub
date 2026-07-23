@@ -4,6 +4,7 @@ import { findSlots } from '../lib/scheduler.js'
 import { getRoutines } from '../lib/storage.js'
 import { normalizeRoutineItems, sortByTime, to12 } from './Routines.jsx'
 import { Icon } from './IconPicker.jsx'
+import { bloomBurst } from '../lib/bloom.js'
 
 const TAG_COLORS = {
   health:'#E07B2E', class:'#7C3AED', lab:'#059669', career:'#D97706',
@@ -281,7 +282,7 @@ function TimelineBlock({ task, categories, status, now, minutesUntilNext, isDone
       {/* Spine + dot */}
       <div style={{width:28,flexShrink:0,display:'flex',flexDirection:'column',alignItems:'center'}}>
         <div style={{width:2,height:14,background:isPast?'#52B78866':'#E5E0D9',flexShrink:0}}/>
-        <div onClick={onToggle}
+        <div onClick={e=>{ if(!isDone) bloomBurst(e.currentTarget); onToggle() }}
           style={{width:18,height:18,borderRadius:'50%',flexShrink:0,cursor:'pointer',
             border:`2px solid ${dotBorderColor}`,background:dotBg,
             display:'flex',alignItems:'center',justifyContent:'center',

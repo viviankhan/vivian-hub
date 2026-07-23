@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { buildWeekPlanFromTasks } from '../data/schedule.js'
 import { Icon } from './IconPicker.jsx'
+import { bloomBurst } from '../lib/bloom.js'
 
 const CAT_COLORS = {
   lab:     { dot:'#059669', bg:'#ECFDF5', text:'#065F46' },
@@ -36,7 +37,7 @@ function TaskRow({ id, text, cat, categories, done, carried, carriedFrom, onTogg
   const icon = found?.icon || ''
   return (
     <div style={{ display:'flex', gap:10, alignItems:'center', padding:'8px 0', borderBottom:'1px solid #F5F3EF', opacity:done?.45:1 }}>
-      <div onClick={onToggle}
+      <div onClick={e=>{ if(!done) bloomBurst(e.currentTarget); onToggle() }}
         style={{ width:18, height:18, borderRadius:'50%', flexShrink:0, cursor:'pointer',
           border:done?'none':`2px solid ${dot}`, background:done?dot:'transparent',
           display:'flex', alignItems:'center', justifyContent:'center', transition:'all .2s' }}>
