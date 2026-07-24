@@ -6,7 +6,7 @@
 // from the start), plus optional custom reminder lead times that override the
 // global defaults just for this item.
 import { useState } from 'react'
-import { LEAD_OPTIONS } from '../lib/notifications.js'
+import { LEAD_OPTIONS, getItemReminders } from '../lib/notifications.js'
 
 const DEFAULT_CATEGORIES = [{ id:'other', label:'Other', color:'#8899AA' }]
 
@@ -54,16 +54,32 @@ function prettyDur(mins) {
   return mins % 60 === 0 ? `${mins/60} h` : `${(mins/60).toFixed(1)} h`
 }
 
-export default function AddItemModal({ presetDate = null, lockDate = false, categories = [], onSave, onClose, title = 'Add to calendar' }) {
+export default function AddItemModal({ existing = null, presetDate = null, lockDate = false, categories = [], onSave, onClose, title = 'Add to calendar' }) {
   const cats = (categories && categories.length) ? categories : DEFAULT_CATEGORIES
-  const [label, setLabel]         = useState('')
-  const [date, setDate]           = useState(presetDate || '')
-  const [time, setTime]           = useState('')  // start
-  const [endTime, setEndTime]     = useState('')
-  const [cat, setCat]             = useState(cats[0]?.id || 'other')
-  // Reminders: default (use global) unless the user customizes.
-  const [useDefault, setUseDefault] = useState(true)
-  const [reminders, setReminders]   = useState([])
+  const isEdit = !!existing
+  const [label, setLabel]         = useState(existing?.text || '')
+  const [date, setDate]           = useState(existing?.date || presetDate || '')
+  const [time, setTime]           = useState(existing?.time || '')  // start
+  const [endTime, setEndTime]     = useState(existing?.time && existing?.durationMins ? addMinutes(existing.time, existing.durationMins) : '')
+  const [cat, setCat]             = useState(existing?.cat || cats[0]?.id || 'other')
+  const [description, setDescription] = useState(existing?.description || '')
+  const [subtasks, setSubtasks]   = useState(() => Array.isArray(existing?.subtasks) ? existing.subtasks : [])
+  const [newSub, setNewSub]       = useState('')
+  // Reminders: default (use global) unless the user customizes. When editing,
+  // prefill from the item's saved override.
+  const existingReminders = isEdit ? getItemReminders(existing.id) : null
+  const [useDefault, setUseDefault] = useState(!existingReminders)
+  const [reminders, setReminders]   = useState(existingReminders || [])
+
+  // ── Sub-checkbox helpers ─────────────────────────────────────
+  const addSub = () => {
+    if (!newSub.trim()) return
+    setSubtasks(prev => [...prev, { id: 'st-' + Date.now(), text: newSub.trim(), done: false }])
+    setNewSub('')
+  }
+  const toggleSub = (id) => setSubtasks(prev => prev.map(s => s.id === id ? { ...s, done: !s.done } : s))
+  const editSub   = (id, text) => setSubtasks(prev => prev.map(s => s.id === id ? { ...s, text } : s))
+  const removeSub = (id) => setSubtasks(prev => prev.filter(s => s.id !== id))
 
   const durationMins = diffMinutes(time, endTime)          // null unless a valid span
   const endInvalid = !!(time && endTime && !durationMins)  // end set but ≤ start
@@ -91,20 +107,21 @@ export default function AddItemModal({ presetDate = null, lockDate = false, cate
 
   const submit = () => {
     if (!canSave) return
+    const base = existing
+      ? { ...existing }
+      : { id: 'c-' + Date.now(), prepMin: null, person: null, done: false, createdAt: new Date().toISOString() }
     const commitment = {
-      id: 'c-' + Date.now(),
+      ...base,
       text: label.trim(),
       date,
       time: time || null,
       durationMins: durationMins || null,
-      prepMin: null,
       cat,
-      person: null,
-      done: false,
-      createdAt: new Date().toISOString(),
+      description: description.trim() || '',
+      subtasks,
     }
     // null → use global defaults; otherwise this item's own lead-minute list.
-    onSave(commitment, useDefault ? null : reminders)
+    onSave(commitment, useDefault ? null : reminders, isEdit)
     onClose()
   }
 
@@ -176,6 +193,37 @@ export default function AddItemModal({ presetDate = null, lockDate = false, cate
           </div>
         </div>
 
+        {/* Description */}
+        <div style={{ marginBottom:14 }}>
+          <div style={fieldLabel}>Description</div>
+          <textarea value={description} onChange={e => setDescription(e.target.value)}
+            placeholder="Notes, details, anything to remember…" rows={2}
+            style={{ ...inp, minHeight:0, resize:'vertical', lineHeight:1.5 }} />
+        </div>
+
+        {/* Sub-checkboxes */}
+        <div style={{ marginBottom:14 }}>
+          <div style={fieldLabel}>Checklist</div>
+          {subtasks.map(s => (
+            <div key={s.id} style={{ display:'flex', alignItems:'center', gap:8, marginBottom:6 }}>
+              <div onClick={() => toggleSub(s.id)}
+                style={{ width:18, height:18, borderRadius:5, flexShrink:0, cursor:'pointer', border: s.done ? 'none' : '2px solid var(--teal)', background: s.done ? 'var(--teal)' : 'transparent', display:'flex', alignItems:'center', justifyContent:'center' }}>
+                {s.done && <span style={{ color:'white', fontSize:11, fontWeight:700 }}>✓</span>}
+              </div>
+              <input value={s.text} onChange={e => editSub(s.id, e.target.value)}
+                style={{ flex:1, fontSize:13, padding:'6px 10px', borderRadius:8, border:'1px solid var(--border)', fontFamily:'DM Sans,sans-serif', outline:'none', textDecoration: s.done ? 'line-through' : 'none', color: s.done ? 'var(--muted)' : 'var(--text)' }} />
+              <button onClick={() => removeSub(s.id)} style={{ background:'none', border:'none', cursor:'pointer', color:'#D1D5DB', fontSize:15, padding:'0 2px', flexShrink:0 }}>✕</button>
+            </div>
+          ))}
+          <div style={{ display:'flex', gap:6, marginTop:2 }}>
+            <input value={newSub} onChange={e => setNewSub(e.target.value)} placeholder="Add a sub-item…"
+              onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addSub() } }}
+              style={{ flex:1, fontSize:13, padding:'7px 10px', borderRadius:8, border:'1px dashed var(--border)', fontFamily:'DM Sans,sans-serif', outline:'none' }} />
+            <button onClick={addSub} disabled={!newSub.trim()}
+              style={{ fontSize:12, padding:'7px 12px', borderRadius:8, border:'none', background: newSub.trim() ? 'var(--teal)' : '#E5E7EB', color: newSub.trim() ? 'white' : '#9CA3AF', cursor: newSub.trim() ? 'pointer' : 'default', fontFamily:'DM Sans,sans-serif', fontWeight:600 }}>+ Add</button>
+          </div>
+        </div>
+
         {/* Reminders */}
         <div style={{ marginBottom:16 }}>
           <div style={fieldLabel}>Remind me</div>
@@ -210,7 +258,7 @@ export default function AddItemModal({ presetDate = null, lockDate = false, cate
         <div style={{ display:'flex', gap:8 }}>
           <button onClick={submit} disabled={!canSave}
             style={{ flex:1, padding:'11px', borderRadius:10, border:'none', background: canSave ? 'var(--forest)' : '#E5E7EB', color: canSave ? 'var(--green-light)' : '#9CA3AF', cursor: canSave ? 'pointer' : 'default', fontFamily:'DM Sans,sans-serif', fontWeight:600, fontSize:14 }}>
-            Add
+            {isEdit ? 'Save changes' : 'Add'}
           </button>
           <button onClick={onClose}
             style={{ padding:'11px 16px', borderRadius:10, border:'1px solid var(--border)', background:'white', color:'var(--muted)', cursor:'pointer', fontSize:13, fontFamily:'DM Sans,sans-serif' }}>

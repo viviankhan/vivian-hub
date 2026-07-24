@@ -32,12 +32,13 @@ function endTimeFrom(start, mins) {
   return `${String(Math.floor(total/60)).padStart(2,'0')}:${String(total%60).padStart(2,'0')}`
 }
 
-export default function Calendar({ commitments, vacations, events, log, categories, jumpTo, addCommitment }) {
+export default function Calendar({ commitments, vacations, events, log, categories, jumpTo, addCommitment, updateCommitment }) {
   // monthOffset shifts by whole months from the current month: 0 = this month,
   // -1 = last month, +1 = next month, and so on — unbounded either way.
   const [monthOffset, setMonthOffset] = useState(0)
   const [selected, setSelected] = useState(null)
   const [adding, setAdding] = useState(false)
+  const [editing, setEditing] = useState(null)
   const today = todayStr()
 
   // Add a commitment on any date (long-term planning), with its own optional
@@ -45,6 +46,17 @@ export default function Calendar({ commitments, vacations, events, log, categori
   const handleAdd = (commitment, reminderMins) => {
     if (addCommitment) addCommitment(commitment)
     setItemReminders(commitment.id, reminderMins)
+  }
+  const handleEdit = (commitment, reminderMins) => {
+    const { id, ...changes } = commitment
+    if (updateCommitment) updateCommitment(id, changes)
+    setItemReminders(id, reminderMins)
+    setEditing(null)
+  }
+  const toggleSubtask = (raw, sid) => {
+    if (!updateCommitment) return
+    const subs = (Array.isArray(raw.subtasks) ? raw.subtasks : []).map(s => s.id === sid ? { ...s, done: !s.done } : s)
+    updateCommitment(raw.id, { subtasks: subs })
   }
 
   // Jump the calendar to the month containing a given date and select it.
@@ -96,10 +108,12 @@ export default function Calendar({ commitments, vacations, events, log, categori
       const end = endTimeFrom(c.time, c.durationMins)
       const timeLabel = c.time ? `${fmt12(c.time)}${end ? '–'+fmt12(end) : ''} ` : ''
       return {
+        id: c.id, raw: c,
         date: c.date,
         text: c.text,
         label: `${timeLabel}${c.text}`,
         done: c.done,
+        description: c.description, subtasks: Array.isArray(c.subtasks) ? c.subtasks : [],
         color: cat.color, icon: cat.icon, catLabel: cat.label,
       }
     })
@@ -216,11 +230,31 @@ export default function Calendar({ commitments, vacations, events, log, categori
             </div>
           ))}
           {selectedEvents.map((e, i) => (
-            <div key={i} style={{ display:'flex', gap:10, alignItems:'center', padding:'9px 12px', borderRadius:8, marginBottom:6, background:`${e.color}14`, border:`1px solid ${e.color}44`, opacity: e.done ? .5 : 1 }}>
-              <span style={{ display:'inline-flex', alignItems:'center', gap:4, fontSize:10, letterSpacing:1, textTransform:'uppercase', color:e.color, minWidth:70, fontWeight:600 }}>
-                {e.icon && <Icon value={e.icon} size={12} />}{e.catLabel}
-              </span>
-              <div style={{ fontSize:13, color:'var(--text)', textDecoration: e.done ? 'line-through' : 'none' }}>{e.label}</div>
+            <div key={i} style={{ padding:'9px 12px', borderRadius:8, marginBottom:6, background:`${e.color}14`, border:`1px solid ${e.color}44`, opacity: e.done ? .6 : 1 }}>
+              <div style={{ display:'flex', gap:10, alignItems:'center' }}>
+                <span style={{ display:'inline-flex', alignItems:'center', gap:4, fontSize:10, letterSpacing:1, textTransform:'uppercase', color:e.color, minWidth:70, fontWeight:600 }}>
+                  {e.icon && <Icon value={e.icon} size={12} />}{e.catLabel}
+                </span>
+                <div style={{ flex:1, fontSize:13, color:'var(--text)', textDecoration: e.done ? 'line-through' : 'none' }}>{e.label}</div>
+                <button onClick={() => setEditing(e.raw)} title="Edit"
+                  style={{ background:'none', border:'none', cursor:'pointer', color:'#9CA3AF', fontSize:13, padding:'0 2px', flexShrink:0 }}>✎</button>
+              </div>
+              {e.description && (
+                <div style={{ fontSize:12, color:'var(--muted)', lineHeight:1.5, whiteSpace:'pre-wrap', marginTop:6, paddingLeft:2 }}>{e.description}</div>
+              )}
+              {e.subtasks.length > 0 && (
+                <div style={{ marginTop:6, paddingLeft:2 }}>
+                  {e.subtasks.map(s => (
+                    <div key={s.id} onClick={() => toggleSubtask(e.raw, s.id)}
+                      style={{ display:'flex', alignItems:'center', gap:8, marginBottom:4, cursor:'pointer' }}>
+                      <div style={{ width:15, height:15, borderRadius:4, flexShrink:0, border: s.done ? 'none' : `2px solid ${e.color}`, background: s.done ? e.color : 'transparent', display:'flex', alignItems:'center', justifyContent:'center' }}>
+                        {s.done && <span style={{ color:'white', fontSize:9, fontWeight:700 }}>✓</span>}
+                      </div>
+                      <span style={{ fontSize:12.5, color: s.done ? 'var(--muted)' : 'var(--text)', textDecoration: s.done ? 'line-through' : 'none' }}>{s.text}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           ))}
           {/* Completed that day — history that persists even after deletion */}
@@ -249,6 +283,14 @@ export default function Calendar({ commitments, vacations, events, log, categori
           onSave={handleAdd}
           onClose={()=>setAdding(false)}
           title="Add to calendar" />
+      )}
+      {editing && (
+        <AddItemModal
+          existing={editing}
+          categories={categories}
+          onSave={handleEdit}
+          onClose={()=>setEditing(null)}
+          title="Edit event" />
       )}
     </div>
   )

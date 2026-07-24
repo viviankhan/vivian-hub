@@ -5,6 +5,7 @@ import {
   getLogEntries, addLogEntry, deleteLogEntry,
   getNotes, setNotes, getFcProgress, setFcProgress, getFcStudied, setFcStudied,
   getScheduledTasks, setScheduledTasks,
+  getCommitmentMeta, setCommitmentMeta,
   getCommitments, addCommitment as dbAddCommitment, updateCommitment as dbUpdateCommitment, deleteCommitment as dbDeleteCommitment,
   getVacations, addVacation as dbAddVacation, deleteVacation as dbDeleteVacation,
   getEvents, addEvent as dbAddEvent, deleteEvent as dbDeleteEvent,
@@ -105,6 +106,7 @@ export default function App() {
   const [fcStudied,        setFcStudied_]       = useState({})
   const [scheduled,        setScheduled_]       = useState([])
   const [commitments,      setCommitments_]     = useState([])
+  const [commitmentMeta,   setCommitmentMeta_]  = useState({})
   const [recurringTaskRows,setRecurringTaskRows]= useState([])
   const [vacations,        setVacations_]       = useState([])
   const [events,           setEvents_]          = useState([])
@@ -114,16 +116,16 @@ export default function App() {
   useEffect(() => {
     async function load() {
       await runMigrationIfNeeded()
-      const [comp, l, n, fcp, fcs, sch, com, rt, vac, evs, cats] = await Promise.all([
+      const [comp, l, n, fcp, fcs, sch, com, rt, vac, evs, cats, cmeta] = await Promise.all([
         getCompletions(), getLogEntries(), getNotes(),
         getFcProgress(), getFcStudied(), getScheduledTasks(),
         getCommitments(), getRecurringTasks(), getVacations(), getEvents(),
-        seedCategoriesIfNeeded(),
+        seedCategoriesIfNeeded(), getCommitmentMeta(),
       ])
       setCompletions_(comp); setLog_(l); setNotes_(n)
       setFcProgress_(fcp); setFcStudied_(fcs); setScheduled_(sch)
       setCommitments_(com); setRecurringTaskRows(rt); setVacations_(vac); setEvents_(evs)
-      setCategories_(cats)
+      setCategories_(cats); setCommitmentMeta_(cmeta)
       setLoading(false)
     }
     load()
@@ -222,21 +224,50 @@ export default function App() {
   // ── Commitments CRUD — each is one atomic row operation now, never a
   // whole-array overwrite, so two edits in flight at once can't clobber
   // each other the way they used to. ──────────────────────────
+  // description + subtasks live in the kv_store meta blob (no commitments-table
+  // columns), so they're split off from the core row write here.
   const addCommitment = useCallback(async c => {
+    const { description, subtasks, ...core } = c
     try {
-      const created = await dbAddCommitment(c)
+      const created = await dbAddCommitment(core)
       setCommitments_(prev => [created, ...prev])
+      if ((description && description.trim()) || (subtasks && subtasks.length)) {
+        setCommitmentMeta_(prev => {
+          const next = { ...prev, [created.id]: { description: description || '', subtasks: subtasks || [] } }
+          setCommitmentMeta(next).catch(reportSaveError)
+          return next
+        })
+      }
     } catch (e) { reportSaveError(e) }
   }, [])
   const updateCommitment = useCallback(async (id, changes) => {
+    const { description, subtasks, ...core } = changes
     try {
-      const updated = await dbUpdateCommitment(id, changes)
-      setCommitments_(prev => prev.map(c => c.id===id ? updated : c))
+      if (Object.keys(core).length) {
+        const updated = await dbUpdateCommitment(id, core)
+        setCommitments_(prev => prev.map(c => c.id===id ? updated : c))
+      }
+      if (description !== undefined || subtasks !== undefined) {
+        setCommitmentMeta_(prev => {
+          const merged = { ...(prev[id] || {}) }
+          if (description !== undefined) merged.description = description
+          if (subtasks !== undefined) merged.subtasks = subtasks
+          const next = { ...prev, [id]: merged }
+          setCommitmentMeta(next).catch(reportSaveError)
+          return next
+        })
+      }
     } catch (e) { reportSaveError(e) }
   }, [])
   const deleteCommitment = useCallback(async id => {
     setCommitments_(prev => prev.filter(c => c.id !== id))
     setCompletions_(prev => { const n = {...prev}; delete n[id]; return n })
+    setCommitmentMeta_(prev => {
+      if (!(id in prev)) return prev
+      const n = { ...prev }; delete n[id]
+      setCommitmentMeta(n).catch(reportSaveError)
+      return n
+    })
     try { await Promise.all([dbDeleteCommitment(id), setCompletion(id, false)]) }
     catch (e) { reportSaveError(e) }
   }, [])
@@ -318,6 +349,15 @@ export default function App() {
     </div>
   )
 
+  // Commitments as the UI sees them: core rows merged with their description +
+  // subtasks from the meta blob. Internal logic (syncToggle, reminders) keeps
+  // using the raw `commitments` state; only children get this enriched view.
+  const commitmentsView = commitments.map(c => ({
+    ...c,
+    description: commitmentMeta[c.id]?.description ?? '',
+    subtasks: commitmentMeta[c.id]?.subtasks ?? [],
+  }))
+
   const sharedProps = {
     // Every consumer reads todos[k] || weekState[k] — both point at the same
     // completions object rather than keeping two copies in sync.
@@ -325,7 +365,7 @@ export default function App() {
     log, appendLog, notes, updateNotes,
     fcProgress, updateFcProgress, fcStudied, updateFcStudied,
     scheduled, addScheduledTask,
-    commitments, addCommitment, updateCommitment, deleteCommitment,
+    commitments: commitmentsView, addCommitment, updateCommitment, deleteCommitment,
     vacations, addVacation, deleteVacation,
     events, addEvent, deleteEvent,
     categories,
