@@ -3,6 +3,7 @@ import { Icon } from './IconPicker.jsx'
 import AddItemModal from './AddItemModal.jsx'
 import { setItemReminders } from '../lib/notifications.js'
 import { recurringForDate } from '../data/schedule.js'
+import { resolveCats, primaryCat } from '../data/categories.js'
 
 // Pastel shading for how busy a day is (number of events on it).
 const BUSY_SHADES = ['#F4F0FA', '#EAE1F4', '#DBC9EC', '#C9AEDF']
@@ -94,9 +95,12 @@ export default function Calendar({ commitments, vacations, events, log, categori
 
   const goMonth = (delta) => { setMonthOffset(o => o + delta); setSelected(null) }
 
+  // A commitment/task can carry multiple labels (comma-joined). The first sets
+  // the color + icon; the label text is all of them joined for the detail view.
   const resolveCat = (id) => {
-    const found = (categories || []).find(c => c.id === id)
-    return { color: found?.color || '#9CA3AF', icon: found?.icon || '', label: found?.label || id || 'Commitment' }
+    const p = primaryCat(id, categories)
+    const all = resolveCats(id, categories)
+    return { color: p.color, icon: p.icon, label: all.length ? all.map(c => c.label).join(', ') : (id || 'Commitment') }
   }
 
   // Each commitment event now carries its own category's color + icon, so the

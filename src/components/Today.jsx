@@ -5,6 +5,7 @@ import { getRoutines } from '../lib/storage.js'
 import { normalizeRoutineItems, sortByTime, to12 } from './Routines.jsx'
 import { Icon } from './IconPicker.jsx'
 import { bloomBurst } from '../lib/bloom.js'
+import { resolveCats } from '../data/categories.js'
 import AddItemModal from './AddItemModal.jsx'
 import { setItemReminders } from '../lib/notifications.js'
 
@@ -228,10 +229,12 @@ function ShiftToast({ result, onClose }) {
 
 // ── Timeline task block ────────────────────────────────────────
 function TimelineBlock({ task, categories, status, now, minutesUntilNext, isDone, onToggle, onManage, onShiftToNow }) {
-  const catFound = (categories || []).find(x => x.id === task.tag)
-  const dot = catFound?.color || TAG_COLORS[task.tag] || '#9CA3AF'
-  const catLabel = catFound?.label || task.tag
-  const catIcon = catFound?.icon || ''
+  // A task can carry more than one label — resolve them all; the first drives
+  // the accent color, and every label renders as its own chip.
+  const cats = resolveCats(task.tag, categories)
+  const primary = cats[0]
+  const dot = primary?.color || TAG_COLORS[task.tag] || '#9CA3AF'
+  const catIcon = primary?.icon || ''
   const location = extractLocation(task.label, task.note)
   const timeMins = parseTimeMins(task.label)
   const minsRemaining = timeMins !== null && minutesUntilNext !== null
@@ -290,7 +293,9 @@ function TimelineBlock({ task, categories, status, now, minutesUntilNext, isDone
               </div>
               {task.note&&<div style={{fontSize:11,color:'var(--muted)',marginTop:3,lineHeight:1.4}}>{task.note}</div>}
               <div style={{display:'flex',gap:5,marginTop:6,flexWrap:'wrap',alignItems:'center'}}>
-                <span style={{display:'inline-flex',alignItems:'center',gap:3,fontSize:9,padding:'2px 6px',borderRadius:6,background:`${dot}18`,color:dot,fontWeight:700,letterSpacing:.8,textTransform:'uppercase'}}>{catIcon&&<Icon value={catIcon} size={11} />}{catLabel}</span>
+                {(cats.length ? cats : [{ id:task.tag, label:task.tag, color:dot, icon:catIcon }]).map(c=>(
+                  <span key={c.id} style={{display:'inline-flex',alignItems:'center',gap:3,fontSize:9,padding:'2px 6px',borderRadius:6,background:`${c.color}18`,color:c.color,fontWeight:700,letterSpacing:.8,textTransform:'uppercase'}}>{c.icon&&<Icon value={c.icon} size={11} />}{c.label}</span>
+                ))}
                 {location&&!isDone&&<span style={{fontSize:9,padding:'2px 6px',borderRadius:6,background:'#EFF6FF',color:'#1E3A8A',fontWeight:600}}>📍 {location}</span>}
               </div>
             </div>

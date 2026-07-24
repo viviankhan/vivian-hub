@@ -19,3 +19,28 @@ export const DEFAULT_CATEGORIES = [
   { id:'sleep',    label:'Sleep',    color:'#52B788', sortOrder:11 },
   { id:'other',    label:'Other',    color:'#8899AA', sortOrder:12 },
 ]
+
+// ── Multi-label helpers ────────────────────────────────────────
+// A task/commitment's category is stored in one text field but can now hold
+// more than one label, comma-joined (e.g. "lab,health"). Category ids are
+// comma-free slugs, so splitting on comma is safe. These helpers are the one
+// place that understands that encoding, so every screen resolves labels the
+// same way.
+export function catIds(cat) {
+  if (Array.isArray(cat)) return cat.filter(Boolean)
+  if (!cat) return []
+  return String(cat).split(',').map(s => s.trim()).filter(Boolean)
+}
+// Resolve a stored cat value into full {id,label,color,icon} objects (order
+// preserved). Unknown ids fall back to a neutral gray so nothing renders blank.
+export function resolveCats(cat, categories) {
+  const list = categories || []
+  return catIds(cat).map(id => {
+    const f = list.find(c => c.id === id)
+    return { id, label: f?.label || id, color: f?.color || '#9CA3AF', icon: f?.icon || '' }
+  })
+}
+// The primary (first) label — for the single dot/color spots that only fit one.
+export function primaryCat(cat, categories) {
+  return resolveCats(cat, categories)[0] || { id:'', label:'', color:'#9CA3AF', icon:'' }
+}

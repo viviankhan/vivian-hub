@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react'
 import { Icon } from './IconPicker.jsx'
+import { catIds, resolveCats } from '../data/categories.js'
 
 const DAYS = ['monday','tuesday','wednesday','thursday','friday','saturday','sunday']
 const DAY_SHORT = { monday:'Mon', tuesday:'Tue', wednesday:'Wed', thursday:'Thu', friday:'Fri', saturday:'Sat', sunday:'Sun' }
@@ -14,13 +15,6 @@ const SURFACES = [
 function taskSurfaces(task) {
   if (Array.isArray(task?.surfaces) && task.surfaces.length) return task.surfaces
   return [task?.type === 'today' ? 'today' : 'week']
-}
-
-// Categories are the shared, user-editable list (Settings → Categories),
-// passed in as a prop. This resolves a category id to its label + color + icon.
-function resolveCat(id, categories) {
-  const found = (categories || []).find(c => c.id === id)
-  return { label: found?.label || id, color: found?.color || '#9CA3AF', icon: found?.icon || '' }
 }
 
 // Current day-of-week name. JS getDay(): 0=Sun…6=Sat → mapped to DAYS (Mon-indexed)
@@ -108,7 +102,12 @@ function TaskModal({ initial, onSave, onDelete, onClose, categories }) {
   const [text,      setText]      = useState(initial?.text||initial?.label||'')
   const [note,      setNote]      = useState(initial?.note||'')
   const [surfaces,  setSurfaces]  = useState(initial ? taskSurfaces(initial) : ['today'])
-  const [cat,       setCat]       = useState(initial?.cat||initial?.tag||catList[0].id)
+  // Multiple labels allowed, stored comma-joined; parse any existing value.
+  const [selCats,   setSelCats]   = useState(() => {
+    const ids = catIds(initial?.cat||initial?.tag)
+    return ids.length ? ids : [catList[0].id]
+  })
+  const toggleCat = (id) => setSelCats(prev => prev.includes(id) ? prev.filter(x=>x!==id) : [...prev, id])
   const [carry,     setCarry]     = useState(initial?.carry||false)
   const [days,      setDays]      = useState(initial?.days||['monday'])
   const [startDate, setStartDate] = useState(initial?.startDate||'')
@@ -120,9 +119,10 @@ function TaskModal({ initial, onSave, onDelete, onClose, categories }) {
   const showsOnWeek = surfaces.includes('week')
 
   const save = () => {
-    if (!text.trim() || days.length===0 || surfaces.length===0) return
+    if (!text.trim() || days.length===0 || surfaces.length===0 || selCats.length===0) return
     const id = initial?.id || `${days[0].slice(0,3)}-${slugify(text)}`
     const trimmed = text.trim()
+    const cat = selCats.join(',')
     onSave({
       id, days, surfaces,
       cat, tag:cat,
@@ -176,19 +176,28 @@ function TaskModal({ initial, onSave, onDelete, onClose, categories }) {
           <input value={note} onChange={e=>setNote(e.target.value)} placeholder="Note (optional sub-text)…"
             style={{ ...inp, color:'var(--muted)', fontSize:12 }} />
 
-          {/* Category */}
-          <div style={{ display:'flex', gap:8, alignItems:'center', marginBottom:14, flexWrap:'wrap' }}>
-            <select value={cat} onChange={e=>setCat(e.target.value)}
-              style={{ fontSize:12, padding:'7px 10px', borderRadius:9, border:'1px solid var(--border)', fontFamily:'DM Sans,sans-serif', background:'white', cursor:'pointer' }}>
-              {catList.map(c=><option key={c.id} value={c.id}>{c.label}</option>)}
-            </select>
-            {showsOnWeek && (
-              <label style={{ display:'flex', alignItems:'center', gap:5, fontSize:12, color:'var(--muted)', cursor:'pointer' }}>
-                <input type="checkbox" checked={carry} onChange={e=>setCarry(e.target.checked)} />
-                carry forward if undone
-              </label>
-            )}
+          {/* Labels — tick one or more */}
+          <div style={{ fontSize:10, color:'var(--muted)', letterSpacing:1.5, textTransform:'uppercase', marginBottom:6 }}>
+            Labels {selCats.length>1 && <span style={{ textTransform:'none', letterSpacing:0, color:'var(--teal)' }}>· {selCats.length} selected</span>}
           </div>
+          <div style={{ display:'flex', gap:6, flexWrap:'wrap', marginBottom:12 }}>
+            {catList.map(c=>{
+              const on = selCats.includes(c.id)
+              return (
+                <button key={c.id} onClick={()=>toggleCat(c.id)}
+                  style={{ fontSize:11, padding:'4px 12px', borderRadius:20, cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:on?600:400,
+                    border:on?'none':'1px solid var(--border)', background:on?(c.color||'var(--forest)'):'white', color:on?'white':'var(--muted)' }}>
+                  {on?'✓ ':''}{c.label}
+                </button>
+              )
+            })}
+          </div>
+          {showsOnWeek && (
+            <label style={{ display:'flex', alignItems:'center', gap:5, fontSize:12, color:'var(--muted)', cursor:'pointer', marginBottom:14 }}>
+              <input type="checkbox" checked={carry} onChange={e=>setCarry(e.target.checked)} />
+              carry forward if undone
+            </label>
+          )}
 
           {/* Days */}
           <div style={{ fontSize:10, color:'var(--muted)', letterSpacing:1.5, textTransform:'uppercase', marginBottom:8 }}>Repeats on</div>
@@ -220,8 +229,8 @@ function TaskModal({ initial, onSave, onDelete, onClose, categories }) {
           {/* Actions */}
           <div style={{ display:'flex', gap:8, justifyContent:'space-between' }}>
             <div style={{ display:'flex', gap:8 }}>
-              <button onClick={save} disabled={!text.trim()||days.length===0||surfaces.length===0}
-                style={{ fontSize:13, padding:'10px 20px', borderRadius:10, border:'none', background:'var(--forest)', color:'var(--green-light)', cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:600, opacity:(!text.trim()||days.length===0||surfaces.length===0)?.5:1 }}>
+              <button onClick={save} disabled={!text.trim()||days.length===0||surfaces.length===0||selCats.length===0}
+                style={{ fontSize:13, padding:'10px 20px', borderRadius:10, border:'none', background:'var(--forest)', color:'var(--green-light)', cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:600, opacity:(!text.trim()||days.length===0||surfaces.length===0||selCats.length===0)?.5:1 }}>
                 {isNew ? 'Add Task' : 'Save Changes'}
               </button>
               <button onClick={onClose}
@@ -245,8 +254,7 @@ function TaskModal({ initial, onSave, onDelete, onClose, categories }) {
 // ── Task list row ──────────────────────────────────────────────
 function TaskListRow({ task, onEdit, today, categories }) {
   const text = task.text||task.label||''
-  const catId = task.cat||task.tag||'other'
-  const { label: catLabel, color: catColor, icon: catIcon } = resolveCat(catId, categories)
+  const cats = resolveCats(task.cat||task.tag||'other', categories)
   const hasDateRange = task.startDate || task.endDate
   const isToday = task.days?.includes(today)
   return (
@@ -266,7 +274,9 @@ function TaskListRow({ task, onEdit, today, categories }) {
           </div>
         )}
       </div>
-      <Tag label={catLabel} color={catColor} icon={catIcon} />
+      <div style={{ display:'flex', gap:3, flexWrap:'wrap', justifyContent:'flex-end', flexShrink:0 }}>
+        {cats.map(c => <Tag key={c.id} label={c.label} color={c.color} icon={c.icon} />)}
+      </div>
       <SurfaceBadges surfaces={taskSurfaces(task)} />
       {/* Day labels — to the right of the title; current day highlighted in teal */}
       <div style={{ display:'flex', gap:3, flexWrap:'wrap', justifyContent:'flex-end', maxWidth:150, flexShrink:0 }}>

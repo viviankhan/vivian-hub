@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { buildWeekDays, recurringForDate } from '../data/schedule.js'
+import { resolveCats } from '../data/categories.js'
 import { Icon } from './IconPicker.jsx'
 import { bloomBurst } from '../lib/bloom.js'
 
@@ -30,11 +31,12 @@ function fmt12(t) {
 
 // ── Task row ───────────────────────────────────────────────────
 function TaskRow({ id, text, cat, categories, done, carried, carriedFrom, onToggle, onDelete }) {
-  const found = (categories || []).find(x => x.id === cat)
+  // Resolve every label on this task; the first sets the accent color.
+  const resolved = resolveCats(cat, categories)
   const fallback = CAT_COLORS[cat] || CAT_COLORS.career
-  const dot = found?.color || fallback.dot
-  const label = found?.label || cat
-  const icon = found?.icon || ''
+  const cats = resolved.length ? resolved : [{ id:cat, label:cat, color:fallback.dot, icon:'' }]
+  const dot = cats[0].color
+  const icon = cats[0].icon
   return (
     <div style={{ display:'flex', gap:10, alignItems:'center', padding:'8px 0', borderBottom:'1px solid #F5F3EF', opacity:done?.45:1 }}>
       <div onClick={e=>{ if(!done) bloomBurst(e.currentTarget); onToggle() }}
@@ -46,7 +48,9 @@ function TaskRow({ id, text, cat, categories, done, carried, carriedFrom, onTogg
       <div style={{ flex:1, display:'flex', alignItems:'center', gap:6, flexWrap:'wrap', cursor:'pointer' }} onClick={onToggle}>
         {icon && <Icon value={icon} size={15} />}
         <span style={{ fontSize:13, color:done?'var(--muted)':'var(--text)', textDecoration:done?'line-through':'none' }}>{text}</span>
-        <span style={{ display:'inline-flex', alignItems:'center', gap:3, fontSize:9, letterSpacing:1, textTransform:'uppercase', padding:'1px 6px', borderRadius:10, background:`${dot}20`, color:dot }}>{label}</span>
+        {cats.map(c => (
+          <span key={c.id} style={{ display:'inline-flex', alignItems:'center', gap:3, fontSize:9, letterSpacing:1, textTransform:'uppercase', padding:'1px 6px', borderRadius:10, background:`${c.color}20`, color:c.color }}>{c.icon&&<Icon value={c.icon} size={11} />}{c.label}</span>
+        ))}
         {carried&&<span style={{ fontSize:9, letterSpacing:1, textTransform:'uppercase', padding:'1px 6px', borderRadius:10, background:'#FEF3C7', color:'#92400E' }}>↩ {carriedFrom}</span>}
       </div>
       {onDelete&&<button onClick={onDelete} style={{ fontSize:10, padding:'2px 6px', borderRadius:6, border:'1px solid var(--border)', background:'white', color:'var(--muted)', cursor:'pointer', flexShrink:0 }}>✕</button>}

@@ -7,6 +7,7 @@
 // global defaults just for this item.
 import { useState } from 'react'
 import { LEAD_OPTIONS, getItemReminders } from '../lib/notifications.js'
+import { catIds } from '../data/categories.js'
 
 const DEFAULT_CATEGORIES = [{ id:'other', label:'Other', color:'#8899AA' }]
 
@@ -61,7 +62,12 @@ export default function AddItemModal({ existing = null, presetDate = null, prese
   const [date, setDate]           = useState(existing?.date || presetDate || '')
   const [time, setTime]           = useState(existing?.time || '')  // start
   const [endTime, setEndTime]     = useState(existing?.time && existing?.durationMins ? addMinutes(existing.time, existing.durationMins) : '')
-  const [cat, setCat]             = useState(existing?.cat || cats[0]?.id || 'other')
+  // Multiple labels allowed. Stored comma-joined; parse any existing value.
+  const [selCats, setSelCats]     = useState(() => {
+    const ids = catIds(existing?.cat)
+    return ids.length ? ids : [cats[0]?.id || 'other']
+  })
+  const toggleCat = (id) => setSelCats(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id])
   const [description, setDescription] = useState(existing?.description || '')
   const [subtasks, setSubtasks]   = useState(() => Array.isArray(existing?.subtasks) ? existing.subtasks : [])
   const [newSub, setNewSub]       = useState('')
@@ -83,7 +89,7 @@ export default function AddItemModal({ existing = null, presetDate = null, prese
 
   const durationMins = diffMinutes(time, endTime)          // null unless a valid span
   const endInvalid = !!(time && endTime && !durationMins)  // end set but ≤ start
-  const canSave = !!(label.trim() && date) && !endInvalid
+  const canSave = !!(label.trim() && date) && !endInvalid && selCats.length > 0
 
   // Quick-set: fill the end time as start + N minutes. Needs a start time.
   const setQuickDuration = (mins) => {
@@ -116,7 +122,7 @@ export default function AddItemModal({ existing = null, presetDate = null, prese
       date,
       time: time || null,
       durationMins: durationMins || null,
-      cat,
+      cat: selCats.join(','),
       description: description.trim() || '',
       subtasks,
     }
@@ -180,16 +186,19 @@ export default function AddItemModal({ existing = null, presetDate = null, prese
               : (!time ? 'Pick a start time, then tap a duration to set the end.' : '')}
         </div>
 
-        {/* Category */}
+        {/* Category — tick one or more labels */}
         <div style={{ marginBottom:14 }}>
-          <div style={fieldLabel}>Category</div>
+          <div style={fieldLabel}>Labels {selCats.length > 1 && <span style={{ textTransform:'none', letterSpacing:0, color:'var(--teal)' }}>· {selCats.length} selected</span>}</div>
           <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
-            {cats.map(c => (
-              <button key={c.id} onClick={() => setCat(c.id)}
-                style={{ fontSize:11, padding:'4px 12px', borderRadius:20, border: cat === c.id ? 'none' : '1px solid var(--border)', background: cat === c.id ? c.color : 'white', color: cat === c.id ? 'white' : 'var(--muted)', cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight: cat === c.id ? 600 : 400 }}>
-                {c.label}
-              </button>
-            ))}
+            {cats.map(c => {
+              const on = selCats.includes(c.id)
+              return (
+                <button key={c.id} onClick={() => toggleCat(c.id)}
+                  style={{ fontSize:11, padding:'4px 12px', borderRadius:20, border: on ? 'none' : '1px solid var(--border)', background: on ? c.color : 'white', color: on ? 'white' : 'var(--muted)', cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight: on ? 600 : 400 }}>
+                  {on ? '✓ ' : ''}{c.label}
+                </button>
+              )
+            })}
           </div>
         </div>
 
