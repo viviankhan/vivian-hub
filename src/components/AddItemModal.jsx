@@ -54,10 +54,10 @@ function prettyDur(mins) {
   return mins % 60 === 0 ? `${mins/60} h` : `${(mins/60).toFixed(1)} h`
 }
 
-export default function AddItemModal({ existing = null, presetDate = null, lockDate = false, categories = [], onSave, onClose, title = 'Add to calendar' }) {
+export default function AddItemModal({ existing = null, presetDate = null, presetText = '', lockDate = false, categories = [], onSave, onClose, title = 'Add to calendar' }) {
   const cats = (categories && categories.length) ? categories : DEFAULT_CATEGORIES
   const isEdit = !!existing
-  const [label, setLabel]         = useState(existing?.text || '')
+  const [label, setLabel]         = useState(existing?.text || presetText || '')
   const [date, setDate]           = useState(existing?.date || presetDate || '')
   const [time, setTime]           = useState(existing?.time || '')  // start
   const [endTime, setEndTime]     = useState(existing?.time && existing?.durationMins ? addMinutes(existing.time, existing.durationMins) : '')

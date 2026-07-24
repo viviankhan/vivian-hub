@@ -175,6 +175,11 @@ export const setScheduledTasks = v  => dbSet('scheduled_tasks', v)
 export const getCommitmentMeta = () => dbGet('commitment_meta').then(v => v ?? {})
 export const setCommitmentMeta = v  => dbSet('commitment_meta', v)
 
+// Thoughts board — a pool of sticky-note thoughts. One kv_store blob (array),
+// so no new table. Each note: { id, text, createdAt, x, y, rot, color, scheduled }.
+export const getThoughts = () => dbGet('thoughts').then(v => v ?? [])
+export const setThoughts = v  => dbSet('thoughts', v)
+
 // ── Classes ────────────────────────────────────────────────────
 export async function getClasses() {
   if (USE_SUPABASE) {

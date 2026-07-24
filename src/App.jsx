@@ -25,6 +25,7 @@ import RecurringTasksManager, { flatToPerDay } from './components/RecurringTasks
 import Routines from './components/Routines.jsx'
 import CategoriesManager from './components/CategoriesManager.jsx'
 import EventsManager from './components/EventsManager.jsx'
+import ThoughtsBoard from './components/ThoughtsBoard.jsx'
 import NotificationsSettings from './components/NotificationsSettings.jsx'
 import SearchOverlay, { SearchIcon } from './components/SearchOverlay.jsx'
 import { registerServiceWorker, syncReminders } from './lib/notifications.js'
@@ -35,6 +36,7 @@ const TABS = [
   { id:'week',        label:'Week'        },
   { id:'commitments', label:'Commitments' },
   { id:'calendar',    label:'Calendar'    },
+  { id:'thoughts',    label:'Thoughts'    },
   { id:'events',      label:'Events'      },
   { id:'recurring',   label:'Recurring'   },
 ]
@@ -406,6 +408,7 @@ export default function App() {
         {tab==='week'        && <ThisWeek    {...sharedProps} weekTasks={activeWeekTasks} deleteCommitment={deleteCommitment} />}
         {tab==='commitments' && <Commitments {...sharedProps} />}
         {tab==='calendar'    && <Calendar    {...sharedProps} jumpTo={jumpTo} />}
+        {tab==='thoughts'    && <ThoughtsBoard addCommitment={addCommitment} categories={categories} />}
         {tab==='events'      && <EventsManager events={events} addEvent={addEvent} deleteEvent={deleteEvent}
           vacations={vacations} addVacation={addVacation} deleteVacation={deleteVacation} />}
         {tab==='recurring'   && <RecurringTasksManager recurringTasks={recurringTasksWrapped}
