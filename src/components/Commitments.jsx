@@ -3,6 +3,8 @@ import { useState, useEffect } from 'react'
 import { findSlots } from '../lib/scheduler.js'
 import { Icon } from './IconPicker.jsx'
 import { bloomBurst } from '../lib/bloom.js'
+import AddItemModal from './AddItemModal.jsx'
+import { setItemReminders } from '../lib/notifications.js'
 
 const DAYS = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday']
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
@@ -368,8 +370,11 @@ function QuickAdd({ onAdd, categories }) {
 }
 
 // ── Commitment card ────────────────────────────────────────────
-function CommitCard({ c, todos, weekState, syncToggle, onDelete, onSchedule, scheduled, categories }) {
+function CommitCard({ c, todos, weekState, syncToggle, onDelete, onSchedule, onEdit, scheduled, categories }) {
   const [showScheduler, setShowScheduler] = useState(false)
+  const subs = Array.isArray(c.subtasks) ? c.subtasks : []
+  const subsDone = subs.filter(s => s.done).length
+  const toggleSub = (sid) => onSchedule(c.id, { subtasks: subs.map(s => s.id === sid ? { ...s, done: !s.done } : s) })
   const cat = getCat(c.cat, categories)
   const done = !!(todos[c.id] || weekState[c.id] || c.done)
   const past = isPast(c.date) && !done
@@ -446,10 +451,35 @@ function CommitCard({ c, todos, weekState, syncToggle, onDelete, onSchedule, sch
               {showScheduler ? 'Cancel' : unscheduled ? '🗓 Find time' : '⏰ Find time'}
             </button>
           )}
+          <button onClick={e => { e.stopPropagation(); onEdit(c) }} title="Edit"
+            style={{ background:'none', border:'none', cursor:'pointer', color:'#9CA3AF', fontSize:14, padding:'0 2px' }}>✎</button>
           <button onClick={() => onDelete(c.id)}
             style={{ background:'none', border:'none', cursor:'pointer', color:'#D1D5DB', fontSize:16, padding:'0 2px' }}>✕</button>
         </div>
       </div>
+
+      {/* Description + sub-checkboxes */}
+      {(c.description || subs.length > 0) && (
+        <div style={{ marginTop:10, paddingLeft:30 }}>
+          {c.description && (
+            <div style={{ fontSize:12, color:'var(--muted)', lineHeight:1.5, whiteSpace:'pre-wrap', marginBottom: subs.length ? 8 : 0 }}>{c.description}</div>
+          )}
+          {subs.length > 0 && (
+            <div>
+              <div style={{ fontSize:10, color:'var(--muted)', letterSpacing:.5, marginBottom:5 }}>{subsDone}/{subs.length} done</div>
+              {subs.map(s => (
+                <div key={s.id} onClick={() => toggleSub(s.id)}
+                  style={{ display:'flex', alignItems:'center', gap:8, marginBottom:5, cursor:'pointer' }}>
+                  <div style={{ width:16, height:16, borderRadius:5, flexShrink:0, border: s.done ? 'none' : '2px solid var(--teal)', background: s.done ? 'var(--teal)' : 'transparent', display:'flex', alignItems:'center', justifyContent:'center' }}>
+                    {s.done && <span style={{ color:'white', fontSize:10, fontWeight:700 }}>✓</span>}
+                  </div>
+                  <span style={{ fontSize:13, color: s.done ? 'var(--muted)' : 'var(--text)', textDecoration: s.done ? 'line-through' : 'none' }}>{s.text}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Inline scheduler panel */}
       {showScheduler && (
@@ -470,6 +500,14 @@ function CommitCard({ c, todos, weekState, syncToggle, onDelete, onSchedule, sch
 export default function Commitments({ commitments, addCommitment, updateCommitment, deleteCommitment, todos, weekState, syncToggle, scheduled, categories }) {
   const [filter, setFilter] = useState('toschedule')
   const [confirmClear, setConfirmClear] = useState(false)
+  const [editing, setEditing] = useState(null)
+
+  const handleSaveEdit = (commitment, reminderMins) => {
+    const { id, ...changes } = commitment
+    updateCommitment(id, changes)
+    setItemReminders(id, reminderMins)
+    setEditing(null)
+  }
 
   const isDone = c => !!(todos[c.id] || weekState[c.id] || c.done)
   const doneCount = (commitments || []).filter(isDone).length
@@ -596,10 +634,19 @@ export default function Commitments({ commitments, addCommitment, updateCommitme
         <CommitCard
           key={c.id} c={c} todos={todos} weekState={weekState}
           syncToggle={syncToggle} onDelete={deleteCommitment}
-          onSchedule={handleSchedule} scheduled={scheduled}
+          onSchedule={handleSchedule} onEdit={setEditing} scheduled={scheduled}
           categories={categories}
         />
       ))}
+
+      {editing && (
+        <AddItemModal
+          existing={editing}
+          categories={categories}
+          onSave={handleSaveEdit}
+          onClose={() => setEditing(null)}
+          title="Edit commitment" />
+      )}
     </div>
   )
 }

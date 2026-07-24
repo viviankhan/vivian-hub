@@ -168,6 +168,13 @@ export const setFcStudied      = v  => dbSet('fc_studied', v)
 export const getScheduledTasks = () => dbGet('scheduled_tasks').then(v => v ?? [])
 export const setScheduledTasks = v  => dbSet('scheduled_tasks', v)
 
+// Rich per-commitment content (description + sub-checkboxes), stored as one
+// map keyed by commitment id. Kept in kv_store (which every install already
+// has) rather than new columns on the commitments table, so it needs no
+// schema migration and can't break the core add/edit path. Still cloud-synced.
+export const getCommitmentMeta = () => dbGet('commitment_meta').then(v => v ?? {})
+export const setCommitmentMeta = v  => dbSet('commitment_meta', v)
+
 // ── Classes ────────────────────────────────────────────────────
 export async function getClasses() {
   if (USE_SUPABASE) {
