@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { buildWeekPlanFromTasks } from '../data/schedule.js'
+import { buildWeekDays, recurringForDate } from '../data/schedule.js'
 import { Icon } from './IconPicker.jsx'
 import { bloomBurst } from '../lib/bloom.js'
 
@@ -91,11 +91,29 @@ function fmtRange(startDate, endDate) {
   return `${s} – ${e}`
 }
 
-export default function ThisWeek({ todos, weekState, syncToggle, commitments, addCommitment, deleteCommitment, weekTasks, categories }) {
+export default function ThisWeek({ todos, weekState, syncToggle, commitments, addCommitment, deleteCommitment, recurringTasks, categories }) {
   const today = todayStr()
   const [weekOffset, setWeekOffset] = useState(0)
-  const weekPlan = buildWeekPlanFromTasks(weekTasks || {}, weekOffset)
+  // A specific date the user jumped to via the date picker — highlighted so
+  // it's easy to spot within the week.
+  const [highlightDate, setHighlightDate] = useState(null)
+  // Build the 7 dates of the viewed week, attaching each day's recurring
+  // 'week' tasks (date-range correct for that exact day, not just today).
+  const weekPlan = buildWeekDays(weekOffset).map(d => ({
+    ...d, tasks: recurringForDate(recurringTasks, d.date, 'week'),
+  }))
   const [addingDay, setAddingDay] = useState(null)
+
+  // Jump to the week containing a given date and highlight that day.
+  const jumpToDate = (dateStr) => {
+    if (!dateStr) return
+    const startOf = (d) => { const x = new Date(d); x.setHours(0,0,0,0); x.setDate(x.getDate()-x.getDay()); return x }
+    const targetWeekStart = startOf(new Date(dateStr+'T12:00:00'))
+    const thisWeekStart = startOf(new Date())
+    const diffWeeks = Math.round((targetWeekStart - thisWeekStart) / (7*86400000))
+    setWeekOffset(diffWeeks)
+    setHighlightDate(dateStr)
+  }
   // Custom tasks per day stored in localStorage (keyed by date)
   const [customByDay, setCustomByDay] = useState(() => {
     try { return JSON.parse(localStorage.getItem('vivian_week_custom')||'{}') } catch { return {} }
@@ -144,9 +162,12 @@ export default function ThisWeek({ todos, weekState, syncToggle, commitments, ad
     <div>
       <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:10, marginBottom:6, flexWrap:'wrap' }}>
         <div className="page-title" style={{ marginBottom:0 }}>{weekTitle}</div>
-        <div style={{ display:'flex', alignItems:'center', gap:6 }}>
-          {weekOffset !== 0 && (
-            <button onClick={()=>setWeekOffset(0)}
+        <div style={{ display:'flex', alignItems:'center', gap:6, flexWrap:'wrap' }}>
+          {/* Jump to the week containing any date */}
+          <input type="date" onChange={e=>jumpToDate(e.target.value)} title="Jump to a date"
+            style={{ fontSize:12, padding:'6px 8px', borderRadius:9, border:'1px solid var(--border)', fontFamily:'DM Sans,sans-serif', color:'var(--text)', background:'white', cursor:'pointer' }}/>
+          {(weekOffset !== 0 || highlightDate) && (
+            <button onClick={()=>{ setWeekOffset(0); setHighlightDate(null) }}
               style={{ fontSize:11, padding:'7px 12px', borderRadius:9, border:'1px solid var(--teal)', background:'#F0FDFB', color:'var(--teal)', cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:600, flexShrink:0 }}>
               This week
             </button>
@@ -160,6 +181,7 @@ export default function ThisWeek({ todos, weekState, syncToggle, commitments, ad
       {weekPlan.map((day, i) => {
         const isToday = day.date === today
         const isPast  = day.date < today
+        const isHighlight = day.date === highlightDate
         const deleted = deletedByDay[day.date] || []
 
         const dayCommitments = (commitsByDate[day.date]||[])
@@ -184,11 +206,12 @@ export default function ThisWeek({ todos, weekState, syncToggle, commitments, ad
 
         return (
           <div key={day.date} className={`week-day-card ${isToday?'today':''}`}
-            style={{ opacity: isPast&&!isToday ? .65 : 1 }}>
+            style={{ opacity: isPast&&!isToday ? .65 : 1, ...(isHighlight&&!isToday ? { boxShadow:'0 0 0 2px var(--teal)', borderRadius:14 } : {}) }}>
             <div className="week-day-header">
               <div style={{ display:'flex', alignItems:'center', gap:8 }}>
                 <span className="week-day-label">{day.dayLabel}</span>
                 {isToday&&<span style={{ fontSize:10, letterSpacing:1, textTransform:'uppercase', color:'#7ABF5E' }}>Today</span>}
+                {isHighlight&&!isToday&&<span style={{ fontSize:10, letterSpacing:1, textTransform:'uppercase', color:'var(--teal)' }}>Jumped to</span>}
                 {isPast&&!isToday&&<span style={{ fontSize:10, color:'var(--muted)' }}>past</span>}
               </div>
               <div style={{ display:'flex', alignItems:'center', gap:8 }}>

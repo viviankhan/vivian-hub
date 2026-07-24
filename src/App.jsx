@@ -13,7 +13,7 @@ import {
   addCategory as dbAddCategory, updateCategory as dbUpdateCategory, deleteCategory as dbDeleteCategory,
 } from './lib/storage.js'
 import { runMigrationIfNeeded, seedCategoriesIfNeeded } from './lib/migrate.js'
-import { DEFAULT_RECURRING_TASKS, DEFAULT_DAILY_TODOS, buildWeekPlanFromTasks } from './data/schedule.js'
+import { DEFAULT_RECURRING_TASKS, DEFAULT_DAILY_TODOS } from './data/schedule.js'
 
 import Today       from './components/Today.jsx'
 import ThisWeek    from './components/ThisWeek.jsx'
@@ -21,7 +21,7 @@ import Commitments from './components/Commitments.jsx'
 import Calendar    from './components/Calendar.jsx'
 import Notes       from './components/Notes.jsx'
 import Edits       from './components/Edits.jsx'
-import RecurringTasksManager, { flatToPerDay } from './components/RecurringTasksManager.jsx'
+import RecurringTasksManager from './components/RecurringTasksManager.jsx'
 import Routines from './components/Routines.jsx'
 import CategoriesManager from './components/CategoriesManager.jsx'
 import EventsManager from './components/EventsManager.jsx'
@@ -150,16 +150,12 @@ export default function App() {
   }, [loading, events, commitments])
 
   // ── Derived schedule ─────────────────────────────────────────
-  // recurring_tasks is now a real table (one row per task) — always the flat
-  // format, so this just wraps the rows the way flatToPerDay expects. An
-  // empty table (nothing ever added, or everything cleared) means an empty
-  // schedule either way, consistent with how "Clear all recurring events"
-  // already worked — no defaults resurrecting themselves.
+  // recurring_tasks is a real table (one row per task), each row carrying a
+  // "surfaces" list of which tabs it shows on. The raw rows are passed straight
+  // to Today / Week / Calendar, which each compute their own per-date
+  // occurrences (so date-range filtering is correct for the exact date shown,
+  // not just today). Only the Recurring manager still wants the wrapped shape.
   const recurringTasksWrapped = { tasks: recurringTaskRows }
-  const perDay = flatToPerDay(recurringTasksWrapped, todayStr())
-  const activeWeekTasks  = perDay?.weekTasks  ?? DEFAULT_RECURRING_TASKS
-  const activeDailyTodos = perDay?.dailyTodos ?? DEFAULT_DAILY_TODOS
-  const weekPlan = buildWeekPlanFromTasks(activeWeekTasks)
 
   // ── Persist helpers ──────────────────────────────────────────
   // Cloud write failures are surfaced instead of swallowed — otherwise a delete
@@ -402,10 +398,10 @@ export default function App() {
       </header>
 
       <main className="content">
-        {tab==='today'       && <Today       {...sharedProps} appendLog={appendLog} weekPlan={weekPlan} dailyTodos={activeDailyTodos} scheduled={scheduled} deleteCommitment={deleteCommitment} />}
-        {tab==='week'        && <ThisWeek    {...sharedProps} weekTasks={activeWeekTasks} deleteCommitment={deleteCommitment} />}
+        {tab==='today'       && <Today       {...sharedProps} appendLog={appendLog} recurringTasks={recurringTaskRows} scheduled={scheduled} deleteCommitment={deleteCommitment} />}
+        {tab==='week'        && <ThisWeek    {...sharedProps} recurringTasks={recurringTaskRows} deleteCommitment={deleteCommitment} />}
         {tab==='commitments' && <Commitments {...sharedProps} />}
-        {tab==='calendar'    && <Calendar    {...sharedProps} jumpTo={jumpTo} />}
+        {tab==='calendar'    && <Calendar    {...sharedProps} recurringTasks={recurringTaskRows} jumpTo={jumpTo} />}
         {tab==='thoughts'    && <ThoughtsBoard addCommitment={addCommitment} categories={categories} />}
         {tab==='events'      && <EventsManager events={events} addEvent={addEvent} deleteEvent={deleteEvent}
           vacations={vacations} addVacation={addVacation} deleteVacation={deleteVacation} />}

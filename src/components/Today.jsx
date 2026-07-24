@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { getDailyTodos } from '../data/schedule.js'
+import { recurringForDate } from '../data/schedule.js'
 import { findSlots } from '../lib/scheduler.js'
 import { getRoutines } from '../lib/storage.js'
 import { normalizeRoutineItems, sortByTime, to12 } from './Routines.jsx'
@@ -16,6 +16,7 @@ const TAG_COLORS = {
 const TAGS = ['class','lab','career','health','fitness','personal','urgent','sleep','polish']
 const INFLEXIBLE_TAGS = new Set(['class','meeting','deadline','urgent'])
 const END_OF_DAY_MINS = 22*60+30 // 10:30 PM
+const dayNavBtn = { fontSize:16, lineHeight:1, width:32, height:32, borderRadius:9, border:'1px solid var(--border)', background:'white', color:'var(--muted)', cursor:'pointer', fontFamily:'DM Sans,sans-serif', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }
 
 function todayKey() {
   const d = new Date()
@@ -23,6 +24,16 @@ function todayKey() {
 }
 function todayLabel() {
   return new Date().toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'})
+}
+// Human label for an arbitrary 'YYYY-MM-DD' (noon avoids TZ day-shift).
+function dateLabelFor(dateStr) {
+  return new Date(dateStr+'T12:00:00').toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'})
+}
+// Shift a 'YYYY-MM-DD' by n days, returning the same string format.
+function addDays(dateStr, n) {
+  const d = new Date(dateStr+'T12:00:00')
+  d.setDate(d.getDate()+n)
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
 }
 function nowMins() { const d=new Date(); return d.getHours()*60+d.getMinutes() }
 function parseTimeMins(label) {
@@ -323,27 +334,39 @@ function NowMarker({ now }) {
 }
 
 // ── Main ───────────────────────────────────────────────────────
-export default function Today({ todos, weekState, syncToggle, commitments, addCommitment, deleteCommitment, appendLog, dailyTodos, scheduled, categories }) {
+export default function Today({ todos, weekState, syncToggle, commitments, addCommitment, deleteCommitment, appendLog, recurringTasks, scheduled, categories }) {
   const [now,         setNow]         = useState(nowMins())
+  // viewDate — which day the timeline is showing. Defaults to today; the date
+  // navigator lets you look ahead or back at any day's schedule.
+  const [viewDate,    setViewDate]    = useState(todayKey())
+  const isToday = viewDate === todayKey()
+  const dateKey = viewDate
   const [managing,    setManaging]    = useState(null)
   const [addingTask,  setAddingTask]  = useState(false)
   const [morningOpen, setMorningOpen] = useState(false)
   const [nightOpen,   setNightOpen]   = useState(false)
   const [shiftResult, setShiftResult] = useState(null)
-  const [customTasks, setCustomTasks] = useState(()=>{
-    try { return JSON.parse(localStorage.getItem('vivian_custom_'+todayKey())||'[]') } catch { return [] }
-  })
-  const [deleted, setDeleted] = useState(()=>{
-    try { return JSON.parse(localStorage.getItem('vivian_deleted_'+todayKey())||'[]') } catch { return [] }
-  })
+  // These four are stored per-day in localStorage; they reload from the right
+  // day's keys whenever viewDate changes (see the effect below).
+  const readDay = (prefix, fallback) => {
+    try { return JSON.parse(localStorage.getItem(prefix+viewDate) ?? fallback) } catch { return JSON.parse(fallback) }
+  }
+  const [customTasks,   setCustomTasks]   = useState(()=>readDay('vivian_custom_','[]'))
+  const [deleted,       setDeleted]       = useState(()=>readDay('vivian_deleted_','[]'))
   // time overrides: { taskId: newMins } — applied when user shifts a task
-  const [timeOverrides, setTimeOverrides] = useState(()=>{
-    try { return JSON.parse(localStorage.getItem('vivian_timeshift_'+todayKey())||'{}') } catch { return {} }
-  })
+  const [timeOverrides, setTimeOverrides] = useState(()=>readDay('vivian_timeshift_','{}'))
   // routine completion tracking
-  const [routineDone, setRoutineDone] = useState(()=>{
-    try { return JSON.parse(localStorage.getItem('vivian_routine_'+todayKey())||'{}') } catch { return {} }
-  })
+  const [routineDone,   setRoutineDone]   = useState(()=>readDay('vivian_routine_','{}'))
+
+  // Reload the per-day state when the viewed date changes.
+  useEffect(()=>{
+    const read = (p,f)=>{ try { return JSON.parse(localStorage.getItem(p+viewDate) ?? f) } catch { return JSON.parse(f) } }
+    setCustomTasks(read('vivian_custom_','[]'))
+    setDeleted(read('vivian_deleted_','[]'))
+    setTimeOverrides(read('vivian_timeshift_','{}'))
+    setRoutineDone(read('vivian_routine_','{}'))
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewDate])
 
   // Load routines from storage
   const [morningItems, setMorningItems] = useState([])
@@ -366,8 +389,6 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
   const [shiftDayOpen, setShiftDayOpen] = useState(false)
   const [shiftDayTime, setShiftDayTime] = useState('')
 
-  const dateKey = todayKey()
-
   const toggleRoutine = (key) => {
     setRoutineDone(prev=>{
       const next={...prev,[key]:!prev[key]}
@@ -376,7 +397,9 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
     })
   }
 
-  const templateTodos = getDailyTodos(dateKey, dailyTodos).filter(t=>!deleted.includes(t.id))
+  // Recurring tasks that surface on Today, for the day being viewed (respects
+  // repeat days + start/end date range). Each carries label/note/tag already.
+  const templateTodos = recurringForDate(recurringTasks, dateKey, 'today').filter(t=>!deleted.includes(t.id))
   const todayCommitments = (commitments||[]).filter(c=>c.date===dateKey&&!c.done)
 
   const isDoneCheck = (id, isCommitment) => isCommitment
@@ -410,6 +433,9 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
   function getStatus(task) {
     if (isDoneCheck(task.id, task.isCommitment)) return 'past'
     if (task._mins===null) return 'anytime'
+    // Current-time-relative states (current/overdue, the NOW marker) only make
+    // sense for the actual today; other days just show timed vs. untimed.
+    if (!isToday) return 'upcoming'
     if (task._mins>now) return 'upcoming'
     const lastStarted = timedSorted.filter(t=>t._mins<=now&&!isDoneCheck(t.id,t.isCommitment)).at(-1)
     if (task._mins===lastStarted?._mins) return 'current'
@@ -589,8 +615,25 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
     <div>
       {/* Header */}
       <div style={{marginBottom:20}}>
-        <div className="page-title">{todayLabel()}</div>
-        <div style={{display:'flex',alignItems:'center',gap:10,marginTop:4}}>
+        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:10,flexWrap:'wrap'}}>
+          <div className="page-title" style={{marginBottom:0}}>{isToday ? todayLabel() : dateLabelFor(viewDate)}</div>
+          <div style={{display:'flex',alignItems:'center',gap:6}}>
+            {!isToday && (
+              <button onClick={()=>setViewDate(todayKey())} title="Back to today"
+                style={{fontSize:11,padding:'7px 12px',borderRadius:9,border:'1px solid var(--teal)',background:'#F0FDFB',color:'var(--teal)',cursor:'pointer',fontFamily:'DM Sans,sans-serif',fontWeight:600,flexShrink:0}}>
+                Today
+              </button>
+            )}
+            <button onClick={()=>setViewDate(d=>addDays(d,-1))} title="Previous day" style={dayNavBtn}>‹</button>
+            {/* Native date picker — search/jump to any specific date */}
+            <input type="date" value={viewDate} onChange={e=>e.target.value&&setViewDate(e.target.value)}
+              title="Jump to a date"
+              style={{fontSize:12,padding:'6px 8px',borderRadius:9,border:'1px solid var(--border)',fontFamily:'DM Sans,sans-serif',color:'var(--text)',background:'white',cursor:'pointer'}}/>
+            <button onClick={()=>setViewDate(d=>addDays(d,1))} title="Next day" style={dayNavBtn}>›</button>
+          </div>
+        </div>
+        {!isToday && <div style={{fontSize:11,color:'var(--muted)',marginTop:4}}>Viewing another day — the timeline reflects that date.</div>}
+        <div style={{display:'flex',alignItems:'center',gap:10,marginTop:8}}>
           <span style={{fontSize:12,color:'var(--muted)'}}>{doneCount} of {tasksWithStatus.length} done</span>
           <div style={{flex:1,height:3,background:'var(--border)',borderRadius:2,overflow:'hidden'}}>
             <div style={{height:'100%',width:`${tasksWithStatus.length>0?(doneCount/tasksWithStatus.length)*100:0}%`,background:'#52B788',borderRadius:2,transition:'width .4s'}}/>
@@ -618,7 +661,7 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
         <div style={{paddingBottom:8}}>
           {tasksWithStatus.map((task,i)=>(
             <div key={task.id}>
-              {i===nowInsertIdx&&<NowMarker now={now}/>}
+              {isToday&&i===nowInsertIdx&&<NowMarker now={now}/>}
               <TimelineBlock
                 task={task} categories={categories} status={task._status} now={now}
                 minutesUntilNext={minsUntilNext(i)}
@@ -629,7 +672,7 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
               />
             </div>
           ))}
-          {nowInsertIdx===-1&&<NowMarker now={now}/>}
+          {isToday&&nowInsertIdx===-1&&<NowMarker now={now}/>}
         </div>
       )}
 
@@ -651,7 +694,7 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
       </button>
 
       {shiftResult&&<ShiftToast result={shiftResult} onClose={()=>setShiftResult(null)}/>}
-      {addingTask&&<AddItemModal presetDate={dateKey} lockDate categories={categories} onSave={handleAdd} onClose={()=>setAddingTask(false)} title="Add to Today"/>}
+      {addingTask&&<AddItemModal presetDate={dateKey} lockDate categories={categories} onSave={handleAdd} onClose={()=>setAddingTask(false)} title={isToday?'Add to Today':`Add to ${dateLabelFor(viewDate)}`}/>}
       {managing&&<ManageModal task={managing} dateKey={dateKey} onClose={()=>setManaging(null)} onDelete={handleDelete} onReschedule={handleReschedule} scheduled={scheduled}/>}
     </div>
   )

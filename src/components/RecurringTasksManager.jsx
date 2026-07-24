@@ -4,6 +4,18 @@ import { Icon } from './IconPicker.jsx'
 const DAYS = ['monday','tuesday','wednesday','thursday','friday','saturday','sunday']
 const DAY_SHORT = { monday:'Mon', tuesday:'Tue', wednesday:'Wed', thursday:'Thu', friday:'Fri', saturday:'Sat', sunday:'Sun' }
 
+// Which tabs a recurring task can surface on, in display order.
+const SURFACES = [
+  { id:'today',    label:'Today',    hint:'Shows in the Today timeline on matching days',       bg:'#FEF9C3', fg:'#854D0E' },
+  { id:'week',     label:'Week',     hint:'Shows in the Week grid on matching days',            bg:'#E0F2FE', fg:'#0369A1' },
+  { id:'calendar', label:'Calendar', hint:'Marked on the Calendar month view on matching days', bg:'#F3E8FF', fg:'#7C3AED' },
+]
+// Legacy rows may only have `type`; derive surfaces so old tasks still render.
+function taskSurfaces(task) {
+  if (Array.isArray(task?.surfaces) && task.surfaces.length) return task.surfaces
+  return [task?.type === 'today' ? 'today' : 'week']
+}
+
 // Categories are the shared, user-editable list (Settings → Categories),
 // passed in as a prop. This resolves a category id to its label + color + icon.
 function resolveCat(id, categories) {
@@ -68,10 +80,15 @@ function Tag({ label, color, icon }) {
   const c = color || '#9CA3AF'
   return <span style={{ display:'inline-flex', alignItems:'center', gap:3, fontSize:9, padding:'2px 6px', borderRadius:6, background:`${c}20`, color:c, fontWeight:700, letterSpacing:.8, textTransform:'uppercase' }}>{icon && <Icon value={icon} size={11} />}{label}</span>
 }
-function TypeBadge({ type }) {
-  return <span style={{ fontSize:9, padding:'2px 6px', borderRadius:6,
-    background:type==='week'?'#E0F2FE':'#FEF9C3', color:type==='week'?'#0369A1':'#854D0E',
-    fontWeight:700, letterSpacing:.8, textTransform:'uppercase' }}>{type==='week'?'Week':'Today'}</span>
+function SurfaceBadges({ surfaces }) {
+  return (
+    <div style={{ display:'flex', gap:3, flexShrink:0 }}>
+      {SURFACES.filter(s => surfaces.includes(s.id)).map(s => (
+        <span key={s.id} style={{ fontSize:9, padding:'2px 6px', borderRadius:6,
+          background:s.bg, color:s.fg, fontWeight:700, letterSpacing:.8, textTransform:'uppercase' }}>{s.label}</span>
+      ))}
+    </div>
+  )
 }
 function DayPill({ day, active, onClick }) {
   return (
@@ -90,7 +107,7 @@ function TaskModal({ initial, onSave, onDelete, onClose, categories }) {
   const catList = (categories && categories.length) ? categories : [{ id:'other', label:'Other', color:'#8899AA' }]
   const [text,      setText]      = useState(initial?.text||initial?.label||'')
   const [note,      setNote]      = useState(initial?.note||'')
-  const [type,      setType]      = useState(initial?.type||'week')
+  const [surfaces,  setSurfaces]  = useState(initial ? taskSurfaces(initial) : ['today'])
   const [cat,       setCat]       = useState(initial?.cat||initial?.tag||catList[0].id)
   const [carry,     setCarry]     = useState(initial?.carry||false)
   const [days,      setDays]      = useState(initial?.days||['monday'])
@@ -99,13 +116,21 @@ function TaskModal({ initial, onSave, onDelete, onClose, categories }) {
   const [noEnd,     setNoEnd]     = useState(!initial?.endDate)
 
   const toggleDay = (d) => setDays(prev => prev.includes(d) ? prev.filter(x=>x!==d) : [...prev,d])
+  const toggleSurface = (s) => setSurfaces(prev => prev.includes(s) ? prev.filter(x=>x!==s) : [...prev,s])
+  const showsOnWeek = surfaces.includes('week')
 
   const save = () => {
-    if (!text.trim() || days.length===0) return
+    if (!text.trim() || days.length===0 || surfaces.length===0) return
     const id = initial?.id || `${days[0].slice(0,3)}-${slugify(text)}`
-    const base = { id, days, type, cat, startDate:startDate||null, endDate:(!noEnd&&endDate)||null }
-    if (type==='week')  onSave({ ...base, text:text.trim(), carry })
-    else                onSave({ ...base, label:text.trim(), note:note.trim(), tag:cat })
+    const trimmed = text.trim()
+    onSave({
+      id, days, surfaces,
+      cat, tag:cat,
+      startDate:startDate||null, endDate:(!noEnd&&endDate)||null,
+      // text + label carry the same value so every tab renders it either way.
+      text:trimmed, label:trimmed, note:note.trim(),
+      carry: showsOnWeek ? carry : false,
+    })
   }
 
   const inp = { width:'100%', fontSize:13, padding:'9px 12px', borderRadius:10, border:'1px solid var(--border)', fontFamily:'DM Sans,sans-serif', outline:'none', boxSizing:'border-box', marginBottom:10, background:'white', color:'var(--text)' }
@@ -121,26 +146,35 @@ function TaskModal({ initial, onSave, onDelete, onClose, categories }) {
         </div>
 
         <div style={{ padding:'18px 20px' }}>
-          {/* Type toggle */}
-          <div style={{ fontSize:10, color:'var(--muted)', letterSpacing:1.5, textTransform:'uppercase', marginBottom:6 }}>Appears in</div>
-          <div style={{ display:'flex', gap:0, marginBottom:14, borderRadius:10, overflow:'hidden', border:'1px solid var(--border)', width:'fit-content' }}>
-            {[['week','Week tab'],['today','Today tab']].map(([v,l])=>(
-              <button key={v} onClick={()=>setType(v)}
-                style={{ fontSize:12, padding:'7px 16px', border:'none', cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:600,
-                  background:type===v?'var(--forest)':'white', color:type===v?'var(--green-light)':'var(--muted)' }}>{l}</button>
-            ))}
+          {/* Surfaces — where this task shows up (pick one or more) */}
+          <div style={{ fontSize:10, color:'var(--muted)', letterSpacing:1.5, textTransform:'uppercase', marginBottom:6 }}>Show in</div>
+          <div style={{ display:'flex', gap:6, marginBottom:6, flexWrap:'wrap' }}>
+            {SURFACES.map(s=>{
+              const on = surfaces.includes(s.id)
+              return (
+                <button key={s.id} onClick={()=>toggleSurface(s.id)} title={s.hint}
+                  style={{ fontSize:12, padding:'7px 14px', borderRadius:10, cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:600,
+                    border:`1.5px solid ${on?'var(--forest)':'var(--border)'}`,
+                    background:on?'var(--forest)':'white', color:on?'var(--green-light)':'var(--muted)' }}>
+                  {on?'✓ ':''}{s.label}
+                </button>
+              )
+            })}
+          </div>
+          <div style={{ fontSize:11, color:'var(--muted)', marginBottom:14, lineHeight:1.4 }}>
+            {surfaces.length===0
+              ? <span style={{ color:'#EF4444' }}>Pick at least one place for it to show.</span>
+              : SURFACES.filter(s=>surfaces.includes(s.id)).map(s=>s.hint).join(' · ')}
           </div>
 
           {/* Text */}
           <input value={text} onChange={e=>setText(e.target.value)} autoFocus
-            placeholder={type==='today'?'Label (e.g. 9:50 AM — Coral Reef class)…':'Task description…'}
+            placeholder="Task description (e.g. 9:50 AM — Coral Reef class)…"
             style={inp} />
 
-          {/* Note (Today only) */}
-          {type==='today' && (
-            <input value={note} onChange={e=>setNote(e.target.value)} placeholder="Note (optional sub-text)…"
-              style={{ ...inp, color:'var(--muted)', fontSize:12 }} />
-          )}
+          {/* Note (optional sub-text) */}
+          <input value={note} onChange={e=>setNote(e.target.value)} placeholder="Note (optional sub-text)…"
+            style={{ ...inp, color:'var(--muted)', fontSize:12 }} />
 
           {/* Category */}
           <div style={{ display:'flex', gap:8, alignItems:'center', marginBottom:14, flexWrap:'wrap' }}>
@@ -148,7 +182,7 @@ function TaskModal({ initial, onSave, onDelete, onClose, categories }) {
               style={{ fontSize:12, padding:'7px 10px', borderRadius:9, border:'1px solid var(--border)', fontFamily:'DM Sans,sans-serif', background:'white', cursor:'pointer' }}>
               {catList.map(c=><option key={c.id} value={c.id}>{c.label}</option>)}
             </select>
-            {type==='week' && (
+            {showsOnWeek && (
               <label style={{ display:'flex', alignItems:'center', gap:5, fontSize:12, color:'var(--muted)', cursor:'pointer' }}>
                 <input type="checkbox" checked={carry} onChange={e=>setCarry(e.target.checked)} />
                 carry forward if undone
@@ -186,8 +220,8 @@ function TaskModal({ initial, onSave, onDelete, onClose, categories }) {
           {/* Actions */}
           <div style={{ display:'flex', gap:8, justifyContent:'space-between' }}>
             <div style={{ display:'flex', gap:8 }}>
-              <button onClick={save} disabled={!text.trim()||days.length===0}
-                style={{ fontSize:13, padding:'10px 20px', borderRadius:10, border:'none', background:'var(--forest)', color:'var(--green-light)', cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:600, opacity:(!text.trim()||days.length===0)?.5:1 }}>
+              <button onClick={save} disabled={!text.trim()||days.length===0||surfaces.length===0}
+                style={{ fontSize:13, padding:'10px 20px', borderRadius:10, border:'none', background:'var(--forest)', color:'var(--green-light)', cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:600, opacity:(!text.trim()||days.length===0||surfaces.length===0)?.5:1 }}>
                 {isNew ? 'Add Task' : 'Save Changes'}
               </button>
               <button onClick={onClose}
@@ -233,7 +267,7 @@ function TaskListRow({ task, onEdit, today, categories }) {
         )}
       </div>
       <Tag label={catLabel} color={catColor} icon={catIcon} />
-      <TypeBadge type={task.type} />
+      <SurfaceBadges surfaces={taskSurfaces(task)} />
       {/* Day labels — to the right of the title; current day highlighted in teal */}
       <div style={{ display:'flex', gap:3, flexWrap:'wrap', justifyContent:'flex-end', maxWidth:150, flexShrink:0 }}>
         {DAYS.filter(d=>task.days?.includes(d)).map(d=>(
@@ -249,7 +283,7 @@ function TaskListRow({ task, onEdit, today, categories }) {
 export default function RecurringTasksManager({ recurringTasks, addRecurringTask, updateRecurringTask, deleteRecurringTask, clearRecurringTasks, categories, defaultWeekTasks, defaultDailyTodos }) {
   const [editing,     setEditing]     = useState(null) // null | 'new' | task object
   const [filterDay,   setFilterDay]   = useState(todayName())
-  const [filterType,  setFilterType]  = useState('all')
+  const [filterSurface, setFilterSurface] = useState('all')
   const [confirmClear, setConfirmClear] = useState(false)
   const [clearing,     setClearing]     = useState(false)
   const today = todayName()
@@ -268,10 +302,10 @@ export default function RecurringTasksManager({ recurringTasks, addRecurringTask
       ;(dt[day]||[]).forEach(t => raw.push({ ...t, type:'today', days:[day], startDate:null, endDate:null }))
     })
 
-    // Deduplicate: group by (text|label) + type + cat/tag → merge days arrays
+    // Deduplicate: group by (text|label) + surfaces + cat/tag → merge days arrays
     const map = new Map()
     raw.forEach(task => {
-      const key = `${task.text||task.label}||${task.type}||${task.cat||task.tag}`
+      const key = `${task.text||task.label}||${taskSurfaces(task).join(',')}||${task.cat||task.tag}`
       if (map.has(key)) {
         const existing = map.get(key)
         const merged = [...new Set([...existing.days, ...task.days])]
@@ -319,18 +353,19 @@ export default function RecurringTasksManager({ recurringTasks, addRecurringTask
 
   // Filter
   const visible = flatData.filter(t => {
-    if (filterDay  !== 'all' && !(t.days||[]).includes(filterDay))  return false
-    if (filterType !== 'all' && t.type !== filterType)               return false
+    if (filterDay     !== 'all' && !(t.days||[]).includes(filterDay))     return false
+    if (filterSurface !== 'all' && !taskSurfaces(t).includes(filterSurface)) return false
     return true
   })
 
-  // Sort: by first day, then type
+  // Sort: by first day, then by primary surface (today → week → calendar)
   const dayOrder = Object.fromEntries(DAYS.map((d,i)=>[d,i]))
+  const surfaceRank = t => Math.min(...taskSurfaces(t).map(s => SURFACES.findIndex(x=>x.id===s)))
   const sorted = [...visible].sort((a,b)=>{
     const da = Math.min(...(a.days||[]).map(d=>dayOrder[d]??99))
     const db = Math.min(...(b.days||[]).map(d=>dayOrder[d]??99))
     if (da!==db) return da-db
-    return (a.type==='week'?0:1)-(b.type==='week'?0:1)
+    return surfaceRank(a)-surfaceRank(b)
   })
 
   return (
@@ -363,10 +398,10 @@ export default function RecurringTasksManager({ recurringTasks, addRecurringTask
         })}
       </div>
       <div style={{ display:'flex', gap:5, marginBottom:16 }}>
-        {[['all','All types'],['week','Week only'],['today','Today only']].map(([v,l])=>(
-          <button key={v} onClick={()=>setFilterType(v)}
-            style={{ fontSize:10, padding:'4px 11px', borderRadius:16, border:`1.5px solid ${filterType===v?'var(--teal)':'var(--border)'}`,
-              background:filterType===v?'#F0FDFB':'white', color:filterType===v?'var(--teal)':'var(--muted)',
+        {[['all','All'],['today','Today'],['week','Week'],['calendar','Calendar']].map(([v,l])=>(
+          <button key={v} onClick={()=>setFilterSurface(v)}
+            style={{ fontSize:10, padding:'4px 11px', borderRadius:16, border:`1.5px solid ${filterSurface===v?'var(--teal)':'var(--border)'}`,
+              background:filterSurface===v?'#F0FDFB':'white', color:filterSurface===v?'var(--teal)':'var(--muted)',
               cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:600, letterSpacing:.5 }}>{l}</button>
         ))}
       </div>
@@ -377,7 +412,7 @@ export default function RecurringTasksManager({ recurringTasks, addRecurringTask
           No tasks match this filter.
         </div>
       ) : sorted.map(task=>(
-        <TaskListRow key={task.id+task.type+(task.days||[]).join('')} task={task} onEdit={()=>setEditing(task)} today={today} categories={categories} />
+        <TaskListRow key={task.id+taskSurfaces(task).join('')+(task.days||[]).join('')} task={task} onEdit={()=>setEditing(task)} today={today} categories={categories} />
       ))}
 
       {/* Clear all */}

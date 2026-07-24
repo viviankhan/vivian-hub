@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { Icon } from './IconPicker.jsx'
 import AddItemModal from './AddItemModal.jsx'
 import { setItemReminders } from '../lib/notifications.js'
+import { recurringForDate } from '../data/schedule.js'
 
 // Pastel shading for how busy a day is (number of events on it).
 const BUSY_SHADES = ['#F4F0FA', '#EAE1F4', '#DBC9EC', '#C9AEDF']
@@ -32,7 +33,7 @@ function endTimeFrom(start, mins) {
   return `${String(Math.floor(total/60)).padStart(2,'0')}:${String(total%60).padStart(2,'0')}`
 }
 
-export default function Calendar({ commitments, vacations, events, log, categories, jumpTo, addCommitment, updateCommitment }) {
+export default function Calendar({ commitments, vacations, events, log, categories, recurringTasks, jumpTo, addCommitment, updateCommitment }) {
   // monthOffset shifts by whole months from the current month: 0 = this month,
   // -1 = last month, +1 = next month, and so on — unbounded either way.
   const [monthOffset, setMonthOffset] = useState(0)
@@ -121,6 +122,13 @@ export default function Calendar({ commitments, vacations, events, log, categori
   // Multi-day events covering a given date (for the colored bands + detail).
   const eventsOn = (dateStr) => (events || []).filter(ev => dateStr >= ev.startDate && dateStr <= ev.endDate)
   const selectedSpans = selected ? eventsOn(selected) : []
+  // Recurring tasks that surface on the Calendar for a given date, resolved to
+  // a display shape (category color + icon), respecting repeat days + range.
+  const recurringOn = (dateStr) => recurringForDate(recurringTasks, dateStr, 'calendar').map(t => {
+    const cat = resolveCat(t.cat || t.tag)
+    return { id: t.id, label: t.text || t.label, note: t.note, color: cat.color, icon: cat.icon, catLabel: cat.label }
+  })
+  const selectedRecurring = selected ? recurringOn(selected) : []
 
   return (
     <div>
@@ -133,7 +141,11 @@ export default function Calendar({ commitments, vacations, events, log, categori
           <div className="serif" style={{ fontSize:18, fontWeight:600, color:'var(--text)', minWidth:150, textAlign:'center' }}>{monthName} {year}</div>
           <button onClick={()=>goMonth(1)} title="Next month" style={calNavBtn}>›</button>
         </div>
-        <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+        <div style={{ display:'flex', alignItems:'center', gap:8, flexWrap:'wrap' }}>
+          {/* Jump to a specific date — navigates the month and selects the day */}
+          <input type="date" value={selected || ''} onChange={e=>e.target.value&&goToDate(e.target.value)}
+            title="Jump to a date"
+            style={{ fontSize:12, padding:'6px 8px', borderRadius:9, border:'1px solid var(--border)', fontFamily:'DM Sans,sans-serif', color:'var(--text)', background:'white', cursor:'pointer' }}/>
           {monthOffset !== 0 && (
             <button onClick={()=>{ setMonthOffset(0); setSelected(null) }}
               style={{ fontSize:11, padding:'7px 12px', borderRadius:9, border:'1px solid var(--teal)', background:'#F0FDFB', color:'var(--teal)', cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:600 }}>
@@ -157,12 +169,13 @@ export default function Calendar({ commitments, vacations, events, log, categori
             const day = i + 1
             const dateStr = ds(year, month, day)
             const evs = allEvents.filter(e => e.date === dateStr)
+            const recs = recurringOn(dateStr)
             const spans = eventsOn(dateStr)
             const dow = new Date(dateStr+'T12:00:00').getDay()
             const isSel = dateStr === selected
             const isTdy = dateStr === today
             // Busier days get a deeper pastel wash. Selected keeps its own bg.
-            const shade = busyShade(evs.length)
+            const shade = busyShade(evs.length + recs.length)
             return (
               <div key={day}
                 className={`cal-cell ${isSel ? 'selected' : ''} ${isTdy ? 'today-cell' : ''}`}
@@ -194,6 +207,14 @@ export default function Calendar({ commitments, vacations, events, log, categori
                   </div>
                 ))}
                 {evs.length > 2 && <div style={{ fontSize:8, color:'var(--muted)', marginTop:1 }}>+{evs.length-2}</div>}
+                {/* Recurring tasks that surface on the calendar — a ↻ marks them apart from one-off commitments */}
+                {recs.slice(0,2).map((r, j) => (
+                  <div key={'r'+j} className="cal-evt" title={r.label}>
+                    <div className="cal-evt-dot" style={{ background: r.color, boxShadow:`0 0 0 1.5px ${r.color}55` }} />
+                    <div className="cal-evt-label" style={{ opacity:.85 }}>↻ {r.label}</div>
+                  </div>
+                ))}
+                {recs.length > 2 && <div style={{ fontSize:8, color:'var(--muted)', marginTop:1 }}>↻ +{recs.length-2}</div>}
                 {(doneByDate[dateStr]?.length > 0) && (
                   <div style={{ fontSize:8, color:'#52B788', marginTop:1, fontWeight:700 }}>✓ {doneByDate[dateStr].length}</div>
                 )}
@@ -214,9 +235,22 @@ export default function Calendar({ commitments, vacations, events, log, categori
               + Add to this day
             </button>
           </div>
-          {selectedEvents.length === 0 && selectedSpans.length === 0 && !(doneByDate[selected]?.length > 0) && (
+          {selectedEvents.length === 0 && selectedSpans.length === 0 && selectedRecurring.length === 0 && !(doneByDate[selected]?.length > 0) && (
             <div style={{ fontSize:12, color:'var(--muted)', fontStyle:'italic', paddingBottom:2 }}>Nothing scheduled yet. Use “+ Add to this day.”</div>
           )}
+          {/* Recurring tasks that surface on the calendar for this day */}
+          {selectedRecurring.map((r, i) => (
+            <div key={'rec'+i} style={{ display:'flex', gap:10, alignItems:'center', padding:'9px 12px', borderRadius:8, marginBottom:6, background:`${r.color}12`, border:`1px dashed ${r.color}66` }}>
+              <span style={{ display:'inline-flex', alignItems:'center', gap:4, fontSize:10, letterSpacing:1, textTransform:'uppercase', color:r.color, minWidth:70, fontWeight:600 }}>
+                {r.icon && <Icon value={r.icon} size={12} />}{r.catLabel}
+              </span>
+              <div style={{ flex:1 }}>
+                <div style={{ fontSize:13, color:'var(--text)' }}>{r.label}</div>
+                {r.note && <div style={{ fontSize:11, color:'var(--muted)', marginTop:1 }}>{r.note}</div>}
+              </div>
+              <span style={{ fontSize:9, padding:'2px 6px', borderRadius:6, background:`${r.color}1F`, color:r.color, fontWeight:700, letterSpacing:.5, flexShrink:0 }}>↻ RECURRING</span>
+            </div>
+          ))}
           {/* Multi-day events covering this day */}
           {selectedSpans.map((ev, i) => (
             <div key={'sp'+i} style={{ display:'flex', gap:10, alignItems:'center', padding:'9px 12px', borderRadius:8, marginBottom:6, background:`${ev.color}18`, borderLeft:`4px solid ${ev.color}`, border:`1px solid ${ev.color}44` }}>

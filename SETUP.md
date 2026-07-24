@@ -26,6 +26,10 @@ to update your schedule or flashcards.
 3. Wait ~2 minutes for it to provision
 4. In the left sidebar click **SQL Editor**
 5. Paste the contents of `supabase_setup.sql` and click **Run**
+   - **Already using the app from a previous version?** Re-run this same file — every
+     statement is idempotent. This release adds a `surfaces` column to `recurring_tasks`
+     (which tabs each recurring task shows on: Today / Week / Calendar); recurring tasks
+     you create or edit won't save to the cloud until that column exists.
 6. In the left sidebar click **Project Settings** → **API**
 7. Copy two values:
    - **Project URL** (looks like `https://abcdef.supabase.co`)

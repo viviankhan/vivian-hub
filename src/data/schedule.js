@@ -56,6 +56,47 @@ export function buildWeekPlanFromTasks(recurringTasks, weekOffset = 0) {
 
 export const WEEK_PLAN = buildWeekPlanFromTasks(DEFAULT_RECURRING_TASKS)
 
+// Just the 7 dates of a Sun→Sat week (no tasks attached). Callers attach
+// recurring occurrences per-date themselves via recurringForDate, so date-range
+// filtering is correct for the week actually being viewed, not just today's.
+export function buildWeekDays(weekOffset = 0) {
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  const start = new Date(today)
+  start.setDate(today.getDate() - today.getDay() + weekOffset * 7)
+  return Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(start)
+    d.setDate(start.getDate() + i)
+    return { date: toDateStr(d), dayLabel: toDayLabel(d) }
+  })
+}
+
+// ── Recurring task occurrences (surface-aware) ────────────────
+// A recurring task now carries a "surfaces" array — any of 'today', 'week',
+// 'calendar' — chosen when it's created. These helpers answer "does this task
+// belong on this date, for this tab?" respecting both its repeat days and its
+// optional start/end date range. Legacy rows without surfaces fall back to
+// their old single "type".
+function taskSurfaces(task) {
+  if (Array.isArray(task.surfaces) && task.surfaces.length) return task.surfaces
+  return [task.type === 'today' ? 'today' : 'week']
+}
+export function taskHasSurface(task, surface) {
+  return taskSurfaces(task).includes(surface)
+}
+// dateStr is 'YYYY-MM-DD'; lexical comparison is valid for range checks.
+export function taskOccursOn(task, dateStr) {
+  const dow = DAY_NAMES[new Date(dateStr + 'T12:00:00').getDay()]
+  if (!(task.days || []).includes(dow)) return false
+  if (task.startDate && dateStr < task.startDate) return false
+  if (task.endDate && dateStr > task.endDate) return false
+  return true
+}
+// All recurring tasks that should appear on `dateStr` in the given `surface`.
+export function recurringForDate(tasks, dateStr, surface) {
+  return (tasks || []).filter(t => taskHasSurface(t, surface) && taskOccursOn(t, dateStr))
+}
+
 // ── Recurring daily to-dos — empty defaults ───────────────────
 export const DEFAULT_DAILY_TODOS = {}
 

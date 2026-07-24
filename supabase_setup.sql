@@ -70,6 +70,10 @@ drop policy if exists "Allow all" on events;
 create policy "Allow all" on events for all using (true) with check (true);
 
 -- ── Recurring task templates ─────────────────────────────────────
+-- "surfaces" is which tabs a task shows on: any combination of
+-- 'today', 'week', 'calendar'. "type" is kept for backward compatibility
+-- (it's the task's primary surface) and still constrained to week/today so
+-- older code paths keep working; "surfaces" is the source of truth.
 create table if not exists recurring_tasks (
   id         text primary key,
   type       text not null check (type in ('week','today')),
@@ -78,11 +82,16 @@ create table if not exists recurring_tasks (
   cat        text not null default 'lab',
   carry      boolean not null default false,
   days       text[] not null default '{}',
+  surfaces   text[] not null default '{}',
   start_date date,
   end_date   date,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+-- Add surfaces to any pre-existing recurring_tasks table and backfill it from
+-- the legacy single "type" so nothing disappears after upgrading.
+alter table recurring_tasks add column if not exists surfaces text[] not null default '{}';
+update recurring_tasks set surfaces = array[type] where surfaces = '{}' or surfaces is null;
 create index if not exists idx_recurring_tasks_days on recurring_tasks using gin (days);
 alter table recurring_tasks enable row level security;
 drop policy if exists "Allow all" on recurring_tasks;

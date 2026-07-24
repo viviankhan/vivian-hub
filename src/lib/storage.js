@@ -463,25 +463,43 @@ export async function deleteEvent(id) {
 }
 
 // ── Recurring Tasks (editable weekly schedule templates) ────────
-// One row per task — "text" (week type) vs "label"+"note" (today type) both
-// map onto a single "label"/"note" pair of columns; "tag" is kept as an alias
-// of "cat" on the returned object since some UI code reads either name.
+// One row per task. A task can now surface on any combination of the Today,
+// Week and Calendar tabs ("surfaces"). The task text lives in a single "label"
+// column and is returned under BOTH "label" and "text" so every consumer works
+// regardless of which name it reads; "tag" is an alias of "cat". "type" is the
+// task's primary surface, still stored (week/today only) for backward compat.
+const LEGACY_SURFACE_FROM_TYPE = t => (t === 'today' ? ['today'] : ['week'])
+// The primary surface still written to the constrained "type" column: 'today'
+// wins if present, else 'week' — 'calendar' has no legacy equivalent so it maps
+// to whichever of the other two is set, defaulting to 'today'.
+function primaryType(surfaces) {
+  if (surfaces.includes('today')) return 'today'
+  if (surfaces.includes('week'))  return 'week'
+  return 'today'
+}
 function recurringTaskFromDb(row) {
-  const base = {
-    id: row.id, type: row.type, days: row.days || [], cat: row.cat, tag: row.cat,
+  const surfaces = (Array.isArray(row.surfaces) && row.surfaces.length)
+    ? row.surfaces
+    : LEGACY_SURFACE_FROM_TYPE(row.type)
+  return {
+    id: row.id, type: row.type, surfaces,
+    days: row.days || [], cat: row.cat, tag: row.cat,
     startDate: row.start_date, endDate: row.end_date,
+    label: row.label, text: row.label, note: row.note || '',
+    carry: !!row.carry,
   }
-  return row.type === 'week'
-    ? { ...base, text: row.label, carry: row.carry }
-    : { ...base, label: row.label, note: row.note || '' }
 }
 export function recurringTaskToDb(task) {
+  const surfaces = (Array.isArray(task.surfaces) && task.surfaces.length)
+    ? task.surfaces
+    : LEGACY_SURFACE_FROM_TYPE(task.type)
   return {
-    id: task.id, type: task.type, cat: task.cat || task.tag || 'lab',
+    id: task.id, type: primaryType(surfaces), surfaces,
+    cat: task.cat || task.tag || 'lab',
     days: task.days || [], start_date: task.startDate || null, end_date: task.endDate || null,
-    label: task.type === 'week' ? task.text : task.label,
-    note: task.type === 'week' ? null : (task.note || null),
-    carry: task.type === 'week' ? !!task.carry : false,
+    label: task.text || task.label || '',
+    note: task.note || null,
+    carry: !!task.carry,
   }
 }
 export async function getRecurringTasks() {
