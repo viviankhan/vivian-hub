@@ -2,23 +2,23 @@
 // A shared "add something to the calendar" sheet used by both the Today tab
 // (locked to today) and the Calendar tab (any date). It creates a commitment
 // — which shows on the Calendar + Week and feeds reminders — and lets you set
-// a start time, a duration, and (optionally) custom reminder lead times that
-// override the global defaults just for this item.
+// a start time and end time (with quick-duration buttons that fill the end
+// from the start), plus optional custom reminder lead times that override the
+// global defaults just for this item.
 import { useState } from 'react'
 import { LEAD_OPTIONS } from '../lib/notifications.js'
 
 const DEFAULT_CATEGORIES = [{ id:'other', label:'Other', color:'#8899AA' }]
 
-const DURATIONS = [
-  { label:'—',       value:'' },
-  { label:'15 min',  value:'15' },
-  { label:'30 min',  value:'30' },
-  { label:'45 min',  value:'45' },
-  { label:'1 hour',  value:'60' },
-  { label:'1.5 hrs', value:'90' },
-  { label:'2 hours', value:'120' },
-  { label:'3 hours', value:'180' },
-  { label:'4 hours', value:'240' },
+// Quick-set buttons: each fills in the end time as (start + this many minutes).
+const QUICK_DURATIONS = [
+  { label:'15m',  mins:15 },
+  { label:'30m',  mins:30 },
+  { label:'45m',  mins:45 },
+  { label:'1h',   mins:60 },
+  { label:'1.5h', mins:90 },
+  { label:'2h',   mins:120 },
+  { label:'3h',   mins:180 },
 ]
 
 const inp = { width:'100%', fontSize:14, padding:'10px 12px', borderRadius:10, border:'1px solid var(--border)', fontFamily:'DM Sans,sans-serif', outline:'none', boxSizing:'border-box' }
@@ -33,19 +33,54 @@ function prettyDate(dateStr) {
   if (!dateStr) return ''
   return new Date(dateStr + 'T12:00:00').toLocaleDateString('en-US', { weekday:'long', month:'long', day:'numeric' })
 }
+// Add minutes to "HH:MM" → "HH:MM" (clamped within the day).
+function addMinutes(time, mins) {
+  if (!time) return ''
+  const [h, m] = time.split(':').map(Number)
+  const t = Math.max(0, Math.min(h * 60 + m + mins, 23 * 60 + 59))
+  return `${String(Math.floor(t/60)).padStart(2,'0')}:${String(t%60).padStart(2,'0')}`
+}
+// Minutes between two "HH:MM" strings (end - start); null if invalid/negative.
+function diffMinutes(start, end) {
+  if (!start || !end) return null
+  const [sh, sm] = start.split(':').map(Number)
+  const [eh, em] = end.split(':').map(Number)
+  const d = (eh * 60 + em) - (sh * 60 + sm)
+  return d > 0 ? d : null
+}
+function prettyDur(mins) {
+  if (!mins) return ''
+  if (mins < 60) return `${mins} min`
+  return mins % 60 === 0 ? `${mins/60} h` : `${(mins/60).toFixed(1)} h`
+}
 
 export default function AddItemModal({ presetDate = null, lockDate = false, categories = [], onSave, onClose, title = 'Add to calendar' }) {
   const cats = (categories && categories.length) ? categories : DEFAULT_CATEGORIES
   const [label, setLabel]         = useState('')
   const [date, setDate]           = useState(presetDate || '')
-  const [time, setTime]           = useState('')
-  const [durationMins, setDur]    = useState('')
+  const [time, setTime]           = useState('')  // start
+  const [endTime, setEndTime]     = useState('')
   const [cat, setCat]             = useState(cats[0]?.id || 'other')
   // Reminders: default (use global) unless the user customizes.
   const [useDefault, setUseDefault] = useState(true)
   const [reminders, setReminders]   = useState([])
 
-  const canSave = label.trim() && date
+  const durationMins = diffMinutes(time, endTime)          // null unless a valid span
+  const endInvalid = !!(time && endTime && !durationMins)  // end set but ≤ start
+  const canSave = !!(label.trim() && date) && !endInvalid
+
+  // Quick-set: fill the end time as start + N minutes. Needs a start time.
+  const setQuickDuration = (mins) => {
+    if (!time) return
+    setEndTime(addMinutes(time, mins))
+  }
+  // If they set/adjust the start after picking an end, keep the same duration
+  // by shifting the end along with it (feels like "move the block").
+  const onStartChange = (v) => {
+    const keep = durationMins
+    setTime(v)
+    if (v && keep) setEndTime(addMinutes(v, keep))
+  }
 
   const toggleLead = (mins) => {
     // Choosing a specific lead switches this item off the global defaults.
@@ -61,7 +96,7 @@ export default function AddItemModal({ presetDate = null, lockDate = false, cate
       text: label.trim(),
       date,
       time: time || null,
-      durationMins: durationMins ? parseInt(durationMins) : null,
+      durationMins: durationMins || null,
       prepMin: null,
       cat,
       person: null,
@@ -93,23 +128,40 @@ export default function AddItemModal({ presetDate = null, lockDate = false, cate
           </div>
         )}
 
-        <div style={{ display:'flex', gap:8, marginBottom:12 }}>
+        <div style={{ display:'flex', gap:8, marginBottom:8 }}>
           <div style={{ flex:1 }}>
             <div style={fieldLabel}>Start time</div>
-            <input type="time" value={time} onChange={e => setTime(e.target.value)} style={inp} />
+            <input type="time" value={time} onChange={e => onStartChange(e.target.value)} style={inp} />
           </div>
           <div style={{ flex:1 }}>
-            <div style={fieldLabel}>Duration</div>
-            <select value={durationMins} onChange={e => setDur(e.target.value)} style={{ ...inp, background:'white', cursor:'pointer' }}>
-              {DURATIONS.map(d => <option key={d.value} value={d.value}>{d.label}</option>)}
-            </select>
+            <div style={fieldLabel}>End time</div>
+            <input type="time" value={endTime} onChange={e => setEndTime(e.target.value)} style={{ ...inp, borderColor: endInvalid ? '#DC2626' : 'var(--border)' }} />
           </div>
         </div>
-        {time && durationMins && (
-          <div style={{ fontSize:11, color:'var(--muted)', marginTop:-6, marginBottom:12 }}>
-            {fmt12(time)} – {fmt12((() => { const [h,m]=time.split(':').map(Number); const t=Math.min(h*60+m+parseInt(durationMins), 23*60+59); return `${String(Math.floor(t/60)).padStart(2,'0')}:${String(t%60).padStart(2,'0')}` })())}
-          </div>
-        )}
+
+        {/* Quick-set the end time as a duration after the start */}
+        <div style={{ display:'flex', gap:6, flexWrap:'wrap', marginBottom:4 }}>
+          {QUICK_DURATIONS.map(q => {
+            const on = durationMins === q.mins
+            return (
+              <button key={q.mins} onClick={() => setQuickDuration(q.mins)} disabled={!time}
+                title={time ? `End at ${fmt12(addMinutes(time, q.mins))}` : 'Set a start time first'}
+                style={{ fontSize:11, padding:'4px 11px', borderRadius:16, cursor: time ? 'pointer' : 'not-allowed', fontFamily:'DM Sans,sans-serif', fontWeight:600,
+                  border: on ? 'none' : '1px solid var(--border)',
+                  background: on ? 'var(--teal)' : 'white',
+                  color: on ? 'white' : (time ? 'var(--muted)' : '#C7CDD4') }}>
+                {q.label}
+              </button>
+            )
+          })}
+        </div>
+        <div style={{ fontSize:11, color: endInvalid ? '#DC2626' : 'var(--muted)', marginBottom:12, minHeight:15 }}>
+          {endInvalid
+            ? 'End time must be after the start time.'
+            : (time && durationMins)
+              ? `${fmt12(time)} – ${fmt12(endTime)} · ${prettyDur(durationMins)}`
+              : (!time ? 'Pick a start time, then tap a duration to set the end.' : '')}
+        </div>
 
         {/* Category */}
         <div style={{ marginBottom:14 }}>
