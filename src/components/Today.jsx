@@ -6,6 +6,7 @@ import { normalizeRoutineItems, sortByTime, to12 } from './Routines.jsx'
 import { Icon } from './IconPicker.jsx'
 import { bloomBurst } from '../lib/bloom.js'
 import AddItemModal from './AddItemModal.jsx'
+import DateField from './DateField.jsx'
 import { setItemReminders } from '../lib/notifications.js'
 
 const TAG_COLORS = {
@@ -169,7 +170,7 @@ function ManageModal({ task, dateKey, onClose, onDelete, onReschedule, scheduled
           <div style={{display:'flex',gap:8,marginBottom:10}}>
             <div style={{flex:1}}>
               <div style={{fontSize:10,color:'var(--muted)',letterSpacing:1,textTransform:'uppercase',marginBottom:4}}>Date</div>
-              <input type="date" value={date} onChange={e=>handleDateChange(e.target.value)} style={{...s}}/>
+              <DateField value={date} onChange={handleDateChange} style={{...s}}/>
             </div>
             <div style={{flex:1}}>
               <div style={{fontSize:10,color:'var(--muted)',letterSpacing:1,textTransform:'uppercase',marginBottom:4}}>Time</div>

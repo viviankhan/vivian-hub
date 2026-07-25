@@ -5,6 +5,7 @@
 //   • Vacations / time off — spans that pause recurring tasks (as before).
 import { useState } from 'react'
 import { IconPicker, Icon } from './IconPicker.jsx'
+import DateField from './DateField.jsx'
 
 const EVENT_COLORS = ['#7C9CBF','#059669','#7C3AED','#D97706','#C4728E','#3B82F6','#E07B2E','#52B788','#EF4444','#A855F7']
 
@@ -126,11 +127,11 @@ function EventSection({ events, addEvent, deleteEvent }) {
           <div style={{ display:'flex', gap:8, marginBottom:10 }}>
             <div style={{ flex:1 }}>
               <div style={fieldLabel}>Start</div>
-              <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} style={{ ...inp, marginBottom:0 }} />
+              <DateField value={startDate} onChange={setStartDate} style={{ ...inp, marginBottom:0 }} />
             </div>
             <div style={{ flex:1 }}>
               <div style={fieldLabel}>End</div>
-              <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} style={{ ...inp, marginBottom:0 }} />
+              <DateField value={endDate} onChange={setEndDate} style={{ ...inp, marginBottom:0 }} />
             </div>
           </div>
           {endDate && startDate && endDate < startDate && (
@@ -217,11 +218,11 @@ function VacationSection({ vacations, addVacation, deleteVacation }) {
           <div style={{ display:'flex', gap:8, marginBottom:12 }}>
             <div style={{ flex:1 }}>
               <div style={fieldLabel}>Start</div>
-              <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} style={{ ...inp, marginBottom:0 }} />
+              <DateField value={startDate} onChange={setStartDate} style={{ ...inp, marginBottom:0 }} />
             </div>
             <div style={{ flex:1 }}>
               <div style={fieldLabel}>End</div>
-              <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} style={{ ...inp, marginBottom:0 }} />
+              <DateField value={endDate} onChange={setEndDate} style={{ ...inp, marginBottom:0 }} />
             </div>
           </div>
           {endDate && startDate && endDate < startDate && (
