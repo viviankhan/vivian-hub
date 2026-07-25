@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react'
 import { Icon } from './IconPicker.jsx'
+import DateField from './DateField.jsx'
 
 const DAYS = ['monday','tuesday','wednesday','thursday','friday','saturday','sunday']
 const DAY_SHORT = { monday:'Mon', tuesday:'Tue', wednesday:'Wed', thursday:'Thu', friday:'Fri', saturday:'Sat', sunday:'Sun' }
@@ -167,14 +168,14 @@ function TaskModal({ initial, onSave, onDelete, onClose, categories }) {
 
           {/* Date range */}
           <div style={{ display:'flex', gap:8, marginBottom:4 }}>
-            <div style={{ flex:1 }}>
+            <div style={{ flex:1, minWidth:0 }}>
               <div style={{ fontSize:10, color:'var(--muted)', letterSpacing:1, textTransform:'uppercase', marginBottom:4 }}>Start date</div>
-              <input type="date" value={startDate} onChange={e=>setStartDate(e.target.value)}
+              <DateField value={startDate} onChange={setStartDate}
                 style={{ ...inp, marginBottom:0, fontSize:12 }} />
             </div>
-            <div style={{ flex:1 }}>
+            <div style={{ flex:1, minWidth:0 }}>
               <div style={{ fontSize:10, color:'var(--muted)', letterSpacing:1, textTransform:'uppercase', marginBottom:4 }}>End date</div>
-              <input type="date" value={endDate} onChange={e=>setEndDate(e.target.value)} disabled={noEnd}
+              <DateField value={endDate} onChange={setEndDate} disabled={noEnd}
                 style={{ ...inp, marginBottom:0, fontSize:12, opacity:noEnd?.45:1 }} />
             </div>
           </div>

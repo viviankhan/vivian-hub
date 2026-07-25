@@ -6,6 +6,7 @@
 // from the start), plus optional custom reminder lead times that override the
 // global defaults just for this item.
 import { useState } from 'react'
+import DateField from './DateField.jsx'
 import { LEAD_OPTIONS, getItemReminders } from '../lib/notifications.js'
 
 const DEFAULT_CATEGORIES = [{ id:'other', label:'Other', color:'#8899AA' }]
@@ -141,7 +142,7 @@ export default function AddItemModal({ existing = null, presetDate = null, prese
         ) : (
           <div style={{ marginBottom:12 }}>
             <div style={fieldLabel}>Date</div>
-            <input type="date" value={date} onChange={e => setDate(e.target.value)} style={inp} />
+            <DateField value={date} onChange={setDate} style={inp} />
           </div>
         )}
 

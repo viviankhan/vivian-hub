@@ -4,6 +4,7 @@ import { findSlots } from '../lib/scheduler.js'
 import { Icon } from './IconPicker.jsx'
 import { bloomBurst } from '../lib/bloom.js'
 import AddItemModal from './AddItemModal.jsx'
+import DateField from './DateField.jsx'
 import { setItemReminders } from '../lib/notifications.js'
 
 const DAYS = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday']
@@ -210,7 +211,7 @@ function SlotPicker({ scheduled, onPick, onCancel, targetDate, commitmentDuratio
           <div style={{ display:'flex', gap:8, marginBottom:10, flexWrap:'wrap' }}>
             <div style={{ flex:1, minWidth:130 }}>
               <div style={{ fontSize:10, color:'var(--muted)', letterSpacing:1, textTransform:'uppercase', marginBottom:4 }}>Date</div>
-              <input type="date" value={mDate} onChange={e => setMDate(e.target.value)}
+              <DateField value={mDate} onChange={setMDate}
                 style={{ width:'100%', fontSize:12, padding:'7px 10px', borderRadius:10, border:'1px solid var(--border)', fontFamily:'DM Sans,sans-serif' }} />
             </div>
             <div style={{ flex:1, minWidth:100 }}>
@@ -300,7 +301,7 @@ function QuickAdd({ onAdd, categories }) {
       <div style={{ display:'flex', gap:8, marginBottom:10, flexWrap:'wrap' }}>
         <div style={{ flex:1, minWidth:120 }}>
           <div style={{ fontSize:10, color:'var(--muted)', letterSpacing:1, textTransform:'uppercase', marginBottom:4 }}>Date</div>
-          <input type="date" value={date} onChange={e => setDate(e.target.value)}
+          <DateField value={date} onChange={setDate}
             style={{ width:'100%', fontSize:12, padding:'7px 10px', borderRadius:10, border:'1px solid var(--border)', fontFamily:'DM Sans, sans-serif' }} />
         </div>
         <div style={{ flex:1, minWidth:95 }}>

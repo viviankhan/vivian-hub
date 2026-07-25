@@ -31,14 +31,17 @@ import SearchOverlay, { SearchIcon } from './components/SearchOverlay.jsx'
 import { registerServiceWorker, syncReminders } from './lib/notifications.js'
 
 const TABS = [
-  { id:'today',       label:'Today'       },
-  { id:'week',        label:'Week'        },
-  { id:'commitments', label:'Commitments' },
-  { id:'calendar',    label:'Calendar'    },
-  { id:'thoughts',    label:'Thoughts'    },
-  { id:'events',      label:'Events'      },
-  { id:'recurring',   label:'Recurring'   },
+  { id:'today',       label:'Today',       icon:'☀️' },
+  { id:'week',        label:'Week',        icon:'🗓️' },
+  { id:'commitments', label:'Commitments', icon:'🎯' },
+  { id:'calendar',    label:'Calendar',    icon:'📅' },
+  { id:'thoughts',    label:'Thoughts',    icon:'💭' },
+  { id:'events',      label:'Events',      icon:'🎈' },
+  { id:'recurring',   label:'Recurring',   icon:'🔁' },
 ]
+// The four primary destinations pinned to the mobile bottom bar; everything
+// else (plus these) lives in the slide-out side menu behind "More".
+const BOTTOM_TABS = ['today', 'week', 'commitments', 'calendar']
 
 function todayStr() {
   const d = new Date()
@@ -77,6 +80,51 @@ function SettingsDrawer({ open, onClose, settingsTab, setSettingsTab, notes, upd
   )
 }
 
+// A simple 3-line "menu" icon for the mobile header hamburger.
+function MenuIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
+      strokeLinecap="round" aria-hidden="true">
+      <line x1="4" y1="7"  x2="20" y2="7"  />
+      <line x1="4" y1="12" x2="20" y2="12" />
+      <line x1="4" y1="17" x2="20" y2="17" />
+    </svg>
+  )
+}
+
+// ── Mobile side-nav drawer ─────────────────────────────────────
+// Slides in from the left on phones. Full section list as rounded rows with
+// icons; the active section is highlighted. Always rendered so it can animate;
+// the `.open` class drives the slide + scrim fade, and it's display:none on
+// desktop (where the horizontal tab bar is used instead).
+function MobileNav({ open, onClose, tab, setTab, onOpenSettings }) {
+  const go = (id) => { setTab(id); onClose() }
+  return (
+    <>
+      <div className={`mobile-nav-scrim ${open ? 'open' : ''}`} onClick={onClose} aria-hidden="true" />
+      <aside className={`mobile-nav ${open ? 'open' : ''}`} aria-hidden={!open}>
+        <div className="mobile-nav-head">
+          <div className="serif mobile-nav-brand">Bloom</div>
+          <button className="mobile-nav-close" onClick={onClose} aria-label="Close menu">✕</button>
+        </div>
+        <nav className="mobile-nav-list">
+          {TABS.map(t => (
+            <button key={t.id} className={`mobile-nav-item ${tab===t.id ? 'active' : ''}`} onClick={() => go(t.id)}>
+              <span className="mobile-nav-icon">{t.icon}</span>
+              <span className="mobile-nav-label">{t.label}</span>
+              {tab===t.id && <span className="mobile-nav-active-dot" aria-hidden="true" />}
+            </button>
+          ))}
+        </nav>
+        <button className="mobile-nav-settings" onClick={() => { onClose(); onOpenSettings() }}>
+          <span className="mobile-nav-icon">⚙️</span>
+          <span className="mobile-nav-label">Settings</span>
+        </button>
+      </aside>
+    </>
+  )
+}
+
 export default function App() {
   // Remember the last tab you were on across reloads — purely a local UI
   // preference, not synced data, so plain localStorage is enough.
@@ -92,6 +140,7 @@ export default function App() {
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [settingsTab,  setSettingsTab]  = useState('routines')
   const [searchOpen,   setSearchOpen]   = useState(false)
+  const [navOpen,      setNavOpen]      = useState(false)  // mobile side-nav drawer
   // Set when a search suggestion is picked → Calendar navigates to this date.
   // The nonce lets re-picking the same date re-trigger the jump.
   const [jumpTo,       setJumpTo]       = useState(null)
@@ -377,7 +426,13 @@ export default function App() {
       <div className="shimmer-bg" aria-hidden="true" />
       <header className="header">
         <div className="header-top">
-          <h1 className="header-title">Bloom</h1>
+          <div className="header-left">
+            <button className="hamburger-btn" onClick={() => setNavOpen(true)}
+              title="Menu" aria-label="Open menu">
+              <MenuIcon />
+            </button>
+            <h1 className="header-title">Bloom</h1>
+          </div>
           <div className="header-actions">
             <span className={`storage-badge ${isUsingSupabase ? 'cloud' : 'local'}`}>
               {isUsingSupabase ? 'Cloud sync on' : 'Local storage'}
@@ -428,6 +483,27 @@ export default function App() {
         open={searchOpen} onClose={() => setSearchOpen(false)}
         commitments={commitments} events={events} log={log}
         onJump={date => { setTab('calendar'); setJumpTo({ date, nonce: Date.now() }) }} />
+
+      {/* Mobile side-nav drawer (phones only; CSS hides it on desktop) */}
+      <MobileNav open={navOpen} onClose={() => setNavOpen(false)}
+        tab={tab} setTab={setTab} onOpenSettings={() => setSettingsOpen(true)} />
+
+      {/* Mobile bottom tab bar (phones only) */}
+      <nav className="bottom-nav">
+        {BOTTOM_TABS.map(id => {
+          const t = TABS.find(x => x.id === id)
+          return (
+            <button key={id} className={`bottom-nav-btn ${tab===id ? 'active' : ''}`} onClick={() => setTab(id)}>
+              <span className="bottom-nav-icon">{t.icon}</span>
+              <span className="bottom-nav-label">{t.label}</span>
+            </button>
+          )
+        })}
+        <button className={`bottom-nav-btn ${navOpen ? 'active' : ''}`} onClick={() => setNavOpen(true)}>
+          <span className="bottom-nav-icon">☰</span>
+          <span className="bottom-nav-label">More</span>
+        </button>
+      </nav>
     </div>
   )
 }

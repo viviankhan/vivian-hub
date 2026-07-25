@@ -354,6 +354,11 @@ body {
 /* ── INPUT STYLES ───────────────────────────────────────────── */
 input, select, textarea { font-family: 'DM Sans', sans-serif; border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; font-size: 13px; color: var(--text); background: white; outline: none; transition: border-color .2s; width: 100%; }
 input:focus, select:focus, textarea:focus { border-color: var(--sea); }
+/* Checkboxes/radios must NOT inherit the full-width text-input styling above —
+   otherwise they stretch across their row and shove the label into a narrow
+   column that wraps one word per line (the broken "carry forward if undone"
+   look on mobile). Keep them native-sized. */
+input[type=checkbox], input[type=radio] { width: auto; min-width: 0; padding: 0; border-radius: 0; flex-shrink: 0; }
 textarea { resize: vertical; min-height: 160px; line-height: 1.6; }
 
 .btn-primary { position: relative; overflow: hidden; font-family: 'DM Sans', sans-serif; font-size: 11px; letter-spacing: 1.5px; text-transform: uppercase; padding: 10px 20px; border-radius: 24px; border: none; background: linear-gradient(135deg, #4A9EB5, #7C86C8 45%, #C88FB0 80%, #E8A98C); background-size: 200% 200%; color: white; cursor: pointer; font-weight: 600; transition: all .2s; box-shadow: 0 4px 14px rgba(90,140,180,.28); }
@@ -419,6 +424,123 @@ textarea { resize: vertical; min-height: 160px; line-height: 1.6; }
 .search-label mark { background: #FDECC8; color: inherit; border-radius: 3px; padding: 0 1px; }
 .search-date { font-size: 11px; color: var(--muted); white-space: nowrap; flex-shrink: 0; }
 .search-hint, .search-empty { padding: 22px 18px; font-size: 13px; color: var(--muted); text-align: center; line-height: 1.6; }
+
+/* ── MOBILE APP SHELL ───────────────────────────────────────── */
+/* On phones the horizontal scrolling tab bar is replaced by a native-feeling
+   shell: a hamburger in the header opens a rounded side drawer with every
+   section, and a fixed bottom bar pins the four primary destinations. All of
+   the pieces below are display:none by default (desktop keeps its tab bar) and
+   are switched on inside the max-width:768px block further down. */
+.header-left { display: flex; align-items: center; gap: 10px; min-width: 0; }
+
+.hamburger-btn {
+  display: none;                 /* desktop: hidden (tab bar handles nav) */
+  align-items: center; justify-content: center;
+  width: 40px; height: 40px; flex-shrink: 0;
+  border: none; padding: 0;
+  background: rgba(255,255,255,.35); border-radius: 14px;
+  color: #1A4A60; cursor: pointer; transition: all .2s;
+}
+.hamburger-btn:hover { background: rgba(255,255,255,.7); }
+.hamburger-btn:active { transform: scale(.94); }
+.hamburger-btn svg { width: 22px; height: 22px; }
+
+/* Scrim + drawer — off-screen and non-interactive until .open is added. */
+.mobile-nav-scrim {
+  display: none;
+  position: fixed; inset: 0; z-index: 700;
+  background: rgba(26,48,64,.44);
+  -webkit-backdrop-filter: blur(2px); backdrop-filter: blur(2px);
+  opacity: 0; pointer-events: none; transition: opacity .28s ease;
+}
+.mobile-nav-scrim.open { opacity: 1; pointer-events: auto; }
+
+.mobile-nav {
+  display: none;
+  position: fixed; top: 0; bottom: 0; left: 0; z-index: 800;
+  width: min(84vw, 320px);
+  flex-direction: column;
+  padding: max(20px, env(safe-area-inset-top)) 14px calc(18px + env(safe-area-inset-bottom));
+  background: linear-gradient(168deg, #FDFBF9 0%, #F5EFEA 55%, #EFE7F0 100%);
+  border-radius: 0 24px 24px 0;
+  box-shadow: 10px 0 44px rgba(40,72,88,.24);
+  transform: translateX(-102%);
+  transition: transform .32s cubic-bezier(.22,.8,.28,1);
+  overflow-y: auto; -webkit-overflow-scrolling: touch;
+}
+.mobile-nav.open { transform: none; }
+.mobile-nav-head { display: flex; align-items: center; justify-content: space-between; padding: 4px 8px 16px; }
+.mobile-nav-brand { font-size: 27px; font-weight: 600; color: #1E3A4E; letter-spacing: .3px; }
+.mobile-nav-close {
+  width: 34px; height: 34px; border: none; border-radius: 12px;
+  background: rgba(42,72,88,.08); color: #2A4858; font-size: 15px; cursor: pointer;
+  display: flex; align-items: center; justify-content: center; transition: all .2s;
+}
+.mobile-nav-close:active { transform: scale(.92); }
+.mobile-nav-list { display: flex; flex-direction: column; gap: 4px; }
+.mobile-nav-item, .mobile-nav-settings {
+  position: relative;
+  display: flex; align-items: center; gap: 14px;
+  padding: 13px 16px; border-radius: 16px; border: none;
+  background: transparent; cursor: pointer; text-align: left; width: 100%;
+  font-family: 'DM Sans', sans-serif; font-size: 15px; font-weight: 500; color: var(--text);
+  transition: background .18s, transform .1s;
+}
+.mobile-nav-item:active, .mobile-nav-settings:active { transform: scale(.985); }
+.mobile-nav-icon { font-size: 20px; width: 26px; text-align: center; flex-shrink: 0; line-height: 1; }
+.mobile-nav-label { flex: 1; }
+.mobile-nav-item.active {
+  background: linear-gradient(135deg, rgba(123,191,212,.26), rgba(200,191,223,.26));
+  color: #143F52; font-weight: 700;
+  box-shadow: 0 4px 14px rgba(120,150,190,.14);
+}
+.mobile-nav-active-dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: linear-gradient(135deg, var(--sea), var(--peach)); flex-shrink: 0;
+}
+.mobile-nav-settings { margin-top: auto; color: var(--muted); font-size: 14px; }
+.mobile-nav-settings:hover { background: rgba(42,72,88,.05); }
+
+/* Fixed bottom tab bar. */
+.bottom-nav {
+  display: none;
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 60;
+  justify-content: space-around; align-items: stretch; gap: 2px;
+  padding: 7px 8px calc(7px + env(safe-area-inset-bottom));
+  background: rgba(255,255,255,.9);
+  -webkit-backdrop-filter: blur(16px) saturate(1.1); backdrop-filter: blur(16px) saturate(1.1);
+  border-top: 1px solid rgba(224,212,220,.8);
+  box-shadow: 0 -6px 24px rgba(120,150,190,.14);
+}
+.bottom-nav-btn {
+  flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px;
+  border: none; background: none; cursor: pointer; padding: 6px 2px; border-radius: 14px;
+  color: var(--muted); transition: color .2s, background .2s;
+}
+.bottom-nav-icon { font-size: 20px; line-height: 1; }
+.bottom-nav-label { font-size: 10px; font-weight: 600; letter-spacing: .2px; }
+.bottom-nav-btn.active {
+  color: #143F52;
+  background: linear-gradient(135deg, rgba(123,191,212,.18), rgba(200,191,223,.18));
+}
+
+/* Today's floating "+" button — default (desktop) position. On mobile it's
+   lifted in the media block below so it clears the fixed bottom bar. */
+.today-fab { bottom: 28px; right: 24px; }
+
+@media (max-width: 768px) {
+  .nav { display: none; }                 /* replaced by drawer + bottom bar */
+  .hamburger-btn { display: inline-flex; }
+  .mobile-nav-scrim { display: block; }
+  .mobile-nav { display: flex; }
+  .bottom-nav { display: flex; }
+  .header-top { margin-bottom: 0; }
+  .header { padding-bottom: 12px; }
+  /* Keep page content clear of the fixed bottom bar. */
+  .content { padding-bottom: calc(78px + env(safe-area-inset-bottom)); }
+  /* Lift the FAB above the bottom bar. */
+  .today-fab { bottom: calc(92px + env(safe-area-inset-bottom)); right: 18px; }
+}
 
 /* ── RESPONSIVE ─────────────────────────────────────────────── */
 @media (max-width: 600px) {

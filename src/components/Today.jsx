@@ -6,6 +6,7 @@ import { normalizeRoutineItems, sortByTime, to12 } from './Routines.jsx'
 import { Icon } from './IconPicker.jsx'
 import { bloomBurst } from '../lib/bloom.js'
 import AddItemModal from './AddItemModal.jsx'
+import DateField from './DateField.jsx'
 import { setItemReminders } from '../lib/notifications.js'
 
 const TAG_COLORS = {
@@ -169,7 +170,7 @@ function ManageModal({ task, dateKey, onClose, onDelete, onReschedule, scheduled
           <div style={{display:'flex',gap:8,marginBottom:10}}>
             <div style={{flex:1}}>
               <div style={{fontSize:10,color:'var(--muted)',letterSpacing:1,textTransform:'uppercase',marginBottom:4}}>Date</div>
-              <input type="date" value={date} onChange={e=>handleDateChange(e.target.value)} style={{...s}}/>
+              <DateField value={date} onChange={handleDateChange} style={{...s}}/>
             </div>
             <div style={{flex:1}}>
               <div style={{fontSize:10,color:'var(--muted)',letterSpacing:1,textTransform:'uppercase',marginBottom:4}}>Time</div>
@@ -642,9 +643,10 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
           routineDone={routineDone} toggleRoutine={toggleRoutine} />
       )}
 
-      {/* FAB */}
-      <button onClick={()=>setAddingTask(true)}
-        style={{position:'fixed',bottom:28,right:24,width:52,height:52,borderRadius:'50%',border:'none',
+      {/* FAB — position lives in CSS (.today-fab) so it can lift above the
+          mobile bottom bar; inline styles would otherwise override it. */}
+      <button onClick={()=>setAddingTask(true)} className="today-fab"
+        style={{position:'fixed',width:52,height:52,borderRadius:'50%',border:'none',
           background:'var(--forest)',color:'var(--green-light)',fontSize:24,cursor:'pointer',
           boxShadow:'0 4px 20px rgba(0,0,0,.25)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:100}}>
         +
