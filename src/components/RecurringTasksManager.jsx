@@ -167,12 +167,12 @@ function TaskModal({ initial, onSave, onDelete, onClose, categories }) {
 
           {/* Date range */}
           <div style={{ display:'flex', gap:8, marginBottom:4 }}>
-            <div style={{ flex:1 }}>
+            <div style={{ flex:1, minWidth:0 }}>
               <div style={{ fontSize:10, color:'var(--muted)', letterSpacing:1, textTransform:'uppercase', marginBottom:4 }}>Start date</div>
               <input type="date" value={startDate} onChange={e=>setStartDate(e.target.value)}
                 style={{ ...inp, marginBottom:0, fontSize:12 }} />
             </div>
-            <div style={{ flex:1 }}>
+            <div style={{ flex:1, minWidth:0 }}>
               <div style={{ fontSize:10, color:'var(--muted)', letterSpacing:1, textTransform:'uppercase', marginBottom:4 }}>End date</div>
               <input type="date" value={endDate} onChange={e=>setEndDate(e.target.value)} disabled={noEnd}
                 style={{ ...inp, marginBottom:0, fontSize:12, opacity:noEnd?.45:1 }} />
