@@ -537,14 +537,16 @@ textarea { resize: vertical; min-height: 160px; line-height: 1.6; }
   .header-top { margin-bottom: 0; }
   .header { padding-bottom: 12px; }
   /* Keep page content clear of the fixed bottom bar. */
-  .content { padding-bottom: calc(78px + env(safe-area-inset-bottom)); }
+  .content { padding-bottom: calc(84px + env(safe-area-inset-bottom)); }
   /* Lift the FAB above the bottom bar. */
   .today-fab { bottom: calc(92px + env(safe-area-inset-bottom)); right: 18px; }
 }
 
 /* ── RESPONSIVE ─────────────────────────────────────────────── */
 @media (max-width: 600px) {
-  .content { padding: 16px 14px; }
+  /* Bottom padding must clear the fixed bottom bar — keep it in the shorthand
+     so it doesn't reset the mobile-shell clearance set above. */
+  .content { padding: 16px 14px calc(84px + env(safe-area-inset-bottom)); }
   .header { padding: max(14px, env(safe-area-inset-top)) 14px 0; }
   .header-title { font-size: clamp(24px, 8vw, 32px); }
   .nav-btn { padding: 11px 13px; font-size: 10px; letter-spacing: 1px; }
