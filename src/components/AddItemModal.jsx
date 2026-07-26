@@ -9,7 +9,8 @@ import { useState } from 'react'
 import DateField from './DateField.jsx'
 import TimeField from './TimeField.jsx'
 import { Icon } from './IconPicker.jsx'
-import { LEAD_OPTIONS, getItemReminders } from '../lib/notifications.js'
+import { LEAD_OPTIONS, getItemReminders, getItemSound, setItemSound } from '../lib/notifications.js'
+import { SOUNDS, playSound } from '../lib/sounds.js'
 
 const DEFAULT_CATEGORIES = [{ id:'other', label:'Other', color:'#8899AA' }]
 
@@ -156,6 +157,8 @@ export default function AddItemModal({ existing = null, presetDate = null, prese
 
   // Optional per-task color. Empty = inherit the primary label's color.
   const [color, setColor] = useState(existing?.color || '')
+  // In-app alert sound for this item's reminders (device-local).
+  const [sound, setSound] = useState(() => getItemSound(existing?.id) || 'chime')
 
   // Which grouped row is expanded for editing (only one open at a time).
   const [expanded, setExpanded] = useState(null)
@@ -202,6 +205,7 @@ export default function AddItemModal({ existing = null, presetDate = null, prese
       description: description.trim() || '',
       subtasks,
     }
+    setItemSound(commitment.id, sound)
     // null → use global defaults; otherwise this item's own lead-minute list.
     onSave(commitment, useDefault ? null : reminders, isEdit)
     onClose()
@@ -213,7 +217,9 @@ export default function AddItemModal({ existing = null, presetDate = null, prese
   const isCustomColor = !!color && !TASK_COLORS.includes(color)
   const labelNames = selectedCats.map(id => (cats.find(c => c.id === id)?.label) || id)
   const card = { background:'white', borderRadius:16, boxShadow:'0 1px 4px rgba(60,72,88,.06)', marginBottom:16, overflow:'hidden' }
-  const remindText = useDefault ? 'Default alerts' : (reminders.length ? `${reminders.length} alert${reminders.length>1?'s':''}` : 'No alerts')
+  const baseRemind = useDefault ? 'Default' : (reminders.length ? `${reminders.length} alert${reminders.length>1?'s':''}` : 'No alerts')
+  const soundLabel = (SOUNDS.find(s => s.id === sound) || {}).label || 'Chime'
+  const remindText = sound === 'none' ? baseRemind : `${baseRemind} · ${soundLabel}`
 
   return (
     <div onClick={onClose}
@@ -355,6 +361,20 @@ export default function AddItemModal({ existing = null, presetDate = null, prese
                   : reminders.length ? `This item only: ${reminders.map(m => LEAD_OPTIONS.find(o => o.mins===m)?.label || m+'m').join(', ')} before.`
                   : 'No reminders for this item.'}
               </div>
+              {/* Sound — tap to choose + preview */}
+              <div style={{ fontSize:10, color:'var(--muted)', letterSpacing:1, textTransform:'uppercase', margin:'14px 0 6px' }}>Sound</div>
+              <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
+                {SOUNDS.map(s => {
+                  const on = sound === s.id
+                  return (
+                    <button key={s.id} onClick={() => { setSound(s.id); if (s.id !== 'none') playSound(s.id) }}
+                      style={{ fontSize:11, padding:'5px 12px', borderRadius:20, cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:600, border: on ? 'none' : '1px solid var(--border)', background: on ? 'var(--forest)' : 'white', color: on ? 'var(--green-light)' : 'var(--muted)' }}>
+                      {on ? '♪ ' : ''}{s.label}
+                    </button>
+                  )
+                })}
+              </div>
+              <div style={{ fontSize:10.5, color:'var(--muted)', marginTop:6 }}>Plays in-app when a reminder fires. Your phone controls the system notification sound.</div>
             </DetailRow>
           </div>
 
