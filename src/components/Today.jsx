@@ -52,6 +52,10 @@ function extractLocation(label, note='') {
   return m?m[0].trim():null
 }
 // Replace time portion in a label string with new formatted time
+function minsToHHMM(m) {
+  const mm = Math.max(0, Math.min(23*60+59, Math.round(m)))
+  return `${String(Math.floor(mm/60)).padStart(2,'0')}:${String(mm%60).padStart(2,'0')}`
+}
 function shiftLabelTime(label, newMins) {
   const newTime = fmtTimeLabel(newMins)
   // Replace leading time pattern like "9:50 AM — " or "~9:50 AM — "
@@ -120,7 +124,7 @@ function RoutineCard({ title, icon, items, prefix, open, setOpen, routineDone, t
 }
 
 // ── Manage modal with smart scheduling ────────────────────────
-function ManageModal({ task, dateKey, onClose, onDelete, onReschedule, scheduled }) {
+function ManageModal({ task, dateKey, onClose, onDelete, onReschedule, onUnschedule, scheduled }) {
   const [view,setView]     = useState('main')
   const [reason,setReason] = useState('')
   const [date,setDate]     = useState(dateKey)
@@ -154,6 +158,9 @@ function ManageModal({ task, dateKey, onClose, onDelete, onReschedule, scheduled
           <div style={{fontSize:13,color:'var(--muted)',marginBottom:16,padding:'9px 12px',background:'#F7F6F3',borderRadius:9,lineHeight:1.5}}>{task.label||task.text}</div>
           <div style={{display:'flex',flexDirection:'column',gap:8}}>
             <button onClick={handleViewReschedule} style={{padding:'10px',borderRadius:10,border:'1px solid var(--border)',background:'white',cursor:'pointer',textAlign:'left',fontSize:13,color:'var(--text)',fontFamily:'DM Sans,sans-serif'}}>📅 Reschedule</button>
+            {task.isCommitment && onUnschedule && (
+              <button onClick={()=>{onUnschedule(task);onClose()}} style={{padding:'10px',borderRadius:10,border:'1px solid var(--border)',background:'white',cursor:'pointer',textAlign:'left',fontSize:13,color:'var(--text)',fontFamily:'DM Sans,sans-serif'}}>🗓️ Unschedule · back to Commitments</button>
+            )}
             <button onClick={()=>setView('delete')} style={{padding:'10px',borderRadius:10,border:'1px solid #FECACA',background:'#FFF5F5',cursor:'pointer',textAlign:'left',fontSize:13,color:'#991B1B',fontFamily:'DM Sans,sans-serif'}}>🗑️ Delete & log why</button>
           </div>
           <button onClick={onClose} style={{marginTop:10,width:'100%',padding:'8px',borderRadius:10,border:'1px solid var(--border)',background:'white',color:'var(--muted)',cursor:'pointer',fontSize:12,fontFamily:'DM Sans,sans-serif'}}>Cancel</button>
@@ -213,6 +220,52 @@ function ShiftToast({ result, onClose }) {
       {result.committed>0&&<div>📋 {result.committed} task{result.committed>1?'s':''} sent to Commitments (overflowed day)</div>}
       {result.fixed>0&&<div>📌 {result.fixed} fixed task{result.fixed>1?'s':''} (class/meeting) left in place</div>}
       <button onClick={onClose} style={{marginTop:8,fontSize:11,padding:'3px 10px',borderRadius:6,border:'1px solid rgba(255,255,255,.2)',background:'transparent',color:'var(--green-light)',cursor:'pointer',fontFamily:'DM Sans,sans-serif'}}>Dismiss</button>
+    </div>
+  )
+}
+
+// ── "Start now" push chooser ───────────────────────────────────
+// Lets you pick which later tasks get pushed down to make room (or all).
+function ShiftChooser({ plan, onApply, onCancel }) {
+  const [sel, setSel] = useState(() => new Set(plan.selected))
+  const ids = plan.rest.map(t => t.id)
+  const allOn = ids.length > 0 && ids.every(id => sel.has(id))
+  const toggle = (id) => setSel(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n })
+  const pivotTitle = plan.pivot.title || stripTimePrefix(plan.pivot.label)
+  return (
+    <div onClick={onCancel} style={{position:'fixed',inset:0,background:'rgba(0,0,0,.5)',zIndex:610,display:'flex',alignItems:'center',justifyContent:'center',padding:16}}>
+      <div onClick={e=>e.stopPropagation()} style={{background:'white',borderRadius:18,width:'100%',maxWidth:400,maxHeight:'86vh',overflowY:'auto',boxShadow:'0 24px 64px rgba(0,0,0,.3)',padding:20}}>
+        <div className="serif" style={{fontSize:18,fontWeight:600,color:'var(--text)',marginBottom:3}}>Start “{pivotTitle}” now</div>
+        <div style={{fontSize:12.5,color:'var(--muted)',marginBottom:14}}>Choose which later tasks to push down to make room. Unchecked tasks stay where they are.</div>
+        <button onClick={()=>setSel(allOn ? new Set() : new Set(ids))}
+          style={{fontSize:11,padding:'5px 12px',borderRadius:16,border:'1px solid var(--border)',background:'white',color:'var(--teal)',fontWeight:600,cursor:'pointer',fontFamily:'DM Sans,sans-serif',marginBottom:10}}>
+          {allOn ? 'Deselect all' : 'Select all'}
+        </button>
+        <div style={{display:'flex',flexDirection:'column',gap:2,marginBottom:16}}>
+          {plan.rest.map(t=>{
+            const on = sel.has(t.id)
+            const title = t.title || stripTimePrefix(t.label)
+            return (
+              <div key={t.id} onClick={()=>toggle(t.id)}
+                style={{display:'flex',alignItems:'center',gap:11,padding:'9px 4px',cursor:'pointer'}}>
+                <div style={{width:20,height:20,borderRadius:6,flexShrink:0,border:on?'none':'2px solid #CDD3DA',background:on?'var(--teal)':'transparent',display:'flex',alignItems:'center',justifyContent:'center'}}>
+                  {on && <span style={{color:'white',fontSize:12,fontWeight:700}}>✓</span>}
+                </div>
+                <span style={{fontSize:12,color:'var(--muted)',minWidth:64,fontVariantNumeric:'tabular-nums'}}>{fmtTimeLabel(t._mins)}</span>
+                <span style={{flex:1,minWidth:0,fontSize:14,color:'var(--text)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{title}</span>
+              </div>
+            )
+          })}
+        </div>
+        <div style={{display:'flex',gap:8}}>
+          <button onClick={()=>onApply([...sel])}
+            style={{flex:1,padding:'12px',borderRadius:12,border:'none',background:'var(--forest)',color:'var(--green-light)',fontWeight:700,fontSize:14,cursor:'pointer',fontFamily:'DM Sans,sans-serif'}}>
+            {sel.size ? `Start now · push ${sel.size}` : 'Start now · push none'}
+          </button>
+          <button onClick={onCancel}
+            style={{padding:'12px 16px',borderRadius:12,border:'1px solid var(--border)',background:'white',color:'var(--muted)',cursor:'pointer',fontSize:13,fontFamily:'DM Sans,sans-serif'}}>Cancel</button>
+        </div>
+      </div>
     </div>
   )
 }
@@ -355,6 +408,7 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
   const [now,         setNow]         = useState(nowMins())
   const [managing,    setManaging]    = useState(null)
   const [editing,     setEditing]     = useState(null)  // full commitment being edited
+  const [shiftPlan,   setShiftPlan]   = useState(null)  // {pivot, rest, selected} — "start now" push chooser
   const [addingTask,  setAddingTask]  = useState(false)
   const [morningOpen, setMorningOpen] = useState(false)
   const [nightOpen,   setNightOpen]   = useState(false)
@@ -519,57 +573,68 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
   }
 
   // ── Shift to now ──────────────────────────────────────────────
-  const handleShiftToNow = (pivotTask) => {
-    const pivotMins = parseTimeMins(pivotTask.label)
+  // Actually move things: the tapped task starts now, and the tasks the user
+  // chose (selectedIds) get packed in after it. Anything not chosen stays put.
+  // Commitment times update for real; local todos use the label-shift override.
+  const applyShift = (pivotTask, selectedIds) => {
+    const pivotMins = pivotTask._mins ?? parseTimeMins(pivotTask.label)
     if (pivotMins===null) return
-    const offset = now - pivotMins // how late we are in minutes
-
-    const newOverrides = { ...timeOverrides }
+    const sel = new Set(selectedIds)
+    const overrides = { ...timeOverrides }
     let shifted=0, committed=0, fixed=0
 
-    // Get all undone timed tasks at or after the pivot, sorted by time
-    const candidates = tasksWithStatus
-      .filter(t=>!isDoneCheck(t.id,t.isCommitment) && t._mins!==null && t._mins>=pivotMins)
+    const setStart = (t, mins) => {
+      if (t.isCommitment && updateCommitment) updateCommitment(t.id, { time: minsToHHMM(mins) })
+      else overrides[t.id] = mins
+    }
+    const sendToTomorrow = (t) => {
+      committed++
+      const tm = new Date(); tm.setDate(tm.getDate()+1)
+      const key = `${tm.getFullYear()}-${String(tm.getMonth()+1).padStart(2,'0')}-${String(tm.getDate()).padStart(2,'0')}`
+      if (t.isCommitment && updateCommitment) updateCommitment(t.id, { date: key, time: null })
+      else if (addCommitment) {
+        addCommitment({ id:'shifted-'+t.id+'-'+Date.now(), text:(t.title||t.label||'').replace(/^~?\d{1,2}:\d{2}\s*(?:AM|PM)\s*(?:—\s*)?/i,'').trim(), date:key, cat:t.tag, note:`Shifted from ${dateKey} — ran out of day`, done:false })
+        setDeleted(prev=>{ const next=[...prev,t.id]; localStorage.setItem('vivian_deleted_'+dateKey, JSON.stringify(next)); return next })
+      }
+    }
+
+    const pivotDur = pivotTask._dur || 0
+    setStart(pivotTask, now); shifted++
+    let cursor = now + pivotDur
+
+    tasksWithStatus
+      .filter(t => t.id!==pivotTask.id && t._mins!==null && t._mins>=pivotMins)
       .sort((a,b)=>a._mins-b._mins)
+      .forEach(t=>{
+        const dur = t._dur || 0
+        if (isDoneCheck(t.id,t.isCommitment)) { cursor=Math.max(cursor,t._mins+dur); return }
+        if (INFLEXIBLE_TAGS.has(t.tag)) { cursor=Math.max(cursor,t._mins+dur); return }
+        if (!sel.has(t.id)) { cursor=Math.max(cursor,t._mins+dur); return }  // not chosen → leave
+        if (t._mins >= cursor) { cursor=t._mins+dur; return }                // chosen but no overlap → leave
+        if (cursor+dur > END_OF_DAY_MINS) { sendToTomorrow(t); return }
+        setStart(t, cursor); shifted++
+        cursor += dur
+      })
 
-    candidates.forEach(task=>{
-      if (INFLEXIBLE_TAGS.has(task.tag)) {
-        fixed++
-        return // leave inflexible tasks where they are
-      }
-      const newTime = task._mins + offset
-      if (newTime > END_OF_DAY_MINS) {
-        // Task overflows day → send to commitments
-        committed++
-        // Add to commitments for tomorrow
-        const tomorrow = new Date(); tomorrow.setDate(tomorrow.getDate()+1)
-        const tomorrowKey = `${tomorrow.getFullYear()}-${String(tomorrow.getMonth()+1).padStart(2,'0')}-${String(tomorrow.getDate()).padStart(2,'0')}`
-        if (addCommitment) {
-          addCommitment({
-            id: 'shifted-'+task.id+'-'+Date.now(),
-            text: task.label.replace(/^~?\d{1,2}:\d{2}\s*(?:AM|PM)\s*(?:—\s*)?/i,'').trim(),
-            date: tomorrowKey,
-            cat: task.tag,
-            note: `Shifted from ${dateKey} — ran out of day`,
-            done: false,
-          })
-        }
-        // Mark as deleted from today since it moved
-        setDeleted(prev=>{
-          const next=[...prev, task.id]
-          localStorage.setItem('vivian_deleted_'+dateKey, JSON.stringify(next))
-          return next
-        })
-      } else {
-        // Shift forward
-        newOverrides[task.id] = newTime
-        shifted++
-      }
-    })
-
-    setTimeOverrides(newOverrides)
-    localStorage.setItem('vivian_timeshift_'+dateKey, JSON.stringify(newOverrides))
+    setTimeOverrides(overrides)
+    localStorage.setItem('vivian_timeshift_'+dateKey, JSON.stringify(overrides))
     setShiftResult({ shifted, committed, fixed })
+  }
+
+  // "Start now": if later movable tasks exist, ask which to push; otherwise
+  // just move this one to now.
+  const handleShiftToNow = (pivotTask) => {
+    const pivotMins = pivotTask._mins ?? parseTimeMins(pivotTask.label)
+    if (pivotMins===null) return
+    const pivotEnd = now + (pivotTask._dur || 0)
+    const rest = tasksWithStatus
+      .filter(t => t.id!==pivotTask.id && t._mins!==null && t._mins>=pivotMins
+        && !isDoneCheck(t.id,t.isCommitment) && !INFLEXIBLE_TAGS.has(t.tag))
+      .sort((a,b)=>a._mins-b._mins)
+    if (rest.length === 0) { applyShift(pivotTask, []); return }
+    // Pre-check the ones that actually overlap the task's new slot.
+    const selected = new Set(rest.filter(t => t._mins < pivotEnd).map(t=>t.id))
+    setShiftPlan({ pivot: pivotTask, rest, selected })
   }
 
   // New items are real commitments dated today, so they show on the Calendar
@@ -587,6 +652,13 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
       if (c) { setEditing(c); return }
     }
     setManaging(task)
+  }
+  // Unschedule → strip the date/time so it drops off the timeline and returns
+  // to Commitments as an unscheduled item (keeps everything else).
+  const handleUnschedule = (task) => {
+    if (task.isCommitment && updateCommitment) {
+      updateCommitment(task.id, { date: null, time: null, durationMins: null })
+    }
   }
   const handleSaveEdit = (commitment, reminderMins) => {
     const { id, ...changes } = commitment
@@ -711,10 +783,11 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
         +
       </button>
 
+      {shiftPlan&&<ShiftChooser plan={shiftPlan} onApply={(ids)=>{applyShift(shiftPlan.pivot, ids); setShiftPlan(null)}} onCancel={()=>setShiftPlan(null)}/>}
       {shiftResult&&<ShiftToast result={shiftResult} onClose={()=>setShiftResult(null)}/>}
       {addingTask&&<AddItemModal presetDate={dateKey} lockDate categories={categories} onSave={handleAdd} onClose={()=>setAddingTask(false)} title="Add to Today"/>}
       {editing&&<AddItemModal existing={editing} categories={categories} onSave={handleSaveEdit} onClose={()=>setEditing(null)} title="Edit task"/>}
-      {managing&&<ManageModal task={managing} dateKey={dateKey} onClose={()=>setManaging(null)} onDelete={handleDelete} onReschedule={handleReschedule} scheduled={scheduled}/>}
+      {managing&&<ManageModal task={managing} dateKey={dateKey} onClose={()=>setManaging(null)} onDelete={handleDelete} onReschedule={handleReschedule} onUnschedule={handleUnschedule} scheduled={scheduled}/>}
     </div>
   )
 }
