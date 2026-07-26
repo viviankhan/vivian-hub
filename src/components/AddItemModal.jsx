@@ -210,6 +210,7 @@ export default function AddItemModal({ existing = null, presetDate = null, prese
   // Primary label drives the header color + icon.
   const primaryCat = cats.find(c => c.id === selectedCats[0]) || cats[0] || { color:'#4A9EB5', label:'', icon:'' }
   const headerColor = color || primaryCat.color || '#4A9EB5'
+  const isCustomColor = !!color && !TASK_COLORS.includes(color)
   const labelNames = selectedCats.map(id => (cats.find(c => c.id === id)?.label) || id)
   const card = { background:'white', borderRadius:16, boxShadow:'0 1px 4px rgba(60,72,88,.06)', marginBottom:16, overflow:'hidden' }
   const remindText = useDefault ? 'Default alerts' : (reminders.length ? `${reminders.length} alert${reminders.length>1?'s':''}` : 'No alerts')
@@ -315,6 +316,14 @@ export default function AddItemModal({ existing = null, presetDate = null, prese
                       border: color===cx ? '3px solid white' : '3px solid transparent',
                       boxShadow: color===cx ? `0 0 0 2px ${cx}` : '0 0 0 1px rgba(0,0,0,.10)' }} />
                 ))}
+                {/* Any custom color via the native color wheel */}
+                <label title="Custom color" style={{ width:28, height:28, borderRadius:'50%', cursor:'pointer', position:'relative', overflow:'hidden', display:'inline-block',
+                  background: isCustomColor ? color : 'conic-gradient(from 90deg, #EF6B6B, #E0A33E, #52B788, #4A9EB5, #7C3AED, #EC6F9C, #EF6B6B)',
+                  border: isCustomColor ? '3px solid white' : '3px solid transparent',
+                  boxShadow: isCustomColor ? `0 0 0 2px ${color}` : '0 0 0 1px rgba(0,0,0,.10)' }}>
+                  <input type="color" value={color || '#4A9EB5'} onChange={e => setColor(e.target.value)}
+                    style={{ position:'absolute', top:'-40%', left:'-40%', width:'180%', height:'180%', opacity:0, cursor:'pointer', border:'none', padding:0 }} />
+                </label>
               </div>
               <button onClick={() => setColor('')}
                 style={{ marginTop:11, fontSize:11, padding:'5px 12px', borderRadius:16, cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:600,

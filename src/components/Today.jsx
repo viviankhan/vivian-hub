@@ -218,7 +218,7 @@ function ShiftToast({ result, onClose }) {
 }
 
 // ── Timeline task block ────────────────────────────────────────
-function TimelineBlock({ task, categories, status, now, minutesUntilNext, isDone, onToggle, onManage, onShiftToNow }) {
+function TimelineBlock({ task, categories, status, now, minutesUntilNext, isDone, onToggle, onManage, onShiftToNow, onOpen }) {
   const catFound = (categories || []).find(x => x.id === task.tag)
   const dot = catFound?.color || TAG_COLORS[task.tag] || '#9CA3AF'
   const catLabel = catFound?.label || task.tag
@@ -270,7 +270,7 @@ function TimelineBlock({ task, categories, status, now, minutesUntilNext, isDone
         )}
         {isOverdue&&<div style={{fontSize:10,color:'#EF4444',fontWeight:700,letterSpacing:.5,marginBottom:4}}>overdue</div>}
 
-        <div style={{background:blockBg,borderRadius:12,border:blockBorder,padding:'10px 12px',transition:'all .2s'}}>
+        <div onClick={()=>onOpen&&onOpen()} style={{background:blockBg,borderRadius:12,border:blockBorder,padding:'10px 12px',transition:'all .2s',cursor:onOpen?'pointer':'default'}}>
           <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',gap:8}}>
             <div style={{flex:1}}>
               <div style={{display:'flex',alignItems:'center',gap:6,lineHeight:1.3}}>
@@ -325,9 +325,10 @@ function NowMarker({ now }) {
 }
 
 // ── Main ───────────────────────────────────────────────────────
-export default function Today({ todos, weekState, syncToggle, commitments, addCommitment, deleteCommitment, appendLog, dailyTodos, scheduled, categories }) {
+export default function Today({ todos, weekState, syncToggle, commitments, addCommitment, updateCommitment, deleteCommitment, appendLog, dailyTodos, scheduled, categories }) {
   const [now,         setNow]         = useState(nowMins())
   const [managing,    setManaging]    = useState(null)
+  const [editing,     setEditing]     = useState(null)  // full commitment being edited
   const [addingTask,  setAddingTask]  = useState(false)
   const [morningOpen, setMorningOpen] = useState(false)
   const [nightOpen,   setNightOpen]   = useState(false)
@@ -547,6 +548,21 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
     if (addCommitment) addCommitment(commitment)
     setItemReminders(commitment.id, reminderMins)
   }
+  // Tapping a task opens its full detail sheet (subtasks, color, alerts).
+  // Commitments open the editor; template/custom todos fall back to Manage.
+  const openTask = (task) => {
+    if (task.isCommitment) {
+      const c = (commitments || []).find(x => x.id === task.id)
+      if (c) { setEditing(c); return }
+    }
+    setManaging(task)
+  }
+  const handleSaveEdit = (commitment, reminderMins) => {
+    const { id, ...changes } = commitment
+    if (updateCommitment) updateCommitment(id, changes)
+    setItemReminders(id, reminderMins)
+    setEditing(null)
+  }
   const handleDelete = (task, reason) => {
     if (task.isCommitment && deleteCommitment) {
       // Commitment — remove from commitments array (syncs to Week, Calendar, Commitments tabs)
@@ -627,6 +643,7 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
                 isDone={task._status==='past'}
                 onToggle={()=>syncToggle(task.id,task.label,task.tag,task.isCommitment?null:dateKey)}
                 onManage={()=>setManaging(task)}
+                onOpen={()=>openTask(task)}
                 onShiftToNow={()=>handleShiftToNow(task)}
               />
             </div>
@@ -655,6 +672,7 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
 
       {shiftResult&&<ShiftToast result={shiftResult} onClose={()=>setShiftResult(null)}/>}
       {addingTask&&<AddItemModal presetDate={dateKey} lockDate categories={categories} onSave={handleAdd} onClose={()=>setAddingTask(false)} title="Add to Today"/>}
+      {editing&&<AddItemModal existing={editing} categories={categories} onSave={handleSaveEdit} onClose={()=>setEditing(null)} title="Edit task"/>}
       {managing&&<ManageModal task={managing} dateKey={dateKey} onClose={()=>setManaging(null)} onDelete={handleDelete} onReschedule={handleReschedule} scheduled={scheduled}/>}
     </div>
   )
