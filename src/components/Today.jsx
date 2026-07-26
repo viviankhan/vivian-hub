@@ -307,7 +307,7 @@ function GapRow({ mins, onAdd }) {
   )
 }
 
-function TimelineBlock({ task, categories, status, now, isDone, onToggle, onManage, onShiftToNow, onOpen }) {
+function TimelineBlock({ task, categories, status, now, isDone, elapsed, onToggle, onManage, onShiftToNow, onOpen }) {
   const catFound = (categories || []).find(x => x.id === task.tag)
   const catColor = catFound?.color || TAG_COLORS[task.tag] || '#9CA3AF'
   const color    = task.color || catColor
@@ -343,16 +343,18 @@ function TimelineBlock({ task, categories, status, now, isDone, onToggle, onMana
           <span style={{ fontSize:11, color:isCurrent?'var(--teal)':'var(--muted)', fontWeight:isCurrent?700:500, whiteSpace:'nowrap' }}>{fmtTimeLabel(timeMins)}</span>
         )}
       </div>
-      {/* Colored duration pill + spine */}
+      {/* Colored duration pill + progress spine. The spine reads as a progress
+          bar: segments you've worked through are solid in the task's color,
+          upcoming segments stay light gray. */}
       <div style={{ width:44, flexShrink:0, display:'flex', flexDirection:'column', alignItems:'center' }}>
-        <div style={{ width:2, height:14, background:'#E7E2DB' }} />
+        <div style={{ width:3, height:14, borderRadius:3, background: elapsed ? color : '#E7E2DB' }} />
         <div style={{ width:40, height:pillH, borderRadius:20, flexShrink:0, background:color, display:'flex', alignItems:'center', justifyContent:'center',
           boxShadow:isCurrent?`0 0 0 4px ${color}33`:'none' }}>
           {shownIcon
             ? <Icon value={shownIcon} size={20} />
             : <span style={{ color:'white', fontWeight:700, fontSize:16 }}>{(title || '?').charAt(0).toUpperCase()}</span>}
         </div>
-        <div style={{ width:2, flex:1, minHeight:14, background:'#E7E2DB' }} />
+        <div style={{ width:3, flex:1, minHeight:14, borderRadius:3, background: (elapsed && !isCurrent) ? color : '#E7E2DB' }} />
       </div>
       {/* Card */}
       <div style={{ flex:1, minWidth:0, paddingTop:8, paddingBottom:12, paddingLeft:10 }}>
@@ -407,9 +409,72 @@ function NowMarker({ now }) {
   )
 }
 
+// ── Structured-style week strip header ─────────────────────────
+// Big date up top, then a Sun–Sat row of the current week. The selected day is
+// a filled teal circle, today gets a soft ring, and small colored dots under
+// each day preview that day's scheduled items. Tapping a day navigates to it.
+function ymd(d) {
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
+}
+function WeekStrip({ viewDate, setViewDate, commitments, categories, doneCount, total, dayProgress, isToday }) {
+  const today = todayKey()
+  const base = new Date(viewDate + 'T12:00:00')
+  const start = new Date(base); start.setDate(base.getDate() - base.getDay())  // back to Sunday
+  const days = Array.from({ length: 7 }, (_, i) => { const d = new Date(start); d.setDate(start.getDate() + i); return d })
+  const colorFor = (c) => c.color || (categories || []).find(x => x.id === c.cat)?.color || TAG_COLORS[c.cat] || '#9CA3AF'
+  const monthDay = base.toLocaleDateString('en-US', { month: 'long', day: 'numeric' })
+  const year = base.getFullYear()
+
+  return (
+    <div style={{ marginBottom: 18 }}>
+      <div style={{ display:'flex', alignItems:'baseline', gap:9, marginBottom:12 }}>
+        <span className="serif" style={{ fontSize:29, fontWeight:700, color:'var(--text)', lineHeight:1 }}>{monthDay},</span>
+        <span className="serif" style={{ fontSize:29, fontWeight:700, color:'var(--teal)', lineHeight:1 }}>{year}</span>
+      </div>
+      <div style={{ display:'flex', gap:2 }}>
+        {days.map(d => {
+          const key = ymd(d)
+          const sel = key === viewDate
+          const isTod = key === today
+          const dots = (commitments || []).filter(c => c.date === key).slice(0, 5).map(colorFor)
+          return (
+            <button key={key} onClick={() => setViewDate(key)}
+              style={{ flex:1, minWidth:0, border:'none', background:'none', cursor:'pointer', padding:'2px 0', display:'flex', flexDirection:'column', alignItems:'center', gap:5 }}>
+              <span style={{ fontSize:11, color:'var(--muted)', fontWeight:500 }}>{d.toLocaleDateString('en-US', { weekday:'short' })}</span>
+              <span style={{ width:34, height:34, borderRadius:'50%', display:'flex', alignItems:'center', justifyContent:'center', fontSize:15,
+                fontWeight: sel ? 700 : 600,
+                background: sel ? 'var(--teal)' : (isTod ? 'rgba(14,158,142,.14)' : 'transparent'),
+                color: sel ? 'white' : (isTod ? 'var(--teal)' : 'var(--text)') }}>{d.getDate()}</span>
+              <span style={{ display:'flex', gap:2, height:6, alignItems:'center' }}>
+                {dots.map((c, i) => <span key={i} style={{ width:5, height:5, borderRadius:'50%', background:c }} />)}
+              </span>
+            </button>
+          )
+        })}
+      </div>
+      {/* Progress bar — how far through the day we are, and how much is done. */}
+      <div style={{ display:'flex', alignItems:'center', gap:10, marginTop:14 }}>
+        <span style={{ fontSize:12, color:'var(--muted)', whiteSpace:'nowrap' }}>{doneCount} of {total} done</span>
+        <div style={{ flex:1, height:5, background:'var(--border)', borderRadius:3, overflow:'hidden', position:'relative' }}>
+          {/* Completed-share fill */}
+          <div style={{ position:'absolute', inset:0, width:`${total>0?(doneCount/total)*100:0}%`, background:'#52B788', borderRadius:3, transition:'width .4s' }} />
+          {/* "Where we are in the day" marker */}
+          {isToday && total>0 && (
+            <div style={{ position:'absolute', top:-2, bottom:-2, left:`calc(${(dayProgress*100).toFixed(1)}% - 1px)`, width:2, background:'var(--teal)', borderRadius:2 }} />
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── Main ───────────────────────────────────────────────────────
 export default function Today({ todos, weekState, syncToggle, commitments, addCommitment, updateCommitment, deleteCommitment, appendLog, dailyTodos, scheduled, categories }) {
   const [now,         setNow]         = useState(nowMins())
+  // The day the timeline is showing. Defaults to today; the week strip up top
+  // navigates to any day. "Now" logic (the progress marker, current/overdue,
+  // start-now) only applies when we're actually looking at today.
+  const [viewDate,    setViewDate]    = useState(todayKey())
   const [managing,    setManaging]    = useState(null)
   const [editing,     setEditing]     = useState(null)  // full commitment being edited
   const [shiftPlan,   setShiftPlan]   = useState(null)  // {pivot, rest, selected} — "start now" push chooser
@@ -453,7 +518,20 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
   const [shiftDayOpen, setShiftDayOpen] = useState(false)
   const [shiftDayTime, setShiftDayTime] = useState('')
 
-  const dateKey = todayKey()
+  const dateKey = viewDate
+  const isToday = viewDate === todayKey()
+
+  // Per-day local collections (custom tasks, deletions, time overrides, routine
+  // ticks) are keyed by date in localStorage — reload them whenever the viewed
+  // day changes so navigating the week strip shows the right day's state.
+  useEffect(() => {
+    const ra = k => { try { return JSON.parse(localStorage.getItem(k) || '[]') } catch { return [] } }
+    const ro = k => { try { return JSON.parse(localStorage.getItem(k) || '{}') } catch { return {} } }
+    setCustomTasks(ra('vivian_custom_' + viewDate))
+    setDeleted(ra('vivian_deleted_' + viewDate))
+    setTimeOverrides(ro('vivian_timeshift_' + viewDate))
+    setRoutineDone(ro('vivian_routine_' + viewDate))
+  }, [viewDate])
 
   const toggleRoutine = (key) => {
     setRoutineDone(prev=>{
@@ -509,6 +587,8 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
 
   function getStatus(task) {
     if (isDoneCheck(task.id, task.isCommitment)) return 'past'
+    // On any day other than today there's no "now" — nothing is current/overdue.
+    if (!isToday) return task._mins===null ? 'anytime' : 'upcoming'
     if (task._mins===null) return 'anytime'
     if (task._mins>now) return 'upcoming'
     const lastStarted = timedSorted.filter(t=>t._mins<=now&&!isDoneCheck(t.id,t.isCommitment)).at(-1)
@@ -525,8 +605,16 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
     .sort((a,b)=>(a._mins??99999)-(b._mins??99999))
 
   const doneCount = tasksWithStatus.filter(t=>t._status==='past').length
-  // The "now" line goes just before the first task that hasn't started yet.
-  const nowInsertIdx = tasksWithStatus.findIndex(t=>t._mins!==null&&t._mins>now)
+  // The "now" line goes just before the first task that hasn't started yet
+  // (only when we're viewing today).
+  const nowInsertIdx = isToday ? tasksWithStatus.findIndex(t=>t._mins!==null&&t._mins>now) : -1
+  // How far through today's schedule we are (0–1), for the header progress bar:
+  // elapsed span from the first task's start to the last task's end.
+  const dayStart = tasksWithStatus.find(t=>t._mins!==null)?._mins ?? null
+  const lastTimed = [...tasksWithStatus].reverse().find(t=>t._mins!==null)
+  const dayEnd = lastTimed ? ((lastTimed._time && lastTimed._dur) ? hhmmToMins(lastTimed._time)+lastTimed._dur : lastTimed._mins) : null
+  const dayProgress = (isToday && dayStart!==null && dayEnd!==null && dayEnd>dayStart)
+    ? Math.max(0, Math.min(1, (now - dayStart) / (dayEnd - dayStart))) : (isToday ? 0 : 0)
 
   function minsUntilNext(i) {
     const cur=tasksWithStatus[i]
@@ -719,16 +807,12 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
 
   return (
     <div>
-      {/* Header */}
-      <div style={{marginBottom:20}}>
-        <div className="page-title">{todayLabel()}</div>
-        <div style={{display:'flex',alignItems:'center',gap:10,marginTop:4}}>
-          <span style={{fontSize:12,color:'var(--muted)'}}>{doneCount} of {tasksWithStatus.length} done</span>
-          <div style={{flex:1,height:3,background:'var(--border)',borderRadius:2,overflow:'hidden'}}>
-            <div style={{height:'100%',width:`${tasksWithStatus.length>0?(doneCount/tasksWithStatus.length)*100:0}%`,background:'#52B788',borderRadius:2,transition:'width .4s'}}/>
-          </div>
-        </div>
-      </div>
+      {/* Structured-style header: big date + week strip + progress bar */}
+      <WeekStrip
+        viewDate={viewDate} setViewDate={setViewDate}
+        commitments={commitments} categories={categories}
+        doneCount={doneCount} total={tasksWithStatus.length}
+        dayProgress={dayProgress} isToday={isToday} />
 
       {/* Morning routine */}
       {morningEnabled && (
@@ -764,6 +848,7 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
                 <TimelineBlock
                   task={task} categories={categories} status={task._status} now={now}
                   isDone={task._status==='past'}
+                  elapsed={isToday && task._mins!==null && task._mins<=now}
                   onToggle={()=>syncToggle(task.id,task.label,task.tag,task.isCommitment?null:dateKey)}
                   onManage={()=>setManaging(task)}
                   onOpen={()=>openTask(task)}
@@ -772,7 +857,7 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
               </div>
             )
           })}
-          {nowInsertIdx===-1&&<NowMarker now={now}/>}
+          {isToday && nowInsertIdx===-1 && <NowMarker now={now}/>}
         </div>
       )}
 
