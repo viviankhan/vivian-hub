@@ -21,7 +21,10 @@ export default function ColorIconPicker({ color, icon, onColor, onIcon, onClose 
   const selColor = color || '#2A9D8F'
 
   const term = q.trim().toLowerCase()
-  const results = term ? GLYPH_ALL.filter(it => it.id.toLowerCase().includes(term) || it.k.includes(term)) : null
+  // Match the icon name, its keywords, or its group name — so searching a
+  // category like "health" surfaces that whole group, not one stray icon.
+  const results = term ? GLYPH_ALL.filter(it =>
+    it.id.toLowerCase().includes(term) || it.k.includes(term) || it.group.toLowerCase().includes(term)) : null
 
   const onFile = async (e) => {
     const f = e.target.files?.[0]
@@ -79,11 +82,13 @@ export default function ColorIconPicker({ color, icon, onColor, onIcon, onClose 
         {/* Search */}
         <div style={{ padding:'0 18px 12px', flexShrink:0 }}>
           <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search icons"
+            autoCapitalize="none" autoCorrect="off" spellCheck={false}
             style={{ width:'100%', fontSize:14, padding:'10px 14px', borderRadius:20, border:'none', background:'#F0EEF3', fontFamily:'DM Sans,sans-serif', outline:'none', boxSizing:'border-box', color:'var(--text)' }} />
         </div>
 
-        {/* Grid */}
-        <div style={{ flex:1, overflowY:'auto', padding:'2px 18px calc(16px + env(safe-area-inset-bottom))' }}>
+        {/* Grid — sizes to its content (so a short search result doesn't leave a
+            big empty sheet) but shrinks + scrolls when the full list is tall. */}
+        <div style={{ flex:'0 1 auto', minHeight:0, overflowY:'auto', padding:'2px 18px calc(16px + env(safe-area-inset-bottom))' }}>
           {results ? (
             results.length ? (
               <div style={{ display:'flex', flexWrap:'wrap', gap:10, paddingTop:6 }}>
