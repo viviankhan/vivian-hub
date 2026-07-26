@@ -24,6 +24,9 @@ const QUICK_DURATIONS = [
   { label:'3h',   mins:180 },
 ]
 
+// A per-task color palette (overrides the label color when picked).
+const TASK_COLORS = ['#E0A33E','#C4728E','#EC6F9C','#7C9CBF','#4A9EB5','#52B788','#2A9D8F','#7C3AED','#E07B2E','#EF6B6B','#6B7A8D','#111827']
+
 const inp = { width:'100%', fontSize:14, padding:'10px 12px', borderRadius:10, border:'1px solid var(--border)', fontFamily:'DM Sans,sans-serif', outline:'none', boxSizing:'border-box' }
 const fieldLabel = { fontSize:10, color:'var(--muted)', letterSpacing:1, textTransform:'uppercase', marginBottom:4 }
 
@@ -151,6 +154,9 @@ export default function AddItemModal({ existing = null, presetDate = null, prese
   const editSub   = (id, text) => setSubtasks(prev => prev.map(s => s.id === id ? { ...s, text } : s))
   const removeSub = (id) => setSubtasks(prev => prev.filter(s => s.id !== id))
 
+  // Optional per-task color. Empty = inherit the primary label's color.
+  const [color, setColor] = useState(existing?.color || '')
+
   // Which grouped row is expanded for editing (only one open at a time).
   const [expanded, setExpanded] = useState(null)
   const toggleRow = (k) => setExpanded(e => (e === k ? null : k))
@@ -192,6 +198,7 @@ export default function AddItemModal({ existing = null, presetDate = null, prese
       durationMins: durationMins || null,
       cat: selectedCats[0],
       cats: selectedCats,
+      color: color || null,
       description: description.trim() || '',
       subtasks,
     }
@@ -202,7 +209,7 @@ export default function AddItemModal({ existing = null, presetDate = null, prese
 
   // Primary label drives the header color + icon.
   const primaryCat = cats.find(c => c.id === selectedCats[0]) || cats[0] || { color:'#4A9EB5', label:'', icon:'' }
-  const headerColor = primaryCat.color || '#4A9EB5'
+  const headerColor = color || primaryCat.color || '#4A9EB5'
   const labelNames = selectedCats.map(id => (cats.find(c => c.id === id)?.label) || id)
   const card = { background:'white', borderRadius:16, boxShadow:'0 1px 4px rgba(60,72,88,.06)', marginBottom:16, overflow:'hidden' }
   const remindText = useDefault ? 'Default alerts' : (reminders.length ? `${reminders.length} alert${reminders.length>1?'s':''}` : 'No alerts')
@@ -296,6 +303,24 @@ export default function AddItemModal({ existing = null, presetDate = null, prese
               {selectedCats.length > 1 && (
                 <div style={{ fontSize:10.5, color:'var(--muted)', marginTop:7 }}>The outlined label is the primary — it sets the color and scheduling.</div>
               )}
+            </DetailRow>
+            <RowDivider />
+            {/* Color */}
+            <DetailRow icon={<span style={{ width:15, height:15, borderRadius:'50%', background:headerColor }} />} iconColor={headerColor}
+              text="Color" hint={color ? 'Custom' : 'From label'} open={expanded==='color'} onClick={() => toggleRow('color')}>
+              <div style={{ display:'flex', gap:9, flexWrap:'wrap', alignItems:'center' }}>
+                {TASK_COLORS.map(cx => (
+                  <button key={cx} onClick={() => setColor(cx)} aria-label={`Color ${cx}`}
+                    style={{ width:28, height:28, borderRadius:'50%', background:cx, cursor:'pointer', padding:0,
+                      border: color===cx ? '3px solid white' : '3px solid transparent',
+                      boxShadow: color===cx ? `0 0 0 2px ${cx}` : '0 0 0 1px rgba(0,0,0,.10)' }} />
+                ))}
+              </div>
+              <button onClick={() => setColor('')}
+                style={{ marginTop:11, fontSize:11, padding:'5px 12px', borderRadius:16, cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:600,
+                  border: color ? '1px solid var(--border)' : 'none', background: color ? 'white' : 'var(--forest)', color: color ? 'var(--muted)' : 'var(--green-light)' }}>
+                {color ? 'Match label color' : '✓ Matching label color'}
+              </button>
             </DetailRow>
             <RowDivider />
             {/* Reminders */}

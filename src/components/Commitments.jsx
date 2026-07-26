@@ -381,6 +381,9 @@ function CommitCard({ c, todos, weekState, syncToggle, onDelete, onSchedule, onE
   // All labels on this commitment (primary first). Falls back to the single
   // `cat` for items saved before multi-label existed.
   const catList = ((c.cats && c.cats.length) ? c.cats : [c.cat]).map(id => getCat(id, categories))
+  // The item's own color (if picked) wins over the primary label's color for
+  // the completion circle accent.
+  const accent = c.color || cat.color
   const done = !!(todos[c.id] || weekState[c.id] || c.done)
   const past = isPast(c.date) && !done
   const today = c.date === todayStr()
@@ -407,7 +410,7 @@ function CommitCard({ c, todos, weekState, syncToggle, onDelete, onSchedule, onE
     <div style={{ background:bg, borderRadius:12, border:`1px solid ${borderColor}`, padding:'14px 16px', marginBottom:8, opacity: done ? .55 : 1 }}>
       <div style={{ display:'flex', gap:10, alignItems:'flex-start' }}>
         <div onClick={e => { if (!done) bloomBurst(e.currentTarget); syncToggle(c.id, c.text, c.cat) }}
-          style={{ width:20, height:20, borderRadius:'50%', flexShrink:0, marginTop:2, cursor:'pointer', border: done ? 'none' : `2px solid ${cat.color}`, background: done ? cat.color : 'transparent', display:'flex', alignItems:'center', justifyContent:'center' }}>
+          style={{ width:20, height:20, borderRadius:'50%', flexShrink:0, marginTop:2, cursor:'pointer', border: done ? 'none' : `2px solid ${accent}`, background: done ? accent : 'transparent', display:'flex', alignItems:'center', justifyContent:'center' }}>
           {done && <span style={{ color:'white', fontSize:11, fontWeight:700 }}>✓</span>}
         </div>
 

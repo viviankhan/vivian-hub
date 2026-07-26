@@ -280,14 +280,15 @@ export default function App() {
   // commitments table has a single `cat` column). Only stored when there's more
   // than one — a single label is fully covered by the `cat` column.
   const addCommitment = useCallback(async c => {
-    const { description, subtasks, cats, ...core } = c
+    const { description, subtasks, cats, color, ...core } = c
     try {
       const created = await dbAddCommitment(core)
       setCommitments_(prev => [created, ...prev])
       const hasCats = Array.isArray(cats) && cats.length > 1
-      if ((description && description.trim()) || (subtasks && subtasks.length) || hasCats) {
+      const extra = { ...(hasCats ? { cats } : {}), ...(color ? { color } : {}) }
+      if ((description && description.trim()) || (subtasks && subtasks.length) || hasCats || color) {
         setCommitmentMeta_(prev => {
-          const next = { ...prev, [created.id]: { description: description || '', subtasks: subtasks || [], ...(hasCats ? { cats } : {}) } }
+          const next = { ...prev, [created.id]: { description: description || '', subtasks: subtasks || [], ...extra } }
           setCommitmentMeta(next).catch(reportSaveError)
           return next
         })
@@ -295,13 +296,13 @@ export default function App() {
     } catch (e) { reportSaveError(e) }
   }, [])
   const updateCommitment = useCallback(async (id, changes) => {
-    const { description, subtasks, cats, ...core } = changes
+    const { description, subtasks, cats, color, ...core } = changes
     try {
       if (Object.keys(core).length) {
         const updated = await dbUpdateCommitment(id, core)
         setCommitments_(prev => prev.map(c => c.id===id ? updated : c))
       }
-      if (description !== undefined || subtasks !== undefined || cats !== undefined) {
+      if (description !== undefined || subtasks !== undefined || cats !== undefined || color !== undefined) {
         setCommitmentMeta_(prev => {
           const merged = { ...(prev[id] || {}) }
           if (description !== undefined) merged.description = description
@@ -310,9 +311,26 @@ export default function App() {
             if (Array.isArray(cats) && cats.length > 1) merged.cats = cats
             else delete merged.cats
           }
+          if (color !== undefined) {
+            if (color) merged.color = color
+            else delete merged.color
+          }
           const next = { ...prev, [id]: merged }
           setCommitmentMeta(next).catch(reportSaveError)
           return next
+        })
+      }
+      // Auto-complete the parent when all its subtasks are checked (and
+      // un-complete it if one gets unchecked). Only kicks in when the item
+      // actually has subtasks — a plain task is never forced done.
+      if (Array.isArray(subtasks) && subtasks.length > 0) {
+        const allDone = subtasks.every(s => s.done)
+        setCommitments_(prev => {
+          const cur = prev.find(x => x.id === id)
+          if (!cur || !!cur.done === allDone) return prev
+          dbUpdateCommitment(id, { done: allDone }).catch(reportSaveError)
+          setCompletions_(cp => { const n = { ...cp, [id]: allDone }; setCompletion(id, allDone).catch(reportSaveError); return n })
+          return prev.map(x => x.id === id ? { ...x, done: allDone } : x)
         })
       }
     } catch (e) { reportSaveError(e) }
@@ -415,6 +433,7 @@ export default function App() {
     description: commitmentMeta[c.id]?.description ?? '',
     subtasks: commitmentMeta[c.id]?.subtasks ?? [],
     cats: commitmentMeta[c.id]?.cats ?? (c.cat ? [c.cat] : []),
+    color: commitmentMeta[c.id]?.color ?? null,
   }))
 
   const sharedProps = {
