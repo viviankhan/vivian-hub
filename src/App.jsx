@@ -276,14 +276,18 @@ export default function App() {
   // each other the way they used to. ──────────────────────────
   // description + subtasks live in the kv_store meta blob (no commitments-table
   // columns), so they're split off from the core row write here.
+  // Extra category labels beyond the primary live in the meta blob too (the
+  // commitments table has a single `cat` column). Only stored when there's more
+  // than one — a single label is fully covered by the `cat` column.
   const addCommitment = useCallback(async c => {
-    const { description, subtasks, ...core } = c
+    const { description, subtasks, cats, ...core } = c
     try {
       const created = await dbAddCommitment(core)
       setCommitments_(prev => [created, ...prev])
-      if ((description && description.trim()) || (subtasks && subtasks.length)) {
+      const hasCats = Array.isArray(cats) && cats.length > 1
+      if ((description && description.trim()) || (subtasks && subtasks.length) || hasCats) {
         setCommitmentMeta_(prev => {
-          const next = { ...prev, [created.id]: { description: description || '', subtasks: subtasks || [] } }
+          const next = { ...prev, [created.id]: { description: description || '', subtasks: subtasks || [], ...(hasCats ? { cats } : {}) } }
           setCommitmentMeta(next).catch(reportSaveError)
           return next
         })
@@ -291,17 +295,21 @@ export default function App() {
     } catch (e) { reportSaveError(e) }
   }, [])
   const updateCommitment = useCallback(async (id, changes) => {
-    const { description, subtasks, ...core } = changes
+    const { description, subtasks, cats, ...core } = changes
     try {
       if (Object.keys(core).length) {
         const updated = await dbUpdateCommitment(id, core)
         setCommitments_(prev => prev.map(c => c.id===id ? updated : c))
       }
-      if (description !== undefined || subtasks !== undefined) {
+      if (description !== undefined || subtasks !== undefined || cats !== undefined) {
         setCommitmentMeta_(prev => {
           const merged = { ...(prev[id] || {}) }
           if (description !== undefined) merged.description = description
           if (subtasks !== undefined) merged.subtasks = subtasks
+          if (cats !== undefined) {
+            if (Array.isArray(cats) && cats.length > 1) merged.cats = cats
+            else delete merged.cats
+          }
           const next = { ...prev, [id]: merged }
           setCommitmentMeta(next).catch(reportSaveError)
           return next
@@ -406,6 +414,7 @@ export default function App() {
     ...c,
     description: commitmentMeta[c.id]?.description ?? '',
     subtasks: commitmentMeta[c.id]?.subtasks ?? [],
+    cats: commitmentMeta[c.id]?.cats ?? (c.cat ? [c.cat] : []),
   }))
 
   const sharedProps = {

@@ -62,7 +62,18 @@ export default function AddItemModal({ existing = null, presetDate = null, prese
   const [date, setDate]           = useState(existing?.date || presetDate || '')
   const [time, setTime]           = useState(existing?.time || '')  // start
   const [endTime, setEndTime]     = useState(existing?.time && existing?.durationMins ? addMinutes(existing.time, existing.durationMins) : '')
-  const [cat, setCat]             = useState(existing?.cat || cats[0]?.id || 'other')
+  // One or more category labels. The first stays the "primary" — it drives the
+  // color dot, scheduling behavior, and everything that still reads a single
+  // `cat`. Extra labels are purely additional tags.
+  const [selectedCats, setSelectedCats] = useState(() => {
+    if (Array.isArray(existing?.cats) && existing.cats.length) return existing.cats
+    return [existing?.cat || cats[0]?.id || 'other']
+  })
+  const toggleCat = (id) => setSelectedCats(prev =>
+    prev.includes(id)
+      ? (prev.length > 1 ? prev.filter(c => c !== id) : prev)  // keep at least one
+      : [...prev, id]
+  )
   const [description, setDescription] = useState(existing?.description || '')
   const [subtasks, setSubtasks]   = useState(() => Array.isArray(existing?.subtasks) ? existing.subtasks : [])
   const [newSub, setNewSub]       = useState('')
@@ -117,7 +128,8 @@ export default function AddItemModal({ existing = null, presetDate = null, prese
       date,
       time: time || null,
       durationMins: durationMins || null,
-      cat,
+      cat: selectedCats[0],
+      cats: selectedCats,
       description: description.trim() || '',
       subtasks,
     }
@@ -181,17 +193,24 @@ export default function AddItemModal({ existing = null, presetDate = null, prese
               : (!time ? 'Pick a start time, then tap a duration to set the end.' : '')}
         </div>
 
-        {/* Category */}
+        {/* Category — tap to add more than one; the first is the primary */}
         <div style={{ marginBottom:14 }}>
-          <div style={fieldLabel}>Category</div>
+          <div style={fieldLabel}>Labels{selectedCats.length > 1 ? ` · ${selectedCats.length} selected` : ''}</div>
           <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
-            {cats.map(c => (
-              <button key={c.id} onClick={() => setCat(c.id)}
-                style={{ fontSize:11, padding:'4px 12px', borderRadius:20, border: cat === c.id ? 'none' : '1px solid var(--border)', background: cat === c.id ? c.color : 'white', color: cat === c.id ? 'white' : 'var(--muted)', cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight: cat === c.id ? 600 : 400 }}>
-                {c.label}
-              </button>
-            ))}
+            {cats.map(c => {
+              const on = selectedCats.includes(c.id)
+              const primary = selectedCats[0] === c.id
+              return (
+                <button key={c.id} onClick={() => toggleCat(c.id)}
+                  style={{ fontSize:11, padding:'4px 12px', borderRadius:20, border: on ? 'none' : '1px solid var(--border)', background: on ? c.color : 'white', color: on ? 'white' : 'var(--muted)', cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight: on ? 600 : 400, boxShadow: primary ? '0 0 0 2px rgba(0,0,0,.18)' : 'none' }}>
+                  {on ? '✓ ' : ''}{c.label}
+                </button>
+              )
+            })}
           </div>
+          {selectedCats.length > 1 && (
+            <div style={{ fontSize:10.5, color:'var(--muted)', marginTop:6 }}>The outlined label is the primary — it sets the color and scheduling.</div>
+          )}
         </div>
 
         {/* Description */}
