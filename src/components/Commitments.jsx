@@ -416,7 +416,7 @@ function CommitCard({ c, todos, weekState, syncToggle, onDelete, onSchedule, onE
 
         <div style={{ flex:1, cursor:'pointer' }} onClick={() => syncToggle(c.id, c.text, c.cat)}>
           <div style={{ display:'flex', alignItems:'center', gap:7, marginBottom:4 }}>
-            {cat.icon && <Icon value={cat.icon} size={16} />}
+            {(c.icon || cat.icon) && <Icon value={c.icon || cat.icon} size={16} />}
             <span style={{ fontSize:14, fontWeight:600, color: done ? 'var(--muted)' : 'var(--text)', textDecoration: done ? 'line-through' : 'none', lineHeight:1.4 }}>
               {c.text}
             </span>

@@ -9,6 +9,7 @@ import { useState } from 'react'
 import DateField from './DateField.jsx'
 import TimeField from './TimeField.jsx'
 import { Icon } from './IconPicker.jsx'
+import ColorIconPicker from './ColorIconPicker.jsx'
 import { LEAD_OPTIONS, getItemReminders, getItemSound, setItemSound } from '../lib/notifications.js'
 import { SOUNDS, playSound } from '../lib/sounds.js'
 
@@ -157,6 +158,10 @@ export default function AddItemModal({ existing = null, presetDate = null, prese
 
   // Optional per-task color. Empty = inherit the primary label's color.
   const [color, setColor] = useState(existing?.color || '')
+  // Optional per-task icon (emoji or uploaded image). Empty = inherit the
+  // primary label's icon, then fall back to the first letter of the title.
+  const [icon, setIcon] = useState(existing?.icon || '')
+  const [showColorIcon, setShowColorIcon] = useState(false)
   // In-app alert sound for this item's reminders (device-local).
   const [sound, setSound] = useState(() => getItemSound(existing?.id) || 'chime')
 
@@ -204,6 +209,7 @@ export default function AddItemModal({ existing = null, presetDate = null, prese
       cat: selectedCats[0],
       cats: selectedCats,
       color: color || null,
+      icon: icon || null,
       description: description.trim() || '',
       subtasks,
     }
@@ -216,6 +222,8 @@ export default function AddItemModal({ existing = null, presetDate = null, prese
   // Primary label drives the header color + icon.
   const primaryCat = cats.find(c => c.id === selectedCats[0]) || cats[0] || { color:'#4A9EB5', label:'', icon:'' }
   const headerColor = color || primaryCat.color || '#4A9EB5'
+  // The task's shown icon: its own, else the label's, else the first letter.
+  const shownIcon = icon || primaryCat.icon || ''
   const isCustomColor = !!color && !TASK_COLORS.includes(color)
   const labelNames = selectedCats.map(id => (cats.find(c => c.id === id)?.label) || id)
   const card = { background:'white', borderRadius:16, boxShadow:'0 1px 4px rgba(60,72,88,.06)', marginBottom:16, overflow:'hidden' }
@@ -237,11 +245,19 @@ export default function AddItemModal({ existing = null, presetDate = null, prese
             <span style={{ fontSize:11, letterSpacing:1.5, textTransform:'uppercase', color:'rgba(255,255,255,.85)', fontWeight:600 }}>{isEdit ? 'Edit' : title}</span>
           </div>
           <div style={{ display:'flex', alignItems:'center', gap:13 }}>
-            {primaryCat.icon && (
-              <div style={{ width:52, height:52, borderRadius:16, flexShrink:0, background:'rgba(255,255,255,.22)', border:'2px solid rgba(255,255,255,.7)', display:'flex', alignItems:'center', justifyContent:'center' }}>
-                <Icon value={primaryCat.icon} size={26} />
-              </div>
-            )}
+            {/* Icon tile — tap the palette badge to pick a color + icon */}
+            <div style={{ position:'relative', flexShrink:0 }}>
+              <button type="button" onClick={() => setShowColorIcon(true)} aria-label="Choose color and icon"
+                style={{ width:52, height:52, borderRadius:16, background:'rgba(255,255,255,.22)', border:'2px solid rgba(255,255,255,.7)', display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', padding:0 }}>
+                {shownIcon
+                  ? <Icon value={shownIcon} size={26} />
+                  : <span style={{ color:'white', fontSize:24, fontWeight:700 }}>{(label.trim()[0] || '?').toUpperCase()}</span>}
+              </button>
+              <span onClick={() => setShowColorIcon(true)}
+                style={{ position:'absolute', bottom:-5, left:-5, width:24, height:24, borderRadius:'50%', background:'white', boxShadow:'0 1px 4px rgba(0,0,0,.25)', display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer' }}>
+                <span style={{ fontSize:13, lineHeight:1 }}>🎨</span>
+              </span>
+            </div>
             <div style={{ flex:1, minWidth:0 }}>
               {time && <div style={{ fontSize:12.5, color:'rgba(255,255,255,.9)', fontWeight:600, marginBottom:1 }}>{fmt12(time)}{endTime && durationMins ? ` – ${fmt12(endTime)}` : ''}</div>}
               <input value={label} onChange={e => setLabel(e.target.value)} placeholder="What's happening?" autoFocus={!isEdit}
@@ -415,6 +431,13 @@ export default function AddItemModal({ existing = null, presetDate = null, prese
           </button>
         </div>
       </div>
+
+      {showColorIcon && (
+        <ColorIconPicker
+          color={color} icon={icon}
+          onColor={setColor} onIcon={setIcon}
+          onClose={() => setShowColorIcon(false)} />
+      )}
     </div>
   )
 }

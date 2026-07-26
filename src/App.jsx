@@ -280,13 +280,13 @@ export default function App() {
   // commitments table has a single `cat` column). Only stored when there's more
   // than one — a single label is fully covered by the `cat` column.
   const addCommitment = useCallback(async c => {
-    const { description, subtasks, cats, color, ...core } = c
+    const { description, subtasks, cats, color, icon, ...core } = c
     try {
       const created = await dbAddCommitment(core)
       setCommitments_(prev => [created, ...prev])
       const hasCats = Array.isArray(cats) && cats.length > 1
-      const extra = { ...(hasCats ? { cats } : {}), ...(color ? { color } : {}) }
-      if ((description && description.trim()) || (subtasks && subtasks.length) || hasCats || color) {
+      const extra = { ...(hasCats ? { cats } : {}), ...(color ? { color } : {}), ...(icon ? { icon } : {}) }
+      if ((description && description.trim()) || (subtasks && subtasks.length) || hasCats || color || icon) {
         setCommitmentMeta_(prev => {
           const next = { ...prev, [created.id]: { description: description || '', subtasks: subtasks || [], ...extra } }
           setCommitmentMeta(next).catch(reportSaveError)
@@ -296,13 +296,13 @@ export default function App() {
     } catch (e) { reportSaveError(e) }
   }, [])
   const updateCommitment = useCallback(async (id, changes) => {
-    const { description, subtasks, cats, color, ...core } = changes
+    const { description, subtasks, cats, color, icon, ...core } = changes
     try {
       if (Object.keys(core).length) {
         const updated = await dbUpdateCommitment(id, core)
         setCommitments_(prev => prev.map(c => c.id===id ? updated : c))
       }
-      if (description !== undefined || subtasks !== undefined || cats !== undefined || color !== undefined) {
+      if (description !== undefined || subtasks !== undefined || cats !== undefined || color !== undefined || icon !== undefined) {
         setCommitmentMeta_(prev => {
           const merged = { ...(prev[id] || {}) }
           if (description !== undefined) merged.description = description
@@ -314,6 +314,10 @@ export default function App() {
           if (color !== undefined) {
             if (color) merged.color = color
             else delete merged.color
+          }
+          if (icon !== undefined) {
+            if (icon) merged.icon = icon
+            else delete merged.icon
           }
           const next = { ...prev, [id]: merged }
           setCommitmentMeta(next).catch(reportSaveError)
@@ -434,6 +438,7 @@ export default function App() {
     subtasks: commitmentMeta[c.id]?.subtasks ?? [],
     cats: commitmentMeta[c.id]?.cats ?? (c.cat ? [c.cat] : []),
     color: commitmentMeta[c.id]?.color ?? null,
+    icon: commitmentMeta[c.id]?.icon ?? null,
   }))
 
   const sharedProps = {

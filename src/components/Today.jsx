@@ -313,6 +313,8 @@ function TimelineBlock({ task, categories, status, now, isDone, onToggle, onMana
   const color    = task.color || catColor
   const catLabel = catFound?.label || task.tag
   const catIcon  = catFound?.icon || ''
+  // The task's own icon wins; then its category's icon; else a letter avatar.
+  const shownIcon = task.icon || catIcon
   const timeMins = task._mins ?? parseTimeMins(task.label)
   const title    = task.title || stripTimePrefix(task.label)
 
@@ -327,9 +329,11 @@ function TimelineBlock({ task, categories, status, now, isDone, onToggle, onMana
     timeLine = fmtTimeLabel(timeMins)
   }
 
-  // Block height scales with the task's duration, so longer tasks visibly take
-  // more of the day. The spine line (flex:1 below the icon) stretches to fill.
+  // Block + pill height scale with the task's duration, so longer tasks visibly
+  // take more of the day. The colored shape is a stadium: a circle for short
+  // tasks, a tall pill for long ones (Structured-style). The icon sits centered.
   const blockMinH = task._dur ? Math.min(360, Math.max(72, Math.round(task._dur * PX_PER_MIN))) : undefined
+  const pillH = task._dur ? Math.min(320, Math.max(40, Math.round(task._dur * PX_PER_MIN))) : 40
 
   return (
     <div style={{ display:'flex', gap:0, minHeight:blockMinH, opacity:isDone?.55:1, transition:'opacity .3s' }}>
@@ -339,14 +343,14 @@ function TimelineBlock({ task, categories, status, now, isDone, onToggle, onMana
           <span style={{ fontSize:11, color:isCurrent?'var(--teal)':'var(--muted)', fontWeight:isCurrent?700:500, whiteSpace:'nowrap' }}>{fmtTimeLabel(timeMins)}</span>
         )}
       </div>
-      {/* Colored icon + spine */}
+      {/* Colored duration pill + spine */}
       <div style={{ width:44, flexShrink:0, display:'flex', flexDirection:'column', alignItems:'center' }}>
         <div style={{ width:2, height:14, background:'#E7E2DB' }} />
-        <div style={{ width:38, height:38, borderRadius:'50%', flexShrink:0, background:color, display:'flex', alignItems:'center', justifyContent:'center',
+        <div style={{ width:40, height:pillH, borderRadius:20, flexShrink:0, background:color, display:'flex', alignItems:'center', justifyContent:'center',
           boxShadow:isCurrent?`0 0 0 4px ${color}33`:'none' }}>
-          {catIcon
-            ? <Icon value={catIcon} size={19} />
-            : <span style={{ color:'white', fontWeight:700, fontSize:15 }}>{(title || '?').charAt(0).toUpperCase()}</span>}
+          {shownIcon
+            ? <Icon value={shownIcon} size={20} />
+            : <span style={{ color:'white', fontWeight:700, fontSize:16 }}>{(title || '?').charAt(0).toUpperCase()}</span>}
         </div>
         <div style={{ width:2, flex:1, minHeight:14, background:'#E7E2DB' }} />
       </div>
@@ -489,7 +493,7 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
       title:c.text,
       note:[c.person&&`With: ${c.person}`,c.prepMin&&`Leave ${c.prepMin} min early`].filter(Boolean).join(' · '),
       tag:c.cat||'personal', isCommitment:true,
-      color:c.color||null, _time:c.time||null, _dur:c.durationMins||null,
+      color:c.color||null, icon:c.icon||null, _time:c.time||null, _dur:c.durationMins||null,
       subCount:Array.isArray(c.subtasks)?c.subtasks.length:0,
       subDone:Array.isArray(c.subtasks)?c.subtasks.filter(s=>s.done).length:0,
     })),
