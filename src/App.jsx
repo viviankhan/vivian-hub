@@ -43,9 +43,6 @@ const TABS = [
   { id:'events',      label:'Events',      icon:'🎈' },
   { id:'recurring',   label:'Recurring',   icon:'🔁' },
 ]
-// The four primary destinations pinned to the mobile bottom bar; everything
-// else (plus these) lives in the slide-out side menu behind "More".
-const BOTTOM_TABS = ['today', 'week', 'commitments', 'calendar']
 
 function todayStr() {
   const d = new Date()
@@ -97,6 +94,21 @@ function MenuIcon() {
       <line x1="4" y1="17" x2="20" y2="17" />
     </svg>
   )
+}
+
+// ── Line icons for the Structured-style bottom bar ─────────────
+const svgProps = { viewBox:'0 0 24 24', width:23, height:23, fill:'none', stroke:'currentColor', strokeWidth:1.9, strokeLinecap:'round', strokeLinejoin:'round', 'aria-hidden':true }
+// Inbox = a tray (where unscheduled tasks land).
+function InboxIcon() {
+  return (<svg {...svgProps}><path d="M4 13.5 6 5.5a2 2 0 0 1 1.9-1.5h8.2A2 2 0 0 1 18 5.5l2 8"/><path d="M4 13.5h4a2 2 0 0 1 2 2 2 2 0 0 0 4 0 2 2 0 0 1 2-2h4"/><path d="M4 13.5V18a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4.5"/></svg>)
+}
+// Timeline = stacked rows with leading dots.
+function TimelineIcon() {
+  return (<svg {...svgProps}><circle cx="5" cy="7" r="1.6"/><circle cx="5" cy="17" r="1.6"/><line x1="10" y1="7" x2="20" y2="7"/><line x1="10" y1="17" x2="20" y2="17"/></svg>)
+}
+// Settings = gear.
+function GearIcon() {
+  return (<svg {...svgProps}><circle cx="12" cy="12" r="3.2"/><path d="M12 2.5v2M12 19.5v2M4.2 4.2l1.4 1.4M18.4 18.4l1.4 1.4M2.5 12h2M19.5 12h2M4.2 19.8l1.4-1.4M18.4 5.6l1.4-1.4"/></svg>)
 }
 
 // ── Mobile side-nav drawer ─────────────────────────────────────
@@ -528,20 +540,22 @@ export default function App() {
       <MobileNav open={navOpen} onClose={() => setNavOpen(false)}
         tab={tab} setTab={setTab} onOpenSettings={() => setSettingsOpen(true)} />
 
-      {/* Mobile bottom tab bar (phones only) */}
+      {/* Mobile bottom tab bar (phones only) — Structured-style:
+          Inbox (unscheduled commitments) · Timeline (today) · Settings.
+          Everything else (Week, Calendar, Thoughts, Events, Recurring) lives
+          in the hamburger side menu, top-left. */}
       <nav className="bottom-nav">
-        {BOTTOM_TABS.map(id => {
-          const t = TABS.find(x => x.id === id)
-          return (
-            <button key={id} className={`bottom-nav-btn ${tab===id ? 'active' : ''}`} onClick={() => setTab(id)}>
-              <span className="bottom-nav-icon">{t.icon}</span>
-              <span className="bottom-nav-label">{t.label}</span>
-            </button>
-          )
-        })}
-        <button className={`bottom-nav-btn ${navOpen ? 'active' : ''}`} onClick={() => setNavOpen(true)}>
-          <span className="bottom-nav-icon">☰</span>
-          <span className="bottom-nav-label">More</span>
+        <button className={`bottom-nav-btn ${tab==='commitments' && !settingsOpen ? 'active' : ''}`} onClick={() => { setSettingsOpen(false); setTab('commitments') }}>
+          <span className="bottom-nav-icon"><InboxIcon /></span>
+          <span className="bottom-nav-label">Inbox</span>
+        </button>
+        <button className={`bottom-nav-btn ${tab==='today' && !settingsOpen ? 'active' : ''}`} onClick={() => { setSettingsOpen(false); setTab('today') }}>
+          <span className="bottom-nav-icon"><TimelineIcon /></span>
+          <span className="bottom-nav-label">Timeline</span>
+        </button>
+        <button className={`bottom-nav-btn ${settingsOpen ? 'active' : ''}`} onClick={() => setSettingsOpen(true)}>
+          <span className="bottom-nav-icon"><GearIcon /></span>
+          <span className="bottom-nav-label">Settings</span>
         </button>
       </nav>
     </div>
