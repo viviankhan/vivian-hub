@@ -11,6 +11,7 @@ import TimeField from './TimeField.jsx'
 import MiniCalendar from './MiniCalendar.jsx'
 import { Icon } from './IconPicker.jsx'
 import ColorIconPicker from './ColorIconPicker.jsx'
+import { suggestGlyph } from '../lib/glyphs.jsx'
 import { LEAD_OPTIONS, getItemReminders, getItemSound, setItemSound } from '../lib/notifications.js'
 import { SOUNDS, playSound } from '../lib/sounds.js'
 
@@ -159,10 +160,18 @@ export default function AddItemModal({ existing = null, presetDate = null, prese
 
   // Optional per-task color. Empty = inherit the primary label's color.
   const [color, setColor] = useState(existing?.color || '')
-  // Optional per-task icon (emoji or uploaded image). Empty = inherit the
-  // primary label's icon, then fall back to the first letter of the title.
+  // Optional per-task icon (glyph / emoji / uploaded image). Empty = auto:
+  // suggest one from the title, then inherit the label's icon, then a letter.
   const [icon, setIcon] = useState(existing?.icon || '')
   const [showColorIcon, setShowColorIcon] = useState(false)
+  // Once you pick or clear an icon yourself, stop auto-suggesting from the
+  // title. (Editing a task that already has an icon counts as "chosen".)
+  const [iconTouched, setIconTouched] = useState(!!existing?.icon)
+  const chooseIcon = (v) => { setIcon(v); setIconTouched(true) }
+  // The icon actually shown/saved: your explicit pick if any, otherwise a
+  // live suggestion matched from the title until you touch it.
+  const autoIcon = (!iconTouched && !icon) ? suggestGlyph(label) : null
+  const effectiveIcon = icon || autoIcon || ''
   // In-app alert sound for this item's reminders (device-local).
   const [sound, setSound] = useState(() => getItemSound(existing?.id) || 'chime')
 
@@ -210,7 +219,7 @@ export default function AddItemModal({ existing = null, presetDate = null, prese
       cat: selectedCats[0],
       cats: selectedCats,
       color: color || null,
-      icon: icon || null,
+      icon: effectiveIcon || null,
       description: description.trim() || '',
       subtasks,
     }
@@ -223,8 +232,8 @@ export default function AddItemModal({ existing = null, presetDate = null, prese
   // Primary label drives the header color + icon.
   const primaryCat = cats.find(c => c.id === selectedCats[0]) || cats[0] || { color:'#4A9EB5', label:'', icon:'' }
   const headerColor = color || primaryCat.color || '#4A9EB5'
-  // The task's shown icon: its own, else the label's, else the first letter.
-  const shownIcon = icon || primaryCat.icon || ''
+  // The task's shown icon: explicit/suggested, else the label's, else a letter.
+  const shownIcon = effectiveIcon || primaryCat.icon || ''
   const isCustomColor = !!color && !TASK_COLORS.includes(color)
   const labelNames = selectedCats.map(id => (cats.find(c => c.id === id)?.label) || id)
   const card = { background:'white', borderRadius:16, boxShadow:'0 1px 4px rgba(60,72,88,.06)', marginBottom:16, overflow:'hidden' }
@@ -444,8 +453,8 @@ export default function AddItemModal({ existing = null, presetDate = null, prese
 
       {showColorIcon && (
         <ColorIconPicker
-          color={color} icon={icon}
-          onColor={setColor} onIcon={setIcon}
+          color={color} icon={effectiveIcon}
+          onColor={setColor} onIcon={chooseIcon}
           onClose={() => setShowColorIcon(false)} />
       )}
     </div>

@@ -135,3 +135,28 @@ export const GLYPH_GROUPS = [
 ]
 
 export const GLYPH_ALL = GLYPH_GROUPS.flatMap(g => g.items.map(([id, k]) => ({ id, k, group:g.name })))
+
+// Guess the best-matching icon for a task title, e.g. "Gym session" → dumbbell,
+// "Dinner with parents" → utensils, "Walk the dog" → paw. Scores each glyph by
+// how many meaningful words of the title hit its id / keywords / group (a whole
+// keyword-token match counts more than a loose substring). Returns "glyph:<id>"
+// or null when nothing meaningfully matches.
+export function suggestGlyph(title) {
+  const words = (title || '').toLowerCase().match(/[a-z]+/g) || []
+  if (!words.length) return null
+  let bestId = null, best = 0
+  for (const it of GLYPH_ALL) {
+    // Match on the icon's own name + keywords only — NOT its group name, or
+    // every item in a group would tie on the group word (e.g. "study").
+    const hay = `${it.id} ${it.k}`.toLowerCase()
+    const tokens = hay.split(/\s+/)
+    let score = 0
+    for (const w of words) {
+      if (w.length < 3) continue                 // skip "to", "hr", "of"…
+      if (tokens.includes(w)) score += 3         // exact keyword hit
+      else if (w.length >= 4 && hay.includes(w)) score += 1  // loose contains
+    }
+    if (score > best) { best = score; bestId = it.id }
+  }
+  return best > 0 ? 'glyph:' + bestId : null
+}
