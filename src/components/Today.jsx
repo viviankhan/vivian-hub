@@ -77,7 +77,7 @@ function RoutineCard({ title, icon, items, prefix, open, setOpen, routineDone, t
       <div onClick={()=>setOpen(o=>!o)}
         style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'12px 16px',cursor:'pointer',userSelect:'none'}}>
         <div style={{display:'flex',alignItems:'center',gap:10}}>
-          <span style={{fontSize:18}}>{icon}</span>
+          <span style={{display:'flex',color:'var(--teal)'}}><Icon value={icon} size={20} /></span>
           <div>
             <div className="serif" style={{fontSize:15,fontWeight:600}}>{title}</div>
             <div style={{fontSize:11,color:'var(--muted)',marginTop:1}}>
@@ -817,7 +817,7 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
       {/* Morning routine */}
       {morningEnabled && (
         <RoutineCard
-          title="Morning Routine" icon="☀️"
+          title="Morning Routine" icon="glyph:sun"
           items={morningItems} prefix="morning"
           open={morningOpen} setOpen={setMorningOpen}
           routineDone={routineDone} toggleRoutine={toggleRoutine} />
@@ -864,7 +864,7 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
       {/* Night routine — end of day */}
       {nightEnabled && (
         <RoutineCard
-          title="Night Routine" icon="🌙"
+          title="Night Routine" icon="glyph:moon"
           items={nightItems} prefix="night"
           open={nightOpen} setOpen={setNightOpen}
           routineDone={routineDone} toggleRoutine={toggleRoutine} />

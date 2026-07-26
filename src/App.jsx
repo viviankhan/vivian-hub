@@ -29,19 +29,20 @@ import ThoughtsBoard from './components/ThoughtsBoard.jsx'
 import NotificationsSettings from './components/NotificationsSettings.jsx'
 import SearchOverlay, { SearchIcon } from './components/SearchOverlay.jsx'
 import { registerServiceWorker, syncReminders } from './lib/notifications.js'
+import { Glyph } from './lib/glyphs.jsx'
 
 // Build id baked in at build time (see vite.config.js). Shown in Settings so
 // it's obvious on-device which version is actually running after a deploy.
 const BUILD_ID = typeof __BUILD_ID__ !== 'undefined' ? __BUILD_ID__ : 'dev'
 
 const TABS = [
-  { id:'today',       label:'Today',       icon:'☀️' },
-  { id:'week',        label:'Week',        icon:'🗓️' },
-  { id:'commitments', label:'Commitments', icon:'🎯' },
-  { id:'calendar',    label:'Calendar',    icon:'📅' },
-  { id:'thoughts',    label:'Thoughts',    icon:'💭' },
-  { id:'events',      label:'Events',      icon:'🎈' },
-  { id:'recurring',   label:'Recurring',   icon:'🔁' },
+  { id:'today',       label:'Today',       glyph:'list' },
+  { id:'week',        label:'Week',        glyph:'calendar' },
+  { id:'commitments', label:'Commitments', glyph:'check' },
+  { id:'calendar',    label:'Calendar',    glyph:'grid' },
+  { id:'thoughts',    label:'Thoughts',    glyph:'bulb' },
+  { id:'events',      label:'Events',      glyph:'ticket' },
+  { id:'recurring',   label:'Recurring',   glyph:'repeat' },
 ]
 
 function todayStr() {
@@ -56,7 +57,7 @@ function SettingsDrawer({ open, onClose, settingsTab, setSettingsTab, notes, upd
       <div onClick={onClose} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.45)', zIndex:400 }} />
       <div style={{ position:'fixed', top:0, right:0, bottom:0, width:Math.min(520, window.innerWidth), background:'var(--cream)', zIndex:500, overflowY:'auto', boxShadow:'-8px 0 40px rgba(0,0,0,.2)' }}>
         <div style={{ background:'var(--forest)', padding:'max(18px, calc(env(safe-area-inset-top) + 12px)) 18px 16px', display:'flex', alignItems:'center', justifyContent:'space-between', position:'sticky', top:0, zIndex:10 }}>
-          <div className="serif" style={{ color:'var(--green-light)', fontSize:20, fontWeight:600 }}>⚙️ Settings</div>
+          <div className="serif" style={{ color:'var(--green-light)', fontSize:20, fontWeight:600 }}>Settings</div>
           <button onClick={onClose} aria-label="Close settings" style={{ background:'rgba(255,255,255,.18)', border:'none', color:'var(--green-light)', borderRadius:10, width:40, height:40, flexShrink:0, cursor:'pointer', fontSize:18, fontFamily:'DM Sans,sans-serif', display:'flex', alignItems:'center', justifyContent:'center' }}>✕</button>
         </div>
         <div style={{ display:'flex', borderBottom:'1px solid var(--border)', background:'white' }}>
@@ -129,14 +130,14 @@ function MobileNav({ open, onClose, tab, setTab, onOpenSettings }) {
         <nav className="mobile-nav-list">
           {TABS.map(t => (
             <button key={t.id} className={`mobile-nav-item ${tab===t.id ? 'active' : ''}`} onClick={() => go(t.id)}>
-              <span className="mobile-nav-icon">{t.icon}</span>
+              <span className="mobile-nav-icon"><Glyph id={t.glyph} size={21} /></span>
               <span className="mobile-nav-label">{t.label}</span>
               {tab===t.id && <span className="mobile-nav-active-dot" aria-hidden="true" />}
             </button>
           ))}
         </nav>
         <button className="mobile-nav-settings" onClick={() => { onClose(); onOpenSettings() }}>
-          <span className="mobile-nav-icon">⚙️</span>
+          <span className="mobile-nav-icon"><GearIcon /></span>
           <span className="mobile-nav-label">Settings</span>
         </button>
       </aside>
@@ -494,8 +495,8 @@ export default function App() {
               <SearchIcon />
             </button>
             <button className="icon-btn" onClick={() => setSettingsOpen(true)}
-              title="Settings" aria-label="Settings" style={{ fontSize:17 }}>
-              ⚙️
+              title="Settings" aria-label="Settings">
+              <GearIcon />
             </button>
           </div>
         </div>
