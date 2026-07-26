@@ -73,6 +73,10 @@ const GLYPHS = {
   bell:    { el: P("M6.5 9.5a5.5 5.5 0 0 1 11 0c0 4.6 2 5.8 2 5.8H4.5s2-1.2 2-5.8ZM10 19a2 2 0 0 0 4 0") },
   check:   { el: <><circle cx="12" cy="12" r="8.5"/>{P("M8.2 12.4l2.5 2.5 5-5")}</> },
   clock:   { el: <><circle cx="12" cy="12" r="8.5"/>{P("M12 7v5.2l3.4 2")}</> },
+  // Nav-only glyphs (not offered in the task picker).
+  list:    { el: <>{P("M9 6h11M9 12h11M9 18h11")}<circle cx="4.5" cy="6" r="1.3"/><circle cx="4.5" cy="12" r="1.3"/><circle cx="4.5" cy="18" r="1.3"/></> },
+  repeat:  { el: P("M17 3.5l3 3-3 3M20 6.5H9A5 5 0 0 0 4 11.5M7 20.5l-3-3 3-3M4 17.5h11a5 5 0 0 0 5-5") },
+  grid:    { el: <><rect x="4" y="4" width="7" height="7" rx="1.6"/><rect x="13" y="4" width="7" height="7" rx="1.6"/><rect x="4" y="13" width="7" height="7" rx="1.6"/><rect x="13" y="13" width="7" height="7" rx="1.6"/></> },
 }
 
 export function hasGlyph(id) { return !!GLYPHS[id] }
