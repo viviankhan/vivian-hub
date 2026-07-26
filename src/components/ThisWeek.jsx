@@ -3,6 +3,8 @@ import { buildWeekPlanFromTasks } from '../data/schedule.js'
 import { Icon } from './IconPicker.jsx'
 import { bloomBurst } from '../lib/bloom.js'
 import TimeField from './TimeField.jsx'
+import AddItemModal from './AddItemModal.jsx'
+import { setItemReminders } from '../lib/notifications.js'
 
 const CAT_COLORS = {
   lab:     { dot:'#059669', bg:'#ECFDF5', text:'#065F46' },
@@ -223,9 +225,9 @@ export default function ThisWeek({ todos, weekState, syncToggle, commitments, ad
               ))}
 
               {addingDay===day.date&&(
-                <DayQuickAdd
-                  onAdd={task=>handleAddCustom(day.date, task)}
-                  onClose={()=>setAddingDay(null)}/>
+                <AddItemModal presetDate={day.date} categories={categories}
+                  onSave={(commitment, reminderMins)=>{ if(addCommitment) addCommitment(commitment); setItemReminders(commitment.id, reminderMins); setAddingDay(null) }}
+                  onClose={()=>setAddingDay(null)} title="Add to this day" />
               )}
             </div>
           </div>

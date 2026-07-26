@@ -166,7 +166,9 @@ export default function AddItemModal({ existing = null, presetDate = null, prese
 
   const durationMins = diffMinutes(time, endTime)          // null unless a valid span
   const endInvalid = !!(time && endTime && !durationMins)  // end set but ≤ start
-  const canSave = !!(label.trim() && date) && !endInvalid
+  // Date is optional — a task with no date is a valid "unscheduled" commitment
+  // (used by the Commitments tab). Today/Calendar preset or lock the date.
+  const canSave = !!label.trim() && !endInvalid
 
   // Quick-set: fill the end time as start + N minutes. Needs a start time.
   const setQuickDuration = (mins) => {
@@ -196,7 +198,7 @@ export default function AddItemModal({ existing = null, presetDate = null, prese
     const commitment = {
       ...base,
       text: label.trim(),
-      date,
+      date: date || null,
       time: time || null,
       durationMins: durationMins || null,
       cat: selectedCats[0],

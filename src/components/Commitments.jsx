@@ -511,12 +511,18 @@ export default function Commitments({ commitments, addCommitment, updateCommitme
   const [filter, setFilter] = useState('toschedule')
   const [confirmClear, setConfirmClear] = useState(false)
   const [editing, setEditing] = useState(null)
+  const [adding, setAdding] = useState(false)
 
   const handleSaveEdit = (commitment, reminderMins) => {
     const { id, ...changes } = commitment
     updateCommitment(id, changes)
     setItemReminders(id, reminderMins)
     setEditing(null)
+  }
+  const handleAddNew = (commitment, reminderMins) => {
+    addCommitment(commitment)
+    setItemReminders(commitment.id, reminderMins)
+    setAdding(false)
   }
 
   const isDone = c => !!(todos[c.id] || weekState[c.id] || c.done)
@@ -589,7 +595,14 @@ export default function Commitments({ commitments, addCommitment, updateCommitme
       <div className="page-title">Commitments</div>
       <div className="page-sub">Things you said yes to. Give one a date + time (a start and end) and it moves onto your Calendar and Week.</div>
 
-      <QuickAdd onAdd={addCommitment} categories={categories} />
+      <button onClick={() => setAdding(true)}
+        style={{ width:'100%', background:'linear-gradient(135deg, #7BBFD4, #C8BFDF)', border:'none', borderRadius:14, padding:'14px 18px', cursor:'pointer', display:'flex', alignItems:'center', gap:10, marginBottom:16 }}>
+        <span style={{ fontSize:20, color:'#1A3A4E' }}>+</span>
+        <span style={{ fontFamily:'DM Sans, sans-serif', fontSize:13, color:'#1A3A4E', fontWeight:600 }}>Add a commitment</span>
+      </button>
+      {adding && (
+        <AddItemModal categories={categories} onSave={handleAddNew} onClose={() => setAdding(false)} title="Add a commitment" />
+      )}
 
       {(commitments||[]).length > 0 && (
         <>
