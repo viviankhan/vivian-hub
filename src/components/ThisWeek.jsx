@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { buildWeekPlanFromTasks } from '../data/schedule.js'
 import { Icon } from './IconPicker.jsx'
 import { bloomBurst } from '../lib/bloom.js'
+import TimeField from './TimeField.jsx'
 
 const CAT_COLORS = {
   lab:     { dot:'#059669', bg:'#ECFDF5', text:'#065F46' },
@@ -70,8 +71,8 @@ function DayQuickAdd({ onAdd, onClose }) {
         onKeyDown={e=>e.key==='Enter'&&submit()}
         style={{ width:'100%', fontSize:13, padding:'7px 10px', borderRadius:8, border:'1px solid var(--border)', fontFamily:'DM Sans,sans-serif', outline:'none', marginBottom:6, boxSizing:'border-box' }}/>
       <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
-        <input type="time" value={time} onChange={e=>setTime(e.target.value)}
-          style={{ fontSize:12, padding:'5px 8px', borderRadius:8, border:'1px solid var(--border)', fontFamily:'DM Sans,sans-serif' }}/>
+        <TimeField value={time} onChange={setTime}
+          style={{ width:110, fontSize:12, padding:'5px 8px', borderRadius:8, border:'1px solid var(--border)', fontFamily:'DM Sans,sans-serif' }}/>
         <select value={cat} onChange={e=>setCat(e.target.value)}
           style={{ fontSize:12, padding:'5px 8px', borderRadius:8, border:'1px solid var(--border)', fontFamily:'DM Sans,sans-serif', background:'white', cursor:'pointer', flex:1 }}>
           {CATS.map(c=><option key={c} value={c}>{c}</option>)}

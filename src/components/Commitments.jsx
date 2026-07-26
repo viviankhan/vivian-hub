@@ -5,6 +5,7 @@ import { Icon } from './IconPicker.jsx'
 import { bloomBurst } from '../lib/bloom.js'
 import AddItemModal from './AddItemModal.jsx'
 import DateField from './DateField.jsx'
+import TimeField from './TimeField.jsx'
 import { setItemReminders } from '../lib/notifications.js'
 
 const DAYS = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday']
@@ -214,14 +215,14 @@ function SlotPicker({ scheduled, onPick, onCancel, targetDate, commitmentDuratio
               <DateField value={mDate} onChange={setMDate}
                 style={{ width:'100%', fontSize:12, padding:'7px 10px', borderRadius:10, border:'1px solid var(--border)', fontFamily:'DM Sans,sans-serif' }} />
             </div>
-            <div style={{ flex:'1 0 190px' }}>
+            <div style={{ flex:'1 1 110px', minWidth:0 }}>
               <div style={{ fontSize:10, color:'var(--muted)', letterSpacing:1, textTransform:'uppercase', marginBottom:4 }}>Start time</div>
-              <input type="time" value={mStart} onChange={e => onStartChange(e.target.value)}
+              <TimeField value={mStart} onChange={onStartChange}
                 style={{ width:'100%', fontSize:12, padding:'7px 10px', borderRadius:10, border:'1px solid var(--border)', fontFamily:'DM Sans,sans-serif' }} />
             </div>
-            <div style={{ flex:'1 0 190px' }}>
+            <div style={{ flex:'1 1 110px', minWidth:0 }}>
               <div style={{ fontSize:10, color:'var(--muted)', letterSpacing:1, textTransform:'uppercase', marginBottom:4 }}>End time</div>
-              <input type="time" value={mEnd} onChange={e => setMEnd(e.target.value)}
+              <TimeField value={mEnd} onChange={setMEnd}
                 style={{ width:'100%', fontSize:12, padding:'7px 10px', borderRadius:10, border:'1px solid var(--border)', fontFamily:'DM Sans,sans-serif' }} />
             </div>
           </div>
@@ -306,12 +307,12 @@ function QuickAdd({ onAdd, categories }) {
         </div>
         <div style={{ flex:1, minWidth:95 }}>
           <div style={{ fontSize:10, color:'var(--muted)', letterSpacing:1, textTransform:'uppercase', marginBottom:4 }}>Start time</div>
-          <input type="time" value={time} onChange={e => setTime(e.target.value)}
+          <TimeField value={time} onChange={setTime}
             style={{ width:'100%', fontSize:12, padding:'7px 10px', borderRadius:10, border:'1px solid var(--border)', fontFamily:'DM Sans, sans-serif' }} />
         </div>
         <div style={{ flex:1, minWidth:95 }}>
           <div style={{ fontSize:10, color:'var(--muted)', letterSpacing:1, textTransform:'uppercase', marginBottom:4 }}>End time</div>
-          <input type="time" value={endTime} onChange={e => setEndTime(e.target.value)}
+          <TimeField value={endTime} onChange={setEndTime}
             style={{ width:'100%', fontSize:12, padding:'7px 10px', borderRadius:10, border:'1px solid var(--border)', fontFamily:'DM Sans, sans-serif' }} />
         </div>
       </div>

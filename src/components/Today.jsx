@@ -7,6 +7,7 @@ import { Icon } from './IconPicker.jsx'
 import { bloomBurst } from '../lib/bloom.js'
 import AddItemModal from './AddItemModal.jsx'
 import DateField from './DateField.jsx'
+import TimeField from './TimeField.jsx'
 import { setItemReminders } from '../lib/notifications.js'
 
 const TAG_COLORS = {
@@ -167,14 +168,14 @@ function ManageModal({ task, dateKey, onClose, onDelete, onReschedule, scheduled
         </>}
         {view==='reschedule'&&<>
           <div className="serif" style={{fontSize:17,fontWeight:600,color:'var(--text)',marginBottom:12}}>Reschedule</div>
-          <div style={{display:'flex',gap:8,marginBottom:10,flexWrap:'wrap'}}>
-            <div style={{flex:'1 1 130px',minWidth:0}}>
+          <div style={{display:'flex',gap:8,marginBottom:10}}>
+            <div style={{flex:1,minWidth:0}}>
               <div style={{fontSize:10,color:'var(--muted)',letterSpacing:1,textTransform:'uppercase',marginBottom:4}}>Date</div>
               <DateField value={date} onChange={handleDateChange} style={{...s}}/>
             </div>
-            <div style={{flex:'1 0 190px'}}>
+            <div style={{flex:1,minWidth:0}}>
               <div style={{fontSize:10,color:'var(--muted)',letterSpacing:1,textTransform:'uppercase',marginBottom:4}}>Time</div>
-              <input type="time" value={time} onChange={e=>setTime(e.target.value)} style={{...s}}/>
+              <TimeField value={time} onChange={setTime} style={{...s}}/>
             </div>
           </div>
 

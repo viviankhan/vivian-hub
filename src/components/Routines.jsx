@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { getRoutines, setRoutines } from '../lib/storage.js'
 import { IconPicker, useOutsideClose } from './IconPicker.jsx'
+import TimeField from './TimeField.jsx'
 
 // ── Shared helpers (also used by Today's routine cards) ─────────
 export const ROUTINE_PRESET_COLORS = [
@@ -95,8 +96,8 @@ function ItemEditor({ item, onChange, onDelete }) {
       <div style={{ display:'flex', gap:8, alignItems:'center', flexWrap:'wrap' }}>
         <IconPicker value={item.icon} onChange={v => onChange({ ...item, icon: v })} />
         <ColorInput value={item.color} onChange={v => onChange({ ...item, color: v })} />
-        <input type="time" value={item.time} onChange={e => onChange({ ...item, time: e.target.value })}
-          style={{ fontSize:12, padding:'6px 8px', borderRadius:8, border:'1px solid var(--border)', fontFamily:'DM Sans,sans-serif', color:'var(--text)' }} />
+        <TimeField value={item.time} onChange={v => onChange({ ...item, time: v })}
+          style={{ width:104, fontSize:12, padding:'6px 8px', borderRadius:8, border:'1px solid var(--border)', fontFamily:'DM Sans,sans-serif', color:'var(--text)' }} />
         <input value={item.label} onChange={e => onChange({ ...item, label: e.target.value })}
           placeholder="What is it?"
           style={{ flex:1, minWidth:120, fontSize:13, padding:'6px 10px', borderRadius:8, border:'1px solid var(--border)', fontFamily:'DM Sans,sans-serif', color:'var(--text)' }} />
