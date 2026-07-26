@@ -8,6 +8,7 @@
 import { useState } from 'react'
 import DateField from './DateField.jsx'
 import TimeField from './TimeField.jsx'
+import MiniCalendar from './MiniCalendar.jsx'
 import { Icon } from './IconPicker.jsx'
 import ColorIconPicker from './ColorIconPicker.jsx'
 import { LEAD_OPTIONS, getItemReminders, getItemSound, setItemSound } from '../lib/notifications.js'
@@ -274,7 +275,16 @@ export default function AddItemModal({ existing = null, presetDate = null, prese
             <DetailRow icon={<CalIcon />} text={date ? prettyDate(date) : 'Add a date'} textMuted={!date}
               hint={relativeDay(date)} open={expanded==='date'}
               onClick={lockDate ? undefined : () => toggleRow('date')}>
+              <div style={{ fontSize:10, color:'var(--muted)', letterSpacing:1, textTransform:'uppercase', marginBottom:4 }}>Type it</div>
               <DateField value={date} onChange={setDate} style={inp} />
+              <div style={{ fontSize:10, color:'var(--muted)', letterSpacing:1, textTransform:'uppercase', margin:'12px 0 0' }}>Or pick a day</div>
+              <MiniCalendar value={date} onChange={setDate} />
+              {date && (
+                <button onClick={() => setDate('')}
+                  style={{ marginTop:10, fontSize:11, padding:'5px 12px', borderRadius:16, cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:600, border:'1px solid var(--border)', background:'white', color:'var(--muted)' }}>
+                  Clear date
+                </button>
+              )}
             </DetailRow>
             <RowDivider />
             {/* Time */}
