@@ -96,7 +96,7 @@ function EventSection({ events, addEvent, deleteEvent }) {
       {(events || []).map(ev => (
         <div key={ev.id} style={{ display:'flex', alignItems:'center', gap:10, padding:'9px 14px', background:`${ev.color}12`, borderRadius:10, borderLeft:`4px solid ${ev.color}`, border:`1px solid ${ev.color}33`, marginBottom:6 }}>
           {ev.icon && <Icon value={ev.icon} size={18} />}
-          <div style={{ flex:1 }}>
+          <div style={{ flex:1, minWidth:0 }}>
             <div style={{ fontSize:13, fontWeight:600, color:'var(--text)' }}>{ev.label}</div>
             <div style={{ fontSize:11, color:'var(--muted)', marginTop:2 }}>
               {fmtRange(ev.startDate, ev.endDate)}
@@ -125,11 +125,11 @@ function EventSection({ events, addEvent, deleteEvent }) {
             <input value={label} onChange={e => setLabel(e.target.value)} placeholder="Event name (e.g. Immunology Retreat)" style={{ ...inp, marginBottom:0, flex:1 }} />
           </div>
           <div style={{ display:'flex', gap:8, marginBottom:10 }}>
-            <div style={{ flex:1 }}>
+            <div style={{ flex:1, minWidth:0 }}>
               <div style={fieldLabel}>Start</div>
               <DateField value={startDate} onChange={setStartDate} style={{ ...inp, marginBottom:0 }} />
             </div>
-            <div style={{ flex:1 }}>
+            <div style={{ flex:1, minWidth:0 }}>
               <div style={fieldLabel}>End</div>
               <DateField value={endDate} onChange={setEndDate} style={{ ...inp, marginBottom:0 }} />
             </div>
@@ -143,11 +143,11 @@ function EventSection({ events, addEvent, deleteEvent }) {
           </label>
           {!allDay && (
             <div style={{ display:'flex', gap:8, marginBottom:10 }}>
-              <div style={{ flex:1 }}>
+              <div style={{ flex:1, minWidth:0 }}>
                 <div style={fieldLabel}>Start time</div>
                 <input type="time" value={startTime} onChange={e => setStartTime(e.target.value)} style={{ ...inp, marginBottom:0 }} />
               </div>
-              <div style={{ flex:1 }}>
+              <div style={{ flex:1, minWidth:0 }}>
                 <div style={fieldLabel}>End time</div>
                 <input type="time" value={endTime} onChange={e => setEndTime(e.target.value)} style={{ ...inp, marginBottom:0 }} />
               </div>
@@ -203,7 +203,7 @@ function VacationSection({ vacations, addVacation, deleteVacation }) {
       )}
       {(vacations || []).map(v => (
         <div key={v.id} style={{ display:'flex', alignItems:'center', gap:10, padding:'9px 14px', background:'#EAF5F8', borderRadius:10, border:'1px solid #A8D8E4', marginBottom:6 }}>
-          <div style={{ flex:1 }}>
+          <div style={{ flex:1, minWidth:0 }}>
             <div style={{ fontSize:13, fontWeight:600, color:'var(--text)' }}>{v.label}</div>
             <div style={{ fontSize:11, color:'#2A7A90', marginTop:2 }}>{fmtRange(v.startDate, v.endDate)} · recurring tasks paused</div>
           </div>
@@ -216,11 +216,11 @@ function VacationSection({ vacations, addVacation, deleteVacation }) {
         <div style={{ background:'white', borderRadius:12, border:'1px solid #A8D8E4', padding:'14px 16px', marginTop:4 }}>
           <input value={label} onChange={e => setLabel(e.target.value)} placeholder='Label (e.g. Bonaire Trip, Spring Break)' style={{ ...inp, marginBottom:10 }} />
           <div style={{ display:'flex', gap:8, marginBottom:12 }}>
-            <div style={{ flex:1 }}>
+            <div style={{ flex:1, minWidth:0 }}>
               <div style={fieldLabel}>Start</div>
               <DateField value={startDate} onChange={setStartDate} style={{ ...inp, marginBottom:0 }} />
             </div>
-            <div style={{ flex:1 }}>
+            <div style={{ flex:1, minWidth:0 }}>
               <div style={fieldLabel}>End</div>
               <DateField value={endDate} onChange={setEndDate} style={{ ...inp, marginBottom:0 }} />
             </div>
