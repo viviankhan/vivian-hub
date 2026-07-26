@@ -517,7 +517,7 @@ textarea { resize: vertical; min-height: 160px; line-height: 1.6; }
   border: none; background: none; cursor: pointer; padding: 6px 2px; border-radius: 14px;
   color: var(--muted); transition: color .2s, background .2s;
 }
-.bottom-nav-icon { font-size: 20px; line-height: 1; }
+.bottom-nav-icon { font-size: 20px; line-height: 1; height: 24px; display: flex; align-items: center; justify-content: center; }
 .bottom-nav-label { font-size: 10px; font-weight: 600; letter-spacing: .2px; }
 .bottom-nav-btn.active {
   color: #143F52;
