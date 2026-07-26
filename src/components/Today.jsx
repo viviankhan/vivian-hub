@@ -351,7 +351,7 @@ function TimelineBlock({ task, categories, status, now, isDone, elapsed, onToggl
         <div style={{ width:40, height:pillH, borderRadius:20, flexShrink:0, background:color, display:'flex', alignItems:'center', justifyContent:'center',
           boxShadow:isCurrent?`0 0 0 4px ${color}33`:'none' }}>
           {shownIcon
-            ? <Icon value={shownIcon} size={20} />
+            ? <Icon value={shownIcon} size={20} color="#fff" />
             : <span style={{ color:'white', fontWeight:700, fontSize:16 }}>{(title || '?').charAt(0).toUpperCase()}</span>}
         </div>
         <div style={{ width:3, flex:1, minHeight:14, borderRadius:3, background: (elapsed && !isCurrent) ? color : '#E7E2DB' }} />
