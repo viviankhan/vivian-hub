@@ -218,87 +218,105 @@ function ShiftToast({ result, onClose }) {
 }
 
 // ── Timeline task block ────────────────────────────────────────
-function TimelineBlock({ task, categories, status, now, minutesUntilNext, isDone, onToggle, onManage, onShiftToNow, onOpen }) {
-  const catFound = (categories || []).find(x => x.id === task.tag)
-  const dot = catFound?.color || TAG_COLORS[task.tag] || '#9CA3AF'
-  const catLabel = catFound?.label || task.tag
-  const catIcon = catFound?.icon || ''
-  const location = extractLocation(task.label, task.note)
-  const timeMins = parseTimeMins(task.label)
-  const minsRemaining = timeMins !== null && minutesUntilNext !== null
-    ? minutesUntilNext - (now - timeMins)
-    : null
+// Strip a leading "9:30 AM — " time prefix so the title reads cleanly (the
+// time is shown separately on a timeline).
+function stripTimePrefix(label) {
+  return (label || '').replace(/^~?\d{1,2}:\d{2}\s*(AM|PM)?\s*[—–-]\s*/i, '')
+}
+function hhmmToMins(t) {
+  if (!t) return null
+  const [h, m] = t.split(':').map(Number)
+  return h * 60 + m
+}
 
-  const isPast    = status==='past' || isDone
+// A "free time" gap between two timed tasks, with a quick Add Task. Its height
+// grows with the length of the gap, so the day reads at relative scale.
+function GapRow({ mins, onAdd }) {
+  const h = Math.min(130, Math.max(30, Math.round(mins * 0.7)))
+  return (
+    <div style={{ display:'flex', gap:0 }}>
+      <div style={{ width:52, flexShrink:0 }} />
+      <div style={{ width:44, flexShrink:0, display:'flex', justifyContent:'center' }}>
+        <div style={{ width:3, minHeight:h, borderRadius:3, background:'repeating-linear-gradient(#DAD5CE 0 4px, transparent 4px 9px)' }} />
+      </div>
+      <div style={{ flex:1, minWidth:0, display:'flex', alignItems:'center', gap:10, paddingLeft:8 }}>
+        <span style={{ fontSize:12.5, color:'var(--muted)' }}>Free for <b style={{ color:'var(--teal)' }}>{fmtMins(mins)}</b></span>
+        <button onClick={onAdd}
+          style={{ display:'inline-flex', alignItems:'center', gap:5, fontSize:11.5, padding:'6px 13px', borderRadius:18, border:'none', background:'#E7F3F6', color:'var(--teal)', fontWeight:600, cursor:'pointer', fontFamily:'DM Sans,sans-serif' }}>
+          <span style={{ fontSize:14, lineHeight:1 }}>＋</span> Add Task
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function TimelineBlock({ task, categories, status, now, isDone, onToggle, onManage, onShiftToNow, onOpen }) {
+  const catFound = (categories || []).find(x => x.id === task.tag)
+  const catColor = catFound?.color || TAG_COLORS[task.tag] || '#9CA3AF'
+  const color    = task.color || catColor
+  const catLabel = catFound?.label || task.tag
+  const catIcon  = catFound?.icon || ''
+  const timeMins = task._mins ?? parseTimeMins(task.label)
+  const title    = task.title || stripTimePrefix(task.label)
+
   const isCurrent = status==='current' && !isDone
   const isOverdue = status==='overdue' && !isDone
-  const canShift  = (isCurrent || isOverdue) && !INFLEXIBLE_TAGS.has(task.tag) && timeMins!==null && !isDone
 
-  const blockBg = isCurrent?'white': isOverdue?'#FFF5F5': isPast?'#FAFAF7':'white'
-  const blockBorder = isCurrent?'2px solid #52B788': isOverdue?'1.5px solid #FECACA':'1.5px solid var(--border)'
-  const dotBg = isDone?'#52B788': isCurrent?'white': isOverdue?'#FCA5A5':'white'
-  const dotBorderColor = isDone?'#52B788': isCurrent?'#52B788': isOverdue?'#FCA5A5':'#D1D5DB'
+  // Time range + duration (e.g. "3:00 – 4:00 PM · 1h").
+  let timeLine = ''
+  if (task._time && task._dur) {
+    timeLine = `${fmt12(task._time)} – ${fmtTimeLabel(hhmmToMins(task._time) + task._dur)} · ${fmtMins(task._dur)}`
+  } else if (timeMins !== null) {
+    timeLine = fmtTimeLabel(timeMins)
+  }
 
   return (
-    <div style={{display:'flex',gap:0,marginBottom:0,opacity:isPast&&!isCurrent?.45:1,transition:'opacity .3s'}}>
-      {/* Time label */}
-      <div style={{width:68,flexShrink:0,paddingTop:14,textAlign:'right',paddingRight:12}}>
-        {timeMins!==null&&(
-          <span style={{fontSize:10,color:isCurrent?'var(--teal)':isPast?'#C4BAAD':'var(--muted)',fontWeight:isCurrent?700:400,letterSpacing:.3,whiteSpace:'nowrap'}}>
-            {fmtTimeLabel(timeMins)}
-          </span>
+    <div style={{ display:'flex', gap:0, opacity:isDone?.55:1, transition:'opacity .3s' }}>
+      {/* Time gutter */}
+      <div style={{ width:52, flexShrink:0, paddingTop:16, textAlign:'right', paddingRight:10 }}>
+        {timeMins!==null && (
+          <span style={{ fontSize:11, color:isCurrent?'var(--teal)':'var(--muted)', fontWeight:isCurrent?700:500, whiteSpace:'nowrap' }}>{fmtTimeLabel(timeMins)}</span>
         )}
       </div>
-      {/* Spine + dot */}
-      <div style={{width:28,flexShrink:0,display:'flex',flexDirection:'column',alignItems:'center'}}>
-        <div style={{width:2,height:14,background:isPast?'#52B78866':'#E5E0D9',flexShrink:0}}/>
-        <div onClick={e=>{ if(!isDone) bloomBurst(e.currentTarget); onToggle() }}
-          style={{width:18,height:18,borderRadius:'50%',flexShrink:0,cursor:'pointer',
-            border:`2px solid ${dotBorderColor}`,background:dotBg,
-            display:'flex',alignItems:'center',justifyContent:'center',
-            boxShadow:isCurrent?'0 0 0 4px rgba(82,183,136,.2)':'none',
-            transition:'all .2s',zIndex:1}}>
-          {isDone&&<span style={{color:'white',fontSize:10,fontWeight:700}}>✓</span>}
-          {isCurrent&&!isDone&&<div style={{width:6,height:6,borderRadius:'50%',background:'#52B788'}}/>}
+      {/* Colored icon + spine */}
+      <div style={{ width:44, flexShrink:0, display:'flex', flexDirection:'column', alignItems:'center' }}>
+        <div style={{ width:2, height:14, background:'#E7E2DB' }} />
+        <div style={{ width:38, height:38, borderRadius:'50%', flexShrink:0, background:color, display:'flex', alignItems:'center', justifyContent:'center',
+          boxShadow:isCurrent?`0 0 0 4px ${color}33`:'none' }}>
+          {catIcon
+            ? <Icon value={catIcon} size={19} />
+            : <span style={{ color:'white', fontWeight:700, fontSize:15 }}>{(title || '?').charAt(0).toUpperCase()}</span>}
         </div>
-        <div style={{width:2,flex:1,minHeight:8,background:isPast?'#52B78866':'#E5E0D9'}}/>
+        <div style={{ width:2, flex:1, minHeight:14, background:'#E7E2DB' }} />
       </div>
       {/* Card */}
-      <div style={{flex:1,paddingTop:6,paddingBottom:10,paddingLeft:10,paddingRight:4}}>
-        {isCurrent&&minsRemaining!==null&&minsRemaining>0&&(
-          <div style={{fontSize:10,color:'var(--teal)',fontWeight:700,letterSpacing:.5,marginBottom:4}}>{fmtMins(minsRemaining)} remaining</div>
-        )}
-        {isOverdue&&<div style={{fontSize:10,color:'#EF4444',fontWeight:700,letterSpacing:.5,marginBottom:4}}>overdue</div>}
-
-        <div onClick={()=>onOpen&&onOpen()} style={{background:blockBg,borderRadius:12,border:blockBorder,padding:'10px 12px',transition:'all .2s',cursor:onOpen?'pointer':'default'}}>
-          <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',gap:8}}>
-            <div style={{flex:1}}>
-              <div style={{display:'flex',alignItems:'center',gap:6,lineHeight:1.3}}>
-                {catIcon&&<Icon value={catIcon} size={15} />}
-                <span style={{fontSize:14,fontWeight:isCurrent?600:500,color:isDone?'var(--muted)':'var(--text)',textDecoration:isDone?'line-through':'none'}}>
-                  {task.label}
-                </span>
-              </div>
-              {task.note&&<div style={{fontSize:11,color:'var(--muted)',marginTop:3,lineHeight:1.4}}>{task.note}</div>}
-              <div style={{display:'flex',gap:5,marginTop:6,flexWrap:'wrap',alignItems:'center'}}>
-                <span style={{display:'inline-flex',alignItems:'center',gap:3,fontSize:9,padding:'2px 6px',borderRadius:6,background:`${dot}18`,color:dot,fontWeight:700,letterSpacing:.8,textTransform:'uppercase'}}>{catIcon&&<Icon value={catIcon} size={11} />}{catLabel}</span>
-                {location&&!isDone&&<span style={{fontSize:9,padding:'2px 6px',borderRadius:6,background:'#EFF6FF',color:'#1E3A8A',fontWeight:600}}>📍 {location}</span>}
-              </div>
+      <div style={{ flex:1, minWidth:0, paddingTop:8, paddingBottom:12, paddingLeft:10 }}>
+        <div onClick={()=>onOpen&&onOpen()} style={{ cursor:onOpen?'pointer':'default' }}>
+          {timeLine && (
+            <div style={{ fontSize:12, color:isCurrent?'var(--teal)':'var(--muted)', fontWeight:600, marginBottom:2, display:'flex', alignItems:'center', gap:7 }}>
+              {timeLine}
+              {isOverdue && <span style={{ fontSize:10, color:'#EF4444', fontWeight:700 }}>OVERDUE</span>}
             </div>
-            {!isDone&&<button onClick={e=>{e.stopPropagation();onManage()}} style={{fontSize:11,padding:'3px 7px',borderRadius:7,border:'1px solid var(--border)',background:'white',color:'var(--muted)',cursor:'pointer',flexShrink:0}}>···</button>}
-          </div>
-
-          {/* Shift to now button */}
-          {canShift&&(
-            <button onClick={e=>{e.stopPropagation();onShiftToNow()}}
-              style={{marginTop:8,width:'100%',padding:'7px',borderRadius:8,border:'1px solid var(--teal)',background:'#F0FDFB',color:'var(--teal)',cursor:'pointer',fontFamily:'DM Sans,sans-serif',fontSize:11,fontWeight:600,letterSpacing:.5}}>
-              ⏱ Set start time to now · cascade remaining tasks
-            </button>
           )}
+          <div style={{ display:'flex', alignItems:'flex-start', gap:10 }}>
+            <span style={{ flex:1, minWidth:0, fontSize:16, fontWeight:700, color:isDone?'var(--muted)':'var(--text)', textDecoration:isDone?'line-through':'none', lineHeight:1.25 }}>{title}</span>
+            <div onClick={e=>{ e.stopPropagation(); if(!isDone) bloomBurst(e.currentTarget); onToggle() }}
+              style={{ width:24, height:24, borderRadius:'50%', flexShrink:0, marginTop:1, cursor:'pointer', border:`2px solid ${color}`, background:isDone?color:'transparent', display:'flex', alignItems:'center', justifyContent:'center' }}>
+              {isDone && <span style={{ color:'white', fontSize:13, fontWeight:700 }}>✓</span>}
+            </div>
+          </div>
+          {task.note && <div style={{ fontSize:12, color:'var(--muted)', marginTop:3, lineHeight:1.4 }}>{task.note}</div>}
+          <div style={{ display:'flex', gap:6, marginTop:7, flexWrap:'wrap', alignItems:'center' }}>
+            <span style={{ display:'inline-flex', alignItems:'center', gap:3, fontSize:9, padding:'2px 7px', borderRadius:6, background:`${color}1c`, color, fontWeight:700, letterSpacing:.6, textTransform:'uppercase' }}>{catIcon && <Icon value={catIcon} size={11} />}{catLabel}</span>
+            {task.subCount>0 && <span style={{ fontSize:10.5, color:'var(--muted)', fontWeight:600 }}>✓ {task.subDone}/{task.subCount}</span>}
+            {!isDone && <button onClick={e=>{ e.stopPropagation(); onManage() }} style={{ marginLeft:'auto', fontSize:14, padding:'0 4px', border:'none', background:'none', color:'#C0C6CE', cursor:'pointer', lineHeight:1 }}>···</button>}
+          </div>
         </div>
-
-        {minutesUntilNext!==null&&minutesUntilNext>10&&!isDone&&!isCurrent&&status==='upcoming'&&(
-          <div style={{fontSize:10,color:'#C4BAAD',marginTop:4,paddingLeft:4}}>— {fmtMins(minutesUntilNext)} until next</div>
+        {(isCurrent||isOverdue) && !INFLEXIBLE_TAGS.has(task.tag) && timeMins!==null && (
+          <button onClick={e=>{ e.stopPropagation(); onShiftToNow() }}
+            style={{ marginTop:9, padding:'7px 12px', borderRadius:9, border:`1px solid ${color}`, background:`${color}12`, color, cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontSize:11, fontWeight:600 }}>
+            ⏱ Start now · shift the rest
+          </button>
         )}
       </div>
     </div>
@@ -380,7 +398,9 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
   }
 
   const templateTodos = getDailyTodos(dateKey, dailyTodos).filter(t=>!deleted.includes(t.id))
-  const todayCommitments = (commitments||[]).filter(c=>c.date===dateKey&&!c.done)
+  // Keep done ones too — a finished task stays on the timeline, crossed off,
+  // rather than vanishing.
+  const todayCommitments = (commitments||[]).filter(c=>c.date===dateKey)
 
   const isDoneCheck = (id, isCommitment) => isCommitment
     ? !!(todos[id]||weekState[id])
@@ -397,8 +417,12 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
   const rawTasks = [
     ...todayCommitments.map(c=>({
       id:c.id, label:c.time?`${fmt12(c.time)} — ${c.text}`:c.text,
+      title:c.text,
       note:[c.person&&`With: ${c.person}`,c.prepMin&&`Leave ${c.prepMin} min early`].filter(Boolean).join(' · '),
-      tag:c.cat||'personal', isCommitment:true
+      tag:c.cat||'personal', isCommitment:true,
+      color:c.color||null, _time:c.time||null, _dur:c.durationMins||null,
+      subCount:Array.isArray(c.subtasks)?c.subtasks.length:0,
+      subDone:Array.isArray(c.subtasks)?c.subtasks.filter(s=>s.done).length:0,
     })),
     ...templateTodos,
     ...customTasks,
@@ -419,18 +443,17 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
     return 'overdue'
   }
 
-  const statusOrder = {overdue:0,current:1,upcoming:2,anytime:3,past:4}
+  // Pure chronological order — a completed task keeps its place on the
+  // timeline (crossed off) instead of being shuffled to the bottom. Untimed
+  // ("anytime") tasks sink to the end.
   const tasksWithStatus = allTasks
     .filter(t=>!deleted.includes(t.id))
     .map(t=>({...t,_mins:parseTimeMins(t.label),_status:getStatus({...t,_mins:parseTimeMins(t.label)})}))
-    .sort((a,b)=>{
-      const so=statusOrder[a._status]-statusOrder[b._status]
-      if (so!==0) return so
-      return (a._mins??9999)-(b._mins??9999)
-    })
+    .sort((a,b)=>(a._mins??99999)-(b._mins??99999))
 
   const doneCount = tasksWithStatus.filter(t=>t._status==='past').length
-  const nowInsertIdx = tasksWithStatus.findIndex(t=>t._status==='upcoming'||t._status==='anytime')
+  // The "now" line goes just before the first task that hasn't started yet.
+  const nowInsertIdx = tasksWithStatus.findIndex(t=>t._mins!==null&&t._mins>now)
 
   function minsUntilNext(i) {
     const cur=tasksWithStatus[i]
@@ -634,20 +657,30 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
         </div>
       ) : (
         <div style={{paddingBottom:8}}>
-          {tasksWithStatus.map((task,i)=>(
-            <div key={task.id}>
-              {i===nowInsertIdx&&<NowMarker now={now}/>}
-              <TimelineBlock
-                task={task} categories={categories} status={task._status} now={now}
-                minutesUntilNext={minsUntilNext(i)}
-                isDone={task._status==='past'}
-                onToggle={()=>syncToggle(task.id,task.label,task.tag,task.isCommitment?null:dateKey)}
-                onManage={()=>setManaging(task)}
-                onOpen={()=>openTask(task)}
-                onShiftToNow={()=>handleShiftToNow(task)}
-              />
-            </div>
-          ))}
+          {tasksWithStatus.map((task,i)=>{
+            // Free-time gap between the previous task's end and this one's start.
+            const prev = tasksWithStatus[i-1]
+            let gap = null
+            if (prev && prev._mins!==null && task._mins!==null && task._status!=='past') {
+              const prevEnd = (prev._time && prev._dur) ? (hhmmToMins(prev._time)+prev._dur) : prev._mins
+              const g = task._mins - prevEnd
+              if (g >= 20) gap = g
+            }
+            return (
+              <div key={task.id}>
+                {i===nowInsertIdx&&<NowMarker now={now}/>}
+                {gap&&<GapRow mins={gap} onAdd={()=>setAddingTask(true)}/>}
+                <TimelineBlock
+                  task={task} categories={categories} status={task._status} now={now}
+                  isDone={task._status==='past'}
+                  onToggle={()=>syncToggle(task.id,task.label,task.tag,task.isCommitment?null:dateKey)}
+                  onManage={()=>setManaging(task)}
+                  onOpen={()=>openTask(task)}
+                  onShiftToNow={()=>handleShiftToNow(task)}
+                />
+              </div>
+            )
+          })}
           {nowInsertIdx===-1&&<NowMarker now={now}/>}
         </div>
       )}
