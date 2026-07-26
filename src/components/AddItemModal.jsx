@@ -146,12 +146,12 @@ export default function AddItemModal({ existing = null, presetDate = null, prese
           </div>
         )}
 
-        <div style={{ display:'flex', gap:8, marginBottom:8 }}>
-          <div style={{ flex:1, minWidth:0 }}>
+        <div style={{ display:'flex', gap:8, marginBottom:8, flexWrap:'wrap' }}>
+          <div style={{ flex:'1 0 190px' }}>
             <div style={fieldLabel}>Start time</div>
             <input type="time" value={time} onChange={e => onStartChange(e.target.value)} style={inp} />
           </div>
-          <div style={{ flex:1, minWidth:0 }}>
+          <div style={{ flex:'1 0 190px' }}>
             <div style={fieldLabel}>End time</div>
             <input type="time" value={endTime} onChange={e => setEndTime(e.target.value)} style={{ ...inp, borderColor: endInvalid ? '#DC2626' : 'var(--border)' }} />
           </div>

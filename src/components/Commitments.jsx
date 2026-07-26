@@ -214,12 +214,12 @@ function SlotPicker({ scheduled, onPick, onCancel, targetDate, commitmentDuratio
               <DateField value={mDate} onChange={setMDate}
                 style={{ width:'100%', fontSize:12, padding:'7px 10px', borderRadius:10, border:'1px solid var(--border)', fontFamily:'DM Sans,sans-serif' }} />
             </div>
-            <div style={{ flex:1, minWidth:100 }}>
+            <div style={{ flex:'1 0 190px' }}>
               <div style={{ fontSize:10, color:'var(--muted)', letterSpacing:1, textTransform:'uppercase', marginBottom:4 }}>Start time</div>
               <input type="time" value={mStart} onChange={e => onStartChange(e.target.value)}
                 style={{ width:'100%', fontSize:12, padding:'7px 10px', borderRadius:10, border:'1px solid var(--border)', fontFamily:'DM Sans,sans-serif' }} />
             </div>
-            <div style={{ flex:1, minWidth:100 }}>
+            <div style={{ flex:'1 0 190px' }}>
               <div style={{ fontSize:10, color:'var(--muted)', letterSpacing:1, textTransform:'uppercase', marginBottom:4 }}>End time</div>
               <input type="time" value={mEnd} onChange={e => setMEnd(e.target.value)}
                 style={{ width:'100%', fontSize:12, padding:'7px 10px', borderRadius:10, border:'1px solid var(--border)', fontFamily:'DM Sans,sans-serif' }} />
