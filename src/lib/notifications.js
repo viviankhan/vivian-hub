@@ -143,10 +143,39 @@ export async function requestPermission() {
 }
 
 // ── Service worker registration ─────────────────────────────────
+// Also drives auto-update: when a new build is deployed, the new service
+// worker installs, activates (it calls skipWaiting), and takes control —
+// which fires `controllerchange`, and we reload once so the running app
+// swaps to the new bundle. Without this, an installed PWA (especially on
+// iOS) can keep showing a stale version after a deploy.
+let reloadingForUpdate = false
 export async function registerServiceWorker() {
   if (!('serviceWorker' in navigator)) return null
   try {
+    // Whether this page was already controlled by a worker when it loaded. On a
+    // brand-new visit it isn't (controller is null); the first worker to claim
+    // the page then fires controllerchange, and we must NOT reload for that —
+    // only for a *later* worker swap, which is a genuine deploy update.
+    const hadController = !!navigator.serviceWorker.controller
+
     swRegistration = await navigator.serviceWorker.register(BASE + 'sw.js', { scope: BASE })
+
+    // Reload once when a new deploy's worker takes control of an already
+    // controlled page (so the running app swaps onto the fresh bundle).
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (reloadingForUpdate || !hadController) return
+      reloadingForUpdate = true
+      window.location.reload()
+    })
+
+    // Check for a new build now, and every time the app comes back to the
+    // foreground (how you'd normally return to an installed PWA).
+    const checkForUpdate = () => { swRegistration && swRegistration.update().catch(() => {}) }
+    checkForUpdate()
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') checkForUpdate()
+    })
+
     // Make sure it's active before we try to message it.
     await navigator.serviceWorker.ready
     return swRegistration

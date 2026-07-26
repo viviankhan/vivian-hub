@@ -14,7 +14,11 @@
 // resolves correctly whether the base is "/" or "/vivian-hub/".
 const BASE = new URL('./', self.location).pathname // e.g. "/vivian-hub/"
 
-const CACHE = 'bloom-shell-v1'
+// The cache name carries the build id (stamped in at build time — see
+// vite.config.js). A new deploy changes this file's bytes, so the browser
+// detects a new service worker, activates it, and the page reloads onto the
+// fresh bundle. The activate handler below purges every older cache.
+const CACHE = 'bloom-shell-__BUILD_ID__'
 const SHELL = [BASE, BASE + 'index.html', BASE + 'manifest.webmanifest', BASE + 'icon-192.png', BASE + 'apple-touch-icon.png']
 
 self.addEventListener('install', event => {
