@@ -468,13 +468,20 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
     ? !!(todos[id]||weekState[id])
     : !!(todos[dateKey+'_'+id]||weekState[dateKey+'_'+id])
 
-  // Apply time overrides to task labels
+  // Apply time overrides to task labels. Commitments carry their real start
+  // time (_time) and are updated directly, so overrides only apply to the
+  // local template/custom todos that have no stored time — otherwise a stale
+  // override would fight the real time and scramble the ordering.
   const applyOverrides = (tasks) => tasks.map(t=>{
-    if (timeOverrides[t.id]!==undefined) {
+    if (!t.isCommitment && timeOverrides[t.id]!==undefined) {
       return { ...t, label: shiftLabelTime(t.label, timeOverrides[t.id]) }
     }
     return t
   })
+  // A task's authoritative start minutes: commitments from their stored time
+  // (so gutter, order, and "now" always match the shown range); todos from the
+  // time in their label.
+  const taskMins = (t) => (t._time != null ? hhmmToMins(t._time) : parseTimeMins(t.label))
 
   const rawTasks = [
     ...todayCommitments.map(c=>({
@@ -492,7 +499,7 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
   const allTasks = applyOverrides(rawTasks)
 
   const timedSorted = allTasks
-    .map(t=>({...t,_mins:parseTimeMins(t.label)}))
+    .map(t=>({...t,_mins:taskMins(t)}))
     .filter(t=>t._mins!==null)
     .sort((a,b)=>a._mins-b._mins)
 
@@ -510,7 +517,7 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
   // ("anytime") tasks sink to the end.
   const tasksWithStatus = allTasks
     .filter(t=>!deleted.includes(t.id))
-    .map(t=>({...t,_mins:parseTimeMins(t.label),_status:getStatus({...t,_mins:parseTimeMins(t.label)})}))
+    .map(t=>({...t,_mins:taskMins(t),_status:getStatus({...t,_mins:taskMins(t)})}))
     .sort((a,b)=>(a._mins??99999)-(b._mins??99999))
 
   const doneCount = tasksWithStatus.filter(t=>t._status==='past').length

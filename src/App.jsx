@@ -54,9 +54,9 @@ function SettingsDrawer({ open, onClose, settingsTab, setSettingsTab, notes, upd
     <>
       <div onClick={onClose} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.45)', zIndex:400 }} />
       <div style={{ position:'fixed', top:0, right:0, bottom:0, width:Math.min(520, window.innerWidth), background:'var(--cream)', zIndex:500, overflowY:'auto', boxShadow:'-8px 0 40px rgba(0,0,0,.2)' }}>
-        <div style={{ background:'var(--forest)', padding:'20px 24px', display:'flex', alignItems:'center', justifyContent:'space-between', position:'sticky', top:0, zIndex:10 }}>
+        <div style={{ background:'var(--forest)', padding:'max(18px, calc(env(safe-area-inset-top) + 12px)) 18px 16px', display:'flex', alignItems:'center', justifyContent:'space-between', position:'sticky', top:0, zIndex:10 }}>
           <div className="serif" style={{ color:'var(--green-light)', fontSize:20, fontWeight:600 }}>⚙️ Settings</div>
-          <button onClick={onClose} style={{ background:'rgba(255,255,255,.1)', border:'none', color:'var(--green-light)', borderRadius:8, width:32, height:32, cursor:'pointer', fontSize:18, fontFamily:'DM Sans,sans-serif' }}>✕</button>
+          <button onClick={onClose} aria-label="Close settings" style={{ background:'rgba(255,255,255,.18)', border:'none', color:'var(--green-light)', borderRadius:10, width:40, height:40, flexShrink:0, cursor:'pointer', fontSize:18, fontFamily:'DM Sans,sans-serif', display:'flex', alignItems:'center', justifyContent:'center' }}>✕</button>
         </div>
         <div style={{ display:'flex', borderBottom:'1px solid var(--border)', background:'white' }}>
           {[['routines','Routines'],['reminders','Reminders'],['categories','Categories'],['notes','Notes'],['edits','Edits']].map(([id,label]) => (
