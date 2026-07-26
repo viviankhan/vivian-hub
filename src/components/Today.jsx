@@ -229,10 +229,14 @@ function hhmmToMins(t) {
   return h * 60 + m
 }
 
+// Vertical pixels per minute — shared by task blocks and gaps so the whole
+// day reads at one consistent scale (a 2-hour task is twice a 1-hour task).
+const PX_PER_MIN = 1.15
+
 // A "free time" gap between two timed tasks, with a quick Add Task. Its height
 // grows with the length of the gap, so the day reads at relative scale.
 function GapRow({ mins, onAdd }) {
-  const h = Math.min(130, Math.max(30, Math.round(mins * 0.7)))
+  const h = Math.min(150, Math.max(30, Math.round(mins * PX_PER_MIN)))
   return (
     <div style={{ display:'flex', gap:0 }}>
       <div style={{ width:52, flexShrink:0 }} />
@@ -270,8 +274,12 @@ function TimelineBlock({ task, categories, status, now, isDone, onToggle, onMana
     timeLine = fmtTimeLabel(timeMins)
   }
 
+  // Block height scales with the task's duration, so longer tasks visibly take
+  // more of the day. The spine line (flex:1 below the icon) stretches to fill.
+  const blockMinH = task._dur ? Math.min(360, Math.max(72, Math.round(task._dur * PX_PER_MIN))) : undefined
+
   return (
-    <div style={{ display:'flex', gap:0, opacity:isDone?.55:1, transition:'opacity .3s' }}>
+    <div style={{ display:'flex', gap:0, minHeight:blockMinH, opacity:isDone?.55:1, transition:'opacity .3s' }}>
       {/* Time gutter */}
       <div style={{ width:52, flexShrink:0, paddingTop:16, textAlign:'right', paddingRight:10 }}>
         {timeMins!==null && (

@@ -23,6 +23,8 @@ const SETTINGS_KEY = 'vivian_notif_settings'
 // for the service worker URL and for links opened from a notification.
 const BASE = import.meta.env.BASE_URL || '/'
 
+import { playSound } from './sounds.js'
+
 // The lead times a user can choose from, in minutes before an item starts.
 // Editable in Settings → Reminders; the chosen set is stored per-device.
 export const LEAD_OPTIONS = [
@@ -66,6 +68,28 @@ export function setItemReminders(id, mins) {
     localStorage.setItem(ITEM_REMINDERS_KEY, JSON.stringify(map))
   } catch {}
 }
+// ── Per-item alert sound ───────────────────────────────────────
+// Device-local, keyed by item id (like the reminder overrides above). A web
+// app can't set the OS push sound, so this only drives the in-app chime that
+// plays when a reminder fires while Bloom is open.
+const ITEM_SOUNDS_KEY = 'vivian_item_sounds'
+export function getItemSound(id) {
+  if (!id) return null
+  try {
+    const map = JSON.parse(localStorage.getItem(ITEM_SOUNDS_KEY) || '{}')
+    return map[id] || null
+  } catch { return null }
+}
+export function setItemSound(id, sound) {
+  if (!id) return
+  try {
+    const map = JSON.parse(localStorage.getItem(ITEM_SOUNDS_KEY) || '{}')
+    if (!sound) delete map[id]
+    else map[id] = sound
+    localStorage.setItem(ITEM_SOUNDS_KEY, JSON.stringify(map))
+  } catch {}
+}
+
 // Leads for a specific item: its override if set, otherwise the global list.
 function leadsForItem(id, globalLeads) {
   const override = getItemReminders(id)
@@ -278,6 +302,16 @@ function fire(reminder) {
   } else if ('Notification' in window && Notification.permission === 'granted') {
     try { new Notification(title, options) } catch {}
   }
+
+  // If Bloom is open in the foreground, play this item's chosen alert sound.
+  // (The OS controls the sound of the push notification itself.)
+  try {
+    if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+      const itemId = String(reminder.id || '').split(':')[0]
+      const s = getItemSound(itemId)
+      if (s && s !== 'none') playSound(s)
+    }
+  } catch {}
 }
 
 // Fire a one-off test notification so the user can confirm it works.
