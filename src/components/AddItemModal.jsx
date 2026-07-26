@@ -7,6 +7,7 @@
 // global defaults just for this item.
 import { useState } from 'react'
 import DateField from './DateField.jsx'
+import TimeField from './TimeField.jsx'
 import { LEAD_OPTIONS, getItemReminders } from '../lib/notifications.js'
 
 const DEFAULT_CATEGORIES = [{ id:'other', label:'Other', color:'#8899AA' }]
@@ -158,14 +159,14 @@ export default function AddItemModal({ existing = null, presetDate = null, prese
           </div>
         )}
 
-        <div style={{ display:'flex', gap:8, marginBottom:8, flexWrap:'wrap' }}>
-          <div style={{ flex:'1 0 190px' }}>
+        <div style={{ display:'flex', gap:8, marginBottom:8 }}>
+          <div style={{ flex:1, minWidth:0 }}>
             <div style={fieldLabel}>Start time</div>
-            <input type="time" value={time} onChange={e => onStartChange(e.target.value)} style={inp} />
+            <TimeField value={time} onChange={onStartChange} style={inp} />
           </div>
-          <div style={{ flex:'1 0 190px' }}>
+          <div style={{ flex:1, minWidth:0 }}>
             <div style={fieldLabel}>End time</div>
-            <input type="time" value={endTime} onChange={e => setEndTime(e.target.value)} style={{ ...inp, borderColor: endInvalid ? '#DC2626' : 'var(--border)' }} />
+            <TimeField value={endTime} onChange={setEndTime} style={{ ...inp, borderColor: endInvalid ? '#DC2626' : 'var(--border)' }} />
           </div>
         </div>
 

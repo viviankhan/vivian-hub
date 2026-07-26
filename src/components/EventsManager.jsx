@@ -6,6 +6,7 @@
 import { useState } from 'react'
 import { IconPicker, Icon } from './IconPicker.jsx'
 import DateField from './DateField.jsx'
+import TimeField from './TimeField.jsx'
 
 const EVENT_COLORS = ['#7C9CBF','#059669','#7C3AED','#D97706','#C4728E','#3B82F6','#E07B2E','#52B788','#EF4444','#A855F7']
 
@@ -142,14 +143,14 @@ function EventSection({ events, addEvent, deleteEvent }) {
             All day
           </label>
           {!allDay && (
-            <div style={{ display:'flex', gap:8, marginBottom:10, flexWrap:'wrap' }}>
-              <div style={{ flex:'1 0 190px' }}>
+            <div style={{ display:'flex', gap:8, marginBottom:10 }}>
+              <div style={{ flex:1, minWidth:0 }}>
                 <div style={fieldLabel}>Start time</div>
-                <input type="time" value={startTime} onChange={e => setStartTime(e.target.value)} style={{ ...inp, marginBottom:0 }} />
+                <TimeField value={startTime} onChange={setStartTime} style={{ ...inp, marginBottom:0 }} />
               </div>
-              <div style={{ flex:'1 0 190px' }}>
+              <div style={{ flex:1, minWidth:0 }}>
                 <div style={fieldLabel}>End time</div>
-                <input type="time" value={endTime} onChange={e => setEndTime(e.target.value)} style={{ ...inp, marginBottom:0 }} />
+                <TimeField value={endTime} onChange={setEndTime} style={{ ...inp, marginBottom:0 }} />
               </div>
             </div>
           )}
