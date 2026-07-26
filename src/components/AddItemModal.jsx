@@ -130,7 +130,7 @@ export default function AddItemModal({ existing = null, presetDate = null, prese
     <div onClick={onClose}
       style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.4)', zIndex:600, display:'flex', alignItems:'flex-end', justifyContent:'center', padding:16 }}>
       <div onClick={e => e.stopPropagation()}
-        style={{ background:'white', borderRadius:16, padding:20, maxWidth:440, width:'100%', maxHeight:'86vh', overflowY:'auto', boxShadow:'0 -8px 40px rgba(0,0,0,.15)' }}>
+        style={{ background:'white', borderRadius:16, padding:20, maxWidth:440, width:'100%', minWidth:0, maxHeight:'86vh', overflowY:'auto', overflowX:'hidden', boxShadow:'0 -8px 40px rgba(0,0,0,.15)' }}>
         <div className="serif" style={{ fontSize:18, fontWeight:600, marginBottom:14, color:'var(--text)' }}>{title}</div>
 
         <input value={label} onChange={e => setLabel(e.target.value)} placeholder="What's happening?" autoFocus
@@ -147,11 +147,11 @@ export default function AddItemModal({ existing = null, presetDate = null, prese
         )}
 
         <div style={{ display:'flex', gap:8, marginBottom:8 }}>
-          <div style={{ flex:1 }}>
+          <div style={{ flex:1, minWidth:0 }}>
             <div style={fieldLabel}>Start time</div>
             <input type="time" value={time} onChange={e => onStartChange(e.target.value)} style={inp} />
           </div>
-          <div style={{ flex:1 }}>
+          <div style={{ flex:1, minWidth:0 }}>
             <div style={fieldLabel}>End time</div>
             <input type="time" value={endTime} onChange={e => setEndTime(e.target.value)} style={{ ...inp, borderColor: endInvalid ? '#DC2626' : 'var(--border)' }} />
           </div>
@@ -212,14 +212,14 @@ export default function AddItemModal({ existing = null, presetDate = null, prese
                 {s.done && <span style={{ color:'white', fontSize:11, fontWeight:700 }}>✓</span>}
               </div>
               <input value={s.text} onChange={e => editSub(s.id, e.target.value)}
-                style={{ flex:1, fontSize:13, padding:'6px 10px', borderRadius:8, border:'1px solid var(--border)', fontFamily:'DM Sans,sans-serif', outline:'none', textDecoration: s.done ? 'line-through' : 'none', color: s.done ? 'var(--muted)' : 'var(--text)' }} />
+                style={{ flex:1, minWidth:0, fontSize:13, padding:'6px 10px', borderRadius:8, border:'1px solid var(--border)', fontFamily:'DM Sans,sans-serif', outline:'none', textDecoration: s.done ? 'line-through' : 'none', color: s.done ? 'var(--muted)' : 'var(--text)' }} />
               <button onClick={() => removeSub(s.id)} style={{ background:'none', border:'none', cursor:'pointer', color:'#D1D5DB', fontSize:15, padding:'0 2px', flexShrink:0 }}>✕</button>
             </div>
           ))}
           <div style={{ display:'flex', gap:6, marginTop:2 }}>
             <input value={newSub} onChange={e => setNewSub(e.target.value)} placeholder="Add a sub-item…"
               onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addSub() } }}
-              style={{ flex:1, fontSize:13, padding:'7px 10px', borderRadius:8, border:'1px dashed var(--border)', fontFamily:'DM Sans,sans-serif', outline:'none' }} />
+              style={{ flex:1, minWidth:0, fontSize:13, padding:'7px 10px', borderRadius:8, border:'1px dashed var(--border)', fontFamily:'DM Sans,sans-serif', outline:'none' }} />
             <button onClick={addSub} disabled={!newSub.trim()}
               style={{ fontSize:12, padding:'7px 12px', borderRadius:8, border:'none', background: newSub.trim() ? 'var(--teal)' : '#E5E7EB', color: newSub.trim() ? 'white' : '#9CA3AF', cursor: newSub.trim() ? 'pointer' : 'default', fontFamily:'DM Sans,sans-serif', fontWeight:600 }}>+ Add</button>
           </div>
