@@ -288,18 +288,28 @@ const PX_PER_MIN = 1.15
 
 // A "free time" gap between two timed tasks, with a quick Add Task. Its height
 // grows with the length of the gap, so the day reads at relative scale.
-function GapRow({ mins, onAdd }) {
-  const h = Math.min(150, Math.max(30, Math.round(mins * PX_PER_MIN)))
+function GapRow({ mins, prevColor, onAdd }) {
+  const h = Math.min(150, Math.max(34, Math.round(mins * PX_PER_MIN)))
+  const dur = <b style={{ color:'var(--teal)' }}>{fmtMins(mins).trim()}</b>
+  // Structured-style copy: a long empty stretch reads as opportunity, a
+  // shorter one as breathing room before the next thing.
+  const body = mins >= 120
+    ? <>Long stretch — {dur} of potential!</>
+    : <>Plan or chill for {dur} before action.</>
+  const dash = prevColor || '#C9C9D3'
   return (
     <div style={{ display:'flex', gap:0 }}>
       <div style={{ width:52, flexShrink:0 }} />
       <div style={{ width:44, flexShrink:0, display:'flex', justifyContent:'center' }}>
-        <div style={{ width:3, minHeight:h, borderRadius:3, background:'repeating-linear-gradient(#DAD5CE 0 4px, transparent 4px 9px)' }} />
+        <div style={{ width:3, minHeight:h, borderRadius:3, background:`repeating-linear-gradient(${dash} 0 5px, transparent 5px 11px)` }} />
       </div>
-      <div style={{ flex:1, minWidth:0, display:'flex', alignItems:'center', gap:10, paddingLeft:8 }}>
-        <span style={{ fontSize:12.5, color:'var(--muted)' }}>Free for <b style={{ color:'var(--teal)' }}>{fmtMins(mins)}</b></span>
+      <div style={{ flex:1, minWidth:0, paddingLeft:8, paddingTop:4 }}>
+        <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:9 }}>
+          <span style={{ display:'flex', flexShrink:0 }}><Icon value="glyph:clock" size={16} color="#9AA6B2" /></span>
+          <span style={{ fontSize:13, color:'var(--muted)' }}>{body}</span>
+        </div>
         <button onClick={onAdd}
-          style={{ display:'inline-flex', alignItems:'center', gap:5, fontSize:11.5, padding:'6px 13px', borderRadius:18, border:'none', background:'#E7F3F6', color:'var(--teal)', fontWeight:600, cursor:'pointer', fontFamily:'DM Sans,sans-serif' }}>
+          style={{ display:'inline-flex', alignItems:'center', gap:5, fontSize:12, padding:'6px 14px', borderRadius:18, border:'none', background:'#E7F3F6', color:'var(--teal)', fontWeight:600, cursor:'pointer', fontFamily:'DM Sans,sans-serif' }}>
           <span style={{ fontSize:14, lineHeight:1 }}>＋</span> Add Task
         </button>
       </div>
@@ -391,19 +401,21 @@ function TimelineBlock({ task, categories, status, now, isDone, elapsed, onToggl
 }
 
 // ── NOW marker ─────────────────────────────────────────────────
+// Structured-style: the current time sits in the left gutter (bold), with the
+// dot centered on the spine — using the SAME column widths as TimelineBlock and
+// GapRow (52 gutter + 44 spine) so it lines up exactly, never shifted to the
+// side. A faint hairline runs across so the moment reads at a glance.
 function NowMarker({ now }) {
   return (
-    <div style={{display:'flex',gap:0,alignItems:'center'}}>
-      <div style={{width:68,flexShrink:0,textAlign:'right',paddingRight:12}}>
-        <span style={{fontSize:10,color:'var(--teal)',fontWeight:700}}>{fmtTimeLabel(now)}</span>
+    <div style={{ display:'flex', gap:0, alignItems:'center', margin:'3px 0' }}>
+      <div style={{ width:52, flexShrink:0, textAlign:'right', paddingRight:10 }}>
+        <span style={{ fontSize:11, color:'var(--teal)', fontWeight:700, whiteSpace:'nowrap' }}>{fmtTimeLabel(now)}</span>
       </div>
-      <div style={{width:28,flexShrink:0,display:'flex',flexDirection:'column',alignItems:'center'}}>
-        <div style={{width:2,height:6,background:'var(--teal)'}}/>
-        <div style={{width:10,height:10,borderRadius:'50%',background:'var(--teal)',boxShadow:'0 0 0 4px rgba(14,158,142,.2)'}}/>
-        <div style={{width:2,height:6,background:'var(--teal)'}}/>
+      <div style={{ width:44, flexShrink:0, display:'flex', justifyContent:'center' }}>
+        <div style={{ width:11, height:11, borderRadius:'50%', background:'var(--teal)', boxShadow:'0 0 0 4px rgba(74,158,181,.18)' }} />
       </div>
-      <div style={{flex:1,paddingLeft:10}}>
-        <span style={{fontSize:10,color:'var(--teal)',fontWeight:700,letterSpacing:1,textTransform:'uppercase'}}>now</span>
+      <div style={{ flex:1, minWidth:0, display:'flex', alignItems:'center', paddingLeft:6 }}>
+        <div style={{ flex:1, height:2, borderRadius:2, background:'rgba(74,158,181,.28)' }} />
       </div>
     </div>
   )
@@ -835,16 +847,19 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
           {tasksWithStatus.map((task,i)=>{
             // Free-time gap between the previous task's end and this one's start.
             const prev = tasksWithStatus[i-1]
-            let gap = null
+            let gap = null, gapColor = null
             if (prev && prev._mins!==null && task._mins!==null && task._status!=='past') {
               const prevEnd = (prev._time && prev._dur) ? (hhmmToMins(prev._time)+prev._dur) : prev._mins
               const g = task._mins - prevEnd
-              if (g >= 20) gap = g
+              if (g >= 20) {
+                gap = g
+                gapColor = prev.color || (categories||[]).find(x=>x.id===prev.tag)?.color || TAG_COLORS[prev.tag] || '#C9C9D3'
+              }
             }
             return (
               <div key={task.id}>
                 {i===nowInsertIdx&&<NowMarker now={now}/>}
-                {gap&&<GapRow mins={gap} onAdd={()=>setAddingTask(true)}/>}
+                {gap&&<GapRow mins={gap} prevColor={gapColor} onAdd={()=>setAddingTask(true)}/>}
                 <TimelineBlock
                   task={task} categories={categories} status={task._status} now={now}
                   isDone={task._status==='past'}
