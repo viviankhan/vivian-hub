@@ -8,6 +8,7 @@
 import { useState } from 'react'
 import DateField from './DateField.jsx'
 import TimeField from './TimeField.jsx'
+import { Icon } from './IconPicker.jsx'
 import { LEAD_OPTIONS, getItemReminders } from '../lib/notifications.js'
 
 const DEFAULT_CATEGORIES = [{ id:'other', label:'Other', color:'#8899AA' }]
@@ -56,6 +57,62 @@ function prettyDur(mins) {
   return mins % 60 === 0 ? `${mins/60} h` : `${(mins/60).toFixed(1)} h`
 }
 
+// ── Grouped detail-sheet building blocks (Structured-style) ────────
+const ROW_ACCENT = '#3E9C86'  // calm green for the row icons
+
+function IconCircle({ children, color = ROW_ACCENT }) {
+  return (
+    <span style={{ width:30, height:30, borderRadius:'50%', flexShrink:0, background:`${color}20`, color, display:'inline-flex', alignItems:'center', justifyContent:'center' }}>
+      {children}
+    </span>
+  )
+}
+function Chevron({ open }) {
+  return (
+    <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="#C2C7D0" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"
+      style={{ transform: open ? 'rotate(90deg)' : 'none', transition:'transform .2s' }} aria-hidden="true">
+      <polyline points="9 6 15 12 9 18" />
+    </svg>
+  )
+}
+const CalIcon   = () => (<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><rect x="3" y="4.5" width="18" height="16" rx="3"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="8" y1="2.5" x2="8" y2="6"/><line x1="16" y1="2.5" x2="16" y2="6"/></svg>)
+const ClockIcon = () => (<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9"/><polyline points="12 7.5 12 12 15.5 14"/></svg>)
+const TagIcon   = () => (<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20.5 13.3 12.7 21a2 2 0 0 1-2.8 0l-6.9-6.9a2 2 0 0 1-.6-1.4V4.5a2 2 0 0 1 2-2h7.2a2 2 0 0 1 1.4.6l7 7a2 2 0 0 1 0 2.6Z"/><circle cx="7.6" cy="7.6" r="1.3"/></svg>)
+const BellIcon  = () => (<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9a6 6 0 0 1 12 0c0 5.5 2.3 6.8 2.3 6.8H3.7S6 14.5 6 9Z"/><path d="M10 20a2 2 0 0 0 4 0"/></svg>)
+
+// A tappable grouped-list row: [icon] main text … [hint] [chevron], with an
+// optional expanded body underneath.
+function DetailRow({ icon, iconColor, text, textMuted, hint, open, onClick, children }) {
+  return (
+    <div>
+      <div onClick={onClick}
+        style={{ display:'flex', alignItems:'center', gap:12, padding:'13px 15px', cursor: onClick ? 'pointer' : 'default', userSelect:'none' }}>
+        <IconCircle color={iconColor}>{icon}</IconCircle>
+        <span style={{ fontSize:15, fontWeight:500, color: textMuted ? 'var(--muted)' : 'var(--text)', minWidth:0, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{text}</span>
+        <span style={{ marginLeft:'auto', display:'inline-flex', alignItems:'center', gap:7, flexShrink:0 }}>
+          {hint && <span style={{ fontSize:13, color:'var(--muted)' }}>{hint}</span>}
+          {onClick && <Chevron open={open} />}
+        </span>
+      </div>
+      {open && <div style={{ padding:'2px 15px 15px 15px' }}>{children}</div>}
+    </div>
+  )
+}
+const RowDivider = () => <div style={{ height:1, background:'#EEEAF1', marginLeft:57 }} />
+
+// Short relative label for the date row ("Today", "Tomorrow", weekday).
+function relativeDay(dateStr) {
+  if (!dateStr) return null
+  const d = new Date(dateStr + 'T12:00:00')
+  const t = new Date(); t.setHours(12,0,0,0)
+  const diff = Math.round((d - t) / 86400000)
+  if (diff === 0) return 'Today'
+  if (diff === 1) return 'Tomorrow'
+  if (diff === -1) return 'Yesterday'
+  if (diff > 1 && diff < 7) return d.toLocaleDateString('en-US', { weekday:'long' })
+  return null
+}
+
 export default function AddItemModal({ existing = null, presetDate = null, presetText = '', lockDate = false, categories = [], onSave, onClose, title = 'Add to calendar' }) {
   const cats = (categories && categories.length) ? categories : DEFAULT_CATEGORIES
   const isEdit = !!existing
@@ -93,6 +150,10 @@ export default function AddItemModal({ existing = null, presetDate = null, prese
   const toggleSub = (id) => setSubtasks(prev => prev.map(s => s.id === id ? { ...s, done: !s.done } : s))
   const editSub   = (id, text) => setSubtasks(prev => prev.map(s => s.id === id ? { ...s, text } : s))
   const removeSub = (id) => setSubtasks(prev => prev.filter(s => s.id !== id))
+
+  // Which grouped row is expanded for editing (only one open at a time).
+  const [expanded, setExpanded] = useState(null)
+  const toggleRow = (k) => setExpanded(e => (e === k ? null : k))
 
   const durationMins = diffMinutes(time, endTime)          // null unless a valid span
   const endInvalid = !!(time && endTime && !durationMins)  // end set but ≤ start
@@ -139,151 +200,162 @@ export default function AddItemModal({ existing = null, presetDate = null, prese
     onClose()
   }
 
+  // Primary label drives the header color + icon.
+  const primaryCat = cats.find(c => c.id === selectedCats[0]) || cats[0] || { color:'#4A9EB5', label:'', icon:'' }
+  const headerColor = primaryCat.color || '#4A9EB5'
+  const labelNames = selectedCats.map(id => (cats.find(c => c.id === id)?.label) || id)
+  const card = { background:'white', borderRadius:16, boxShadow:'0 1px 4px rgba(60,72,88,.06)', marginBottom:16, overflow:'hidden' }
+  const remindText = useDefault ? 'Default alerts' : (reminders.length ? `${reminders.length} alert${reminders.length>1?'s':''}` : 'No alerts')
+
   return (
     <div onClick={onClose}
-      style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.4)', zIndex:600, display:'flex', alignItems:'flex-end', justifyContent:'center', padding:16 }}>
+      style={{ position:'fixed', inset:0, background:'rgba(20,28,38,.5)', zIndex:600, display:'flex', alignItems:'flex-end', justifyContent:'center' }}>
       <div onClick={e => e.stopPropagation()}
-        style={{ background:'white', borderRadius:16, padding:20, maxWidth:440, width:'100%', minWidth:0, maxHeight:'86vh', overflowY:'auto', overflowX:'hidden', boxShadow:'0 -8px 40px rgba(0,0,0,.15)' }}>
-        <div className="serif" style={{ fontSize:18, fontWeight:600, marginBottom:14, color:'var(--text)' }}>{title}</div>
+        style={{ background:'#F3F2F6', borderRadius:'22px 22px 0 0', width:'100%', maxWidth:480, minWidth:0, maxHeight:'94vh', overflowY:'auto', overflowX:'hidden', boxShadow:'0 -10px 44px rgba(20,40,60,.28)' }}>
 
-        <input value={label} onChange={e => setLabel(e.target.value)} placeholder="What's happening?" autoFocus
-          onKeyDown={e => e.key === 'Enter' && submit()} style={{ ...inp, marginBottom:12 }} />
-
-        {/* Date — editable unless the caller locked it (Today) */}
-        {lockDate ? (
-          <div style={{ fontSize:13, color:'var(--muted)', marginBottom:12 }}>📅 {prettyDate(date)}</div>
-        ) : (
-          <div style={{ marginBottom:12 }}>
-            <div style={fieldLabel}>Date</div>
-            <DateField value={date} onChange={setDate} style={inp} />
+        {/* ── Colored header band ─────────────────────────────── */}
+        <div style={{ background:headerColor, backgroundImage:'linear-gradient(158deg, rgba(255,255,255,.14), rgba(0,0,0,.20))', padding:'14px 16px 20px' }}>
+          <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:14 }}>
+            <button onClick={onClose} aria-label="Close"
+              style={{ width:34, height:34, borderRadius:'50%', border:'none', background:'rgba(255,255,255,.28)', color:'white', fontSize:16, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>✕</button>
+            <span style={{ fontSize:11, letterSpacing:1.5, textTransform:'uppercase', color:'rgba(255,255,255,.85)', fontWeight:600 }}>{isEdit ? 'Edit' : title}</span>
           </div>
-        )}
-
-        <div style={{ display:'flex', gap:8, marginBottom:8 }}>
-          <div style={{ flex:1, minWidth:0 }}>
-            <div style={fieldLabel}>Start time</div>
-            <TimeField value={time} onChange={onStartChange} style={inp} />
-          </div>
-          <div style={{ flex:1, minWidth:0 }}>
-            <div style={fieldLabel}>End time</div>
-            <TimeField value={endTime} onChange={setEndTime} style={{ ...inp, borderColor: endInvalid ? '#DC2626' : 'var(--border)' }} />
-          </div>
-        </div>
-
-        {/* Quick-set the end time as a duration after the start */}
-        <div style={{ display:'flex', gap:6, flexWrap:'wrap', marginBottom:4 }}>
-          {QUICK_DURATIONS.map(q => {
-            const on = durationMins === q.mins
-            return (
-              <button key={q.mins} onClick={() => setQuickDuration(q.mins)} disabled={!time}
-                title={time ? `End at ${fmt12(addMinutes(time, q.mins))}` : 'Set a start time first'}
-                style={{ fontSize:11, padding:'4px 11px', borderRadius:16, cursor: time ? 'pointer' : 'not-allowed', fontFamily:'DM Sans,sans-serif', fontWeight:600,
-                  border: on ? 'none' : '1px solid var(--border)',
-                  background: on ? 'var(--teal)' : 'white',
-                  color: on ? 'white' : (time ? 'var(--muted)' : '#C7CDD4') }}>
-                {q.label}
-              </button>
-            )
-          })}
-        </div>
-        <div style={{ fontSize:11, color: endInvalid ? '#DC2626' : 'var(--muted)', marginBottom:12, minHeight:15 }}>
-          {endInvalid
-            ? 'End time must be after the start time.'
-            : (time && durationMins)
-              ? `${fmt12(time)} – ${fmt12(endTime)} · ${prettyDur(durationMins)}`
-              : (!time ? 'Pick a start time, then tap a duration to set the end.' : '')}
-        </div>
-
-        {/* Category — tap to add more than one; the first is the primary */}
-        <div style={{ marginBottom:14 }}>
-          <div style={fieldLabel}>Labels{selectedCats.length > 1 ? ` · ${selectedCats.length} selected` : ''}</div>
-          <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
-            {cats.map(c => {
-              const on = selectedCats.includes(c.id)
-              const primary = selectedCats[0] === c.id
-              return (
-                <button key={c.id} onClick={() => toggleCat(c.id)}
-                  style={{ fontSize:11, padding:'4px 12px', borderRadius:20, border: on ? 'none' : '1px solid var(--border)', background: on ? c.color : 'white', color: on ? 'white' : 'var(--muted)', cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight: on ? 600 : 400, boxShadow: primary ? '0 0 0 2px rgba(0,0,0,.18)' : 'none' }}>
-                  {on ? '✓ ' : ''}{c.label}
-                </button>
-              )
-            })}
-          </div>
-          {selectedCats.length > 1 && (
-            <div style={{ fontSize:10.5, color:'var(--muted)', marginTop:6 }}>The outlined label is the primary — it sets the color and scheduling.</div>
-          )}
-        </div>
-
-        {/* Description */}
-        <div style={{ marginBottom:14 }}>
-          <div style={fieldLabel}>Description</div>
-          <textarea value={description} onChange={e => setDescription(e.target.value)}
-            placeholder="Notes, details, anything to remember…" rows={2}
-            style={{ ...inp, minHeight:0, resize:'vertical', lineHeight:1.5 }} />
-        </div>
-
-        {/* Sub-checkboxes */}
-        <div style={{ marginBottom:14 }}>
-          <div style={fieldLabel}>Checklist</div>
-          {subtasks.map(s => (
-            <div key={s.id} style={{ display:'flex', alignItems:'center', gap:8, marginBottom:6 }}>
-              <div onClick={() => toggleSub(s.id)}
-                style={{ width:18, height:18, borderRadius:5, flexShrink:0, cursor:'pointer', border: s.done ? 'none' : '2px solid var(--teal)', background: s.done ? 'var(--teal)' : 'transparent', display:'flex', alignItems:'center', justifyContent:'center' }}>
-                {s.done && <span style={{ color:'white', fontSize:11, fontWeight:700 }}>✓</span>}
+          <div style={{ display:'flex', alignItems:'center', gap:13 }}>
+            {primaryCat.icon && (
+              <div style={{ width:52, height:52, borderRadius:16, flexShrink:0, background:'rgba(255,255,255,.22)', border:'2px solid rgba(255,255,255,.7)', display:'flex', alignItems:'center', justifyContent:'center' }}>
+                <Icon value={primaryCat.icon} size={26} />
               </div>
-              <input value={s.text} onChange={e => editSub(s.id, e.target.value)}
-                style={{ flex:1, minWidth:0, fontSize:13, padding:'6px 10px', borderRadius:8, border:'1px solid var(--border)', fontFamily:'DM Sans,sans-serif', outline:'none', textDecoration: s.done ? 'line-through' : 'none', color: s.done ? 'var(--muted)' : 'var(--text)' }} />
-              <button onClick={() => removeSub(s.id)} style={{ background:'none', border:'none', cursor:'pointer', color:'#D1D5DB', fontSize:15, padding:'0 2px', flexShrink:0 }}>✕</button>
+            )}
+            <div style={{ flex:1, minWidth:0 }}>
+              {time && <div style={{ fontSize:12.5, color:'rgba(255,255,255,.9)', fontWeight:600, marginBottom:1 }}>{fmt12(time)}{endTime && durationMins ? ` – ${fmt12(endTime)}` : ''}</div>}
+              <input value={label} onChange={e => setLabel(e.target.value)} placeholder="What's happening?" autoFocus={!isEdit}
+                onKeyDown={e => e.key === 'Enter' && canSave && submit()}
+                style={{ width:'100%', background:'transparent', border:'none', borderBottom:'1px solid rgba(255,255,255,.45)', color:'white', fontSize:21, fontWeight:700, fontFamily:'DM Sans,sans-serif', outline:'none', padding:'3px 0' }} />
             </div>
-          ))}
-          <div style={{ display:'flex', gap:6, marginTop:2 }}>
-            <input value={newSub} onChange={e => setNewSub(e.target.value)} placeholder="Add a sub-item…"
-              onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addSub() } }}
-              style={{ flex:1, minWidth:0, fontSize:13, padding:'7px 10px', borderRadius:8, border:'1px dashed var(--border)', fontFamily:'DM Sans,sans-serif', outline:'none' }} />
-            <button onClick={addSub} disabled={!newSub.trim()}
-              style={{ fontSize:12, padding:'7px 12px', borderRadius:8, border:'none', background: newSub.trim() ? 'var(--teal)' : '#E5E7EB', color: newSub.trim() ? 'white' : '#9CA3AF', cursor: newSub.trim() ? 'pointer' : 'default', fontFamily:'DM Sans,sans-serif', fontWeight:600 }}>+ Add</button>
           </div>
         </div>
 
-        {/* Reminders */}
-        <div style={{ marginBottom:16 }}>
-          <div style={fieldLabel}>Remind me</div>
-          <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
-            <button onClick={chooseDefault}
-              style={{ fontSize:11, padding:'5px 12px', borderRadius:20, cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:600,
-                border: useDefault ? 'none' : '1px solid var(--border)',
-                background: useDefault ? 'var(--forest)' : 'white', color: useDefault ? 'var(--green-light)' : 'var(--muted)' }}>
-              {useDefault ? '✓ ' : ''}Default
-            </button>
-            {LEAD_OPTIONS.map(opt => {
-              const on = !useDefault && reminders.includes(opt.mins)
-              return (
-                <button key={opt.mins} onClick={() => toggleLead(opt.mins)}
-                  style={{ fontSize:11, padding:'5px 12px', borderRadius:20, cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:600,
-                    border: on ? 'none' : '1px solid var(--border)',
-                    background: on ? 'var(--forest)' : 'white', color: on ? 'var(--green-light)' : 'var(--muted)' }}>
-                  {on ? '✓ ' : ''}{opt.label}
+        <div style={{ padding:'16px 14px calc(20px + env(safe-area-inset-bottom))' }}>
+          {/* ── Scheduling rows ───────────────────────────────── */}
+          <div style={card}>
+            {/* Date */}
+            <DetailRow icon={<CalIcon />} text={date ? prettyDate(date) : 'Add a date'} textMuted={!date}
+              hint={relativeDay(date)} open={expanded==='date'}
+              onClick={lockDate ? undefined : () => toggleRow('date')}>
+              <DateField value={date} onChange={setDate} style={inp} />
+            </DetailRow>
+            <RowDivider />
+            {/* Time */}
+            <DetailRow icon={<ClockIcon />} text={time ? `${fmt12(time)}${endTime && durationMins ? ' – '+fmt12(endTime) : ''}` : 'Add a time'} textMuted={!time}
+              open={expanded==='time'} onClick={() => toggleRow('time')}>
+              <div style={{ display:'flex', gap:8, marginBottom:8 }}>
+                <div style={{ flex:1, minWidth:0 }}>
+                  <div style={fieldLabel}>Start</div>
+                  <TimeField value={time} onChange={onStartChange} style={inp} />
+                </div>
+                <div style={{ flex:1, minWidth:0 }}>
+                  <div style={fieldLabel}>End</div>
+                  <TimeField value={endTime} onChange={setEndTime} style={{ ...inp, borderColor: endInvalid ? '#DC2626' : 'var(--border)' }} />
+                </div>
+              </div>
+              <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
+                {QUICK_DURATIONS.map(q => {
+                  const on = durationMins === q.mins
+                  return (
+                    <button key={q.mins} onClick={() => setQuickDuration(q.mins)} disabled={!time}
+                      style={{ fontSize:11, padding:'4px 11px', borderRadius:16, cursor: time ? 'pointer' : 'not-allowed', fontFamily:'DM Sans,sans-serif', fontWeight:600,
+                        border: on ? 'none' : '1px solid var(--border)', background: on ? 'var(--teal)' : 'white', color: on ? 'white' : (time ? 'var(--muted)' : '#C7CDD4') }}>
+                      {q.label}
+                    </button>
+                  )
+                })}
+              </div>
+              <div style={{ fontSize:11, color: endInvalid ? '#DC2626' : 'var(--muted)', marginTop:8 }}>
+                {endInvalid ? 'End time must be after the start time.'
+                  : (time && durationMins) ? `${prettyDur(durationMins)} long`
+                  : (!time ? 'Type a start time, then tap a duration.' : '')}
+              </div>
+            </DetailRow>
+            <RowDivider />
+            {/* Labels */}
+            <DetailRow icon={<TagIcon />} iconColor={headerColor} text={labelNames.join(', ')}
+              hint={selectedCats.length > 1 ? `${selectedCats.length}` : null}
+              open={expanded==='labels'} onClick={() => toggleRow('labels')}>
+              <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
+                {cats.map(c => {
+                  const on = selectedCats.includes(c.id)
+                  const primary = selectedCats[0] === c.id
+                  return (
+                    <button key={c.id} onClick={() => toggleCat(c.id)}
+                      style={{ fontSize:11, padding:'5px 12px', borderRadius:20, border: on ? 'none' : '1px solid var(--border)', background: on ? c.color : 'white', color: on ? 'white' : 'var(--muted)', cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight: on ? 600 : 400, boxShadow: primary ? '0 0 0 2px rgba(0,0,0,.16)' : 'none' }}>
+                      {on ? '✓ ' : ''}{c.label}
+                    </button>
+                  )
+                })}
+              </div>
+              {selectedCats.length > 1 && (
+                <div style={{ fontSize:10.5, color:'var(--muted)', marginTop:7 }}>The outlined label is the primary — it sets the color and scheduling.</div>
+              )}
+            </DetailRow>
+            <RowDivider />
+            {/* Reminders */}
+            <DetailRow icon={<BellIcon />} text="Remind me" hint={remindText}
+              open={expanded==='remind'} onClick={() => toggleRow('remind')}>
+              <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
+                <button onClick={chooseDefault}
+                  style={{ fontSize:11, padding:'5px 12px', borderRadius:20, cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:600, border: useDefault ? 'none' : '1px solid var(--border)', background: useDefault ? 'var(--forest)' : 'white', color: useDefault ? 'var(--green-light)' : 'var(--muted)' }}>
+                  {useDefault ? '✓ ' : ''}Default
                 </button>
-              )
-            })}
+                {LEAD_OPTIONS.map(opt => {
+                  const on = !useDefault && reminders.includes(opt.mins)
+                  return (
+                    <button key={opt.mins} onClick={() => toggleLead(opt.mins)}
+                      style={{ fontSize:11, padding:'5px 12px', borderRadius:20, cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:600, border: on ? 'none' : '1px solid var(--border)', background: on ? 'var(--forest)' : 'white', color: on ? 'var(--green-light)' : 'var(--muted)' }}>
+                      {on ? '✓ ' : ''}{opt.label}
+                    </button>
+                  )
+                })}
+              </div>
+              <div style={{ fontSize:10.5, color:'var(--muted)', marginTop:7 }}>
+                {useDefault ? 'Uses your default reminder times (Settings → Reminders).'
+                  : reminders.length ? `This item only: ${reminders.map(m => LEAD_OPTIONS.find(o => o.mins===m)?.label || m+'m').join(', ')} before.`
+                  : 'No reminders for this item.'}
+              </div>
+            </DetailRow>
           </div>
-          <div style={{ fontSize:10.5, color:'var(--muted)', marginTop:6 }}>
-            {useDefault
-              ? 'Uses your default reminder times (Settings → Reminders).'
-              : reminders.length
-                ? `This item only: ${reminders.map(m => LEAD_OPTIONS.find(o => o.mins===m)?.label || m+'m').join(', ')} before.`
-                : 'No reminders for this item.'}
-          </div>
-        </div>
 
-        <div style={{ display:'flex', gap:8 }}>
+          {/* ── Subtasks + notes ──────────────────────────────── */}
+          <div style={{ ...card, padding:'6px 15px 14px' }}>
+            {subtasks.map(s => (
+              <div key={s.id} style={{ display:'flex', alignItems:'center', gap:10, padding:'8px 0', borderBottom:'1px solid #F1EDF2' }}>
+                <div onClick={() => toggleSub(s.id)}
+                  style={{ width:20, height:20, borderRadius:6, flexShrink:0, cursor:'pointer', border: s.done ? 'none' : '2px solid #CDD3DA', background: s.done ? ROW_ACCENT : 'transparent', display:'flex', alignItems:'center', justifyContent:'center' }}>
+                  {s.done && <span style={{ color:'white', fontSize:12, fontWeight:700 }}>✓</span>}
+                </div>
+                <input value={s.text} onChange={e => editSub(s.id, e.target.value)}
+                  style={{ flex:1, minWidth:0, fontSize:14, padding:'2px 0', border:'none', background:'transparent', fontFamily:'DM Sans,sans-serif', outline:'none', textDecoration: s.done ? 'line-through' : 'none', color: s.done ? 'var(--muted)' : 'var(--text)' }} />
+                <button onClick={() => removeSub(s.id)} style={{ background:'none', border:'none', cursor:'pointer', color:'#CBD0D8', fontSize:16, padding:'0 2px', flexShrink:0 }}>✕</button>
+              </div>
+            ))}
+            <div style={{ display:'flex', alignItems:'center', gap:10, padding:'9px 0 6px' }}>
+              <div style={{ width:20, height:20, borderRadius:6, flexShrink:0, border:'2px solid #DBDFE5' }} />
+              <input value={newSub} onChange={e => setNewSub(e.target.value)} placeholder="Add subtask"
+                onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addSub() } }}
+                style={{ flex:1, minWidth:0, fontSize:14, padding:'2px 0', border:'none', background:'transparent', fontFamily:'DM Sans,sans-serif', outline:'none', color:'var(--text)' }} />
+              {newSub.trim() && (
+                <button onClick={addSub} style={{ fontSize:12, padding:'5px 11px', borderRadius:14, border:'none', background:ROW_ACCENT, color:'white', cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:600, flexShrink:0 }}>Add</button>
+              )}
+            </div>
+            <div style={{ height:1, background:'#F1EDF2', margin:'6px 0 4px' }} />
+            <textarea value={description} onChange={e => setDescription(e.target.value)}
+              placeholder="Add notes, details, anything to remember…" rows={3}
+              style={{ width:'100%', minHeight:0, fontSize:14, padding:'8px 0 2px', border:'none', background:'transparent', resize:'vertical', lineHeight:1.5, fontFamily:'DM Sans,sans-serif', outline:'none', color:'var(--text)' }} />
+          </div>
+
+          {/* ── Save ──────────────────────────────────────────── */}
           <button onClick={submit} disabled={!canSave}
-            style={{ flex:1, padding:'11px', borderRadius:10, border:'none', background: canSave ? 'var(--forest)' : '#E5E7EB', color: canSave ? 'var(--green-light)' : '#9CA3AF', cursor: canSave ? 'pointer' : 'default', fontFamily:'DM Sans,sans-serif', fontWeight:600, fontSize:14 }}>
-            {isEdit ? 'Save changes' : 'Add'}
-          </button>
-          <button onClick={onClose}
-            style={{ padding:'11px 16px', borderRadius:10, border:'1px solid var(--border)', background:'white', color:'var(--muted)', cursor:'pointer', fontSize:13, fontFamily:'DM Sans,sans-serif' }}>
-            Cancel
+            style={{ width:'100%', padding:'14px', borderRadius:14, border:'none', background: canSave ? headerColor : '#E1E1E6', color: canSave ? 'white' : '#9CA3AF', cursor: canSave ? 'pointer' : 'default', fontFamily:'DM Sans,sans-serif', fontWeight:700, fontSize:15, letterSpacing:.3 }}>
+            {isEdit ? 'Save changes' : title}
           </button>
         </div>
       </div>
