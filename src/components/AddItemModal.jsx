@@ -250,7 +250,7 @@ export default function AddItemModal({ existing = null, presetDate = null, prese
               <button type="button" onClick={() => setShowColorIcon(true)} aria-label="Choose color and icon"
                 style={{ width:52, height:52, borderRadius:16, background:'rgba(255,255,255,.22)', border:'2px solid rgba(255,255,255,.7)', display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', padding:0 }}>
                 {shownIcon
-                  ? <Icon value={shownIcon} size={26} />
+                  ? <Icon value={shownIcon} size={26} color="#fff" />
                   : <span style={{ color:'white', fontSize:24, fontWeight:700 }}>{(label.trim()[0] || '?').toUpperCase()}</span>}
               </button>
               <span onClick={() => setShowColorIcon(true)}
