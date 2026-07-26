@@ -377,6 +377,9 @@ function CommitCard({ c, todos, weekState, syncToggle, onDelete, onSchedule, onE
   const subsDone = subs.filter(s => s.done).length
   const toggleSub = (sid) => onSchedule(c.id, { subtasks: subs.map(s => s.id === sid ? { ...s, done: !s.done } : s) })
   const cat = getCat(c.cat, categories)
+  // All labels on this commitment (primary first). Falls back to the single
+  // `cat` for items saved before multi-label existed.
+  const catList = ((c.cats && c.cats.length) ? c.cats : [c.cat]).map(id => getCat(id, categories))
   const done = !!(todos[c.id] || weekState[c.id] || c.done)
   const past = isPast(c.date) && !done
   const today = c.date === todayStr()
@@ -423,7 +426,9 @@ function CommitCard({ c, todos, weekState, syncToggle, onDelete, onSchedule, onE
             )}
             {c.durationMins && !end && <span style={{ fontSize:11, color:'var(--muted)' }}>~{c.durationMins < 60 ? c.durationMins+'min' : (c.durationMins/60 % 1 === 0 ? c.durationMins/60+'h' : (c.durationMins/60).toFixed(1)+'h')}</span>}
             {c.prepMin && <span style={{ fontSize:11, color:'var(--muted)' }}>Leave {c.prepMin} min early</span>}
-            <span style={{ display:'inline-flex', alignItems:'center', gap:3, fontSize:10, padding:'2px 8px', borderRadius:10, background:cat.bg, color:cat.color, fontWeight:500 }}>{cat.icon && <Icon value={cat.icon} size={11} />}{cat.label}</span>
+            {catList.map((ct, i) => (
+              <span key={i} style={{ display:'inline-flex', alignItems:'center', gap:3, fontSize:10, padding:'2px 8px', borderRadius:10, background:ct.bg, color:ct.color, fontWeight:500 }}>{ct.icon && <Icon value={ct.icon} size={11} />}{ct.label}</span>
+            ))}
             {past  && !done && <span style={{ fontSize:10, padding:'2px 8px', borderRadius:10, background:'#FBF0F4', color:'#B44A6A', fontWeight:600 }}>PAST DUE</span>}
             {today && !done && <span style={{ fontSize:10, padding:'2px 8px', borderRadius:10, background:'#D4EEF4', color:'#2A7A90', fontWeight:600 }}>TODAY</span>}
             {unscheduled && !done && <span style={{ fontSize:10, padding:'2px 8px', borderRadius:10, background:'#F3F4F6', color:'#6B7280' }}>Unscheduled</span>}
