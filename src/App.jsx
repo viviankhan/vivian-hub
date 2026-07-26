@@ -30,6 +30,10 @@ import NotificationsSettings from './components/NotificationsSettings.jsx'
 import SearchOverlay, { SearchIcon } from './components/SearchOverlay.jsx'
 import { registerServiceWorker, syncReminders } from './lib/notifications.js'
 
+// Build id baked in at build time (see vite.config.js). Shown in Settings so
+// it's obvious on-device which version is actually running after a deploy.
+const BUILD_ID = typeof __BUILD_ID__ !== 'undefined' ? __BUILD_ID__ : 'dev'
+
 const TABS = [
   { id:'today',       label:'Today',       icon:'☀️' },
   { id:'week',        label:'Week',        icon:'🗓️' },
@@ -74,6 +78,9 @@ function SettingsDrawer({ open, onClose, settingsTab, setSettingsTab, notes, upd
           {settingsTab==='categories' && <CategoriesManager categories={categories} addCategory={addCategory} updateCategory={updateCategory} deleteCategory={deleteCategory} />}
           {settingsTab==='notes'      && <Notes notes={notes} updateNotes={updateNotes} />}
           {settingsTab==='edits'      && <Edits />}
+        </div>
+        <div style={{ padding:'8px 24px calc(24px + env(safe-area-inset-bottom))', textAlign:'center', fontSize:11, color:'var(--muted)' }}>
+          Bloom · build {BUILD_ID}
         </div>
       </div>
     </>
@@ -184,7 +191,7 @@ export default function App() {
   // ── Reminders / PWA ──────────────────────────────────────────
   // Register the service worker once (enables installability + lets reminders
   // show even when the tab is backgrounded).
-  useEffect(() => { registerServiceWorker() }, [])
+  useEffect(() => { console.log('[Bloom] build', BUILD_ID); registerServiceWorker() }, [])
 
   // Recompute reminders whenever the data that drives them changes, and again
   // each time the app is brought back to the foreground (so it "catches up" on
