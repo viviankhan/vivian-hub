@@ -10,10 +10,12 @@ import {
   getVacations, addVacation as dbAddVacation, deleteVacation as dbDeleteVacation,
   getEvents, addEvent as dbAddEvent, deleteEvent as dbDeleteEvent,
   getRecurringTasks, addRecurringTask, updateRecurringTask, deleteRecurringTask, clearRecurringTasks,
+  getRecurringExceptions, setRecurringExceptions,
   addCategory as dbAddCategory, updateCategory as dbUpdateCategory, deleteCategory as dbDeleteCategory,
 } from './lib/storage.js'
+import { occKey } from './lib/occurrences.js'
 import { runMigrationIfNeeded, seedCategoriesIfNeeded } from './lib/migrate.js'
-import { DEFAULT_RECURRING_TASKS, DEFAULT_DAILY_TODOS, buildWeekPlanFromTasks } from './data/schedule.js'
+import { DEFAULT_RECURRING_TASKS, DEFAULT_DAILY_TODOS } from './data/schedule.js'
 
 import Today       from './components/Today.jsx'
 import ThisWeek    from './components/ThisWeek.jsx'
@@ -21,7 +23,7 @@ import Commitments from './components/Commitments.jsx'
 import Calendar    from './components/Calendar.jsx'
 import Notes       from './components/Notes.jsx'
 import Edits       from './components/Edits.jsx'
-import RecurringTasksManager, { flatToPerDay } from './components/RecurringTasksManager.jsx'
+import RecurringTasksManager from './components/RecurringTasksManager.jsx'
 import Routines from './components/Routines.jsx'
 import CategoriesManager from './components/CategoriesManager.jsx'
 import EventsManager from './components/EventsManager.jsx'
@@ -45,10 +47,6 @@ const TABS = [
   { id:'recurring',   label:'Recurring',   glyph:'repeat' },
 ]
 
-function todayStr() {
-  const d = new Date()
-  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
-}
 // ── Settings Drawer ────────────────────────────────────────────
 function SettingsDrawer({ open, onClose, settingsTab, setSettingsTab, notes, updateNotes, categories, addCategory, updateCategory, deleteCategory, events, commitments }) {
   if (!open) return null
@@ -178,6 +176,7 @@ export default function App() {
   const [commitments,      setCommitments_]     = useState([])
   const [commitmentMeta,   setCommitmentMeta_]  = useState({})
   const [recurringTaskRows,setRecurringTaskRows]= useState([])
+  const [recurringExceptions,setRecurringExceptions_] = useState({})
   const [vacations,        setVacations_]       = useState([])
   const [events,           setEvents_]          = useState([])
   const [categories,       setCategories_]      = useState([])
@@ -186,16 +185,16 @@ export default function App() {
   useEffect(() => {
     async function load() {
       await runMigrationIfNeeded()
-      const [comp, l, n, fcp, fcs, sch, com, rt, vac, evs, cats, cmeta] = await Promise.all([
+      const [comp, l, n, fcp, fcs, sch, com, rt, vac, evs, cats, cmeta, rexc] = await Promise.all([
         getCompletions(), getLogEntries(), getNotes(),
         getFcProgress(), getFcStudied(), getScheduledTasks(),
         getCommitments(), getRecurringTasks(), getVacations(), getEvents(),
-        seedCategoriesIfNeeded(), getCommitmentMeta(),
+        seedCategoriesIfNeeded(), getCommitmentMeta(), getRecurringExceptions(),
       ])
       setCompletions_(comp); setLog_(l); setNotes_(n)
       setFcProgress_(fcp); setFcStudied_(fcs); setScheduled_(sch)
       setCommitments_(com); setRecurringTaskRows(rt); setVacations_(vac); setEvents_(evs)
-      setCategories_(cats); setCommitmentMeta_(cmeta)
+      setCategories_(cats); setCommitmentMeta_(cmeta); setRecurringExceptions_(rexc)
       setLoading(false)
     }
     load()
@@ -219,16 +218,12 @@ export default function App() {
   }, [loading, events, commitments])
 
   // ── Derived schedule ─────────────────────────────────────────
-  // recurring_tasks is now a real table (one row per task) — always the flat
-  // format, so this just wraps the rows the way flatToPerDay expects. An
-  // empty table (nothing ever added, or everything cleared) means an empty
-  // schedule either way, consistent with how "Clear all recurring events"
-  // already worked — no defaults resurrecting themselves.
+  // recurring_tasks is a real table (one row per task). Today, Week and
+  // Calendar now compute their own per-day recurring instances from these raw
+  // rows via lib/occurrences.js (one shared computation), so the app no longer
+  // pre-splits them into week/day maps here. The Recurring tab still takes the
+  // wrapped form for its editor.
   const recurringTasksWrapped = { tasks: recurringTaskRows }
-  const perDay = flatToPerDay(recurringTasksWrapped, todayStr())
-  const activeWeekTasks  = perDay?.weekTasks  ?? DEFAULT_RECURRING_TASKS
-  const activeDailyTodos = perDay?.dailyTodos ?? DEFAULT_DAILY_TODOS
-  const weekPlan = buildWeekPlanFromTasks(activeWeekTasks)
 
   // ── Persist helpers ──────────────────────────────────────────
   // Cloud write failures are surfaced instead of swallowed — otherwise a delete
@@ -267,6 +262,38 @@ export default function App() {
   const clearRecurringTasksFn = useCallback(async () => {
     setRecurringTaskRows([])
     try { await clearRecurringTasks() } catch (e) { reportSaveError(e) }
+  }, [])
+
+  // ── Recurring occurrence skips (one shared, synced map) ──────
+  // Hide a single instance of a recurring task on one date. Because the map is
+  // cloud-synced and every view reads it, skipping on Today/Week/Calendar hides
+  // that occurrence everywhere. Unskip restores it. Also drops any completion
+  // that was recorded for the now-hidden instance so it can't linger.
+  const skipRecurringOccurrence = useCallback((recurringId, date) => {
+    const key = occKey(recurringId, date)
+    setRecurringExceptions_(prev => {
+      if (prev[key]) return prev
+      const next = { ...prev, [key]: true }
+      setRecurringExceptions(next).catch(reportSaveError)
+      return next
+    })
+    // Clear a stale completion for the hidden instance (storage key is date_id).
+    const compKey = `${date}_${recurringId}`
+    setCompletions_(prev => {
+      if (!prev[compKey]) return prev
+      const n = { ...prev }; delete n[compKey]
+      setCompletion(compKey, false).catch(reportSaveError)
+      return n
+    })
+  }, [])
+  const unskipRecurringOccurrence = useCallback((recurringId, date) => {
+    const key = occKey(recurringId, date)
+    setRecurringExceptions_(prev => {
+      if (!prev[key]) return prev
+      const n = { ...prev }; delete n[key]
+      setRecurringExceptions(n).catch(reportSaveError)
+      return n
+    })
   }, [])
 
   // ── Categories CRUD (shared, real per-row table) ─────────────
@@ -472,6 +499,14 @@ export default function App() {
     vacations, addVacation, deleteVacation,
     events, addEvent, deleteEvent,
     categories,
+    // Unified recurring schedule — the raw templates, the synced skip map, and
+    // the operations Today/Week/Calendar share so all three stay in sync.
+    recurringTasks: recurringTaskRows,
+    recurringExceptions,
+    addRecurringTask: addRecurringTaskFn,
+    deleteRecurringTask: deleteRecurringTaskFn,
+    skipRecurringOccurrence,
+    unskipRecurringOccurrence,
   }
 
   return (
@@ -510,8 +545,8 @@ export default function App() {
       </header>
 
       <main className="content">
-        {tab==='today'       && <Today       {...sharedProps} appendLog={appendLog} weekPlan={weekPlan} dailyTodos={activeDailyTodos} scheduled={scheduled} deleteCommitment={deleteCommitment} />}
-        {tab==='week'        && <ThisWeek    {...sharedProps} weekTasks={activeWeekTasks} deleteCommitment={deleteCommitment} />}
+        {tab==='today'       && <Today       {...sharedProps} appendLog={appendLog} scheduled={scheduled} deleteCommitment={deleteCommitment} />}
+        {tab==='week'        && <ThisWeek    {...sharedProps} deleteCommitment={deleteCommitment} />}
         {tab==='commitments' && <Commitments {...sharedProps} />}
         {tab==='calendar'    && <Calendar    {...sharedProps} jumpTo={jumpTo} />}
         {tab==='thoughts'    && <ThoughtsBoard addCommitment={addCommitment} categories={categories} />}

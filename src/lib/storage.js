@@ -180,6 +180,15 @@ export const setCommitmentMeta = v  => dbSet('commitment_meta', v)
 export const getThoughts = () => dbGet('thoughts').then(v => v ?? [])
 export const setThoughts = v  => dbSet('thoughts', v)
 
+// Recurring occurrence exceptions — one shared, cloud-synced map marking which
+// individual instances of a recurring task have been skipped/removed on a given
+// date. Key: "<recurringId>@<YYYY-MM-DD>" → true. Replaces the old per-device,
+// per-view localStorage deletion lists (vivian_deleted_*, vivian_week_deleted),
+// so hiding one occurrence on Today/Week/Calendar hides it on all three, on
+// every device. Kept in kv_store (a blob) so it needs no schema migration.
+export const getRecurringExceptions = () => dbGet('recurring_exceptions').then(v => v ?? {})
+export const setRecurringExceptions = v  => dbSet('recurring_exceptions', v)
+
 // ── Classes ────────────────────────────────────────────────────
 export async function getClasses() {
   if (USE_SUPABASE) {

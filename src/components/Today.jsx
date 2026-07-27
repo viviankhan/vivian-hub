@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { getDailyTodos } from '../data/schedule.js'
+import { recurringOccurrencesForDate } from '../lib/occurrences.js'
 import { findSlots } from '../lib/scheduler.js'
 import { getRoutines } from '../lib/storage.js'
 import { normalizeRoutineItems, sortByTime, to12 } from './Routines.jsx'
@@ -124,9 +124,10 @@ function RoutineCard({ title, icon, items, prefix, open, setOpen, routineDone, t
 }
 
 // ── Manage modal with smart scheduling ────────────────────────
-function ManageModal({ task, dateKey, onClose, onDelete, onReschedule, onUnschedule, scheduled }) {
+function ManageModal({ task, dateKey, onClose, onDelete, onReschedule, onUnschedule, onDeleteSeries, scheduled }) {
   const [view,setView]     = useState('main')
   const [reason,setReason] = useState('')
+  const isRec = !!task.isRecurring
   const [date,setDate]     = useState(dateKey)
   const [time,setTime]     = useState('')
   const [slots,setSlots]   = useState([])
@@ -161,15 +162,19 @@ function ManageModal({ task, dateKey, onClose, onDelete, onReschedule, onUnsched
             {task.isCommitment && onUnschedule && (
               <button onClick={()=>{onUnschedule(task);onClose()}} style={{padding:'10px',borderRadius:10,border:'1px solid var(--border)',background:'white',cursor:'pointer',textAlign:'left',fontSize:13,color:'var(--text)',fontFamily:'DM Sans,sans-serif'}}>🗓️ Unschedule · back to Commitments</button>
             )}
-            <button onClick={()=>setView('delete')} style={{padding:'10px',borderRadius:10,border:'1px solid #FECACA',background:'#FFF5F5',cursor:'pointer',textAlign:'left',fontSize:13,color:'#991B1B',fontFamily:'DM Sans,sans-serif'}}>🗑️ Delete & log why</button>
+            <button onClick={()=>setView('delete')} style={{padding:'10px',borderRadius:10,border:'1px solid #FECACA',background:'#FFF5F5',cursor:'pointer',textAlign:'left',fontSize:13,color:'#991B1B',fontFamily:'DM Sans,sans-serif'}}>{isRec ? '🗓️ Skip just this day' : '🗑️ Delete & log why'}</button>
+            {isRec && onDeleteSeries && (
+              <button onClick={()=>{onDeleteSeries(task);onClose()}} style={{padding:'10px',borderRadius:10,border:'1px solid #FECACA',background:'#FFF5F5',cursor:'pointer',textAlign:'left',fontSize:13,color:'#991B1B',fontFamily:'DM Sans,sans-serif'}}>🔁 Delete every occurrence</button>
+            )}
           </div>
           <button onClick={onClose} style={{marginTop:10,width:'100%',padding:'8px',borderRadius:10,border:'1px solid var(--border)',background:'white',color:'var(--muted)',cursor:'pointer',fontSize:12,fontFamily:'DM Sans,sans-serif'}}>Cancel</button>
         </>}
         {view==='delete'&&<>
-          <div className="serif" style={{fontSize:17,fontWeight:600,color:'#991B1B',marginBottom:6}}>Delete Task</div>
+          <div className="serif" style={{fontSize:17,fontWeight:600,color:'#991B1B',marginBottom:6}}>{isRec ? 'Skip this day' : 'Delete Task'}</div>
+          {isRec && <div style={{fontSize:12,color:'var(--muted)',marginBottom:10,lineHeight:1.5}}>Removes just this one occurrence — the recurring task keeps its other days. Use “Delete every occurrence” to remove the whole series.</div>}
           <textarea value={reason} onChange={e=>setReason(e.target.value)} placeholder="Reason (optional)…" rows={3} style={{...s,marginBottom:12,resize:'none',lineHeight:1.5}}/>
           <div style={{display:'flex',gap:8}}>
-            <button onClick={()=>{onDelete(task,reason);onClose()}} style={{flex:1,padding:'10px',borderRadius:10,border:'none',background:'#EF4444',color:'white',cursor:'pointer',fontFamily:'DM Sans,sans-serif',fontWeight:600,fontSize:13}}>Delete{reason?' & Log':''}</button>
+            <button onClick={()=>{onDelete(task,reason);onClose()}} style={{flex:1,padding:'10px',borderRadius:10,border:'none',background:'#EF4444',color:'white',cursor:'pointer',fontFamily:'DM Sans,sans-serif',fontWeight:600,fontSize:13}}>{isRec ? 'Skip this day' : 'Delete'}{reason?' & Log':''}</button>
             <button onClick={()=>setView('main')} style={{padding:'10px 14px',borderRadius:10,border:'1px solid var(--border)',background:'white',color:'var(--muted)',cursor:'pointer',fontSize:12,fontFamily:'DM Sans,sans-serif'}}>Back</button>
           </div>
         </>}
@@ -481,7 +486,7 @@ function WeekStrip({ viewDate, setViewDate, commitments, categories, doneCount, 
 }
 
 // ── Main ───────────────────────────────────────────────────────
-export default function Today({ todos, weekState, syncToggle, commitments, addCommitment, updateCommitment, deleteCommitment, appendLog, dailyTodos, scheduled, categories }) {
+export default function Today({ todos, weekState, syncToggle, commitments, addCommitment, updateCommitment, deleteCommitment, appendLog, scheduled, categories, recurringTasks, recurringExceptions, skipRecurringOccurrence, deleteRecurringTask, addRecurringTask }) {
   const [now,         setNow]         = useState(nowMins())
   // The day the timeline is showing. Defaults to today; the week strip up top
   // navigates to any day. "Now" logic (the progress marker, current/overdue,
@@ -553,7 +558,11 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
     })
   }
 
-  const templateTodos = getDailyTodos(dateKey, dailyTodos).filter(t=>!deleted.includes(t.id))
+  // Recurring instances for this day come from the SAME shared computation the
+  // Week and Calendar use, so all three agree. Legacy per-date localStorage
+  // deletions (`deleted`) are still honored alongside the new synced skips.
+  const templateTodos = recurringOccurrencesForDate(recurringTasks, dateKey, recurringExceptions)
+    .filter(t=>!deleted.includes(t.id))
   // Keep done ones too — a finished task stays on the timeline, crossed off,
   // rather than vanishing.
   const todayCommitments = (commitments||[]).filter(c=>c.date===dateKey)
@@ -568,7 +577,10 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
   // override would fight the real time and scramble the ordering.
   const applyOverrides = (tasks) => tasks.map(t=>{
     if (!t.isCommitment && timeOverrides[t.id]!==undefined) {
-      return { ...t, label: shiftLabelTime(t.label, timeOverrides[t.id]) }
+      // Move both the shown label and the authoritative start time, so a
+      // rescheduled recurring/local task actually re-sorts on the timeline
+      // (taskMins prefers _time when present).
+      return { ...t, label: shiftLabelTime(t.label, timeOverrides[t.id]), _time: minsToHHMM(timeOverrides[t.id]) }
     }
     return t
   })
@@ -781,13 +793,21 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
     if (task.isCommitment && deleteCommitment) {
       // Commitment — remove from commitments array (syncs to Week, Calendar, Commitments tabs)
       deleteCommitment(task.id)
+    } else if (task.isRecurring && skipRecurringOccurrence) {
+      // Recurring instance — skip just this occurrence (synced → hidden on
+      // Today, Week and Calendar everywhere).
+      skipRecurringOccurrence(task.id, dateKey)
     } else {
-      // Template or custom task — add to local deleted list for today only
+      // Legacy local custom task — add to local deleted list for today only
       const next=[...deleted,task.id]
       setDeleted(next)
       localStorage.setItem('vivian_deleted_'+dateKey, JSON.stringify(next))
     }
-    if (appendLog&&reason) appendLog({date:dateKey,dateLabel:todayLabel(),label:`Deleted: ${task.label||task.text} — ${reason}`,tag:'deleted',ts:new Date().toISOString()})
+    if (appendLog&&reason) appendLog({date:dateKey,dateLabel:todayLabel(),label:`${task.isRecurring?'Skipped':'Deleted'}: ${task.label||task.text} — ${reason}`,tag:'deleted',ts:new Date().toISOString()})
+  }
+  // Delete the whole recurring series (every occurrence, all days).
+  const handleDeleteSeries = (task) => {
+    if (task.isRecurring && deleteRecurringTask) deleteRecurringTask(task.id)
   }
   const handleReschedule = (task, date, time) => {
     if (date === dateKey) {
@@ -896,9 +916,9 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
 
       {shiftPlan&&<ShiftChooser plan={shiftPlan} onApply={(ids)=>{applyShift(shiftPlan.pivot, ids); setShiftPlan(null)}} onCancel={()=>setShiftPlan(null)}/>}
       {shiftResult&&<ShiftToast result={shiftResult} onClose={()=>setShiftResult(null)}/>}
-      {addingTask&&<AddItemModal presetDate={dateKey} lockDate categories={categories} onSave={handleAdd} onClose={()=>setAddingTask(false)} title="Add to Today"/>}
+      {addingTask&&<AddItemModal presetDate={dateKey} lockDate categories={categories} onSave={handleAdd} onSaveRecurring={addRecurringTask} onClose={()=>setAddingTask(false)} title="Add to Today"/>}
       {editing&&<AddItemModal existing={editing} categories={categories} onSave={handleSaveEdit} onClose={()=>setEditing(null)} title="Edit task"/>}
-      {managing&&<ManageModal task={managing} dateKey={dateKey} onClose={()=>setManaging(null)} onDelete={handleDelete} onReschedule={handleReschedule} onUnschedule={handleUnschedule} scheduled={scheduled}/>}
+      {managing&&<ManageModal task={managing} dateKey={dateKey} onClose={()=>setManaging(null)} onDelete={handleDelete} onReschedule={handleReschedule} onUnschedule={handleUnschedule} onDeleteSeries={handleDeleteSeries} scheduled={scheduled}/>}
     </div>
   )
 }

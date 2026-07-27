@@ -4,6 +4,18 @@
 
 const EDIT_LOG = [
   {
+    date: '2026-07-27',
+    summary: 'One unified scheduling system across Today, Week & Calendar',
+    changes: [
+      'Today, Week and the Calendar month view now read the exact same schedule — a day\'s items are its commitments plus its active recurring instances — so the three screens can no longer disagree',
+      'Recurring tasks finally show on the Calendar month view (and in each day\'s detail), matching what Today and Week already showed',
+      'Add a recurring task from anywhere: the add sheet on Today, Week and Calendar has a new Repeat option (pick the weekdays) that creates a recurring task instead of a one-off',
+      'Recurring tasks are still fully viewable and editable in the Recurring tab',
+      'Skip or delete a single recurring occurrence from Today, Week or Calendar and it hides on all three — skips are now stored in one cloud-synced place instead of per-device, per-view lists',
+      'Manage a recurring item on Today to either skip just that day or delete the whole series',
+    ]
+  },
+  {
     date: '2026-07-22',
     summary: 'Per-row cloud storage, custom categories, tab cleanup',
     changes: [

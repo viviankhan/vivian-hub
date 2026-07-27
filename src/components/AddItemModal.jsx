@@ -83,6 +83,7 @@ function Chevron({ open }) {
   )
 }
 const CalIcon   = () => (<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><rect x="3" y="4.5" width="18" height="16" rx="3"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="8" y1="2.5" x2="8" y2="6"/><line x1="16" y1="2.5" x2="16" y2="6"/></svg>)
+const RepeatIcon = () => (<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>)
 const ClockIcon = () => (<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9"/><polyline points="12 7.5 12 12 15.5 14"/></svg>)
 const TagIcon   = () => (<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20.5 13.3 12.7 21a2 2 0 0 1-2.8 0l-6.9-6.9a2 2 0 0 1-.6-1.4V4.5a2 2 0 0 1 2-2h7.2a2 2 0 0 1 1.4.6l7 7a2 2 0 0 1 0 2.6Z"/><circle cx="7.6" cy="7.6" r="1.3"/></svg>)
 const BellIcon  = () => (<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9a6 6 0 0 1 12 0c0 5.5 2.3 6.8 2.3 6.8H3.7S6 14.5 6 9Z"/><path d="M10 20a2 2 0 0 0 4 0"/></svg>)
@@ -107,6 +108,23 @@ function DetailRow({ icon, iconColor, text, textMuted, hint, open, onClick, chil
 }
 const RowDivider = () => <div style={{ height:1, background:'#EEEAF1', marginLeft:57 }} />
 
+// ── Weekday helpers for the Repeat row ─────────────────────────
+const WEEKDAYS = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday']
+const WEEKDAY_SHORT = { sunday:'Su', monday:'Mo', tuesday:'Tu', wednesday:'We', thursday:'Th', friday:'Fr', saturday:'Sa' }
+const WEEKDAY_ORDER = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']
+function weekdayOf(dateStr) {
+  if (!dateStr) return null
+  return WEEKDAYS[new Date(dateStr + 'T12:00:00').getDay()]
+}
+function repeatSummary(days) {
+  if (!days || !days.length) return 'Pick days'
+  const set = new Set(days)
+  if (set.size === 7) return 'Every day'
+  const weekdays = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday']
+  if (weekdays.every(d => set.has(d)) && set.size === 5) return 'Weekdays'
+  return WEEKDAY_ORDER.filter(d => set.has(d)).map(d => WEEKDAY_SHORT[d]).join(' · ')
+}
+
 // Short relative label for the date row ("Today", "Tomorrow", weekday).
 function relativeDay(dateStr) {
   if (!dateStr) return null
@@ -120,7 +138,7 @@ function relativeDay(dateStr) {
   return null
 }
 
-export default function AddItemModal({ existing = null, presetDate = null, presetText = '', lockDate = false, categories = [], onSave, onClose, title = 'Add to calendar' }) {
+export default function AddItemModal({ existing = null, presetDate = null, presetText = '', lockDate = false, categories = [], onSave, onSaveRecurring = null, onClose, title = 'Add to calendar' }) {
   const cats = (categories && categories.length) ? categories : DEFAULT_CATEGORIES
   const isEdit = !!existing
   const [label, setLabel]         = useState(existing?.text || presetText || '')
@@ -175,6 +193,29 @@ export default function AddItemModal({ existing = null, presetDate = null, prese
   // In-app alert sound for this item's reminders (device-local).
   const [sound, setSound] = useState(() => getItemSound(existing?.id) || 'chime')
 
+  // ── Repeat ───────────────────────────────────────────────────
+  // Turning this on makes the item a recurring task instead of a one-off — it
+  // then shows on every matching day across Today, Week and Calendar, and is
+  // editable in the Recurring tab. Only offered for brand-new items (editing a
+  // one-off shouldn't silently morph it into a series) and only when the parent
+  // handed us an onSaveRecurring handler.
+  const canRepeat = !isEdit && !!onSaveRecurring
+  const [repeat, setRepeat] = useState(false)
+  const [repeatDays, setRepeatDays] = useState(() => {
+    const wd = weekdayOf(existing?.date || presetDate || '')
+    return wd ? [wd] : ['monday']
+  })
+  const toggleRepeatDay = (d) => setRepeatDays(prev =>
+    prev.includes(d) ? prev.filter(x => x !== d) : [...prev, d])
+  const toggleRepeat = () => setRepeat(r => {
+    const nr = !r
+    if (nr) {
+      const wd = weekdayOf(date)
+      if (wd && repeatDays.length === 0) setRepeatDays([wd])
+    }
+    return nr
+  })
+
   // Which grouped row is expanded for editing (only one open at a time).
   const [expanded, setExpanded] = useState(null)
   const toggleRow = (k) => setExpanded(e => (e === k ? null : k))
@@ -183,7 +224,9 @@ export default function AddItemModal({ existing = null, presetDate = null, prese
   const endInvalid = !!(time && endTime && !durationMins)  // end set but ≤ start
   // Date is optional — a task with no date is a valid "unscheduled" commitment
   // (used by the Commitments tab). Today/Calendar preset or lock the date.
-  const canSave = !!label.trim() && !endInvalid
+  // A repeating item needs at least one weekday chosen.
+  const repeatInvalid = repeat && repeatDays.length === 0
+  const canSave = !!label.trim() && !endInvalid && !repeatInvalid
 
   // Quick-set: fill the end time as start + N minutes. Needs a start time.
   const setQuickDuration = (mins) => {
@@ -207,6 +250,27 @@ export default function AddItemModal({ existing = null, presetDate = null, prese
 
   const submit = () => {
     if (!canSave) return
+    // Repeating → create a recurring template (Recurring tab format) rather than
+    // a single commitment. It carries its time in the label prefix ('today'
+    // type) so it lands on the timeline; category, note and start date come
+    // along too. Duration/subtasks aren't part of the recurring schema.
+    if (repeat && onSaveRecurring) {
+      const primaryCatId = selectedCats[0]
+      const recurringTask = {
+        id: 'r-' + Date.now(),
+        type: 'today',
+        days: WEEKDAY_ORDER.filter(d => repeatDays.includes(d)),
+        cat: primaryCatId,
+        tag: primaryCatId,
+        label: time ? `${fmt12(time)} — ${label.trim()}` : label.trim(),
+        note: description.trim() || '',
+        startDate: date || null,
+        endDate: null,
+      }
+      onSaveRecurring(recurringTask)
+      onClose()
+      return
+    }
     const base = existing
       ? { ...existing }
       : { id: 'c-' + Date.now(), prepMin: null, person: null, done: false, createdAt: new Date().toISOString() }
@@ -327,6 +391,35 @@ export default function AddItemModal({ existing = null, presetDate = null, prese
                   : (!time ? 'Type a start time, then tap a duration.' : '')}
               </div>
             </DetailRow>
+            {canRepeat && <>
+              <RowDivider />
+              {/* Repeat — turns this into a recurring task shown on every matching day */}
+              <DetailRow icon={<RepeatIcon />} text={repeat ? repeatSummary(repeatDays) : 'Does not repeat'} textMuted={!repeat}
+                hint={repeat ? 'On' : null} open={expanded==='repeat'} onClick={() => toggleRow('repeat')}>
+                <label style={{ display:'flex', alignItems:'center', gap:8, cursor:'pointer', marginBottom: repeat ? 12 : 0 }}>
+                  <input type="checkbox" checked={repeat} onChange={toggleRepeat} />
+                  <span style={{ fontSize:13, color:'var(--text)' }}>Repeat weekly</span>
+                </label>
+                {repeat && <>
+                  <div style={{ fontSize:10, color:'var(--muted)', letterSpacing:1, textTransform:'uppercase', marginBottom:7 }}>On these days</div>
+                  <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
+                    {WEEKDAY_ORDER.map(d => {
+                      const on = repeatDays.includes(d)
+                      return (
+                        <button key={d} onClick={() => toggleRepeatDay(d)}
+                          style={{ fontSize:11, padding:'5px 11px', borderRadius:20, border: on ? 'none' : '1px solid var(--border)', background: on ? 'var(--forest)' : 'white', color: on ? 'var(--green-light)' : 'var(--muted)', cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:600 }}>
+                          {WEEKDAY_SHORT[d]}
+                        </button>
+                      )
+                    })}
+                  </div>
+                  <div style={{ fontSize:10.5, color: repeatInvalid ? '#DC2626' : 'var(--muted)', marginTop:8 }}>
+                    {repeatInvalid ? 'Pick at least one day.'
+                      : 'Shows on Today, Week and Calendar every chosen day. Manage it later in the Recurring tab.'}
+                  </div>
+                </>}
+              </DetailRow>
+            </>}
             <RowDivider />
             {/* Labels */}
             <DetailRow icon={<TagIcon />} iconColor={headerColor} text={labelNames.join(', ')}
@@ -446,7 +539,7 @@ export default function AddItemModal({ existing = null, presetDate = null, prese
           {/* ── Save ──────────────────────────────────────────── */}
           <button onClick={submit} disabled={!canSave}
             style={{ width:'100%', padding:'14px', borderRadius:14, border:'none', background: canSave ? headerColor : '#E1E1E6', color: canSave ? 'white' : '#9CA3AF', cursor: canSave ? 'pointer' : 'default', fontFamily:'DM Sans,sans-serif', fontWeight:700, fontSize:15, letterSpacing:.3 }}>
-            {isEdit ? 'Save changes' : title}
+            {isEdit ? 'Save changes' : (repeat ? 'Add recurring task' : title)}
           </button>
         </div>
       </div>

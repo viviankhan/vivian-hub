@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { Icon } from './IconPicker.jsx'
 import AddItemModal from './AddItemModal.jsx'
 import { setItemReminders } from '../lib/notifications.js'
+import { recurringOccurrencesForDate } from '../lib/occurrences.js'
 
 // Pastel shading for how busy a day is (number of events on it).
 const BUSY_SHADES = ['#F4F0FA', '#EAE1F4', '#DBC9EC', '#C9AEDF']
@@ -32,7 +33,7 @@ function endTimeFrom(start, mins) {
   return `${String(Math.floor(total/60)).padStart(2,'0')}:${String(total%60).padStart(2,'0')}`
 }
 
-export default function Calendar({ commitments, vacations, events, log, categories, jumpTo, addCommitment, updateCommitment }) {
+export default function Calendar({ commitments, vacations, events, log, categories, jumpTo, addCommitment, updateCommitment, todos, recurringTasks, recurringExceptions, skipRecurringOccurrence, addRecurringTask }) {
   // monthOffset shifts by whole months from the current month: 0 = this month,
   // -1 = last month, +1 = next month, and so on — unbounded either way.
   const [monthOffset, setMonthOffset] = useState(0)
@@ -118,6 +119,21 @@ export default function Calendar({ commitments, vacations, events, log, categori
       }
     })
   const selectedEvents = selected ? allEvents.filter(e => e.date === selected) : []
+
+  // Recurring instances landing on a date — the SAME computation Today and Week
+  // use, so the month view finally shows the recurring schedule too. Each is
+  // shaped like a calendar event (color/icon/label/done) for the grid + detail.
+  const recurringEventsOn = (dateStr) => recurringOccurrencesForDate(recurringTasks, dateStr, recurringExceptions).map(o => {
+    const cat = resolveCat(o.cat)
+    return {
+      id: o.id, date: dateStr, isRecurring: true,
+      text: o.text, label: o.label,
+      done: !!(todos && todos[`${dateStr}_${o.id}`]),
+      color: cat.color, icon: cat.icon, catLabel: cat.label,
+    }
+  })
+  const selectedRecurring = selected ? recurringEventsOn(selected) : []
+
   // Multi-day events covering a given date (for the colored bands + detail).
   const eventsOn = (dateStr) => (events || []).filter(ev => dateStr >= ev.startDate && dateStr <= ev.endDate)
   const selectedSpans = selected ? eventsOn(selected) : []
@@ -156,7 +172,7 @@ export default function Calendar({ commitments, vacations, events, log, categori
           {Array.from({ length: daysInMonth }).map((_, i) => {
             const day = i + 1
             const dateStr = ds(year, month, day)
-            const evs = allEvents.filter(e => e.date === dateStr)
+            const evs = [...allEvents.filter(e => e.date === dateStr), ...recurringEventsOn(dateStr)]
             const spans = eventsOn(dateStr)
             const dow = new Date(dateStr+'T12:00:00').getDay()
             const isSel = dateStr === selected
@@ -214,7 +230,7 @@ export default function Calendar({ commitments, vacations, events, log, categori
               + Add to this day
             </button>
           </div>
-          {selectedEvents.length === 0 && selectedSpans.length === 0 && !(doneByDate[selected]?.length > 0) && (
+          {selectedEvents.length === 0 && selectedSpans.length === 0 && selectedRecurring.length === 0 && !(doneByDate[selected]?.length > 0) && (
             <div style={{ fontSize:12, color:'var(--muted)', fontStyle:'italic', paddingBottom:2 }}>Nothing scheduled yet. Use “+ Add to this day.”</div>
           )}
           {/* Multi-day events covering this day */}
@@ -257,6 +273,19 @@ export default function Calendar({ commitments, vacations, events, log, categori
               )}
             </div>
           ))}
+          {/* Recurring instances on this day — same items shown on Today/Week.
+              The ✕ skips just this occurrence (synced to every view). */}
+          {selectedRecurring.map((e, i) => (
+            <div key={'rec'+i} style={{ display:'flex', gap:10, alignItems:'center', padding:'9px 12px', borderRadius:8, marginBottom:6, background:`${e.color}14`, border:`1px solid ${e.color}44`, opacity: e.done ? .6 : 1 }}>
+              <span style={{ display:'inline-flex', alignItems:'center', gap:4, fontSize:10, letterSpacing:1, textTransform:'uppercase', color:e.color, minWidth:70, fontWeight:600 }}>
+                {e.icon && <Icon value={e.icon} size={12} />}{e.catLabel}
+              </span>
+              <div style={{ flex:1, fontSize:13, color:'var(--text)', textDecoration: e.done ? 'line-through' : 'none' }}>{e.label}</div>
+              <span style={{ fontSize:9, letterSpacing:.5, textTransform:'uppercase', color:'var(--muted)', flexShrink:0 }}>Repeats</span>
+              <button onClick={() => skipRecurringOccurrence && skipRecurringOccurrence(e.id, selected)} title="Skip just this day"
+                style={{ background:'none', border:'none', cursor:'pointer', color:'#9CA3AF', fontSize:14, padding:'0 2px', flexShrink:0 }}>✕</button>
+            </div>
+          ))}
           {/* Completed that day — history that persists even after deletion */}
           {(doneByDate[selected] || []).map((e, i) => (
             <div key={'done'+i} style={{ display:'flex', gap:10, alignItems:'center', padding:'7px 12px' }}>
@@ -281,6 +310,7 @@ export default function Calendar({ commitments, vacations, events, log, categori
           presetDate={selected || ''}
           categories={categories}
           onSave={handleAdd}
+          onSaveRecurring={addRecurringTask}
           onClose={()=>setAdding(false)}
           title="Add to calendar" />
       )}

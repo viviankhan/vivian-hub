@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { buildWeekPlanFromTasks } from '../data/schedule.js'
+import { recurringOccurrencesForDate } from '../lib/occurrences.js'
 import { Icon } from './IconPicker.jsx'
 import { bloomBurst } from '../lib/bloom.js'
 import TimeField from './TimeField.jsx'
@@ -94,10 +95,12 @@ function fmtRange(startDate, endDate) {
   return `${s} – ${e}`
 }
 
-export default function ThisWeek({ todos, weekState, syncToggle, commitments, addCommitment, deleteCommitment, weekTasks, categories }) {
+export default function ThisWeek({ todos, weekState, syncToggle, commitments, addCommitment, deleteCommitment, categories, recurringTasks, recurringExceptions, skipRecurringOccurrence, addRecurringTask }) {
   const today = todayStr()
   const [weekOffset, setWeekOffset] = useState(0)
-  const weekPlan = buildWeekPlanFromTasks(weekTasks || {}, weekOffset)
+  // Just the 7-day Sun→Sat scaffold; recurring items are filled per-day below
+  // from the same shared computation Today and Calendar use.
+  const weekPlan = buildWeekPlanFromTasks({}, weekOffset)
   const [addingDay, setAddingDay] = useState(null)
   // Custom tasks per day stored in localStorage (keyed by date)
   const [customByDay, setCustomByDay] = useState(() => {
@@ -168,18 +171,24 @@ export default function ThisWeek({ todos, weekState, syncToggle, commitments, ad
         const dayCommitments = (commitsByDate[day.date]||[])
           .sort((a,b) => (a.time||'99').localeCompare(b.time||'99'))
 
-        const templateTasks = (day.tasks||[]).filter(t => !deleted.includes(t.id))
+        // Recurring instances for this day (minus per-occurrence skips and any
+        // legacy per-day localStorage deletions).
+        const recurringForDay = recurringOccurrencesForDate(recurringTasks, day.date, recurringExceptions)
+          .filter(t => !deleted.includes(t.id))
 
-        const carriedFromPrev = i > 0
-          ? (weekPlan[i-1].tasks||[]).filter(t => t.carry && !isDone(t.id, weekPlan[i-1].date, false))
+        // Carry-forward: yesterday's carry-flagged recurring items left undone.
+        const prevDate = i > 0 ? weekPlan[i-1].date : null
+        const carriedFromPrev = prevDate
+          ? recurringOccurrencesForDate(recurringTasks, prevDate, recurringExceptions)
+              .filter(t => t.carry && !isDone(t.id, prevDate, false))
           : []
 
         const customTasks = customByDay[day.date] || []
 
         const allTasks = [
           ...dayCommitments.map(c=>({ id:c.id, text:c.time?`${fmt12(c.time)} — ${c.text}`:c.text, cat:c.cat||'personal', isCommitment:true, _sortTime:c.time||'99:99' })),
-          ...carriedFromPrev.map(t=>({ ...t, carried:true, carriedFrom:weekPlan[i-1].dayLabel, _sortTime:'00:00' })),
-          ...templateTasks.map(t=>({ ...t, _sortTime: (() => { const m=t.text?.match(/(\d{1,2}):(\d{2})\s*(AM|PM)/i); if(!m)return'50:00'; let h=parseInt(m[1]); if(m[3].toUpperCase()==='PM'&&h!==12)h+=12; if(m[3].toUpperCase()==='AM'&&h===12)h=0; return `${String(h).padStart(2,'0')}:${m[2]}`; })() })),
+          ...carriedFromPrev.map(t=>({ id:t.id, text:t.text, cat:t.cat, isRecurring:true, carried:true, carriedFrom:weekPlan[i-1].dayLabel, _sortTime:'00:00' })),
+          ...recurringForDay.map(t=>({ id:t.id, text:t.label, cat:t.cat, isRecurring:true, _sortTime: t._time || '50:00' })),
           ...customTasks.map(t=>({ ...t, _sortTime: (() => { const m=t.text?.match(/(\d{1,2}):(\d{2})\s*(AM|PM)/i); if(!m)return'50:00'; let h=parseInt(m[1]); if(m[3].toUpperCase()==='PM'&&h!==12)h+=12; if(m[3].toUpperCase()==='AM'&&h===12)h=0; return `${String(h).padStart(2,'0')}:${m[2]}`; })() })),
         ].sort((a,b) => (a._sortTime||'99:99').localeCompare(b._sortTime||'99:99'))
 
@@ -218,15 +227,18 @@ export default function ThisWeek({ todos, weekState, syncToggle, commitments, ad
                   onDelete={t.carried ? null
                     : t.isCommitment
                       ? ()=>deleteCommitment&&deleteCommitment(t.id)
-                      : ()=>customByDay[day.date]?.find(c=>c.id===t.id)
-                          ? handleDeleteCustom(day.date, t.id)
-                          : handleDeleteTemplate(day.date, t.id)}
+                      : t.isRecurring
+                        ? ()=>skipRecurringOccurrence&&skipRecurringOccurrence(t.id, day.date)
+                        : ()=>customByDay[day.date]?.find(c=>c.id===t.id)
+                            ? handleDeleteCustom(day.date, t.id)
+                            : handleDeleteTemplate(day.date, t.id)}
                 />
               ))}
 
               {addingDay===day.date&&(
                 <AddItemModal presetDate={day.date} categories={categories}
                   onSave={(commitment, reminderMins)=>{ if(addCommitment) addCommitment(commitment); setItemReminders(commitment.id, reminderMins); setAddingDay(null) }}
+                  onSaveRecurring={addRecurringTask}
                   onClose={()=>setAddingDay(null)} title="Add to this day" />
               )}
             </div>
