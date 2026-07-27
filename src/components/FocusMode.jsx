@@ -5,6 +5,7 @@
 // stopwatch for tasks that have no fixed end (a start time but no duration).
 import { useState, useEffect } from 'react'
 import { Icon } from './IconPicker.jsx'
+import { iconColorOn } from '../lib/glyphs.jsx'
 
 function fmt12(t) {
   if (!t) return ''
@@ -57,22 +58,29 @@ export default function FocusMode({ title, icon, color = '#4A9EB5', time, durati
   const R = 132, C = 2 * Math.PI * R
   const offset = C * (hasWindow ? frac : 0)
 
+  // Readable foreground for this color (dark on light backdrops, light on dark).
+  const fg = iconColorOn(color)
+  const onLight = fg !== '#FFFFFF'
+  const track = onLight ? 'rgba(0,0,0,.14)' : 'rgba(255,255,255,.22)'
+  const btnBg = onLight ? 'rgba(0,0,0,.10)' : 'rgba(255,255,255,.22)'
+  const btnBorder = onLight ? 'rgba(0,0,0,.5)' : 'rgba(255,255,255,.6)'
+
   return (
     <div style={{ position:'fixed', inset:0, zIndex:800, background:`linear-gradient(165deg, ${color}, ${darken(color)})`,
-      display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', padding:24, color:'white' }}>
+      display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', padding:24, color:fg }}>
       <button onClick={onClose} aria-label="Exit focus"
-        style={{ position:'absolute', top:'max(20px, calc(env(safe-area-inset-top) + 8px))', right:20, width:42, height:42, borderRadius:'50%', border:'none', background:'rgba(255,255,255,.22)', color:'white', fontSize:17, cursor:'pointer' }}>✕</button>
+        style={{ position:'absolute', top:'max(20px, calc(env(safe-area-inset-top) + 8px))', right:20, width:42, height:42, borderRadius:'50%', border:'none', background:btnBg, color:fg, fontSize:17, cursor:'pointer' }}>✕</button>
 
       <div style={{ position:'relative', width:300, height:300, display:'flex', alignItems:'center', justifyContent:'center', marginBottom:28 }}>
         <svg width="300" height="300" style={{ position:'absolute', transform:'rotate(-90deg)' }} aria-hidden="true">
-          <circle cx="150" cy="150" r={R} fill="none" stroke="rgba(255,255,255,.22)" strokeWidth="13" />
+          <circle cx="150" cy="150" r={R} fill="none" stroke={track} strokeWidth="13" />
           {hasWindow && (
-            <circle cx="150" cy="150" r={R} fill="none" stroke="white" strokeWidth="13" strokeLinecap="round"
+            <circle cx="150" cy="150" r={R} fill="none" stroke={fg} strokeWidth="13" strokeLinecap="round"
               strokeDasharray={C} strokeDashoffset={offset} style={{ transition:'stroke-dashoffset 1s linear' }} />
           )}
         </svg>
         <div style={{ textAlign:'center' }}>
-          {icon && <div style={{ marginBottom:12, display:'flex', justifyContent:'center' }}><Icon value={icon} size={40} color="#fff" /></div>}
+          {icon && <div style={{ marginBottom:12, display:'flex', justifyContent:'center' }}><Icon value={icon} size={40} color={fg} /></div>}
           {done ? (
             <div style={{ fontSize:34, fontWeight:700 }}>Time’s up</div>
           ) : (
@@ -94,12 +102,12 @@ export default function FocusMode({ title, icon, color = '#4A9EB5', time, durati
       <div style={{ display:'flex', gap:12 }}>
         {onDone && (
           <button onClick={onDone}
-            style={{ padding:'14px 26px', borderRadius:16, border:'none', background:'white', color, fontWeight:700, fontSize:15, cursor:'pointer', fontFamily:'DM Sans,sans-serif' }}>
+            style={{ padding:'14px 26px', borderRadius:16, border:'none', background:fg, color, fontWeight:700, fontSize:15, cursor:'pointer', fontFamily:'DM Sans,sans-serif' }}>
             ✓ Mark done
           </button>
         )}
         <button onClick={onClose}
-          style={{ padding:'14px 24px', borderRadius:16, border:'1.5px solid rgba(255,255,255,.6)', background:'transparent', color:'white', fontWeight:600, fontSize:15, cursor:'pointer', fontFamily:'DM Sans,sans-serif' }}>
+          style={{ padding:'14px 24px', borderRadius:16, border:`1.5px solid ${btnBorder}`, background:'transparent', color:fg, fontWeight:600, fontSize:15, cursor:'pointer', fontFamily:'DM Sans,sans-serif' }}>
           Exit
         </button>
       </div>

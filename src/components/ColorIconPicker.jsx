@@ -6,7 +6,7 @@
 // on the detail header, and on the Commitments card.
 import { useState, useRef } from 'react'
 import { isImageIcon, fileToIconDataUri } from './IconPicker.jsx'
-import { Glyph, GLYPH_GROUPS, GLYPH_ALL } from '../lib/glyphs.jsx'
+import { Glyph, GLYPH_GROUPS, GLYPH_ALL, iconColorOn } from '../lib/glyphs.jsx'
 
 // Same palette the detail sheet uses, so a color picked here matches.
 export const TASK_COLORS = ['#E0A33E','#C4728E','#EC6F9C','#7C9CBF','#4A9EB5','#52B788','#2A9D8F','#7C3AED','#E07B2E','#EF6B6B','#6B7A8D','#111827']
@@ -43,7 +43,7 @@ export default function ColorIconPicker({ color, icon, onColor, onIcon, onClose 
         style={{ width:52, height:52, borderRadius:'50%', border:'none', cursor:'pointer', flexShrink:0,
           display:'flex', alignItems:'center', justifyContent:'center',
           background: on ? selColor : '#F0EEF3', transition:'background .15s' }}>
-        <Glyph id={id} size={25} color={on ? '#fff' : GLYPH_DARK} />
+        <Glyph id={id} size={25} color={on ? iconColorOn(selColor) : GLYPH_DARK} />
       </button>
     )
   }

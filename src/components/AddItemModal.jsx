@@ -13,7 +13,7 @@ import FocusMode from './FocusMode.jsx'
 import { nowProgress, taskProgress } from '../lib/occurrences.js'
 import { Icon } from './IconPicker.jsx'
 import ColorIconPicker from './ColorIconPicker.jsx'
-import { suggestGlyph } from '../lib/glyphs.jsx'
+import { suggestGlyph, iconColorOn } from '../lib/glyphs.jsx'
 import { LEAD_OPTIONS, getItemReminders, getItemSound, setItemSound } from '../lib/notifications.js'
 import { SOUNDS, playSound } from '../lib/sounds.js'
 
@@ -347,6 +347,13 @@ export default function AddItemModal({ existing = null, presetDate = null, prese
   // Primary label drives the header color + icon.
   const primaryCat = cats.find(c => c.id === selectedCats[0]) || cats[0] || { color:'#4A9EB5', label:'', icon:'' }
   const headerColor = color || primaryCat.color || '#4A9EB5'
+  // Foreground that stays readable on the header band — dark on light colors,
+  // light on dark ones — with matching muted/hairline/button tints.
+  const headerFg   = iconColorOn(headerColor)
+  const onLight    = headerFg !== '#FFFFFF'
+  const headerSub  = onLight ? 'rgba(0,0,0,.6)'  : 'rgba(255,255,255,.9)'
+  const headerHair = onLight ? 'rgba(0,0,0,.28)' : 'rgba(255,255,255,.45)'
+  const headerBtnBg= onLight ? 'rgba(0,0,0,.10)' : 'rgba(255,255,255,.26)'
   // The task's shown icon: explicit/suggested, else the label's, else a letter.
   const shownIcon = effectiveIcon || primaryCat.icon || ''
   const isCustomColor = !!color && !TASK_COLORS.includes(color)
@@ -378,11 +385,11 @@ export default function AddItemModal({ existing = null, presetDate = null, prese
         <div style={{ background:headerColor, backgroundImage:'linear-gradient(158deg, rgba(255,255,255,.14), rgba(0,0,0,.20))', padding:'14px 16px 20px' }}>
           <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:14, position:'relative' }}>
             <button onClick={onClose} aria-label="Close"
-              style={{ width:34, height:34, borderRadius:'50%', border:'none', background:'rgba(255,255,255,.28)', color:'white', fontSize:16, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>✕</button>
-            <span style={{ fontSize:11, letterSpacing:1.5, textTransform:'uppercase', color:'rgba(255,255,255,.85)', fontWeight:600 }}>{isEdit ? 'Edit' : title}</span>
+              style={{ width:34, height:34, borderRadius:'50%', border:'none', background:headerBtnBg, color:headerFg, fontSize:16, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>✕</button>
+            <span style={{ fontSize:11, letterSpacing:1.5, textTransform:'uppercase', color:headerSub, fontWeight:600 }}>{isEdit ? 'Edit' : title}</span>
             {hasMenu ? (
               <button onClick={() => setMenuOpen(o => !o)} aria-label="More actions"
-                style={{ width:34, height:34, borderRadius:'50%', border:'none', background:'rgba(255,255,255,.28)', color:'white', fontSize:18, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', lineHeight:1, paddingBottom:4 }}>⋯</button>
+                style={{ width:34, height:34, borderRadius:'50%', border:'none', background:headerBtnBg, color:headerFg, fontSize:18, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', lineHeight:1, paddingBottom:4 }}>⋯</button>
             ) : <span style={{ width:34 }} />}
             {menuOpen && (
               <>
@@ -406,8 +413,8 @@ export default function AddItemModal({ existing = null, presetDate = null, prese
                 )}
                 <span style={{ position:'relative', display:'flex' }}>
                   {shownIcon
-                    ? <Icon value={shownIcon} size={26} color="#fff" />
-                    : <span style={{ color:'white', fontSize:24, fontWeight:700 }}>{(label.trim()[0] || '?').toUpperCase()}</span>}
+                    ? <Icon value={shownIcon} size={26} color={headerFg} />
+                    : <span style={{ color:headerFg, fontSize:24, fontWeight:700 }}>{(label.trim()[0] || '?').toUpperCase()}</span>}
                 </span>
               </button>
               <span onClick={() => setShowColorIcon(true)}
@@ -417,16 +424,16 @@ export default function AddItemModal({ existing = null, presetDate = null, prese
             </div>
             <div style={{ flex:1, minWidth:0 }}>
               {timeProg
-                ? <div style={{ fontSize:12.5, color:'rgba(255,255,255,.92)', fontWeight:600, marginBottom:1 }}>{timeProg.remaining}m remaining</div>
-                : (time && <div style={{ fontSize:12.5, color:'rgba(255,255,255,.9)', fontWeight:600, marginBottom:1 }}>{fmt12(time)}{endTime && durationMins ? ` – ${fmt12(endTime)}` : ''}</div>)}
+                ? <div style={{ fontSize:12.5, color:headerSub, fontWeight:600, marginBottom:1 }}>{timeProg.remaining}m remaining</div>
+                : (time && <div style={{ fontSize:12.5, color:headerSub, fontWeight:600, marginBottom:1 }}>{fmt12(time)}{endTime && durationMins ? ` – ${fmt12(endTime)}` : ''}</div>)}
               <input value={label} onChange={e => setLabel(e.target.value)} placeholder="What's happening?" autoFocus={!isEdit}
                 onKeyDown={e => e.key === 'Enter' && canSave && submit()}
-                style={{ width:'100%', background:'transparent', border:'none', borderBottom:'1px solid rgba(255,255,255,.45)', color:'white', fontSize:21, fontWeight:700, fontFamily:'DM Sans,sans-serif', outline:'none', padding:'3px 0' }} />
+                style={{ width:'100%', background:'transparent', border:'none', borderBottom:`1px solid ${headerHair}`, color:headerFg, fontSize:21, fontWeight:700, fontFamily:'DM Sans,sans-serif', outline:'none', padding:'3px 0' }} />
             </div>
           </div>
           {timeProg && (
             <button type="button" onClick={() => setFocusOpen(true)}
-              style={{ marginTop:16, width:'100%', padding:'13px', borderRadius:16, border:'none', background:'rgba(255,255,255,.26)', color:'white', fontWeight:700, fontSize:15, cursor:'pointer', fontFamily:'DM Sans,sans-serif', display:'flex', alignItems:'center', justifyContent:'center', gap:9 }}>
+              style={{ marginTop:16, width:'100%', padding:'13px', borderRadius:16, border:'none', background:headerBtnBg, color:headerFg, fontWeight:700, fontSize:15, cursor:'pointer', fontFamily:'DM Sans,sans-serif', display:'flex', alignItems:'center', justifyContent:'center', gap:9 }}>
               <TargetIcon /> Focus Now
             </button>
           )}

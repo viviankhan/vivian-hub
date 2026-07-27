@@ -5,6 +5,14 @@
 const EDIT_LOG = [
   {
     date: '2026-07-27',
+    summary: 'Smarter icon suggestions + readable icons on any color',
+    changes: [
+      'The auto-suggested task icon is much better: far richer keywords, plural/verb-aware matching (e.g. "budgeting"→money, "meetings"→calendar), and new bus, car and wifi glyphs',
+      'Icons and header text now pick dark-on-light or light-on-dark automatically, so they stay legible whatever task color you choose — across the timeline, the task sheet, Focus mode, the calendar bands and the icon picker',
+    ]
+  },
+  {
+    date: '2026-07-27',
     summary: 'Progress highlight tracks both subtasks done and time elapsed',
     changes: [
       'A task now highlights by how far along it is — the fill reflects the share of its subtasks that are checked off as well as time elapsed, whichever is further',

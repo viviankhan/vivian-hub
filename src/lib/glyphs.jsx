@@ -77,9 +77,26 @@ const GLYPHS = {
   list:    { el: <>{P("M9 6h11M9 12h11M9 18h11")}<circle cx="4.5" cy="6" r="1.3"/><circle cx="4.5" cy="12" r="1.3"/><circle cx="4.5" cy="18" r="1.3"/></> },
   repeat:  { el: P("M17 3.5l3 3-3 3M20 6.5H9A5 5 0 0 0 4 11.5M7 20.5l-3-3 3-3M4 17.5h11a5 5 0 0 0 5-5") },
   grid:    { el: <><rect x="4" y="4" width="7" height="7" rx="1.6"/><rect x="13" y="4" width="7" height="7" rx="1.6"/><rect x="4" y="13" width="7" height="7" rx="1.6"/><rect x="13" y="13" width="7" height="7" rx="1.6"/></> },
+  // ── Getting around / tech ──
+  bus:     { el: <><rect x="4" y="4.5" width="16" height="12" rx="2.5"/>{P("M4 11h16M9 4.5v6.5M15 4.5v6.5M6 16.5v2M18 16.5v2")}<circle cx="8" cy="13.6" r="0.9" fill="currentColor" stroke="none"/><circle cx="16" cy="13.6" r="0.9" fill="currentColor" stroke="none"/></> },
+  car:     { el: <>{P("M4 13l1.6-4.5A2.2 2.2 0 0 1 7.7 7h8.6a2.2 2.2 0 0 1 2.1 1.5L20 13")}{P("M3.5 13h17v3.3a1 1 0 0 1-1 1H18.5M5.5 17.3H4.5a1 1 0 0 1-1-1V13")}<circle cx="8" cy="17.2" r="1.6"/><circle cx="16" cy="17.2" r="1.6"/></> },
+  wifi:    { el: <>{P("M4 9.5a13 13 0 0 1 16 0M6.7 12.7a9 9 0 0 1 10.6 0M9.3 15.9a5 5 0 0 1 5.4 0")}<circle cx="12" cy="19" r="1.1" fill="currentColor" stroke="none"/></> },
 }
 
 export function hasGlyph(id) { return !!GLYPHS[id] }
+
+// Pick a readable icon/text color for a filled background: dark on light
+// colors, light on dark ones. Falls back to white for anything it can't parse
+// (e.g. a CSS var), which is the safe default on Bloom's medium accents.
+export function iconColorOn(bg, dark = '#20242E', light = '#FFFFFF') {
+  if (typeof bg !== 'string' || bg[0] !== '#' || (bg.length !== 7 && bg.length !== 4)) return light
+  let r, g, b
+  if (bg.length === 4) { r = parseInt(bg[1]+bg[1],16); g = parseInt(bg[2]+bg[2],16); b = parseInt(bg[3]+bg[3],16) }
+  else { r = parseInt(bg.slice(1,3),16); g = parseInt(bg.slice(3,5),16); b = parseInt(bg.slice(5,7),16) }
+  // Perceived brightness (0–1). Above ~0.62 reads as "light".
+  const L = (0.299*r + 0.587*g + 0.114*b) / 255
+  return L > 0.62 ? dark : light
+}
 
 // Render a glyph by id in a single color (defaults to the current text color).
 export function Glyph({ id, size = 22, color = 'currentColor', style }) {
@@ -98,64 +115,111 @@ export function Glyph({ id, size = 22, color = 'currentColor', style }) {
 // Grouped for the picker, each with search keywords.
 export const GLYPH_GROUPS = [
   { name:'Daily', items:[
-    ['sun','morning day wake rise'],['moon','night sleep evening'],['alarm','clock wake time'],
-    ['coffee','drink tea morning cup'],['droplet','water hydrate drink'],['sparkle','clean fresh shine'],['bed','sleep rest nap'],
+    ['sun','morning day wake rise sunrise dawn am'],['moon','night sleep evening bedtime pm dusk'],['alarm','clock wake time alarm snooze'],
+    ['coffee','drink tea morning cup coffee brew caffeine espresso latte breakfast'],['droplet','water hydrate drink hydration bottle rain'],
+    ['sparkle','clean fresh shine tidy cleaning wash sparkle laundry vacuum'],['bed','sleep rest nap bed bedtime relax'],
   ]},
   { name:'Fitness', items:[
-    ['dumbbell','gym weights lift strength workout'],['pulse','activity cardio heart run exercise'],['bike','cycle cycling ride'],
-    ['waves','swim pool water'],['trophy','win goal achievement'],['target','goal focus aim'],
+    ['dumbbell','gym weights lift strength workout exercise train training fitness muscle'],
+    ['pulse','activity cardio heart run running jog exercise steps hiit'],['bike','cycle cycling ride bike biking spin peloton'],
+    ['waves','swim swimming pool water surf ocean laps'],['trophy','win goal achievement award prize compete match game won'],
+    ['target','goal focus aim objective habit target milestone'],['run','run running jog jogging walk walking sprint marathon exercise commute'],
   ]},
   { name:'Work & Study', items:[
-    ['briefcase','work job office career'],['laptop','computer work code'],['monitor','desktop screen work'],
-    ['book','read study school'],['bookOpen','read study reading'],['pencil','write edit note homework'],
-    ['flask','lab science chemistry'],['gradcap','school class degree graduation'],['calendar','date plan schedule meeting'],
-    ['clipboard','tasks list checklist notes'],['chart','data report analytics'],
+    ['briefcase','work job office career business interview client meeting boss'],['laptop','computer work code coding laptop dev develop program email zoom'],
+    ['monitor','desktop screen work display setup pc'],
+    ['book','read reading study school book textbook chapter novel library learn'],['bookOpen','read reading study review revise study notes'],
+    ['pencil','write writing edit note homework essay draft assignment journal sign'],
+    ['flask','lab science chemistry experiment research biology'],['gradcap','school class degree graduation lecture college university course exam'],
+    ['calendar','date plan schedule meeting event appointment calendar booking deadline day'],
+    ['clipboard','tasks list checklist notes todo plan agenda form survey'],['chart','data report analytics stats metrics dashboard finance review numbers'],
   ]},
   { name:'Home', items:[
-    ['house','home'],['sprout','plant garden water grow'],['wrench','fix repair tool'],
-    ['cart','shopping groceries errand store'],['trash','clean chore garbage'],['paw','pet dog cat animal walk'],
+    ['house','home house apartment rent mortgage move room'],['sprout','plant plants garden water grow gardening flower yard tree'],
+    ['wrench','fix repair tool maintenance setup install assemble handyman plumber'],
+    ['cart','shopping groceries grocery errand store market supermarket buy shop food'],
+    ['trash','clean chore garbage trash rubbish bins recycling dishes'],['paw','pet dog cat animal walk vet feed puppy litter'],
+    ['wifi','wifi internet router network setup connect broadband online'],
   ]},
   { name:'Health', items:[
-    ['capsule','pill medicine meds vitamin'],['heart','love date care health'],['cross','doctor appointment health first aid'],
+    ['capsule','pill pills medicine meds vitamin vitamins supplement prescription dose refill pharmacy medication'],
+    ['heart','love date care health relationship wellbeing self'],
+    ['cross','doctor appointment health clinic hospital dentist tooth checkup medical nurse therapy therapist'],
   ]},
   { name:'Food', items:[
-    ['utensils','food eat meal dinner lunch'],['mug','drink coffee tea'],['wine','drink dinner date bar'],
+    ['utensils','food eat meal dinner lunch breakfast cook cooking recipe restaurant kitchen dish prep'],
+    ['mug','drink coffee tea cup mug hot cocoa'],['wine','drink dinner date bar drinks party wine beer happy hour cocktail'],
   ]},
   { name:'Fun & Social', items:[
-    ['controller','game gaming play fun'],['film','movie cinema watch tv show'],['music','song listen play'],
-    ['camera','photo picture'],['gift','present birthday'],['headphones','music podcast listen'],
-    ['plane','travel trip flight vacation'],['chat','talk message call social'],['ticket','event concert show'],
+    ['controller','game gaming play fun video xbox playstation nintendo arcade'],['film','movie movies cinema watch tv show series stream netflix film'],
+    ['music','song music listen play band practice guitar sing concert playlist'],
+    ['camera','photo photos picture pictures shoot camera selfie album'],['gift','present gift birthday anniversary wrap holiday christmas'],
+    ['headphones','music podcast listen audio audiobook'],['chat','talk message call social text catch chat meet friend hangout'],
+    ['ticket','event concert show festival ticket game match theatre'],
+  ]},
+  { name:'Travel', items:[
+    ['plane','travel trip flight vacation fly airport plane holiday abroad boarding'],
+    ['bus','bus commute transit ride stop shuttle coach public'],
+    ['car','car drive commute vehicle uber lyft taxi road trip parking gas dmv'],
   ]},
   { name:'General', items:[
-    ['star','important favorite'],['flame','streak priority hot'],['pin','important reminder location'],
-    ['bulb','idea think plan'],['dollar','money finance budget pay bill'],['bag','shopping buy errand'],
-    ['phone','call contact'],['mail','email message inbox'],['bell','reminder alert notify'],
-    ['check','done complete task'],['clock','time schedule'],
+    ['star','important favorite star special priority'],['flame','streak priority hot urgent fire momentum'],
+    ['pin','important reminder location place map address pin'],
+    ['bulb','idea think plan brainstorm inspiration creative concept'],
+    ['dollar','money finance budget budgeting pay bill bills invoice bank taxes salary save savings payment venmo'],
+    ['bag','shopping buy errand bag purchase order pack packing'],
+    ['phone','call phone contact ring dial telephone voicemail'],['mail','email message inbox mail letter send reply newsletter'],
+    ['bell','reminder alert notify notification ping ring'],['check','done complete task finish check tick verify'],
+    ['clock','time schedule timer deadline duration wait later'],
   ]},
 ]
 
 export const GLYPH_ALL = GLYPH_GROUPS.flatMap(g => g.items.map(([id, k]) => ({ id, k, group:g.name })))
 
+// Common filler words that shouldn't drive an icon choice.
+const STOPWORDS = new Set(('a an the to of in on at for with and or but my me your our this that these those ' +
+  'is be am are do does go get got set make made take give have has had new some any it its ' +
+  'up out off via about into from over again more less week day today tomorrow morning night').split(/\s+/))
+
+// Fold a word toward a comparable stem: drop a trailing plural/verb suffix so
+// "meetings", "running", "budgeting", "called" all line up with their root.
+function stem(w) {
+  if (w.length > 5 && w.endsWith('ing')) return w.slice(0, -3)
+  if (w.length > 5 && w.endsWith('ed'))  return w.slice(0, -2)
+  if (w.length > 4 && w.endsWith('es'))  return w.slice(0, -2)
+  if (w.length > 4 && w.endsWith('s') && !w.endsWith('ss')) return w.slice(0, -1)
+  return w
+}
+function related(a, b) {
+  if (a === b) return true
+  if (a.length < 4 || b.length < 4) return false
+  return a.startsWith(b) || b.startsWith(a)
+}
+
 // Guess the best-matching icon for a task title, e.g. "Gym session" → dumbbell,
-// "Dinner with parents" → utensils, "Walk the dog" → paw. Scores each glyph by
-// how many meaningful words of the title hit its id / keywords / group (a whole
-// keyword-token match counts more than a loose substring). Returns "glyph:<id>"
-// or null when nothing meaningfully matches.
+// "Dinner with parents" → utensils, "Budgeting plan" → dollar, "Take the bus" →
+// bus. Meaningful words of the title are stemmed and scored against each glyph's
+// name + keywords (also stemmed): an exact stem hit counts most, a shared
+// prefix (running↔run) counts less. Returns "glyph:<id>" or null on no match.
 export function suggestGlyph(title) {
-  const words = (title || '').toLowerCase().match(/[a-z]+/g) || []
+  const raw = (title || '').toLowerCase().match(/[a-z]+/g) || []
+  const words = [...new Set(raw.filter(w => w.length >= 3 && !STOPWORDS.has(w)).map(stem))]
   if (!words.length) return null
   let bestId = null, best = 0
   for (const it of GLYPH_ALL) {
-    // Match on the icon's own name + keywords only — NOT its group name, or
+    // Match on the icon's own name + keywords only — not its group name, or
     // every item in a group would tie on the group word (e.g. "study").
-    const hay = `${it.id} ${it.k}`.toLowerCase()
-    const tokens = hay.split(/\s+/)
+    const tokens = [...new Set(`${it.id} ${it.k}`.toLowerCase().split(/\s+/).map(stem))]
     let score = 0
     for (const w of words) {
-      if (w.length < 3) continue                 // skip "to", "hr", "of"…
-      if (tokens.includes(w)) score += 3         // exact keyword hit
-      else if (w.length >= 4 && hay.includes(w)) score += 1  // loose contains
+      let s = 0
+      for (const t of tokens) {
+        if (t === w) { s = 3; break }
+        if (related(w, t)) s = Math.max(s, 2)
+      }
+      score += s
     }
+    // Tiebreak toward the icon with fewer keywords (a more specific match).
     if (score > best) { best = score; bestId = it.id }
   }
   return best > 0 ? 'glyph:' + bestId : null

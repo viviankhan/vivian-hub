@@ -4,6 +4,7 @@ import { findSlots } from '../lib/scheduler.js'
 import { getRoutines } from '../lib/storage.js'
 import { normalizeRoutineItems, sortByTime, to12 } from './Routines.jsx'
 import { Icon } from './IconPicker.jsx'
+import { iconColorOn } from '../lib/glyphs.jsx'
 import { bloomBurst } from '../lib/bloom.js'
 import AddItemModal from './AddItemModal.jsx'
 import FocusMode from './FocusMode.jsx'
@@ -386,8 +387,8 @@ function TimelineBlock({ task, categories, status, now, isDone, elapsed, dateKey
           })()}
           <span style={{ position:'relative', display:'flex' }}>
             {shownIcon
-              ? <Icon value={shownIcon} size={20} color="#fff" />
-              : <span style={{ color:'white', fontWeight:700, fontSize:16 }}>{(title || '?').charAt(0).toUpperCase()}</span>}
+              ? <Icon value={shownIcon} size={20} color={iconColorOn(color)} />
+              : <span style={{ color:iconColorOn(color), fontWeight:700, fontSize:16 }}>{(title || '?').charAt(0).toUpperCase()}</span>}
           </span>
         </div>
         <div style={{ width:3, flex:1, minHeight:14, borderRadius:3, background: (elapsed && !isCurrent) ? color : '#E7E2DB' }} />

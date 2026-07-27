@@ -3,6 +3,7 @@ import { Icon } from './IconPicker.jsx'
 import AddItemModal from './AddItemModal.jsx'
 import { setItemReminders } from '../lib/notifications.js'
 import { recurringOccurrencesForDate, taskProgress } from '../lib/occurrences.js'
+import { iconColorOn } from '../lib/glyphs.jsx'
 
 // Pastel shading for how busy a day is (number of events on it).
 const BUSY_SHADES = ['#F4F0FA', '#EAE1F4', '#DBC9EC', '#C9AEDF']
@@ -196,7 +197,7 @@ export default function Calendar({ commitments, vacations, events, log, categori
                   return (
                     <div key={'sp'+j} title={ev.label}
                       style={{ display:'flex', alignItems:'center', gap:2, height:13, marginTop:2, paddingLeft:3, overflow:'hidden',
-                        background:`${ev.color}`, color:'white',
+                        background:`${ev.color}`, color:iconColorOn(ev.color),
                         borderTopLeftRadius:isStart?4:0, borderBottomLeftRadius:isStart?4:0,
                         borderTopRightRadius:isEnd?4:0, borderBottomRightRadius:isEnd?4:0,
                         marginLeft:isStart?0:-5, marginRight:isEnd?0:-5 }}>
