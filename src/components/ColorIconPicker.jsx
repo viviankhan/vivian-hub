@@ -4,7 +4,7 @@
 // searchable, grouped grid — or upload your own image. The chosen icon is
 // stored on the task ("glyph:<id>") and renders white on the timeline pill,
 // on the detail header, and on the Commitments card.
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { isImageIcon, fileToIconDataUri } from './IconPicker.jsx'
 import { Glyph, GLYPH_GROUPS, GLYPH_ALL, iconColorOn } from '../lib/glyphs.jsx'
 
@@ -17,6 +17,27 @@ export default function ColorIconPicker({ color, icon, onColor, onIcon, onClose 
   const [q, setQ] = useState('')
   const [err, setErr] = useState('')
   const fileRef = useRef(null)
+
+  // Keep the sheet above the on-screen keyboard. This sheet is anchored to the
+  // bottom of the layout viewport, which iOS does NOT shrink when the keyboard
+  // opens — so without this the whole picker (search field + icons) slides
+  // behind the keyboard the moment you tap "Search icons". The visualViewport
+  // API tells us how much of the bottom is obscured; we lift the sheet by that
+  // amount and cap its height to what's actually visible.
+  const [kb, setKb] = useState(0)         // pixels hidden by the keyboard
+  const [visH, setVisH] = useState(0)     // visible viewport height (0 = no data)
+  useEffect(() => {
+    const vv = window.visualViewport
+    if (!vv) return
+    const sync = () => {
+      setKb(Math.max(0, window.innerHeight - vv.height - vv.offsetTop))
+      setVisH(vv.height)
+    }
+    sync()
+    vv.addEventListener('resize', sync)
+    vv.addEventListener('scroll', sync)
+    return () => { vv.removeEventListener('resize', sync); vv.removeEventListener('scroll', sync) }
+  }, [])
   const isCustomColor = !!color && !TASK_COLORS.includes(color)
   const selColor = color || '#2A9D8F'
 
@@ -52,7 +73,12 @@ export default function ColorIconPicker({ color, icon, onColor, onIcon, onClose 
     <div onClick={e => { e.stopPropagation(); onClose() }}
       style={{ position:'fixed', inset:0, background:'rgba(20,28,38,.5)', zIndex:700, display:'flex', alignItems:'flex-end', justifyContent:'center' }}>
       <div onClick={e => e.stopPropagation()}
-        style={{ background:'white', borderRadius:'22px 22px 0 0', width:'100%', maxWidth:480, maxHeight:'88vh', display:'flex', flexDirection:'column', boxShadow:'0 -10px 44px rgba(20,40,60,.28)' }}>
+        style={{ background:'white', borderRadius:'22px 22px 0 0', width:'100%', maxWidth:480,
+          // Lift the sheet above the keyboard and shrink it to the visible area
+          // so its content scrolls instead of hiding behind the keyboard.
+          marginBottom: kb, transition:'margin-bottom .18s ease',
+          maxHeight: kb > 0 ? Math.round(visH - 8) : '88vh',
+          display:'flex', flexDirection:'column', boxShadow:'0 -10px 44px rgba(20,40,60,.28)' }}>
 
         {/* Header */}
         <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'16px 18px 12px', flexShrink:0 }}>
