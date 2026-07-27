@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { buildWeekPlanFromTasks } from '../data/schedule.js'
-import { recurringOccurrencesForDate, nowProgress } from '../lib/occurrences.js'
+import { recurringOccurrencesForDate, taskProgress } from '../lib/occurrences.js'
 import { Icon } from './IconPicker.jsx'
 import { bloomBurst } from '../lib/bloom.js'
 import TimeField from './TimeField.jsx'
@@ -55,7 +55,7 @@ function TaskRow({ id, text, cat, categories, done, carried, carriedFrom, progre
           <span style={{ fontSize:13, color:done?'var(--muted)':'var(--text)', textDecoration:done?'line-through':'none' }}>{text}</span>
           <span style={{ display:'inline-flex', alignItems:'center', gap:3, fontSize:9, letterSpacing:1, textTransform:'uppercase', padding:'1px 6px', borderRadius:10, background:`${dot}20`, color:dot }}>{label}</span>
           {carried&&<span style={{ fontSize:9, letterSpacing:1, textTransform:'uppercase', padding:'1px 6px', borderRadius:10, background:'#FEF3C7', color:'#92400E' }}>↩ {carriedFrom}</span>}
-          {progress&&<span style={{ fontSize:9, fontWeight:700, letterSpacing:.5, padding:'1px 6px', borderRadius:10, background:`${dot}20`, color:dot }}>{progress.remaining}m left</span>}
+          {progress?.remaining!=null&&<span style={{ fontSize:9, fontWeight:700, letterSpacing:.5, padding:'1px 6px', borderRadius:10, background:`${dot}20`, color:dot }}>{progress.remaining}m left</span>}
         </div>
         {onDelete&&<button onClick={onDelete} style={{ fontSize:10, padding:'2px 6px', borderRadius:6, border:'1px solid var(--border)', background:'white', color:'var(--muted)', cursor:'pointer', flexShrink:0 }}>✕</button>}
       </div>
@@ -194,7 +194,7 @@ export default function ThisWeek({ todos, weekState, syncToggle, commitments, ad
         const customTasks = customByDay[day.date] || []
 
         const allTasks = [
-          ...dayCommitments.map(c=>({ id:c.id, text:c.time?`${fmt12(c.time)} — ${c.text}`:c.text, cat:c.cat||'personal', isCommitment:true, _time:c.time, _dur:c.durationMins, _sortTime:c.time||'99:99' })),
+          ...dayCommitments.map(c=>{ const st=Array.isArray(c.subtasks)?c.subtasks:[]; return { id:c.id, text:c.time?`${fmt12(c.time)} — ${c.text}`:c.text, cat:c.cat||'personal', isCommitment:true, _time:c.time, _dur:c.durationMins, _subDone:st.filter(s=>s.done).length, _subCount:st.length, _sortTime:c.time||'99:99' } }),
           ...carriedFromPrev.map(t=>({ id:t.id, text:t.text, cat:t.cat, isRecurring:true, carried:true, carriedFrom:weekPlan[i-1].dayLabel, _sortTime:'00:00' })),
           ...recurringForDay.map(t=>({ id:t.id, text:t.label, cat:t.cat, isRecurring:true, _sortTime: t._time || '50:00' })),
           ...customTasks.map(t=>({ ...t, _sortTime: (() => { const m=t.text?.match(/(\d{1,2}):(\d{2})\s*(AM|PM)/i); if(!m)return'50:00'; let h=parseInt(m[1]); if(m[3].toUpperCase()==='PM'&&h!==12)h+=12; if(m[3].toUpperCase()==='AM'&&h===12)h=0; return `${String(h).padStart(2,'0')}:${m[2]}`; })() })),
@@ -231,7 +231,11 @@ export default function ThisWeek({ todos, weekState, syncToggle, commitments, ad
                 <TaskRow key={t.id} id={t.id} text={t.text} cat={t.cat} categories={categories}
                   done={isDone(t.id, day.date, t.isCommitment)}
                   carried={t.carried} carriedFrom={t.carriedFrom}
-                  progress={t.isCommitment && !isDone(t.id, day.date, true) ? nowProgress(day.date, t._time, t._dur) : null}
+                  progress={(() => {
+                    if (!t.isCommitment || isDone(t.id, day.date, true)) return null
+                    const p = taskProgress({ date: day.date, time: t._time, durationMins: t._dur, subDone: t._subDone, subCount: t._subCount })
+                    return p.show ? p : null
+                  })()}
                   onToggle={()=>syncToggle(t.id, t.text, t.cat, t.isCommitment?null:day.date)}
                   onDelete={t.carried ? null
                     : t.isCommitment

@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { Icon } from './IconPicker.jsx'
 import AddItemModal from './AddItemModal.jsx'
 import { setItemReminders } from '../lib/notifications.js'
-import { recurringOccurrencesForDate, nowProgress } from '../lib/occurrences.js'
+import { recurringOccurrencesForDate, taskProgress } from '../lib/occurrences.js'
 
 // Pastel shading for how busy a day is (number of events on it).
 const BUSY_SHADES = ['#F4F0FA', '#EAE1F4', '#DBC9EC', '#C9AEDF']
@@ -249,7 +249,8 @@ export default function Calendar({ commitments, vacations, events, log, categori
             </div>
           ))}
           {selectedEvents.map((e, i) => {
-            const prog = e.done ? null : nowProgress(selected, e.raw.time, e.raw.durationMins)
+            const p = e.done ? null : taskProgress({ date: selected, time: e.raw.time, durationMins: e.raw.durationMins, subDone: e.subtasks.filter(s=>s.done).length, subCount: e.subtasks.length })
+            const prog = p && p.show ? p : null
             return (
             <div key={i} style={{ position:'relative', overflow:'hidden', padding:'9px 12px', borderRadius:8, marginBottom:6, background:`${e.color}14`, border:`1px solid ${prog ? e.color : e.color+'44'}`, opacity: e.done ? .6 : 1 }}>
               {/* Elapsed shade — fills left→right while the event is happening. */}
@@ -259,7 +260,7 @@ export default function Calendar({ commitments, vacations, events, log, categori
                   {e.icon && <Icon value={e.icon} size={12} />}{e.catLabel}
                 </span>
                 <div style={{ flex:1, fontSize:13, color:'var(--text)', textDecoration: e.done ? 'line-through' : 'none' }}>{e.label}</div>
-                {prog && <span style={{ fontSize:10, fontWeight:700, color:e.color, flexShrink:0 }}>{prog.remaining}m left</span>}
+                {prog?.remaining!=null && <span style={{ fontSize:10, fontWeight:700, color:e.color, flexShrink:0 }}>{prog.remaining}m left</span>}
                 <button onClick={() => setEditing(e.raw)} title="Edit"
                   style={{ background:'none', border:'none', cursor:'pointer', color:'#9CA3AF', fontSize:13, padding:'0 2px', flexShrink:0 }}>✎</button>
               </div>

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { recurringOccurrencesForDate } from '../lib/occurrences.js'
+import { recurringOccurrencesForDate, taskProgress } from '../lib/occurrences.js'
 import { findSlots } from '../lib/scheduler.js'
 import { getRoutines } from '../lib/storage.js'
 import { normalizeRoutineItems, sortByTime, to12 } from './Routines.jsx'
@@ -332,7 +332,7 @@ function GapRow({ mins, prevColor, onAdd }) {
   )
 }
 
-function TimelineBlock({ task, categories, status, now, isDone, elapsed, onToggle, onManage, onShiftToNow, onOpen, onFocus }) {
+function TimelineBlock({ task, categories, status, now, isDone, elapsed, dateKey, onToggle, onManage, onShiftToNow, onOpen, onFocus }) {
   const catFound = (categories || []).find(x => x.id === task.tag)
   const catColor = catFound?.color || TAG_COLORS[task.tag] || '#9CA3AF'
   const color    = task.color || catColor
@@ -375,11 +375,15 @@ function TimelineBlock({ task, categories, status, now, isDone, elapsed, onToggl
         <div style={{ width:3, height:14, borderRadius:3, background: elapsed ? color : '#E7E2DB' }} />
         <div style={{ position:'relative', overflow:'hidden', width:40, height:pillH, borderRadius:20, flexShrink:0, background:color, display:'flex', alignItems:'center', justifyContent:'center',
           boxShadow:isCurrent?`0 0 0 4px ${color}33`:'none' }}>
-          {/* Elapsed shade — a lighter fill rises from the bottom as the current
-              event runs, so an in-progress task visibly "fills up". */}
-          {isCurrent && task._dur && timeMins!==null && (
-            <div style={{ position:'absolute', left:0, right:0, bottom:0, height:`${Math.max(0, Math.min(1, (now - timeMins) / task._dur)) * 100}%`, background:'rgba(255,255,255,.34)', transition:'height 1s linear' }} />
-          )}
+          {/* Progress shade — a lighter fill rises from the bottom by how far
+              along the task is: elapsed time while it's happening, and/or the
+              share of its subtasks that are checked off. */}
+          {(() => {
+            const p = isDone ? null : taskProgress({ date: dateKey, time: task._time, durationMins: task._dur, subDone: task.subDone, subCount: task.subCount })
+            return p && p.show ? (
+              <div style={{ position:'absolute', left:0, right:0, bottom:0, height:`${p.frac * 100}%`, background:'rgba(255,255,255,.34)', transition:'height .5s ease' }} />
+            ) : null
+          })()}
           <span style={{ position:'relative', display:'flex' }}>
             {shownIcon
               ? <Icon value={shownIcon} size={20} color="#fff" />
@@ -925,6 +929,7 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
                   task={task} categories={categories} status={task._status} now={now}
                   isDone={task._status==='past'}
                   elapsed={isToday && task._mins!==null && task._mins<=now}
+                  dateKey={dateKey}
                   onToggle={()=>syncToggle(task.id,task.label,task.tag,task.isCommitment?null:dateKey)}
                   onManage={()=>setManaging(task)}
                   onOpen={()=>openTask(task)}

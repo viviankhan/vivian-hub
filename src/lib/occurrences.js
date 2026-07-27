@@ -149,6 +149,20 @@ export function nowProgress(dateStr, time, durationMins) {
   return { remaining: endMin - nowMin, frac: Math.max(0, Math.min(1, (nowMin - startMin) / (endMin - startMin))) }
 }
 
+// How far along a task is, for its progress highlight — the furthest of two
+// signals: (a) elapsed time within its window right now, and (b) how many of
+// its subtasks are checked off. `show` is true when there's any progress to
+// show; `remaining` is the minutes left when it's mid-window (for the "Xm left"
+// label), else null.
+export function taskProgress({ date, time, durationMins, subDone = 0, subCount = 0 }) {
+  const timeP = nowProgress(date, time, durationMins)
+  const timeFrac = timeP ? timeP.frac : null
+  const subFrac = subCount > 0 ? Math.max(0, Math.min(1, subDone / subCount)) : null
+  const frac = Math.max(timeFrac ?? 0, subFrac ?? 0)
+  const show = timeFrac != null || (subFrac != null && subFrac > 0)
+  return { show, frac, remaining: timeP ? timeP.remaining : null }
+}
+
 // Convenience: does this date have any scheduled item at all (used by Calendar
 // for its busyness shading and day dots)?
 export function recurringCountForDate(rows, dateStr, exceptions = {}) {

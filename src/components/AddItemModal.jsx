@@ -10,7 +10,7 @@ import DateField from './DateField.jsx'
 import TimeField from './TimeField.jsx'
 import MiniCalendar from './MiniCalendar.jsx'
 import FocusMode from './FocusMode.jsx'
-import { nowProgress } from '../lib/occurrences.js'
+import { nowProgress, taskProgress } from '../lib/occurrences.js'
 import { Icon } from './IconPicker.jsx'
 import ColorIconPicker from './ColorIconPicker.jsx'
 import { suggestGlyph } from '../lib/glyphs.jsx'
@@ -260,7 +260,10 @@ export default function AddItemModal({ existing = null, presetDate = null, prese
     const t = setInterval(() => forceTick(x => x + 1), 15000)
     return () => clearInterval(t)
   }, [isEdit])
-  const progress = isEdit ? nowProgress(existing?.date, existing?.time, existing?.durationMins) : null
+  // Time window drives "Xm remaining" + Focus Now; the icon fill reflects the
+  // combined progress (time elapsed and/or live subtask completion).
+  const timeProg = isEdit ? nowProgress(existing?.date, existing?.time, existing?.durationMins) : null
+  const fill = isEdit ? taskProgress({ date: existing?.date, time: existing?.time, durationMins: existing?.durationMins, subDone: subtasks.filter(s => s.done).length, subCount: subtasks.length }) : null
   const [focusOpen, setFocusOpen] = useState(false)
 
   const durationMins = diffMinutes(time, endTime)          // null unless a valid span
@@ -398,8 +401,8 @@ export default function AddItemModal({ existing = null, presetDate = null, prese
             <div style={{ position:'relative', flexShrink:0 }}>
               <button type="button" onClick={() => setShowColorIcon(true)} aria-label="Choose color and icon"
                 style={{ position:'relative', overflow:'hidden', width:52, height:52, borderRadius:16, background:'rgba(255,255,255,.22)', border:'2px solid rgba(255,255,255,.7)', display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', padding:0 }}>
-                {progress && (
-                  <span style={{ position:'absolute', left:0, right:0, bottom:0, height:`${progress.frac * 100}%`, background:'rgba(255,255,255,.4)', transition:'height 1s linear' }} />
+                {fill && fill.show && (
+                  <span style={{ position:'absolute', left:0, right:0, bottom:0, height:`${fill.frac * 100}%`, background:'rgba(255,255,255,.4)', transition:'height .5s ease' }} />
                 )}
                 <span style={{ position:'relative', display:'flex' }}>
                   {shownIcon
@@ -413,15 +416,15 @@ export default function AddItemModal({ existing = null, presetDate = null, prese
               </span>
             </div>
             <div style={{ flex:1, minWidth:0 }}>
-              {progress
-                ? <div style={{ fontSize:12.5, color:'rgba(255,255,255,.92)', fontWeight:600, marginBottom:1 }}>{progress.remaining}m remaining</div>
+              {timeProg
+                ? <div style={{ fontSize:12.5, color:'rgba(255,255,255,.92)', fontWeight:600, marginBottom:1 }}>{timeProg.remaining}m remaining</div>
                 : (time && <div style={{ fontSize:12.5, color:'rgba(255,255,255,.9)', fontWeight:600, marginBottom:1 }}>{fmt12(time)}{endTime && durationMins ? ` – ${fmt12(endTime)}` : ''}</div>)}
               <input value={label} onChange={e => setLabel(e.target.value)} placeholder="What's happening?" autoFocus={!isEdit}
                 onKeyDown={e => e.key === 'Enter' && canSave && submit()}
                 style={{ width:'100%', background:'transparent', border:'none', borderBottom:'1px solid rgba(255,255,255,.45)', color:'white', fontSize:21, fontWeight:700, fontFamily:'DM Sans,sans-serif', outline:'none', padding:'3px 0' }} />
             </div>
           </div>
-          {progress && (
+          {timeProg && (
             <button type="button" onClick={() => setFocusOpen(true)}
               style={{ marginTop:16, width:'100%', padding:'13px', borderRadius:16, border:'none', background:'rgba(255,255,255,.26)', color:'white', fontWeight:700, fontSize:15, cursor:'pointer', fontFamily:'DM Sans,sans-serif', display:'flex', alignItems:'center', justifyContent:'center', gap:9 }}>
               <TargetIcon /> Focus Now

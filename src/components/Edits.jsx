@@ -5,6 +5,14 @@
 const EDIT_LOG = [
   {
     date: '2026-07-27',
+    summary: 'Progress highlight tracks both subtasks done and time elapsed',
+    changes: [
+      'A task now highlights by how far along it is — the fill reflects the share of its subtasks that are checked off as well as time elapsed, whichever is further',
+      'Subtask progress shows any time (not only while the event is happening), across the Today timeline, Week rows, Calendar day detail, and the task editor',
+    ]
+  },
+  {
+    date: '2026-07-27',
     summary: 'Progress shade on Week & Calendar + consistent Add button',
     changes: [
       'The "happening now" elapsed shade now also fills the Week rows and the Calendar day detail, with an "Xm left" label — matching the Today timeline',
