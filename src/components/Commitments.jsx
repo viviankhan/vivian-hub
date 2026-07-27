@@ -507,7 +507,7 @@ function CommitCard({ c, todos, weekState, syncToggle, onDelete, onSchedule, onE
 }
 
 // ── Main ───────────────────────────────────────────────────────
-export default function Commitments({ commitments, addCommitment, updateCommitment, deleteCommitment, todos, weekState, syncToggle, scheduled, categories }) {
+export default function Commitments({ commitments, addCommitment, updateCommitment, deleteCommitment, todos, weekState, syncToggle, scheduled, categories, addRecurringTask }) {
   const [filter, setFilter] = useState('toschedule')
   const [confirmClear, setConfirmClear] = useState(false)
   const [editing, setEditing] = useState(null)
@@ -667,6 +667,7 @@ export default function Commitments({ commitments, addCommitment, updateCommitme
           existing={editing}
           categories={categories}
           onSave={handleSaveEdit}
+          onSaveRecurring={addRecurringTask}
           onDelete={c => deleteCommitment(c.id)}
           onDuplicate={c => addCommitment({ ...c, id:'c-'+Date.now(), text:(c.text||'')+' (copy)', done:false, createdAt:new Date().toISOString() })}
           onMoveToInbox={c => updateCommitment(c.id, { date:null, time:null, durationMins:null })}

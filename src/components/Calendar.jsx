@@ -320,6 +320,7 @@ export default function Calendar({ commitments, vacations, events, log, categori
           existing={editing}
           categories={categories}
           onSave={handleEdit}
+          onSaveRecurring={addRecurringTask}
           onDelete={c => deleteCommitment && deleteCommitment(c.id)}
           onDuplicate={c => addCommitment && addCommitment({ ...c, id:'c-'+Date.now(), text:(c.text||'')+' (copy)', done:false, createdAt:new Date().toISOString() })}
           onMoveToInbox={c => updateCommitment && updateCommitment(c.id, { date:null, time:null, durationMins:null })}

@@ -231,10 +231,10 @@ export default function AddItemModal({ existing = null, existingRecurring = null
   // ── Repeat ───────────────────────────────────────────────────
   // Turning this on makes the item a recurring task instead of a one-off — it
   // then shows on every matching day across Today, Week and Calendar, and is
-  // editable in the Recurring tab. Only offered for brand-new items (editing a
-  // one-off shouldn't silently morph it into a series) and only when the parent
-  // handed us an onSaveRecurring handler.
-  const canRepeat = (!isEdit && !!onSaveRecurring) || isRecEdit
+  // editable in the Recurring tab. Offered for new items, when editing a
+  // recurring template, and when editing a one-off (so you can convert an
+  // existing task into a series) — anywhere the parent handed us onSaveRecurring.
+  const canRepeat = !!onSaveRecurring || isRecEdit
   const [repeatFreq, setRepeatFreq] = useState(rec ? (rec.freq || 'weekly') : (defaultRepeat ? 'weekly' : 'once'))   // once | daily | weekly | monthly
   const [repeatInterval, setRepeatInterval] = useState(rec?.interval && rec.interval > 1 ? rec.interval : 1)
   const [repeatDays, setRepeatDays] = useState(() => {
@@ -332,6 +332,9 @@ export default function AddItemModal({ existing = null, existingRecurring = null
         endDate: repeatEnd || null,
       }
       onSaveRecurring(recurringTask)
+      // Converting an existing one-off into a series → remove the original
+      // single task so it isn't duplicated alongside the new recurring one.
+      if (isEdit && !isRecEdit && existing && onDelete) onDelete(existing)
       onClose()
       return
     }

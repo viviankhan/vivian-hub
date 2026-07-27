@@ -5,6 +5,15 @@
 const EDIT_LOG = [
   {
     date: '2026-07-27',
+    summary: 'Turn an existing task into a recurring one',
+    changes: [
+      'Editing any task now shows the Repeat section — pick Daily / Weekly / Monthly (with every-N interval, weekdays and an end date) to convert a one-off into a series right from the edit sheet',
+      'When you convert, the original single task is removed so it isn\'t duplicated next to the new recurring one',
+      'Works from Today, Calendar and the Inbox edit sheets',
+    ]
+  },
+  {
+    date: '2026-07-27',
     summary: 'Settings feels native + editing a recurring task uses the real add sheet',
     changes: [
       'Settings no longer closes from a lone ✕ up top — it now has a themed bottom selection bar (Look / Routines / Reminders / Categories / Notes / Edits) with a big "Done" button, matching the rest of the app',
