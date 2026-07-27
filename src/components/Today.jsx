@@ -385,7 +385,9 @@ function TimelineBlock({ task, categories, status, now, isDone, elapsed, dateKey
 
   // How far "now" sits into this task's pill (0–1), for the current task's
   // now-line + time label. Null unless this task is the one in progress.
-  const nowFrac = (isToday && isCurrent && task._dur && timeMins !== null)
+  // (`isCurrent` is only ever true on the day being viewed as today, so no
+  // separate isToday check is needed here — and it isn't in scope.)
+  const nowFrac = (isCurrent && task._dur && timeMins !== null)
     ? Math.max(0, Math.min(1, (now - timeMins) / task._dur)) : null
 
   return (
