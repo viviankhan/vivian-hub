@@ -5,6 +5,16 @@
 const EDIT_LOG = [
   {
     date: '2026-07-27',
+    summary: 'Task menu (Duplicate / Move to Inbox / Delete) + more Look options',
+    changes: [
+      'Editing a task now has a ⋯ menu in the top corner: Duplicate it, Move to Inbox (unschedule — strips its date/time so it returns to Commitments), or Delete',
+      'Available wherever you open a task’s editor — Today, the Calendar, and Commitments',
+      'Settings → Look adds a Layout control: Full, Simplified (hides routine cards) or Minimal (also hides the free-time gaps on the timeline)',
+      'Settings → Look adds an In-App Sound toggle to silence Bloom’s reminder chimes and sound previews',
+    ]
+  },
+  {
+    date: '2026-07-27',
     summary: 'Customization — reading font + accent themes (Settings → Look)',
     changes: [
       'New Look tab in Settings: choose a font and an accent theme, Structured-style',

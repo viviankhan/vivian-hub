@@ -2,7 +2,7 @@
 // Look & feel — Font (System / OpenDyslexic) and "App Icon" (accent theme),
 // modeled on Structured's Customization screen. Font and theme are applied live
 // by the parent (App) and persisted per-device.
-import { THEMES, FONTS, tileBackground } from '../lib/appearance.js'
+import { THEMES, FONTS, LAYOUTS, tileBackground } from '../lib/appearance.js'
 
 const sectionLabel = { fontSize:13, fontWeight:700, color:'var(--muted)', letterSpacing:.2, margin:'6px 2px 10px' }
 const card = { background:'white', borderRadius:16, border:'1px solid var(--border)', padding:16, marginBottom:12 }
@@ -45,7 +45,18 @@ function FontTile({ font, selected, onClick }) {
   )
 }
 
-export default function Customization({ font, onFont, theme, onTheme }) {
+// A pill toggle switch (In-App Sound).
+function Switch({ on, onClick }) {
+  return (
+    <button onClick={onClick} aria-pressed={on}
+      style={{ width:52, height:31, borderRadius:16, border:'none', cursor:'pointer', padding:3, flexShrink:0,
+        background: on ? 'var(--teal)' : '#CBD2DA', transition:'background .2s', display:'flex', justifyContent: on ? 'flex-end' : 'flex-start' }}>
+      <span style={{ width:25, height:25, borderRadius:'50%', background:'white', boxShadow:'0 1px 3px rgba(0,0,0,.28)' }} />
+    </button>
+  )
+}
+
+export default function Customization({ font, onFont, theme, onTheme, layout, onLayout, soundOn, onSound }) {
   return (
     <div>
       <div className="page-title" style={{ marginBottom:4 }}>Customization</div>
@@ -73,9 +84,43 @@ export default function Customization({ font, onFont, theme, onTheme }) {
           ))}
         </div>
       </div>
+      <div style={{ fontSize:12.5, color:'var(--muted)', lineHeight:1.55, margin:'0 2px 22px' }}>
+        Recolors Bloom’s accent throughout the app; it won’t change the color of
+        existing tasks. On the web the installed home-screen icon can’t be
+        swapped, so this changes the in-app theme.
+      </div>
+
+      {/* ── Layout ────────────────────────────────────────────── */}
+      <div style={sectionLabel}>Layout</div>
+      <div style={{ ...card, padding:6, display:'flex', gap:4, background:'white' }}>
+        {LAYOUTS.map(l => {
+          const on = layout === l.id
+          return (
+            <button key={l.id} onClick={() => onLayout(l.id)}
+              style={{ flex:1, padding:'11px 6px', borderRadius:12, border:'none', cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontSize:14, fontWeight:600,
+                background: on ? 'var(--teal)' : 'transparent', color: on ? 'white' : 'var(--muted)', transition:'background .15s' }}>
+              {l.label}
+            </button>
+          )
+        })}
+      </div>
+      <div style={{ fontSize:12.5, color:'var(--muted)', lineHeight:1.55, margin:'0 2px 22px' }}>
+        <i>Simplified</i> and <i>Minimal</i> hide certain elements — routine cards,
+        then the free-time gaps on the timeline — to make the day less distracting.
+      </div>
+
+      {/* ── Sound Effects ─────────────────────────────────────── */}
+      <div style={sectionLabel}>Sound Effects</div>
+      <div style={{ ...card, display:'flex', alignItems:'center', gap:12, marginBottom:8 }}>
+        <span style={{ display:'inline-flex', color:'var(--teal)' }}>
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 5 6 9H2v6h4l5 4V5Z"/><path d="M15.5 8.5a5 5 0 0 1 0 7M19 5a9 9 0 0 1 0 14"/></svg>
+        </span>
+        <span style={{ flex:1, fontSize:15, fontWeight:500, color:'var(--text)' }}>In-App Sound</span>
+        <Switch on={soundOn} onClick={() => onSound(!soundOn)} />
+      </div>
       <div style={{ fontSize:12.5, color:'var(--muted)', lineHeight:1.55, margin:'0 2px 8px' }}>
-        Recolors Bloom’s accent throughout the app. On the web the installed
-        home-screen icon can’t be swapped, so this changes the in-app theme.
+        Plays a chime in-app when a reminder fires while Bloom is open, and when
+        you preview alert sounds. Your phone still controls system notifications.
       </div>
     </div>
   )

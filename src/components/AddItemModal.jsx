@@ -138,7 +138,21 @@ function relativeDay(dateStr) {
   return null
 }
 
-export default function AddItemModal({ existing = null, presetDate = null, presetText = '', lockDate = false, categories = [], onSave, onSaveRecurring = null, onClose, title = 'Add to calendar' }) {
+// A row in the header ⋯ menu (Duplicate / Move to Inbox / Delete).
+function MenuRow({ icon, label, danger, onClick }) {
+  return (
+    <button onClick={onClick}
+      style={{ display:'flex', alignItems:'center', gap:12, width:'100%', padding:'12px 16px', border:'none', background:'transparent', cursor:'pointer',
+        fontFamily:'DM Sans,sans-serif', fontSize:15, color: danger ? '#DC2626' : 'var(--text)', textAlign:'left' }}>
+      <span style={{ display:'inline-flex', color: danger ? '#DC2626' : 'var(--text)' }}>{icon}</span>{label}
+    </button>
+  )
+}
+const DupIcon = () => (<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h8"/></svg>)
+const InboxIcon2 = () => (<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 13h4l2 3h4l2-3h4"/><path d="M4 13 6 5.5A2 2 0 0 1 7.9 4h8.2A2 2 0 0 1 18 5.5L20 13v5a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2Z"/></svg>)
+const TrashIcon2 = () => (<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4.5 7h15M9 7V5.2A1.2 1.2 0 0 1 10.2 4h3.6A1.2 1.2 0 0 1 15 5.2V7M6.5 7l1 12.5h9L17.5 7"/></svg>)
+
+export default function AddItemModal({ existing = null, presetDate = null, presetText = '', lockDate = false, categories = [], onSave, onSaveRecurring = null, onDelete = null, onDuplicate = null, onMoveToInbox = null, onClose, title = 'Add to calendar' }) {
   const cats = (categories && categories.length) ? categories : DEFAULT_CATEGORIES
   const isEdit = !!existing
   const [label, setLabel]         = useState(existing?.text || presetText || '')
@@ -219,6 +233,10 @@ export default function AddItemModal({ existing = null, presetDate = null, prese
   // Which grouped row is expanded for editing (only one open at a time).
   const [expanded, setExpanded] = useState(null)
   const toggleRow = (k) => setExpanded(e => (e === k ? null : k))
+  // Header ⋯ overflow menu (edit mode only) — Duplicate / Move to Inbox / Delete.
+  const [menuOpen, setMenuOpen] = useState(false)
+  const hasMenu = isEdit && (onDuplicate || onMoveToInbox || onDelete)
+  const runMenu = (fn) => { setMenuOpen(false); onClose(); fn(existing) }
 
   const durationMins = diffMinutes(time, endTime)          // null unless a valid span
   const endInvalid = !!(time && endTime && !durationMins)  // end set but ≤ start
@@ -313,10 +331,25 @@ export default function AddItemModal({ existing = null, presetDate = null, prese
 
         {/* ── Colored header band ─────────────────────────────── */}
         <div style={{ background:headerColor, backgroundImage:'linear-gradient(158deg, rgba(255,255,255,.14), rgba(0,0,0,.20))', padding:'14px 16px 20px' }}>
-          <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:14 }}>
+          <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:14, position:'relative' }}>
             <button onClick={onClose} aria-label="Close"
               style={{ width:34, height:34, borderRadius:'50%', border:'none', background:'rgba(255,255,255,.28)', color:'white', fontSize:16, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>✕</button>
             <span style={{ fontSize:11, letterSpacing:1.5, textTransform:'uppercase', color:'rgba(255,255,255,.85)', fontWeight:600 }}>{isEdit ? 'Edit' : title}</span>
+            {hasMenu ? (
+              <button onClick={() => setMenuOpen(o => !o)} aria-label="More actions"
+                style={{ width:34, height:34, borderRadius:'50%', border:'none', background:'rgba(255,255,255,.28)', color:'white', fontSize:18, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', lineHeight:1, paddingBottom:4 }}>⋯</button>
+            ) : <span style={{ width:34 }} />}
+            {menuOpen && (
+              <>
+                <div onClick={() => setMenuOpen(false)} style={{ position:'fixed', inset:0, zIndex:5 }} />
+                <div style={{ position:'absolute', top:42, right:0, zIndex:6, background:'white', borderRadius:14, boxShadow:'0 12px 40px rgba(20,30,45,.28)', overflow:'hidden', minWidth:196, paddingTop:4, paddingBottom:4 }}>
+                  {onDuplicate && <MenuRow icon={<DupIcon />} label="Duplicate" onClick={() => runMenu(onDuplicate)} />}
+                  {onMoveToInbox && <MenuRow icon={<InboxIcon2 />} label="Move to Inbox" onClick={() => runMenu(onMoveToInbox)} />}
+                  {onDelete && <div style={{ height:1, background:'#EEEAF1', margin:'4px 0' }} />}
+                  {onDelete && <MenuRow icon={<TrashIcon2 />} label="Delete" danger onClick={() => runMenu(onDelete)} />}
+                </div>
+              </>
+            )}
           </div>
           <div style={{ display:'flex', alignItems:'center', gap:13 }}>
             {/* Icon tile — tap the palette badge to pick a color + icon */}

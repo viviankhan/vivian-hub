@@ -31,6 +31,15 @@ export const FONTS = [
   { id:'dyslexic', label:'OpenDyslexic', family:"'OpenDyslexic', 'DM Sans', sans-serif" },
 ]
 
+// Layout density — how much supporting UI shows on the timeline. Simplified and
+// Minimal hide progressively more (routine cards, then free-time gap rows) to
+// make the day less busy. Driven by a class on <html> + CSS in index.css.
+export const LAYOUTS = [
+  { id:'full',       label:'Full' },
+  { id:'simplified', label:'Simplified' },
+  { id:'minimal',    label:'Minimal' },
+]
+
 export function getTheme(id) {
   return THEMES.find(t => t.id === id) || THEMES[0]
 }
@@ -65,6 +74,13 @@ export function applyFont(id) {
   document.documentElement.classList.toggle('font-dyslexic', id === 'dyslexic')
 }
 
+export function applyLayout(id) {
+  if (typeof document === 'undefined') return
+  const c = document.documentElement.classList
+  c.toggle('layout-simplified', id === 'simplified')
+  c.toggle('layout-minimal', id === 'minimal')
+}
+
 // ── Persistence (device-local) ───────────────────────────────
 export function getThemePref() {
   try { return localStorage.getItem('bloom_theme') || 'bloom' } catch { return 'bloom' }
@@ -78,10 +94,24 @@ export function getFontPref() {
 export function setFontPref(v) {
   try { localStorage.setItem('bloom_font', v) } catch {}
 }
+export function getLayoutPref() {
+  try { return localStorage.getItem('bloom_layout') || 'full' } catch { return 'full' }
+}
+export function setLayoutPref(v) {
+  try { localStorage.setItem('bloom_layout', v) } catch {}
+}
+// In-app sound effects (reminder chimes / previews). On by default.
+export function getSoundEnabled() {
+  try { return localStorage.getItem('bloom_sound') !== 'off' } catch { return true }
+}
+export function setSoundEnabled(on) {
+  try { localStorage.setItem('bloom_sound', on ? 'on' : 'off') } catch {}
+}
 
 // Apply whatever's saved — call once as early as possible to avoid a flash of
-// the default theme before React mounts.
+// the default look before React mounts.
 export function applySavedAppearance() {
   applyTheme(getThemePref())
   applyFont(getFontPref())
+  applyLayout(getLayoutPref())
 }

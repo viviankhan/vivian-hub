@@ -667,6 +667,9 @@ export default function Commitments({ commitments, addCommitment, updateCommitme
           existing={editing}
           categories={categories}
           onSave={handleSaveEdit}
+          onDelete={c => deleteCommitment(c.id)}
+          onDuplicate={c => addCommitment({ ...c, id:'c-'+Date.now(), text:(c.text||'')+' (copy)', done:false, createdAt:new Date().toISOString() })}
+          onMoveToInbox={c => updateCommitment(c.id, { date:null, time:null, durationMins:null })}
           onClose={() => setEditing(null)}
           title="Edit commitment" />
       )}

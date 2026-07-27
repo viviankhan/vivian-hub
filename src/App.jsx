@@ -33,7 +33,8 @@ import SearchOverlay, { SearchIcon } from './components/SearchOverlay.jsx'
 import { registerServiceWorker, syncReminders } from './lib/notifications.js'
 import { Glyph } from './lib/glyphs.jsx'
 import Customization from './components/Customization.jsx'
-import { getFontPref, setFontPref, applyFont, getThemePref, setThemePref, applyTheme } from './lib/appearance.js'
+import { getFontPref, setFontPref, applyFont, getThemePref, setThemePref, applyTheme,
+  getLayoutPref, setLayoutPref, applyLayout, getSoundEnabled, setSoundEnabled } from './lib/appearance.js'
 
 // Build id baked in at build time (see vite.config.js). Shown in Settings so
 // it's obvious on-device which version is actually running after a deploy.
@@ -50,7 +51,7 @@ const TABS = [
 ]
 
 // ── Settings Drawer ────────────────────────────────────────────
-function SettingsDrawer({ open, onClose, settingsTab, setSettingsTab, notes, updateNotes, categories, addCategory, updateCategory, deleteCategory, events, commitments, font, setFont, theme, setTheme }) {
+function SettingsDrawer({ open, onClose, settingsTab, setSettingsTab, notes, updateNotes, categories, addCategory, updateCategory, deleteCategory, events, commitments, font, setFont, theme, setTheme, layout, setLayout, soundOn, setSound }) {
   if (!open) return null
   return (
     <>
@@ -71,7 +72,7 @@ function SettingsDrawer({ open, onClose, settingsTab, setSettingsTab, notes, upd
           ))}
         </div>
         <div style={{ padding:'20px 24px' }}>
-          {settingsTab==='customize'  && <Customization font={font} onFont={setFont} theme={theme} onTheme={setTheme} />}
+          {settingsTab==='customize'  && <Customization font={font} onFont={setFont} theme={theme} onTheme={setTheme} layout={layout} onLayout={setLayout} soundOn={soundOn} onSound={setSound} />}
           {settingsTab==='routines'   && <Routines />}
           {settingsTab==='reminders'  && <NotificationsSettings events={events} commitments={commitments} />}
           {settingsTab==='categories' && <CategoriesManager categories={categories} addCategory={addCategory} updateCategory={updateCategory} deleteCategory={deleteCategory} />}
@@ -162,10 +163,14 @@ export default function App() {
   const [settingsTab,  setSettingsTab]  = useState('routines')
   // Appearance — device-local font + accent theme. main.jsx applies the saved
   // values before first paint; these setters keep the live app in step.
-  const [font,  setFontState]  = useState(getFontPref)
-  const [theme, setThemeState] = useState(getThemePref)
-  const setFont  = useCallback(v => { setFontState(v);  setFontPref(v);  applyFont(v)  }, [])
-  const setTheme = useCallback(v => { setThemeState(v); setThemePref(v); applyTheme(v) }, [])
+  const [font,   setFontState]   = useState(getFontPref)
+  const [theme,  setThemeState]  = useState(getThemePref)
+  const [layout, setLayoutState] = useState(getLayoutPref)
+  const [soundOn,setSoundState]  = useState(getSoundEnabled)
+  const setFont   = useCallback(v  => { setFontState(v);   setFontPref(v);    applyFont(v)   }, [])
+  const setTheme  = useCallback(v  => { setThemeState(v);  setThemePref(v);   applyTheme(v)  }, [])
+  const setLayout = useCallback(v  => { setLayoutState(v); setLayoutPref(v);  applyLayout(v) }, [])
+  const setSound  = useCallback(on => { setSoundState(on); setSoundEnabled(on) }, [])
   const [searchOpen,   setSearchOpen]   = useState(false)
   const [navOpen,      setNavOpen]      = useState(false)  // mobile side-nav drawer
   // Set when a search suggestion is picked → Calendar navigates to this date.
@@ -575,7 +580,8 @@ export default function App() {
         categories={categories} addCategory={addCategoryFn}
         updateCategory={updateCategoryFn} deleteCategory={deleteCategoryFn}
         events={events} commitments={commitments}
-        font={font} setFont={setFont} theme={theme} setTheme={setTheme} />
+        font={font} setFont={setFont} theme={theme} setTheme={setTheme}
+        layout={layout} setLayout={setLayout} soundOn={soundOn} setSound={setSound} />
 
       <SearchOverlay
         open={searchOpen} onClose={() => setSearchOpen(false)}

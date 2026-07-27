@@ -29,6 +29,13 @@
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
+/* ── Layout density (Settings → Look) ─────────────────────────── */
+/* Simplified hides the morning/night routine cards; Minimal additionally hides
+   the free-time gap rows on the timeline, for a calmer, less busy day. */
+.layout-simplified .routine-card,
+.layout-minimal .routine-card { display: none; }
+.layout-minimal .today-gap { display: none; }
+
 :root {
   --bloom-header-start: #B8D8E8;
   --bloom-header-mid:   #C8BFDF;

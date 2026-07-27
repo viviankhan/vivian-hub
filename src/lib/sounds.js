@@ -47,6 +47,9 @@ export const SOUNDS = [
 ]
 
 export function playSound(id) {
+  // Respect the global In-App Sound toggle (Settings → Look). Read straight
+  // from localStorage to avoid an import cycle with appearance.js.
+  try { if (localStorage.getItem('bloom_sound') === 'off') return } catch {}
   switch (id) {
     case 'chime':   return playNotes([{ f: 659, t: 0, d: 0.24 }, { f: 988, t: 0.12, d: 0.32 }], 'sine')
     case 'ding':    return playNotes([{ f: 1047, t: 0, d: 0.42 }], 'sine')

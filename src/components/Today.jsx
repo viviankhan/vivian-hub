@@ -73,7 +73,7 @@ function RoutineCard({ title, icon, items, prefix, open, setOpen, routineDone, t
         : `${to12(withT[0].time)} – ${to12(withT[withT.length-1].time)}`)
     : ''
   return (
-    <div style={{background:'white',borderRadius:12,border:'1px solid var(--border)',marginBottom:20,overflow:'hidden'}}>
+    <div className="routine-card" style={{background:'white',borderRadius:12,border:'1px solid var(--border)',marginBottom:20,overflow:'hidden'}}>
       <div onClick={()=>setOpen(o=>!o)}
         style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'12px 16px',cursor:'pointer',userSelect:'none'}}>
         <div style={{display:'flex',alignItems:'center',gap:10}}>
@@ -303,7 +303,7 @@ function GapRow({ mins, prevColor, onAdd }) {
     : <>Plan or chill for {dur} before action.</>
   const dash = prevColor || '#C9C9D3'
   return (
-    <div style={{ display:'flex', gap:0 }}>
+    <div className="today-gap" style={{ display:'flex', gap:0 }}>
       <div style={{ width:52, flexShrink:0 }} />
       <div style={{ width:44, flexShrink:0, display:'flex', justifyContent:'center' }}>
         <div style={{ width:3, minHeight:h, borderRadius:3, background:`repeating-linear-gradient(${dash} 0 5px, transparent 5px 11px)` }} />
@@ -917,7 +917,11 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
       {shiftPlan&&<ShiftChooser plan={shiftPlan} onApply={(ids)=>{applyShift(shiftPlan.pivot, ids); setShiftPlan(null)}} onCancel={()=>setShiftPlan(null)}/>}
       {shiftResult&&<ShiftToast result={shiftResult} onClose={()=>setShiftResult(null)}/>}
       {addingTask&&<AddItemModal presetDate={dateKey} lockDate categories={categories} onSave={handleAdd} onSaveRecurring={addRecurringTask} onClose={()=>setAddingTask(false)} title="Add to Today"/>}
-      {editing&&<AddItemModal existing={editing} categories={categories} onSave={handleSaveEdit} onClose={()=>setEditing(null)} title="Edit task"/>}
+      {editing&&<AddItemModal existing={editing} categories={categories} onSave={handleSaveEdit}
+        onDelete={c=>deleteCommitment&&deleteCommitment(c.id)}
+        onDuplicate={c=>addCommitment&&addCommitment({ ...c, id:'c-'+Date.now(), text:(c.text||'')+' (copy)', done:false, createdAt:new Date().toISOString() })}
+        onMoveToInbox={c=>updateCommitment&&updateCommitment(c.id, { date:null, time:null, durationMins:null })}
+        onClose={()=>setEditing(null)} title="Edit task"/>}
       {managing&&<ManageModal task={managing} dateKey={dateKey} onClose={()=>setManaging(null)} onDelete={handleDelete} onReschedule={handleReschedule} onUnschedule={handleUnschedule} onDeleteSeries={handleDeleteSeries} scheduled={scheduled}/>}
     </div>
   )
