@@ -5,6 +5,14 @@
 const EDIT_LOG = [
   {
     date: '2026-07-27',
+    summary: 'Check subtasks off right on the Today timeline',
+    changes: [
+      'Tap a task\'s ☑ 1/1 pill to expand its subtasks and check them off in place — no need to open the task',
+      'Ticking the last one auto-completes the parent, same as in the editor; all synced to the cloud',
+    ]
+  },
+  {
+    date: '2026-07-27',
     summary: 'Timeline detail polish to match Structured',
     changes: [
       'The progress fill now lives only on the Today timeline pill (and the task sheet), not as bars on the Week and Calendar rows',

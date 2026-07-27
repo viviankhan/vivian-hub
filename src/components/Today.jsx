@@ -347,7 +347,8 @@ function GapRow({ mins, prevColor, onAdd }) {
   )
 }
 
-function TimelineBlock({ task, categories, status, now, isDone, elapsed, dateKey, onToggle, onManage, onShiftToNow, onOpen, onFocus }) {
+function TimelineBlock({ task, categories, status, now, isDone, elapsed, dateKey, onToggle, onManage, onShiftToNow, onOpen, onFocus, onToggleSub }) {
+  const [subOpen, setSubOpen] = useState(false)
   const catFound = (categories || []).find(x => x.id === task.tag)
   const catColor = catFound?.color || TAG_COLORS[task.tag] || '#9CA3AF'
   const color    = task.color || catColor
@@ -430,18 +431,34 @@ function TimelineBlock({ task, categories, status, now, isDone, elapsed, dateKey
           <div style={{ display:'flex', gap:6, marginTop:7, flexWrap:'wrap', alignItems:'center' }}>
             <span style={{ display:'inline-flex', alignItems:'center', gap:3, fontSize:9, padding:'2px 7px', borderRadius:6, background:`${color}1c`, color, fontWeight:700, letterSpacing:.6, textTransform:'uppercase' }}>{catIcon && <Icon value={catIcon} size={11} />}{catLabel}</span>
             {task.subCount>0 && (
-              <span style={{ display:'inline-flex', alignItems:'center', gap:4, fontSize:10, fontWeight:700, padding:'2px 8px', borderRadius:12, background:'#EEECF0', color:'var(--muted)' }}>
+              <button onClick={e=>{ e.stopPropagation(); onToggleSub ? setSubOpen(o=>!o) : null }}
+                style={{ display:'inline-flex', alignItems:'center', gap:4, fontSize:10, fontWeight:700, padding:'2px 8px', borderRadius:12, border:'none', background:'#EEECF0', color:'var(--muted)', cursor:onToggleSub?'pointer':'default', fontFamily:'DM Sans,sans-serif' }}>
                 <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><rect x="4" y="4" width="16" height="16" rx="4.5"/><path d="M8.4 12.3l2.4 2.4 4.6-5"/></svg>
                 {task.subDone}/{task.subCount}
-              </span>
+                {onToggleSub && <span style={{ fontSize:9, transform:subOpen?'rotate(180deg)':'none', transition:'transform .2s' }}>▾</span>}
+              </button>
             )}
             {!isDone && <button onClick={e=>{ e.stopPropagation(); onManage() }} style={{ marginLeft:'auto', fontSize:14, padding:'0 4px', border:'none', background:'none', color:'#C0C6CE', cursor:'pointer', lineHeight:1 }}>···</button>}
           </div>
+          {/* Inline subtasks — check them off without opening the task. */}
+          {subOpen && onToggleSub && task.subCount>0 && (
+            <div onClick={e=>e.stopPropagation()} style={{ marginTop:8, marginLeft:2 }}>
+              {(task.subtasks||[]).map(s => (
+                <div key={s.id} onClick={()=>onToggleSub(s.id)}
+                  style={{ display:'flex', alignItems:'center', gap:9, padding:'5px 0', cursor:'pointer' }}>
+                  <span style={{ width:18, height:18, borderRadius:5, flexShrink:0, border: s.done?'none':`2px solid ${color}`, background:s.done?color:'transparent', display:'flex', alignItems:'center', justifyContent:'center' }}>
+                    {s.done && <span style={{ color:iconColorOn(color), fontSize:11, fontWeight:700 }}>✓</span>}
+                  </span>
+                  <span style={{ fontSize:13, color:s.done?'var(--muted)':'var(--text)', textDecoration:s.done?'line-through':'none' }}>{s.text}</span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
         <div style={{ display:'flex', flexWrap:'wrap', gap:8 }}>
           {isCurrent && timeMins!==null && (
             <button onClick={e=>{ e.stopPropagation(); onFocus&&onFocus() }}
-              style={{ marginTop:9, padding:'7px 14px', borderRadius:9, border:'none', background:color, color:'#fff', cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontSize:11, fontWeight:700, display:'inline-flex', alignItems:'center', gap:5 }}>
+              style={{ marginTop:9, padding:'7px 14px', borderRadius:9, border:'none', background:color, color:iconColorOn(color), cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontSize:11, fontWeight:700, display:'inline-flex', alignItems:'center', gap:5 }}>
               <TargetIcon /> Focus Now
             </button>
           )}
@@ -662,6 +679,7 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
       note:[c.person&&`With: ${c.person}`,c.prepMin&&`Leave ${c.prepMin} min early`].filter(Boolean).join(' · '),
       tag:c.cat||'personal', isCommitment:true,
       color:c.color||null, icon:c.icon||null, _time:c.time||null, _dur:c.durationMins||null,
+      subtasks:Array.isArray(c.subtasks)?c.subtasks:[],
       subCount:Array.isArray(c.subtasks)?c.subtasks.length:0,
       subDone:Array.isArray(c.subtasks)?c.subtasks.filter(s=>s.done).length:0,
     })),
@@ -833,6 +851,13 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
     if (addCommitment) addCommitment(commitment)
     setItemReminders(commitment.id, reminderMins)
   }
+  // Check a subtask off right on the timeline (commitments only). Writes back
+  // the whole subtasks array; App auto-completes the parent when all are done.
+  const toggleSubtask = (task, subId) => {
+    if (!task.isCommitment || !updateCommitment) return
+    const subs = (Array.isArray(task.subtasks) ? task.subtasks : []).map(s => s.id === subId ? { ...s, done: !s.done } : s)
+    updateCommitment(task.id, { subtasks: subs })
+  }
   // Tapping a task opens its full detail sheet (subtasks, color, alerts).
   // Commitments open the editor; template/custom todos fall back to Manage.
   const openTask = (task) => {
@@ -958,6 +983,7 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
                   onOpen={()=>openTask(task)}
                   onShiftToNow={()=>handleShiftToNow(task)}
                   onFocus={()=>setFocusTask(task)}
+                  onToggleSub={(sid)=>toggleSubtask(task, sid)}
                 />
               </div>
             )
