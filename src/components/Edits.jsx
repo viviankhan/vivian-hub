@@ -5,6 +5,13 @@
 const EDIT_LOG = [
   {
     date: '2026-07-27',
+    summary: 'Connector line blends between task colors',
+    changes: [
+      'The dashed line in a gap now fades from the last task\'s color at the top into the next task\'s color at the bottom — so the spine visibly bridges the two',
+    ]
+  },
+  {
+    date: '2026-07-27',
     summary: 'Turn an existing task into a recurring one',
     changes: [
       'Editing any task now shows the Repeat section — pick Daily / Weekly / Monthly (with every-N interval, weekdays and an end date) to convert a one-off into a series right from the edit sheet',

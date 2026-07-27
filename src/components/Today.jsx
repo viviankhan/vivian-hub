@@ -319,7 +319,7 @@ const PX_PER_MIN = 2.4
 
 // A "free time" gap between two timed tasks, with a quick Add Task. Its height
 // grows with the length of the gap, so the day reads at relative scale.
-function GapRow({ mins, prevColor, onAdd }) {
+function GapRow({ mins, prevColor, nextColor, onAdd }) {
   const h = Math.min(150, Math.max(34, Math.round(mins * PX_PER_MIN)))
   const dur = <b style={{ color:'var(--teal)' }}>{fmtMins(mins).trim()}</b>
   // Structured-style copy: a long empty stretch reads as opportunity, a
@@ -327,12 +327,18 @@ function GapRow({ mins, prevColor, onAdd }) {
   const body = mins >= 120
     ? <>Long stretch — {dur} of potential!</>
     : <>Plan or chill for {dur} before action.</>
-  const dash = prevColor || '#C9C9D3'
+  const top = prevColor || '#C9C9D3'
+  const bot = nextColor || top
+  // The connector reads as a bridge between the two tasks: its dashes blend
+  // from the finished task's color at the top into the upcoming task's color
+  // at the bottom. A vertical color gradient paints the ink; a repeating mask
+  // cuts it into dashes (‑webkit‑ prefix for iOS Safari / the PWA).
+  const dashMask = 'repeating-linear-gradient(black 0 5px, transparent 5px 11px)'
   return (
     <div className="today-gap" style={{ display:'flex', gap:0 }}>
       <div style={{ width:52, flexShrink:0 }} />
       <div style={{ width:52, flexShrink:0, display:'flex', justifyContent:'center' }}>
-        <div style={{ width:3, minHeight:h, borderRadius:3, background:`repeating-linear-gradient(${dash} 0 5px, transparent 5px 11px)` }} />
+        <div style={{ width:3, minHeight:h, borderRadius:3, background:`linear-gradient(to bottom, ${top}, ${bot})`, WebkitMask:dashMask, mask:dashMask }} />
       </div>
       <div style={{ flex:1, minWidth:0, paddingLeft:8, paddingTop:4 }}>
         <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:9 }}>
@@ -996,19 +1002,21 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
           {tasksWithStatus.map((task,i)=>{
             // Free-time gap between the previous task's end and this one's start.
             const prev = tasksWithStatus[i-1]
-            let gap = null, gapColor = null
+            const colorOf = t => t && (t.color || (categories||[]).find(x=>x.id===t.tag)?.color || TAG_COLORS[t.tag] || null)
+            let gap = null, gapColor = null, gapNextColor = null
             if (prev && prev._mins!==null && task._mins!==null && task._status!=='past') {
               const prevEnd = (prev._time && prev._dur) ? (hhmmToMins(prev._time)+prev._dur) : prev._mins
               const g = task._mins - prevEnd
               if (g >= 20) {
                 gap = g
-                gapColor = prev.color || (categories||[]).find(x=>x.id===prev.tag)?.color || TAG_COLORS[prev.tag] || '#C9C9D3'
+                gapColor = colorOf(prev) || '#C9C9D3'
+                gapNextColor = colorOf(task) || gapColor
               }
             }
             return (
               <div key={task.id}>
                 {i===nowInsertIdx&&<NowMarker now={now}/>}
-                {gap&&<GapRow mins={gap} prevColor={gapColor} onAdd={()=>setAddingTask(true)}/>}
+                {gap&&<GapRow mins={gap} prevColor={gapColor} nextColor={gapNextColor} onAdd={()=>setAddingTask(true)}/>}
                 <TimelineBlock
                   task={task} categories={categories} status={task._status} now={now}
                   isDone={task._status==='past'}
