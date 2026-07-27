@@ -22,5 +22,37 @@
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
+    <!-- Safety net: if the app bundle fails to load/parse (e.g. a stale cached
+         file), React never mounts and #root stays empty. After a few seconds
+         with nothing rendered, show a reload button that clears the PWA caches
+         and fetches a fresh copy — so the screen is never just blank. -->
+    <script>
+      window.addEventListener('load', function () {
+        setTimeout(function () {
+          var root = document.getElementById('root');
+          if (!root || root.childElementCount > 0) return;
+          root.innerHTML =
+            '<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;font-family:-apple-system,sans-serif;color:#2A3848;text-align:center">' +
+            '<div style="max-width:420px"><div style="font-size:23px;font-weight:700;margin-bottom:8px">Bloom couldn’t load</div>' +
+            '<div style="font-size:14px;color:#8899AA;margin-bottom:18px;line-height:1.5">A cached file looks stale. Reload to fetch a fresh copy — your data is safe in the cloud.</div>' +
+            '<button id="bloom-reload" style="padding:12px 24px;border-radius:12px;border:none;background:#2A4858;color:#E8F6FA;font-weight:700;font-size:15px;cursor:pointer">Clean reload</button></div></div>';
+          document.getElementById('bloom-reload').onclick = function () {
+            (async function () {
+              try {
+                if ('serviceWorker' in navigator) {
+                  var rs = await navigator.serviceWorker.getRegistrations();
+                  await Promise.all(rs.map(function (r) { return r.unregister(); }));
+                }
+                if (window.caches) {
+                  var ks = await caches.keys();
+                  await Promise.all(ks.map(function (k) { return caches.delete(k); }));
+                }
+              } catch (e) {}
+              location.reload();
+            })();
+          };
+        }, 5000);
+      });
+    </script>
   </body>
 </html>
