@@ -966,7 +966,7 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
         onClose={()=>setFocusTask(null)} />}
       {shiftPlan&&<ShiftChooser plan={shiftPlan} onApply={(ids)=>{applyShift(shiftPlan.pivot, ids); setShiftPlan(null)}} onCancel={()=>setShiftPlan(null)}/>}
       {shiftResult&&<ShiftToast result={shiftResult} onClose={()=>setShiftResult(null)}/>}
-      {addingTask&&<AddItemModal presetDate={dateKey} lockDate categories={categories} onSave={handleAdd} onSaveRecurring={addRecurringTask} onClose={()=>setAddingTask(false)} title="Add to Today"/>}
+      {addingTask&&<AddItemModal presetDate={dateKey} categories={categories} onSave={handleAdd} onSaveRecurring={addRecurringTask} onClose={()=>setAddingTask(false)} title="Add to Today"/>}
       {editing&&<AddItemModal existing={editing} categories={categories} onSave={handleSaveEdit}
         onDelete={c=>deleteCommitment&&deleteCommitment(c.id)}
         onDuplicate={c=>addCommitment&&addCommitment({ ...c, id:'c-'+Date.now(), text:(c.text||'')+' (copy)', done:false, createdAt:new Date().toISOString() })}

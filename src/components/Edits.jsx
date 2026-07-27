@@ -5,6 +5,14 @@
 const EDIT_LOG = [
   {
     date: '2026-07-27',
+    summary: 'Progress shade on Week & Calendar + consistent Add button',
+    changes: [
+      'The "happening now" elapsed shade now also fills the Week rows and the Calendar day detail, with an "Xm left" label — matching the Today timeline',
+      'The + button on Today now opens the same add sheet as the Calendar\'s: the date is pre-filled to the day you\'re on but is editable, instead of being locked',
+    ]
+  },
+  {
+    date: '2026-07-27',
     summary: 'Live "happening now" progress shade + Focus Now timer',
     changes: [
       'A task that\'s happening right now fills up: the timeline pill shades from the bottom as it elapses, and its editor shows "Xm remaining" with a matching shade on the icon',

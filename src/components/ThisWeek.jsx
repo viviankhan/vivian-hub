@@ -1,6 +1,6 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { buildWeekPlanFromTasks } from '../data/schedule.js'
-import { recurringOccurrencesForDate } from '../lib/occurrences.js'
+import { recurringOccurrencesForDate, nowProgress } from '../lib/occurrences.js'
 import { Icon } from './IconPicker.jsx'
 import { bloomBurst } from '../lib/bloom.js'
 import TimeField from './TimeField.jsx'
@@ -33,27 +33,32 @@ function fmt12(t) {
 }
 
 // ── Task row ───────────────────────────────────────────────────
-function TaskRow({ id, text, cat, categories, done, carried, carriedFrom, onToggle, onDelete }) {
+function TaskRow({ id, text, cat, categories, done, carried, carriedFrom, progress, onToggle, onDelete }) {
   const found = (categories || []).find(x => x.id === cat)
   const fallback = CAT_COLORS[cat] || CAT_COLORS.career
   const dot = found?.color || fallback.dot
   const label = found?.label || cat
   const icon = found?.icon || ''
   return (
-    <div style={{ display:'flex', gap:10, alignItems:'center', padding:'8px 0', borderBottom:'1px solid #F5F3EF', opacity:done?.45:1 }}>
-      <div onClick={e=>{ if(!done) bloomBurst(e.currentTarget); onToggle() }}
-        style={{ width:18, height:18, borderRadius:'50%', flexShrink:0, cursor:'pointer',
-          border:done?'none':`2px solid ${dot}`, background:done?dot:'transparent',
-          display:'flex', alignItems:'center', justifyContent:'center', transition:'all .2s' }}>
-        {done&&<span style={{ color:'white', fontSize:10, fontWeight:700 }}>✓</span>}
+    <div style={{ position:'relative', overflow:'hidden', borderBottom:'1px solid #F5F3EF', opacity:done?.45:1 }}>
+      {/* Elapsed shade — fills left→right while this event is happening now. */}
+      {progress && <div style={{ position:'absolute', top:0, bottom:0, left:0, width:`${progress.frac*100}%`, background:`${dot}20`, transition:'width 1s linear', pointerEvents:'none' }} />}
+      <div style={{ position:'relative', display:'flex', gap:10, alignItems:'center', padding:'8px 0' }}>
+        <div onClick={e=>{ if(!done) bloomBurst(e.currentTarget); onToggle() }}
+          style={{ width:18, height:18, borderRadius:'50%', flexShrink:0, cursor:'pointer',
+            border:done?'none':`2px solid ${dot}`, background:done?dot:'transparent',
+            display:'flex', alignItems:'center', justifyContent:'center', transition:'all .2s' }}>
+          {done&&<span style={{ color:'white', fontSize:10, fontWeight:700 }}>✓</span>}
+        </div>
+        <div style={{ flex:1, display:'flex', alignItems:'center', gap:6, flexWrap:'wrap', cursor:'pointer' }} onClick={onToggle}>
+          {icon && <Icon value={icon} size={15} />}
+          <span style={{ fontSize:13, color:done?'var(--muted)':'var(--text)', textDecoration:done?'line-through':'none' }}>{text}</span>
+          <span style={{ display:'inline-flex', alignItems:'center', gap:3, fontSize:9, letterSpacing:1, textTransform:'uppercase', padding:'1px 6px', borderRadius:10, background:`${dot}20`, color:dot }}>{label}</span>
+          {carried&&<span style={{ fontSize:9, letterSpacing:1, textTransform:'uppercase', padding:'1px 6px', borderRadius:10, background:'#FEF3C7', color:'#92400E' }}>↩ {carriedFrom}</span>}
+          {progress&&<span style={{ fontSize:9, fontWeight:700, letterSpacing:.5, padding:'1px 6px', borderRadius:10, background:`${dot}20`, color:dot }}>{progress.remaining}m left</span>}
+        </div>
+        {onDelete&&<button onClick={onDelete} style={{ fontSize:10, padding:'2px 6px', borderRadius:6, border:'1px solid var(--border)', background:'white', color:'var(--muted)', cursor:'pointer', flexShrink:0 }}>✕</button>}
       </div>
-      <div style={{ flex:1, display:'flex', alignItems:'center', gap:6, flexWrap:'wrap', cursor:'pointer' }} onClick={onToggle}>
-        {icon && <Icon value={icon} size={15} />}
-        <span style={{ fontSize:13, color:done?'var(--muted)':'var(--text)', textDecoration:done?'line-through':'none' }}>{text}</span>
-        <span style={{ display:'inline-flex', alignItems:'center', gap:3, fontSize:9, letterSpacing:1, textTransform:'uppercase', padding:'1px 6px', borderRadius:10, background:`${dot}20`, color:dot }}>{label}</span>
-        {carried&&<span style={{ fontSize:9, letterSpacing:1, textTransform:'uppercase', padding:'1px 6px', borderRadius:10, background:'#FEF3C7', color:'#92400E' }}>↩ {carriedFrom}</span>}
-      </div>
-      {onDelete&&<button onClick={onDelete} style={{ fontSize:10, padding:'2px 6px', borderRadius:6, border:'1px solid var(--border)', background:'white', color:'var(--muted)', cursor:'pointer', flexShrink:0 }}>✕</button>}
     </div>
   )
 }
@@ -98,6 +103,9 @@ function fmtRange(startDate, endDate) {
 export default function ThisWeek({ todos, weekState, syncToggle, commitments, addCommitment, deleteCommitment, categories, recurringTasks, recurringExceptions, skipRecurringOccurrence, addRecurringTask }) {
   const today = todayStr()
   const [weekOffset, setWeekOffset] = useState(0)
+  // Re-render every 30s so an in-progress item's elapsed shade keeps advancing.
+  const [, forceTick] = useState(0)
+  useEffect(() => { const t = setInterval(() => forceTick(x => x + 1), 30000); return () => clearInterval(t) }, [])
   // Just the 7-day Sun→Sat scaffold; recurring items are filled per-day below
   // from the same shared computation Today and Calendar use.
   const weekPlan = buildWeekPlanFromTasks({}, weekOffset)
@@ -186,7 +194,7 @@ export default function ThisWeek({ todos, weekState, syncToggle, commitments, ad
         const customTasks = customByDay[day.date] || []
 
         const allTasks = [
-          ...dayCommitments.map(c=>({ id:c.id, text:c.time?`${fmt12(c.time)} — ${c.text}`:c.text, cat:c.cat||'personal', isCommitment:true, _sortTime:c.time||'99:99' })),
+          ...dayCommitments.map(c=>({ id:c.id, text:c.time?`${fmt12(c.time)} — ${c.text}`:c.text, cat:c.cat||'personal', isCommitment:true, _time:c.time, _dur:c.durationMins, _sortTime:c.time||'99:99' })),
           ...carriedFromPrev.map(t=>({ id:t.id, text:t.text, cat:t.cat, isRecurring:true, carried:true, carriedFrom:weekPlan[i-1].dayLabel, _sortTime:'00:00' })),
           ...recurringForDay.map(t=>({ id:t.id, text:t.label, cat:t.cat, isRecurring:true, _sortTime: t._time || '50:00' })),
           ...customTasks.map(t=>({ ...t, _sortTime: (() => { const m=t.text?.match(/(\d{1,2}):(\d{2})\s*(AM|PM)/i); if(!m)return'50:00'; let h=parseInt(m[1]); if(m[3].toUpperCase()==='PM'&&h!==12)h+=12; if(m[3].toUpperCase()==='AM'&&h===12)h=0; return `${String(h).padStart(2,'0')}:${m[2]}`; })() })),
@@ -223,6 +231,7 @@ export default function ThisWeek({ todos, weekState, syncToggle, commitments, ad
                 <TaskRow key={t.id} id={t.id} text={t.text} cat={t.cat} categories={categories}
                   done={isDone(t.id, day.date, t.isCommitment)}
                   carried={t.carried} carriedFrom={t.carriedFrom}
+                  progress={t.isCommitment && !isDone(t.id, day.date, true) ? nowProgress(day.date, t._time, t._dur) : null}
                   onToggle={()=>syncToggle(t.id, t.text, t.cat, t.isCommitment?null:day.date)}
                   onDelete={t.carried ? null
                     : t.isCommitment

@@ -10,6 +10,7 @@ import DateField from './DateField.jsx'
 import TimeField from './TimeField.jsx'
 import MiniCalendar from './MiniCalendar.jsx'
 import FocusMode from './FocusMode.jsx'
+import { nowProgress } from '../lib/occurrences.js'
 import { Icon } from './IconPicker.jsx'
 import ColorIconPicker from './ColorIconPicker.jsx'
 import { suggestGlyph } from '../lib/glyphs.jsx'
@@ -162,21 +163,6 @@ const InboxIcon2 = () => (<svg viewBox="0 0 24 24" width="18" height="18" fill="
 const TrashIcon2 = () => (<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4.5 7h15M9 7V5.2A1.2 1.2 0 0 1 10.2 4h3.6A1.2 1.2 0 0 1 15 5.2V7M6.5 7l1 12.5h9L17.5 7"/></svg>)
 const TargetIcon = () => (<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4.5"/><circle cx="12" cy="12" r="1" fill="currentColor" stroke="none"/></svg>)
 
-// If an existing item is happening right now (today, within its start→end),
-// returns { remaining, frac } for the live "Xm remaining" + elapsed shade.
-function inProgressInfo(existing) {
-  if (!existing?.date || !existing?.time || !existing?.durationMins) return null
-  const d = new Date()
-  const todayStr = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
-  if (existing.date !== todayStr) return null
-  const [h, m] = existing.time.split(':').map(Number)
-  const startMin = h * 60 + m
-  const endMin = startMin + existing.durationMins
-  const nowMin = d.getHours() * 60 + d.getMinutes()
-  if (nowMin < startMin || nowMin >= endMin) return null
-  return { remaining: endMin - nowMin, frac: Math.max(0, Math.min(1, (nowMin - startMin) / (endMin - startMin))) }
-}
-
 export default function AddItemModal({ existing = null, presetDate = null, presetText = '', lockDate = false, categories = [], onSave, onSaveRecurring = null, onDelete = null, onDuplicate = null, onMoveToInbox = null, onClose, title = 'Add to calendar' }) {
   const cats = (categories && categories.length) ? categories : DEFAULT_CATEGORIES
   const isEdit = !!existing
@@ -274,7 +260,7 @@ export default function AddItemModal({ existing = null, presetDate = null, prese
     const t = setInterval(() => forceTick(x => x + 1), 15000)
     return () => clearInterval(t)
   }, [isEdit])
-  const progress = isEdit ? inProgressInfo(existing) : null
+  const progress = isEdit ? nowProgress(existing?.date, existing?.time, existing?.durationMins) : null
   const [focusOpen, setFocusOpen] = useState(false)
 
   const durationMins = diffMinutes(time, endTime)          // null unless a valid span

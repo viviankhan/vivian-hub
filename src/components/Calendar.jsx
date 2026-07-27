@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { Icon } from './IconPicker.jsx'
 import AddItemModal from './AddItemModal.jsx'
 import { setItemReminders } from '../lib/notifications.js'
-import { recurringOccurrencesForDate } from '../lib/occurrences.js'
+import { recurringOccurrencesForDate, nowProgress } from '../lib/occurrences.js'
 
 // Pastel shading for how busy a day is (number of events on it).
 const BUSY_SHADES = ['#F4F0FA', '#EAE1F4', '#DBC9EC', '#C9AEDF']
@@ -41,6 +41,9 @@ export default function Calendar({ commitments, vacations, events, log, categori
   const [adding, setAdding] = useState(false)
   const [editing, setEditing] = useState(null)
   const today = todayStr()
+  // Re-render every 30s so an in-progress item's elapsed shade keeps advancing.
+  const [, forceTick] = useState(0)
+  useEffect(() => { const t = setInterval(() => forceTick(x => x + 1), 30000); return () => clearInterval(t) }, [])
 
   // Add a commitment on any date (long-term planning), with its own optional
   // duration + reminder times. Shows immediately on the calendar + Week.
@@ -245,21 +248,26 @@ export default function Calendar({ commitments, vacations, events, log, categori
               </div>
             </div>
           ))}
-          {selectedEvents.map((e, i) => (
-            <div key={i} style={{ padding:'9px 12px', borderRadius:8, marginBottom:6, background:`${e.color}14`, border:`1px solid ${e.color}44`, opacity: e.done ? .6 : 1 }}>
-              <div style={{ display:'flex', gap:10, alignItems:'center' }}>
+          {selectedEvents.map((e, i) => {
+            const prog = e.done ? null : nowProgress(selected, e.raw.time, e.raw.durationMins)
+            return (
+            <div key={i} style={{ position:'relative', overflow:'hidden', padding:'9px 12px', borderRadius:8, marginBottom:6, background:`${e.color}14`, border:`1px solid ${prog ? e.color : e.color+'44'}`, opacity: e.done ? .6 : 1 }}>
+              {/* Elapsed shade — fills left→right while the event is happening. */}
+              {prog && <div style={{ position:'absolute', top:0, bottom:0, left:0, width:`${prog.frac*100}%`, background:`${e.color}22`, transition:'width 1s linear', pointerEvents:'none' }} />}
+              <div style={{ position:'relative', display:'flex', gap:10, alignItems:'center' }}>
                 <span style={{ display:'inline-flex', alignItems:'center', gap:4, fontSize:10, letterSpacing:1, textTransform:'uppercase', color:e.color, minWidth:70, fontWeight:600 }}>
                   {e.icon && <Icon value={e.icon} size={12} />}{e.catLabel}
                 </span>
                 <div style={{ flex:1, fontSize:13, color:'var(--text)', textDecoration: e.done ? 'line-through' : 'none' }}>{e.label}</div>
+                {prog && <span style={{ fontSize:10, fontWeight:700, color:e.color, flexShrink:0 }}>{prog.remaining}m left</span>}
                 <button onClick={() => setEditing(e.raw)} title="Edit"
                   style={{ background:'none', border:'none', cursor:'pointer', color:'#9CA3AF', fontSize:13, padding:'0 2px', flexShrink:0 }}>✎</button>
               </div>
               {e.description && (
-                <div style={{ fontSize:12, color:'var(--muted)', lineHeight:1.5, whiteSpace:'pre-wrap', marginTop:6, paddingLeft:2 }}>{e.description}</div>
+                <div style={{ position:'relative', fontSize:12, color:'var(--muted)', lineHeight:1.5, whiteSpace:'pre-wrap', marginTop:6, paddingLeft:2 }}>{e.description}</div>
               )}
               {e.subtasks.length > 0 && (
-                <div style={{ marginTop:6, paddingLeft:2 }}>
+                <div style={{ position:'relative', marginTop:6, paddingLeft:2 }}>
                   {e.subtasks.map(s => (
                     <div key={s.id} onClick={() => toggleSubtask(e.raw, s.id)}
                       style={{ display:'flex', alignItems:'center', gap:8, marginBottom:4, cursor:'pointer' }}>
@@ -272,7 +280,7 @@ export default function Calendar({ commitments, vacations, events, log, categori
                 </div>
               )}
             </div>
-          ))}
+          )})}
           {/* Recurring instances on this day — same items shown on Today/Week.
               The ✕ skips just this occurrence (synced to every view). */}
           {selectedRecurring.map((e, i) => (

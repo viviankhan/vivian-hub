@@ -132,6 +132,23 @@ export function recurringOccurrencesForDate(rows, dateStr, exceptions = {}) {
     .map(t => recurringOccurrence(t, dateStr))
 }
 
+// If a timed item on `dateStr` is happening right now (today, within its
+// start→end window), returns { remaining, frac } for the live "Xm remaining"
+// label and the elapsed shade. Returns null otherwise. Shared by the timeline
+// pill, the task editor, and the Week/Calendar rows so they all agree.
+export function nowProgress(dateStr, time, durationMins) {
+  if (!dateStr || !time || !durationMins) return null
+  const d = new Date()
+  const today = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
+  if (dateStr !== today) return null
+  const [h, m] = String(time).split(':').map(Number)
+  const startMin = h * 60 + m
+  const endMin = startMin + durationMins
+  const nowMin = d.getHours() * 60 + d.getMinutes()
+  if (nowMin < startMin || nowMin >= endMin) return null
+  return { remaining: endMin - nowMin, frac: Math.max(0, Math.min(1, (nowMin - startMin) / (endMin - startMin))) }
+}
+
 // Convenience: does this date have any scheduled item at all (used by Calendar
 // for its busyness shading and day dots)?
 export function recurringCountForDate(rows, dateStr, exceptions = {}) {
