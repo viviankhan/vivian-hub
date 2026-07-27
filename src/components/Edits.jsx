@@ -5,6 +5,16 @@
 const EDIT_LOG = [
   {
     date: '2026-07-27',
+    summary: 'Customization — reading font + accent themes (Settings → Look)',
+    changes: [
+      'New Look tab in Settings: choose a font and an accent theme, Structured-style',
+      'Font: switch the whole app to OpenDyslexic (a dyslexia-friendly typeface) or back to the System font',
+      'App Icon themes: Bloom, Day, Night, Nature, Classic, Pride, Trans, Ocean and Amber — each recolors Bloom\'s accent everywhere at once',
+      'Your choices are remembered on the device and applied before the app paints, so there\'s no flash of the old look on load',
+    ]
+  },
+  {
+    date: '2026-07-27',
     summary: 'One unified scheduling system across Today, Week & Calendar',
     changes: [
       'Today, Week and the Calendar month view now read the exact same schedule — a day\'s items are its commitments plus its active recurring instances — so the three screens can no longer disagree',

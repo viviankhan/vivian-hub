@@ -1,5 +1,32 @@
 /* src/styles/index.css — Bloom theme */
 
+/* ── OpenDyslexic (optional accessibility font) ───────────────── */
+/* Loaded from the Fontsource CDN. If it fails to fetch, the font-family
+   fallback below quietly drops back to DM Sans — the toggle still works, the
+   text just isn't in OpenDyslexic. */
+@font-face {
+  font-family: 'OpenDyslexic';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('https://cdn.jsdelivr.net/npm/@fontsource/opendyslexic@5/files/opendyslexic-latin-400-normal.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'OpenDyslexic';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('https://cdn.jsdelivr.net/npm/@fontsource/opendyslexic@5/files/opendyslexic-latin-700-normal.woff2') format('woff2');
+}
+/* When dyslexic mode is on, override every font — including the serif headings
+   and inline `font-family` styles (hence !important, which beats inline). */
+.font-dyslexic,
+.font-dyslexic *,
+.font-dyslexic .serif {
+  font-family: 'OpenDyslexic', 'DM Sans', sans-serif !important;
+  letter-spacing: .2px;
+}
+
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 :root {

@@ -32,6 +32,8 @@ import NotificationsSettings from './components/NotificationsSettings.jsx'
 import SearchOverlay, { SearchIcon } from './components/SearchOverlay.jsx'
 import { registerServiceWorker, syncReminders } from './lib/notifications.js'
 import { Glyph } from './lib/glyphs.jsx'
+import Customization from './components/Customization.jsx'
+import { getFontPref, setFontPref, applyFont, getThemePref, setThemePref, applyTheme } from './lib/appearance.js'
 
 // Build id baked in at build time (see vite.config.js). Shown in Settings so
 // it's obvious on-device which version is actually running after a deploy.
@@ -48,7 +50,7 @@ const TABS = [
 ]
 
 // ── Settings Drawer ────────────────────────────────────────────
-function SettingsDrawer({ open, onClose, settingsTab, setSettingsTab, notes, updateNotes, categories, addCategory, updateCategory, deleteCategory, events, commitments }) {
+function SettingsDrawer({ open, onClose, settingsTab, setSettingsTab, notes, updateNotes, categories, addCategory, updateCategory, deleteCategory, events, commitments, font, setFont, theme, setTheme }) {
   if (!open) return null
   return (
     <>
@@ -59,7 +61,7 @@ function SettingsDrawer({ open, onClose, settingsTab, setSettingsTab, notes, upd
           <button onClick={onClose} aria-label="Close settings" style={{ background:'rgba(255,255,255,.18)', border:'none', color:'var(--green-light)', borderRadius:10, width:40, height:40, flexShrink:0, cursor:'pointer', fontSize:18, fontFamily:'DM Sans,sans-serif', display:'flex', alignItems:'center', justifyContent:'center' }}>✕</button>
         </div>
         <div style={{ display:'flex', borderBottom:'1px solid var(--border)', background:'white' }}>
-          {[['routines','Routines'],['reminders','Reminders'],['categories','Categories'],['notes','Notes'],['edits','Edits']].map(([id,label]) => (
+          {[['customize','Look'],['routines','Routines'],['reminders','Reminders'],['categories','Categories'],['notes','Notes'],['edits','Edits']].map(([id,label]) => (
             <button key={id} onClick={()=>setSettingsTab(id)}
               style={{ flex:1, padding:'11px 6px', border:'none', borderBottom:`2px solid ${settingsTab===id?'var(--teal)':'transparent'}`,
                 background:'transparent', color:settingsTab===id?'var(--teal)':'var(--muted)', cursor:'pointer',
@@ -69,6 +71,7 @@ function SettingsDrawer({ open, onClose, settingsTab, setSettingsTab, notes, upd
           ))}
         </div>
         <div style={{ padding:'20px 24px' }}>
+          {settingsTab==='customize'  && <Customization font={font} onFont={setFont} theme={theme} onTheme={setTheme} />}
           {settingsTab==='routines'   && <Routines />}
           {settingsTab==='reminders'  && <NotificationsSettings events={events} commitments={commitments} />}
           {settingsTab==='categories' && <CategoriesManager categories={categories} addCategory={addCategory} updateCategory={updateCategory} deleteCategory={deleteCategory} />}
@@ -157,6 +160,12 @@ export default function App() {
   }, [tab])
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [settingsTab,  setSettingsTab]  = useState('routines')
+  // Appearance — device-local font + accent theme. main.jsx applies the saved
+  // values before first paint; these setters keep the live app in step.
+  const [font,  setFontState]  = useState(getFontPref)
+  const [theme, setThemeState] = useState(getThemePref)
+  const setFont  = useCallback(v => { setFontState(v);  setFontPref(v);  applyFont(v)  }, [])
+  const setTheme = useCallback(v => { setThemeState(v); setThemePref(v); applyTheme(v) }, [])
   const [searchOpen,   setSearchOpen]   = useState(false)
   const [navOpen,      setNavOpen]      = useState(false)  // mobile side-nav drawer
   // Set when a search suggestion is picked → Calendar navigates to this date.
@@ -565,7 +574,8 @@ export default function App() {
         notes={notes} updateNotes={updateNotes}
         categories={categories} addCategory={addCategoryFn}
         updateCategory={updateCategoryFn} deleteCategory={deleteCategoryFn}
-        events={events} commitments={commitments} />
+        events={events} commitments={commitments}
+        font={font} setFont={setFont} theme={theme} setTheme={setTheme} />
 
       <SearchOverlay
         open={searchOpen} onClose={() => setSearchOpen(false)}
