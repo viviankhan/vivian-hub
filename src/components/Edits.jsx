@@ -5,6 +5,16 @@
 const EDIT_LOG = [
   {
     date: '2026-07-27',
+    summary: 'Timeline detail polish to match Structured',
+    changes: [
+      'The progress fill now lives only on the Today timeline pill (and the task sheet), not as bars on the Week and Calendar rows',
+      'The pill fill adapts to the task color — a light overlay on dark colors, a dark overlay on light ones — so it always reads',
+      'Timeline times match Structured: "7:50 – 8:11 AM (21 min)" with the meridiem shown once, and a ↻ icon marks recurring tasks',
+      'Subtask counts show as a ☑ 1/1 pill; the done-check and pill icons stay legible on any task color',
+    ]
+  },
+  {
+    date: '2026-07-27',
     summary: 'Smarter icon suggestions + readable icons on any color',
     changes: [
       'The auto-suggested task icon is much better: far richer keywords, plural/verb-aware matching (e.g. "budgeting"→money, "meetings"→calendar), and new bus, car and wifi glyphs',

@@ -409,7 +409,7 @@ export default function AddItemModal({ existing = null, presetDate = null, prese
               <button type="button" onClick={() => setShowColorIcon(true)} aria-label="Choose color and icon"
                 style={{ position:'relative', overflow:'hidden', width:52, height:52, borderRadius:16, background:'rgba(255,255,255,.22)', border:'2px solid rgba(255,255,255,.7)', display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', padding:0 }}>
                 {fill && fill.show && (
-                  <span style={{ position:'absolute', left:0, right:0, bottom:0, height:`${fill.frac * 100}%`, background:'rgba(255,255,255,.4)', transition:'height .5s ease' }} />
+                  <span style={{ position:'absolute', left:0, right:0, bottom:0, height:`${fill.frac * 100}%`, background: onLight ? 'rgba(0,0,0,.14)' : 'rgba(255,255,255,.4)', transition:'height .5s ease' }} />
                 )}
                 <span style={{ position:'relative', display:'flex' }}>
                   {shownIcon

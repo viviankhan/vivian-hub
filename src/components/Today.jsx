@@ -57,6 +57,20 @@ function fmtTimeLabel(mins) {
   const h=Math.floor(mins/60), m=mins%60
   return `${h%12||12}:${String(m).padStart(2,'0')} ${h>=12?'PM':'AM'}`
 }
+// Structured-style range: drop the meridiem on the start when it matches the end
+// ("7:50 – 8:11 AM"), keep both when they differ ("11:50 AM – 12:10 PM").
+function clockNoMer(mins) { const h=Math.floor(mins/60)%24, m=mins%60; return `${h%12||12}:${String(m).padStart(2,'0')}` }
+function merOf(mins) { return (Math.floor(mins/60)%24) >= 12 ? 'PM' : 'AM' }
+function rangeLabel(s, e) {
+  return merOf(s) === merOf(e)
+    ? `${clockNoMer(s)} – ${clockNoMer(e)} ${merOf(e)}`
+    : `${clockNoMer(s)} ${merOf(s)} – ${clockNoMer(e)} ${merOf(e)}`
+}
+function durParen(mins) {
+  if (mins < 60) return `(${mins} min)`
+  const h=Math.floor(mins/60), m=mins%60
+  return m === 0 ? `(${h} hr)` : `(${h}h ${m}m)`
+}
 function extractLocation(label, note='') {
   const combined=`${label} ${note}`
   const m=combined.match(/(Youngchild\s*\d*|Steitz\s*\d*|Briggs\s*\d*|Commons|B3\s*\w*)/i)
@@ -347,10 +361,11 @@ function TimelineBlock({ task, categories, status, now, isDone, elapsed, dateKey
   const isCurrent = status==='current' && !isDone
   const isOverdue = status==='overdue' && !isDone
 
-  // Time range + duration (e.g. "3:00 – 4:00 PM · 1h").
+  // Time range + duration (Structured-style: "7:50 – 8:11 AM (21 min)").
   let timeLine = ''
   if (task._time && task._dur) {
-    timeLine = `${fmt12(task._time)} – ${fmtTimeLabel(hhmmToMins(task._time) + task._dur)} · ${fmtMins(task._dur)}`
+    const s = hhmmToMins(task._time)
+    timeLine = `${rangeLabel(s, s + task._dur)} ${durParen(task._dur)}`
   } else if (timeMins !== null) {
     timeLine = fmtTimeLabel(timeMins)
   }
@@ -381,8 +396,9 @@ function TimelineBlock({ task, categories, status, now, isDone, elapsed, dateKey
               share of its subtasks that are checked off. */}
           {(() => {
             const p = isDone ? null : taskProgress({ date: dateKey, time: task._time, durationMins: task._dur, subDone: task.subDone, subCount: task.subCount })
+            const shade = iconColorOn(color) === '#FFFFFF' ? 'rgba(255,255,255,.34)' : 'rgba(0,0,0,.16)'
             return p && p.show ? (
-              <div style={{ position:'absolute', left:0, right:0, bottom:0, height:`${p.frac * 100}%`, background:'rgba(255,255,255,.34)', transition:'height .5s ease' }} />
+              <div style={{ position:'absolute', left:0, right:0, bottom:0, height:`${p.frac * 100}%`, background:shade, transition:'height .5s ease' }} />
             ) : null
           })()}
           <span style={{ position:'relative', display:'flex' }}>
@@ -397,8 +413,9 @@ function TimelineBlock({ task, categories, status, now, isDone, elapsed, dateKey
       <div style={{ flex:1, minWidth:0, paddingTop:8, paddingBottom:12, paddingLeft:10 }}>
         <div onClick={()=>onOpen&&onOpen()} style={{ cursor:onOpen?'pointer':'default' }}>
           {timeLine && (
-            <div style={{ fontSize:12, color:isCurrent?'var(--teal)':'var(--muted)', fontWeight:600, marginBottom:2, display:'flex', alignItems:'center', gap:7 }}>
+            <div style={{ fontSize:12, color:isCurrent?'var(--teal)':'var(--muted)', fontWeight:600, marginBottom:2, display:'flex', alignItems:'center', gap:6 }}>
               {timeLine}
+              {task.isRecurring && <Icon value="glyph:repeat" size={12} color={isCurrent?'var(--teal)':'#9AA6B2'} />}
               {isOverdue && <span style={{ fontSize:10, color:'#EF4444', fontWeight:700 }}>OVERDUE</span>}
             </div>
           )}
@@ -406,13 +423,18 @@ function TimelineBlock({ task, categories, status, now, isDone, elapsed, dateKey
             <span style={{ flex:1, minWidth:0, fontSize:16, fontWeight:700, color:isDone?'var(--muted)':'var(--text)', textDecoration:isDone?'line-through':'none', lineHeight:1.25 }}>{title}</span>
             <div onClick={e=>{ e.stopPropagation(); if(!isDone) bloomBurst(e.currentTarget); onToggle() }}
               style={{ width:24, height:24, borderRadius:'50%', flexShrink:0, marginTop:1, cursor:'pointer', border:`2px solid ${color}`, background:isDone?color:'transparent', display:'flex', alignItems:'center', justifyContent:'center' }}>
-              {isDone && <span style={{ color:'white', fontSize:13, fontWeight:700 }}>✓</span>}
+              {isDone && <span style={{ color:iconColorOn(color), fontSize:13, fontWeight:700 }}>✓</span>}
             </div>
           </div>
           {task.note && <div style={{ fontSize:12, color:'var(--muted)', marginTop:3, lineHeight:1.4 }}>{task.note}</div>}
           <div style={{ display:'flex', gap:6, marginTop:7, flexWrap:'wrap', alignItems:'center' }}>
             <span style={{ display:'inline-flex', alignItems:'center', gap:3, fontSize:9, padding:'2px 7px', borderRadius:6, background:`${color}1c`, color, fontWeight:700, letterSpacing:.6, textTransform:'uppercase' }}>{catIcon && <Icon value={catIcon} size={11} />}{catLabel}</span>
-            {task.subCount>0 && <span style={{ fontSize:10.5, color:'var(--muted)', fontWeight:600 }}>✓ {task.subDone}/{task.subCount}</span>}
+            {task.subCount>0 && (
+              <span style={{ display:'inline-flex', alignItems:'center', gap:4, fontSize:10, fontWeight:700, padding:'2px 8px', borderRadius:12, background:'#EEECF0', color:'var(--muted)' }}>
+                <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><rect x="4" y="4" width="16" height="16" rx="4.5"/><path d="M8.4 12.3l2.4 2.4 4.6-5"/></svg>
+                {task.subDone}/{task.subCount}
+              </span>
+            )}
             {!isDone && <button onClick={e=>{ e.stopPropagation(); onManage() }} style={{ marginLeft:'auto', fontSize:14, padding:'0 4px', border:'none', background:'none', color:'#C0C6CE', cursor:'pointer', lineHeight:1 }}>···</button>}
           </div>
         </div>
