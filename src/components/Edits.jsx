@@ -5,6 +5,14 @@
 const EDIT_LOG = [
   {
     date: '2026-07-27',
+    summary: 'The + button follows your theme color',
+    changes: [
+      'The Today + button now uses your chosen accent theme (Settings → Look → App Icon) instead of a fixed dark, so it changes with your mood',
+      'Its "+" auto-switches to dark or light so it stays readable on any accent',
+    ]
+  },
+  {
+    date: '2026-07-27',
     summary: 'Check subtasks off right on the Today timeline',
     changes: [
       'Tap a task\'s ☑ 1/1 pill to expand its subtasks and check them off in place — no need to open the task',

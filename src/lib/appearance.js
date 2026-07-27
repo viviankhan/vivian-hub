@@ -10,6 +10,8 @@
 // are their own values, so they stay put.
 // ─────────────────────────────────────────────────────────────
 
+import { iconColorOn } from './glyphs.jsx'
+
 // Each theme mirrors one of the app-icon looks. `accent` drives buttons, nav,
 // links and timeline spines; `deep` is the dark surface (drawer header, FAB);
 // `light` is the pale on-dark text/tint. `tile` is how the icon swatch is
@@ -69,6 +71,9 @@ export function applyTheme(id) {
     '--teal': t.accent, '--sea-deep': t.accent, '--green-mid': t.accent, '--sea': t.accent,
     '--forest': t.deep, '--deep-forest': t.deep, '--reef': t.deep,
     '--green-light': t.light,
+    // Readable foreground for anything filled with the accent (e.g. the FAB) —
+    // dark on light accents, light on dark ones.
+    '--on-accent': iconColorOn(t.accent),
   }
   Object.entries(map).forEach(([k, v]) => r.setProperty(k, v))
   // Keep the iOS status-bar / browser chrome color in step with the theme.

@@ -1005,7 +1005,7 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
           mobile bottom bar; inline styles would otherwise override it. */}
       <button onClick={()=>setAddingTask(true)} className="today-fab"
         style={{position:'fixed',width:52,height:52,borderRadius:'50%',border:'none',
-          background:'var(--forest)',color:'var(--green-light)',fontSize:24,cursor:'pointer',
+          background:'var(--teal)',color:'var(--on-accent)',fontSize:24,cursor:'pointer',
           boxShadow:'0 4px 20px rgba(0,0,0,.25)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:100}}>
         +
       </button>

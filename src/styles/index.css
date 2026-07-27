@@ -61,6 +61,7 @@
   --coral:       #E85D3A;
   --green-light: #E8F6FA;
   --green-mid:   #7BBFD4;
+  --on-accent:   #FFFFFF;   /* readable foreground on the accent color (FAB) */
 }
 
 html, body {
