@@ -10,7 +10,7 @@ import DateField from './DateField.jsx'
 import TimeField from './TimeField.jsx'
 import MiniCalendar from './MiniCalendar.jsx'
 import FocusMode from './FocusMode.jsx'
-import { nowProgress, taskProgress } from '../lib/occurrences.js'
+import { nowProgress, taskProgress, splitTimePrefix } from '../lib/occurrences.js'
 import { Icon } from './IconPicker.jsx'
 import ColorIconPicker from './ColorIconPicker.jsx'
 import { suggestGlyph, iconColorOn } from '../lib/glyphs.jsx'
@@ -163,26 +163,36 @@ const InboxIcon2 = () => (<svg viewBox="0 0 24 24" width="18" height="18" fill="
 const TrashIcon2 = () => (<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4.5 7h15M9 7V5.2A1.2 1.2 0 0 1 10.2 4h3.6A1.2 1.2 0 0 1 15 5.2V7M6.5 7l1 12.5h9L17.5 7"/></svg>)
 const TargetIcon = () => (<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4.5"/><circle cx="12" cy="12" r="1" fill="currentColor" stroke="none"/></svg>)
 
-export default function AddItemModal({ existing = null, presetDate = null, presetText = '', lockDate = false, defaultRepeat = false, categories = [], onSave, onSaveRecurring = null, onDelete = null, onDuplicate = null, onMoveToInbox = null, onClose, title = 'Add to calendar' }) {
+export default function AddItemModal({ existing = null, existingRecurring = null, presetDate = null, presetText = '', lockDate = false, defaultRepeat = false, categories = [], onSave, onSaveRecurring = null, onDelete = null, onDuplicate = null, onMoveToInbox = null, onClose, title = 'Add to calendar' }) {
   const cats = (categories && categories.length) ? categories : DEFAULT_CATEGORIES
   const isEdit = !!existing
-  const [label, setLabel]         = useState(existing?.text || presetText || '')
-  const [date, setDate]           = useState(existing?.date || presetDate || '')
-  const [time, setTime]           = useState(existing?.time || '')  // start
-  const [endTime, setEndTime]     = useState(existing?.time && existing?.durationMins ? addMinutes(existing.time, existing.durationMins) : '')
+  // Editing an existing recurring task: it comes in the Recurring-tab row shape
+  // (label with a time prefix, days, freq/interval/monthDay/durationMins). Split
+  // it into the same fields the sheet uses so one editor serves both.
+  const rec = existingRecurring
+  const isRecEdit = !!rec
+  const recSplit = rec ? splitTimePrefix(rec.label ?? rec.text ?? '') : { time:null, title:'' }
+  const [label, setLabel]         = useState(existing?.text ?? (rec ? recSplit.title : presetText) ?? '')
+  const [date, setDate]           = useState(existing?.date ?? rec?.startDate ?? presetDate ?? '')
+  const [time, setTime]           = useState(existing?.time ?? (rec ? (recSplit.time || '') : '') ?? '')  // start
+  const [endTime, setEndTime]     = useState(() => {
+    if (existing?.time && existing?.durationMins) return addMinutes(existing.time, existing.durationMins)
+    if (rec && recSplit.time && rec.durationMins) return addMinutes(recSplit.time, rec.durationMins)
+    return ''
+  })
   // One or more category labels. The first stays the "primary" — it drives the
   // color dot, scheduling behavior, and everything that still reads a single
   // `cat`. Extra labels are purely additional tags.
   const [selectedCats, setSelectedCats] = useState(() => {
     if (Array.isArray(existing?.cats) && existing.cats.length) return existing.cats
-    return [existing?.cat || cats[0]?.id || 'other']
+    return [existing?.cat || rec?.cat || rec?.tag || cats[0]?.id || 'other']
   })
   const toggleCat = (id) => setSelectedCats(prev =>
     prev.includes(id)
       ? (prev.length > 1 ? prev.filter(c => c !== id) : prev)  // keep at least one
       : [...prev, id]
   )
-  const [description, setDescription] = useState(existing?.description || '')
+  const [description, setDescription] = useState(existing?.description ?? rec?.note ?? '')
   const [subtasks, setSubtasks]   = useState(() => Array.isArray(existing?.subtasks) ? existing.subtasks : [])
   const [newSub, setNewSub]       = useState('')
   // Reminders: default (use global) unless the user customizes. When editing,
@@ -224,14 +234,15 @@ export default function AddItemModal({ existing = null, presetDate = null, prese
   // editable in the Recurring tab. Only offered for brand-new items (editing a
   // one-off shouldn't silently morph it into a series) and only when the parent
   // handed us an onSaveRecurring handler.
-  const canRepeat = !isEdit && !!onSaveRecurring
-  const [repeatFreq, setRepeatFreq] = useState(defaultRepeat ? 'weekly' : 'once')   // once | daily | weekly | monthly
-  const [repeatInterval, setRepeatInterval] = useState(1)
+  const canRepeat = (!isEdit && !!onSaveRecurring) || isRecEdit
+  const [repeatFreq, setRepeatFreq] = useState(rec ? (rec.freq || 'weekly') : (defaultRepeat ? 'weekly' : 'once'))   // once | daily | weekly | monthly
+  const [repeatInterval, setRepeatInterval] = useState(rec?.interval && rec.interval > 1 ? rec.interval : 1)
   const [repeatDays, setRepeatDays] = useState(() => {
-    const wd = weekdayOf(existing?.date || presetDate || '')
+    if (rec && Array.isArray(rec.days) && rec.days.length) return rec.days
+    const wd = weekdayOf(existing?.date || rec?.startDate || presetDate || '')
     return wd ? [wd] : ['monday']
   })
-  const [repeatEnd, setRepeatEnd] = useState('')
+  const [repeatEnd, setRepeatEnd] = useState(rec?.endDate || '')
   const repeatOn = repeatFreq !== 'once'
   const toggleRepeatDay = (d) => setRepeatDays(prev =>
     prev.includes(d) ? prev.filter(x => x !== d) : [...prev, d])
@@ -247,12 +258,12 @@ export default function AddItemModal({ existing = null, presetDate = null, prese
 
   // Which grouped row is expanded for editing (only one open at a time). On the
   // recurring page the Repeat row opens by default so the days are right there.
-  const [expanded, setExpanded] = useState(defaultRepeat ? 'repeat' : null)
+  const [expanded, setExpanded] = useState((defaultRepeat || isRecEdit) ? 'repeat' : null)
   const toggleRow = (k) => setExpanded(e => (e === k ? null : k))
   // Header ⋯ overflow menu (edit mode only) — Duplicate / Move to Inbox / Delete.
   const [menuOpen, setMenuOpen] = useState(false)
-  const hasMenu = isEdit && (onDuplicate || onMoveToInbox || onDelete)
-  const runMenu = (fn) => { setMenuOpen(false); onClose(); fn(existing) }
+  const hasMenu = (isEdit || isRecEdit) && (onDuplicate || onMoveToInbox || onDelete)
+  const runMenu = (fn) => { setMenuOpen(false); onClose(); fn(existing || rec) }
 
   // Live "happening now" state — re-tick so the remaining-time and shade update.
   const [, forceTick] = useState(0)
@@ -306,7 +317,7 @@ export default function AddItemModal({ existing = null, presetDate = null, prese
       const primaryCatId = selectedCats[0]
       const startDate = date || localTodayStr()
       const recurringTask = {
-        id: 'r-' + Date.now(),
+        id: isRecEdit ? rec.id : ('r-' + Date.now()),
         type: 'today',
         freq: repeatFreq,
         interval: Math.max(1, repeatInterval),
@@ -324,6 +335,10 @@ export default function AddItemModal({ existing = null, presetDate = null, prese
       onClose()
       return
     }
+    // A recurring-edit modal only provides onSaveRecurring. If we reach here
+    // with no onSave (e.g. the user cleared the repeat rule in a rec-edit),
+    // there's nothing to commit — just close.
+    if (!onSave) { onClose(); return }
     const base = existing
       ? { ...existing }
       : { id: 'c-' + Date.now(), prepMin: null, person: null, done: false, createdAt: new Date().toISOString() }
@@ -388,7 +403,7 @@ export default function AddItemModal({ existing = null, presetDate = null, prese
           <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:14, position:'relative' }}>
             <button onClick={onClose} aria-label="Close"
               style={{ width:34, height:34, borderRadius:'50%', border:'none', background:headerBtnBg, color:headerFg, fontSize:16, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>✕</button>
-            <span style={{ fontSize:11, letterSpacing:1.5, textTransform:'uppercase', color:headerSub, fontWeight:600 }}>{isEdit ? 'Edit' : title}</span>
+            <span style={{ fontSize:11, letterSpacing:1.5, textTransform:'uppercase', color:headerSub, fontWeight:600 }}>{(isEdit || isRecEdit) ? 'Edit' : title}</span>
             {hasMenu ? (
               <button onClick={() => setMenuOpen(o => !o)} aria-label="More actions"
                 style={{ width:34, height:34, borderRadius:'50%', border:'none', background:headerBtnBg, color:headerFg, fontSize:18, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', lineHeight:1, paddingBottom:4 }}>⋯</button>
@@ -498,7 +513,7 @@ export default function AddItemModal({ existing = null, presetDate = null, prese
                 hint={repeatOn ? 'On' : null} open={expanded==='repeat'} onClick={() => toggleRow('repeat')}>
                 {/* Once / Daily / Weekly / Monthly */}
                 <div style={{ display:'flex', gap:4, padding:4, borderRadius:12, background:'#EAE7EE', marginBottom: repeatOn ? 14 : 0 }}>
-                  {(defaultRepeat ? [['daily','Daily'],['weekly','Weekly'],['monthly','Monthly']] : [['once','Once'],['daily','Daily'],['weekly','Weekly'],['monthly','Monthly']]).map(([v,l]) => {
+                  {((defaultRepeat || isRecEdit) ? [['daily','Daily'],['weekly','Weekly'],['monthly','Monthly']] : [['once','Once'],['daily','Daily'],['weekly','Weekly'],['monthly','Monthly']]).map(([v,l]) => {
                     const on = repeatFreq === v
                     return (
                       <button key={v} onClick={() => pickFreq(v)}
@@ -676,7 +691,7 @@ export default function AddItemModal({ existing = null, presetDate = null, prese
           {/* ── Save ──────────────────────────────────────────── */}
           <button onClick={submit} disabled={!canSave}
             style={{ width:'100%', padding:'14px', borderRadius:14, border:'none', background: canSave ? headerColor : '#E1E1E6', color: canSave ? 'white' : '#9CA3AF', cursor: canSave ? 'pointer' : 'default', fontFamily:'DM Sans,sans-serif', fontWeight:700, fontSize:15, letterSpacing:.3 }}>
-            {isEdit ? 'Save changes' : (repeatOn ? 'Add recurring task' : title)}
+            {(isEdit || isRecEdit) ? 'Save changes' : (repeatOn ? 'Add recurring task' : title)}
           </button>
         </div>
       </div>

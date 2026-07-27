@@ -420,14 +420,15 @@ export default function RecurringTasksManager({ recurringTasks, addRecurringTask
           onClose={()=>setEditing(null)}
           title="New recurring task" />
       )}
-      {/* Editing an existing recurring task keeps the detailed per-rule editor. */}
+      {/* Editing an existing recurring task — same add sheet, prefilled. */}
       {editing && editing!=='new' && (
-        <TaskModal
-          initial={editing}
-          onSave={handleSave}
-          onDelete={handleDelete}
+        <AddItemModal
+          existingRecurring={editing}
+          categories={categories}
+          onSaveRecurring={(task)=>{ updateRecurringTask(task.id, task); setEditing(null) }}
+          onDelete={(t)=>{ deleteRecurringTask(t.id); setEditing(null) }}
           onClose={()=>setEditing(null)}
-          categories={categories} />
+          title="Edit recurring task" />
       )}
     </div>
   )

@@ -55,35 +55,62 @@ const TABS = [
 // ── Settings Drawer ────────────────────────────────────────────
 function SettingsDrawer({ open, onClose, settingsTab, setSettingsTab, notes, updateNotes, categories, addCategory, updateCategory, deleteCategory, events, commitments, font, setFont, theme, setTheme, layout, setLayout, soundOn, setSound, summary, setSummary }) {
   if (!open) return null
+  const SECTIONS = [
+    ['customize','Look','sun'],
+    ['routines','Routines','repeat'],
+    ['reminders','Reminders','bell'],
+    ['categories','Categories','grid'],
+    ['notes','Notes','book'],
+    ['edits','Edits','sparkle'],
+  ]
+  const activeLabel = (SECTIONS.find(s => s[0] === settingsTab) || SECTIONS[0])[1]
   return (
     <>
       <div onClick={onClose} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.45)', zIndex:400 }} />
-      <div style={{ position:'fixed', top:0, right:0, bottom:0, width:Math.min(520, window.innerWidth), background:'var(--cream)', zIndex:500, overflowY:'auto', boxShadow:'-8px 0 40px rgba(0,0,0,.2)' }}>
-        <div style={{ background:'var(--forest)', padding:'max(18px, calc(env(safe-area-inset-top) + 12px)) 18px 16px', display:'flex', alignItems:'center', justifyContent:'space-between', position:'sticky', top:0, zIndex:10 }}>
-          <div className="serif" style={{ color:'var(--green-light)', fontSize:20, fontWeight:600 }}>Settings</div>
-          <button onClick={onClose} aria-label="Close settings" style={{ background:'rgba(255,255,255,.18)', border:'none', color:'var(--green-light)', borderRadius:10, width:40, height:40, flexShrink:0, cursor:'pointer', fontSize:18, fontFamily:'DM Sans,sans-serif', display:'flex', alignItems:'center', justifyContent:'center' }}>✕</button>
+      <div style={{ position:'fixed', top:0, right:0, bottom:0, width:Math.min(520, window.innerWidth), background:'var(--cream)', zIndex:500, display:'flex', flexDirection:'column', boxShadow:'-8px 0 40px rgba(0,0,0,.2)' }}>
+        {/* Header — title only; you leave via the bottom bar, not a top ✕. */}
+        <div style={{ background:'var(--forest)', padding:'max(18px, calc(env(safe-area-inset-top) + 14px)) 22px 16px', flexShrink:0 }}>
+          <div className="serif" style={{ color:'var(--green-light)', fontSize:23, fontWeight:600, lineHeight:1.1 }}>Settings</div>
+          <div style={{ color:'var(--green-light)', opacity:.65, fontSize:12.5, marginTop:3 }}>{activeLabel}</div>
         </div>
-        <div style={{ display:'flex', borderBottom:'1px solid var(--border)', background:'white' }}>
-          {[['customize','Look'],['routines','Routines'],['reminders','Reminders'],['categories','Categories'],['notes','Notes'],['edits','Edits']].map(([id,label]) => (
-            <button key={id} onClick={()=>setSettingsTab(id)}
-              style={{ flex:1, padding:'11px 6px', border:'none', borderBottom:`2px solid ${settingsTab===id?'var(--teal)':'transparent'}`,
-                background:'transparent', color:settingsTab===id?'var(--teal)':'var(--muted)', cursor:'pointer',
-                fontFamily:'DM Sans,sans-serif', fontSize:10, fontWeight:600, letterSpacing:.5, textTransform:'uppercase', transition:'all .2s' }}>
-              {label}
-            </button>
-          ))}
+        {/* Scrollable content */}
+        <div style={{ flex:1, minHeight:0, overflowY:'auto', WebkitOverflowScrolling:'touch' }}>
+          <div style={{ padding:'20px 24px' }}>
+            {settingsTab==='customize'  && <Customization font={font} onFont={setFont} theme={theme} onTheme={setTheme} layout={layout} onLayout={setLayout} soundOn={soundOn} onSound={setSound} summary={summary} onSummary={setSummary} />}
+            {settingsTab==='routines'   && <Routines />}
+            {settingsTab==='reminders'  && <NotificationsSettings events={events} commitments={commitments} />}
+            {settingsTab==='categories' && <CategoriesManager categories={categories} addCategory={addCategory} updateCategory={updateCategory} deleteCategory={deleteCategory} />}
+            {settingsTab==='notes'      && <Notes notes={notes} updateNotes={updateNotes} />}
+            {settingsTab==='edits'      && <Edits />}
+          </div>
+          <div style={{ padding:'4px 24px 20px', textAlign:'center', fontSize:11, color:'var(--muted)' }}>
+            Bloom · build {BUILD_ID}
+          </div>
         </div>
-        <div style={{ padding:'20px 24px' }}>
-          {settingsTab==='customize'  && <Customization font={font} onFont={setFont} theme={theme} onTheme={setTheme} layout={layout} onLayout={setLayout} soundOn={soundOn} onSound={setSound} summary={summary} onSummary={setSummary} />}
-          {settingsTab==='routines'   && <Routines />}
-          {settingsTab==='reminders'  && <NotificationsSettings events={events} commitments={commitments} />}
-          {settingsTab==='categories' && <CategoriesManager categories={categories} addCategory={addCategory} updateCategory={updateCategory} deleteCategory={deleteCategory} />}
-          {settingsTab==='notes'      && <Notes notes={notes} updateNotes={updateNotes} />}
-          {settingsTab==='edits'      && <Edits />}
-        </div>
-        <div style={{ padding:'8px 24px calc(24px + env(safe-area-inset-bottom))', textAlign:'center', fontSize:11, color:'var(--muted)' }}>
-          Bloom · build {BUILD_ID}
-        </div>
+        {/* Bottom selection bar — pick a section, or Done to leave. Mirrors the
+            app's own bottom nav so Settings doesn't break the immersion. */}
+        <nav style={{ flexShrink:0, display:'flex', alignItems:'stretch', gap:6, background:'white', borderTop:'1px solid var(--border)', boxShadow:'0 -6px 20px rgba(60,72,88,.06)', padding:'8px 8px calc(8px + env(safe-area-inset-bottom))' }}>
+          <div style={{ flex:1, minWidth:0, display:'flex', gap:2, overflowX:'auto' }}>
+            {SECTIONS.map(([id,label,icon]) => {
+              const on = settingsTab === id
+              return (
+                <button key={id} onClick={()=>setSettingsTab(id)}
+                  style={{ flex:'1 0 auto', minWidth:62, border:'none', cursor:'pointer', borderRadius:12, padding:'7px 8px 6px',
+                    background: on ? 'var(--green-light)' : 'transparent', color: on ? 'var(--teal)' : 'var(--muted)',
+                    display:'flex', flexDirection:'column', alignItems:'center', gap:3, fontFamily:'DM Sans,sans-serif' }}>
+                  <Glyph id={icon} size={20} />
+                  <span style={{ fontSize:10, fontWeight:600, whiteSpace:'nowrap' }}>{label}</span>
+                </button>
+              )
+            })}
+          </div>
+          <button onClick={onClose} aria-label="Close settings"
+            style={{ flexShrink:0, border:'none', cursor:'pointer', borderRadius:12, padding:'7px 14px 6px', background:'var(--forest)', color:'var(--green-light)',
+              display:'flex', flexDirection:'column', alignItems:'center', gap:3, fontFamily:'DM Sans,sans-serif' }}>
+            <Glyph id="check" size={20} />
+            <span style={{ fontSize:10, fontWeight:700, whiteSpace:'nowrap' }}>Done</span>
+          </button>
+        </nav>
       </div>
     </>
   )
@@ -291,6 +318,25 @@ export default function App() {
       const updated = await updateRecurringTask(id, task)
       setRecurringTaskRows(prev => prev.map(t => t.id===id ? updated : t))
     } catch (e) { reportSaveError(e) }
+    // Keep the rule extras (freq/interval/monthDay/durationMins) in sync with
+    // the edit — set them when present, clear them when it's back to plain
+    // weekly with no duration.
+    const { freq, interval, monthDay, durationMins } = task
+    const extra = {
+      ...(freq && freq !== 'weekly' ? { freq } : {}),
+      ...(interval && interval > 1 ? { interval } : {}),
+      ...(monthDay ? { monthDay } : {}),
+      ...(durationMins ? { durationMins } : {}),
+    }
+    setRecurringMeta_(prev => {
+      const has = id in prev
+      if (!Object.keys(extra).length && !has) return prev
+      const next = { ...prev }
+      if (Object.keys(extra).length) next[id] = extra
+      else delete next[id]
+      setRecurringMeta(next).catch(reportSaveError)
+      return next
+    })
   }, [])
   const deleteRecurringTaskFn = useCallback(async id => {
     setRecurringTaskRows(prev => prev.filter(t => t.id !== id))

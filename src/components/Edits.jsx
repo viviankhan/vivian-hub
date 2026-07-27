@@ -5,6 +5,16 @@
 const EDIT_LOG = [
   {
     date: '2026-07-27',
+    summary: 'Settings feels native + editing a recurring task uses the real add sheet',
+    changes: [
+      'Settings no longer closes from a lone ✕ up top — it now has a themed bottom selection bar (Look / Routines / Reminders / Categories / Notes / Edits) with a big "Done" button, matching the rest of the app',
+      'The active section name shows in the Settings header so you always know where you are',
+      'Editing a recurring task now opens the same add sheet as everywhere else, pre-filled with its time, duration, category, note, and full repeat rule (frequency, every-N interval, weekdays, end date) — no more stripped-down editor',
+      'You can delete a recurring task from that same sheet via its ⋯ menu',
+    ]
+  },
+  {
+    date: '2026-07-27',
     summary: 'The "now" line lands inside the task you\'re in',
     changes: [
       'When a task is in progress, the current-time dot now sits inside that task\'s pill at the right point — instead of floating in the gap after it',
