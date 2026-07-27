@@ -5,10 +5,11 @@
 // a start time and end time (with quick-duration buttons that fill the end
 // from the start), plus optional custom reminder lead times that override the
 // global defaults just for this item.
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import DateField from './DateField.jsx'
 import TimeField from './TimeField.jsx'
 import MiniCalendar from './MiniCalendar.jsx'
+import FocusMode from './FocusMode.jsx'
 import { Icon } from './IconPicker.jsx'
 import ColorIconPicker from './ColorIconPicker.jsx'
 import { suggestGlyph } from '../lib/glyphs.jsx'
@@ -159,6 +160,22 @@ function MenuRow({ icon, label, danger, onClick }) {
 const DupIcon = () => (<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h8"/></svg>)
 const InboxIcon2 = () => (<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 13h4l2 3h4l2-3h4"/><path d="M4 13 6 5.5A2 2 0 0 1 7.9 4h8.2A2 2 0 0 1 18 5.5L20 13v5a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2Z"/></svg>)
 const TrashIcon2 = () => (<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4.5 7h15M9 7V5.2A1.2 1.2 0 0 1 10.2 4h3.6A1.2 1.2 0 0 1 15 5.2V7M6.5 7l1 12.5h9L17.5 7"/></svg>)
+const TargetIcon = () => (<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4.5"/><circle cx="12" cy="12" r="1" fill="currentColor" stroke="none"/></svg>)
+
+// If an existing item is happening right now (today, within its start→end),
+// returns { remaining, frac } for the live "Xm remaining" + elapsed shade.
+function inProgressInfo(existing) {
+  if (!existing?.date || !existing?.time || !existing?.durationMins) return null
+  const d = new Date()
+  const todayStr = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
+  if (existing.date !== todayStr) return null
+  const [h, m] = existing.time.split(':').map(Number)
+  const startMin = h * 60 + m
+  const endMin = startMin + existing.durationMins
+  const nowMin = d.getHours() * 60 + d.getMinutes()
+  if (nowMin < startMin || nowMin >= endMin) return null
+  return { remaining: endMin - nowMin, frac: Math.max(0, Math.min(1, (nowMin - startMin) / (endMin - startMin))) }
+}
 
 export default function AddItemModal({ existing = null, presetDate = null, presetText = '', lockDate = false, categories = [], onSave, onSaveRecurring = null, onDelete = null, onDuplicate = null, onMoveToInbox = null, onClose, title = 'Add to calendar' }) {
   const cats = (categories && categories.length) ? categories : DEFAULT_CATEGORIES
@@ -249,6 +266,16 @@ export default function AddItemModal({ existing = null, presetDate = null, prese
   const [menuOpen, setMenuOpen] = useState(false)
   const hasMenu = isEdit && (onDuplicate || onMoveToInbox || onDelete)
   const runMenu = (fn) => { setMenuOpen(false); onClose(); fn(existing) }
+
+  // Live "happening now" state — re-tick so the remaining-time and shade update.
+  const [, forceTick] = useState(0)
+  useEffect(() => {
+    if (!isEdit) return
+    const t = setInterval(() => forceTick(x => x + 1), 15000)
+    return () => clearInterval(t)
+  }, [isEdit])
+  const progress = isEdit ? inProgressInfo(existing) : null
+  const [focusOpen, setFocusOpen] = useState(false)
 
   const durationMins = diffMinutes(time, endTime)          // null unless a valid span
   const endInvalid = !!(time && endTime && !durationMins)  // end set but ≤ start
@@ -384,10 +411,15 @@ export default function AddItemModal({ existing = null, presetDate = null, prese
             {/* Icon tile — tap the palette badge to pick a color + icon */}
             <div style={{ position:'relative', flexShrink:0 }}>
               <button type="button" onClick={() => setShowColorIcon(true)} aria-label="Choose color and icon"
-                style={{ width:52, height:52, borderRadius:16, background:'rgba(255,255,255,.22)', border:'2px solid rgba(255,255,255,.7)', display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', padding:0 }}>
-                {shownIcon
-                  ? <Icon value={shownIcon} size={26} color="#fff" />
-                  : <span style={{ color:'white', fontSize:24, fontWeight:700 }}>{(label.trim()[0] || '?').toUpperCase()}</span>}
+                style={{ position:'relative', overflow:'hidden', width:52, height:52, borderRadius:16, background:'rgba(255,255,255,.22)', border:'2px solid rgba(255,255,255,.7)', display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', padding:0 }}>
+                {progress && (
+                  <span style={{ position:'absolute', left:0, right:0, bottom:0, height:`${progress.frac * 100}%`, background:'rgba(255,255,255,.4)', transition:'height 1s linear' }} />
+                )}
+                <span style={{ position:'relative', display:'flex' }}>
+                  {shownIcon
+                    ? <Icon value={shownIcon} size={26} color="#fff" />
+                    : <span style={{ color:'white', fontSize:24, fontWeight:700 }}>{(label.trim()[0] || '?').toUpperCase()}</span>}
+                </span>
               </button>
               <span onClick={() => setShowColorIcon(true)}
                 style={{ position:'absolute', bottom:-5, left:-5, width:24, height:24, borderRadius:'50%', background:'white', boxShadow:'0 1px 4px rgba(0,0,0,.25)', display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer' }}>
@@ -395,12 +427,20 @@ export default function AddItemModal({ existing = null, presetDate = null, prese
               </span>
             </div>
             <div style={{ flex:1, minWidth:0 }}>
-              {time && <div style={{ fontSize:12.5, color:'rgba(255,255,255,.9)', fontWeight:600, marginBottom:1 }}>{fmt12(time)}{endTime && durationMins ? ` – ${fmt12(endTime)}` : ''}</div>}
+              {progress
+                ? <div style={{ fontSize:12.5, color:'rgba(255,255,255,.92)', fontWeight:600, marginBottom:1 }}>{progress.remaining}m remaining</div>
+                : (time && <div style={{ fontSize:12.5, color:'rgba(255,255,255,.9)', fontWeight:600, marginBottom:1 }}>{fmt12(time)}{endTime && durationMins ? ` – ${fmt12(endTime)}` : ''}</div>)}
               <input value={label} onChange={e => setLabel(e.target.value)} placeholder="What's happening?" autoFocus={!isEdit}
                 onKeyDown={e => e.key === 'Enter' && canSave && submit()}
                 style={{ width:'100%', background:'transparent', border:'none', borderBottom:'1px solid rgba(255,255,255,.45)', color:'white', fontSize:21, fontWeight:700, fontFamily:'DM Sans,sans-serif', outline:'none', padding:'3px 0' }} />
             </div>
           </div>
+          {progress && (
+            <button type="button" onClick={() => setFocusOpen(true)}
+              style={{ marginTop:16, width:'100%', padding:'13px', borderRadius:16, border:'none', background:'rgba(255,255,255,.26)', color:'white', fontWeight:700, fontSize:15, cursor:'pointer', fontFamily:'DM Sans,sans-serif', display:'flex', alignItems:'center', justifyContent:'center', gap:9 }}>
+              <TargetIcon /> Focus Now
+            </button>
+          )}
         </div>
 
         <div style={{ padding:'16px 14px calc(20px + env(safe-area-inset-bottom))' }}>
@@ -648,6 +688,16 @@ export default function AddItemModal({ existing = null, presetDate = null, prese
           color={color} icon={effectiveIcon}
           onColor={setColor} onIcon={chooseIcon}
           onClose={() => setShowColorIcon(false)} />
+      )}
+
+      {focusOpen && (
+        <FocusMode
+          title={label.trim() || 'Focus'}
+          icon={shownIcon}
+          color={headerColor}
+          time={time}
+          durationMins={durationMins || existing?.durationMins || null}
+          onClose={() => setFocusOpen(false)} />
       )}
     </div>
   )

@@ -6,9 +6,19 @@ import { normalizeRoutineItems, sortByTime, to12 } from './Routines.jsx'
 import { Icon } from './IconPicker.jsx'
 import { bloomBurst } from '../lib/bloom.js'
 import AddItemModal from './AddItemModal.jsx'
+import FocusMode from './FocusMode.jsx'
 import DateField from './DateField.jsx'
 import TimeField from './TimeField.jsx'
 import { setItemReminders } from '../lib/notifications.js'
+
+// Concentric-circle "focus" target, for the Focus Now button.
+function TargetIcon({ size = 13 }) {
+  return (
+    <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+      <circle cx="12" cy="12" r="8.5" /><circle cx="12" cy="12" r="4.5" /><circle cx="12" cy="12" r="1" fill="currentColor" stroke="none" />
+    </svg>
+  )
+}
 
 const TAG_COLORS = {
   health:'#E07B2E', class:'#7C3AED', lab:'#059669', career:'#D97706',
@@ -322,7 +332,7 @@ function GapRow({ mins, prevColor, onAdd }) {
   )
 }
 
-function TimelineBlock({ task, categories, status, now, isDone, elapsed, onToggle, onManage, onShiftToNow, onOpen }) {
+function TimelineBlock({ task, categories, status, now, isDone, elapsed, onToggle, onManage, onShiftToNow, onOpen, onFocus }) {
   const catFound = (categories || []).find(x => x.id === task.tag)
   const catColor = catFound?.color || TAG_COLORS[task.tag] || '#9CA3AF'
   const color    = task.color || catColor
@@ -363,11 +373,18 @@ function TimelineBlock({ task, categories, status, now, isDone, elapsed, onToggl
           upcoming segments stay light gray. */}
       <div style={{ width:44, flexShrink:0, display:'flex', flexDirection:'column', alignItems:'center' }}>
         <div style={{ width:3, height:14, borderRadius:3, background: elapsed ? color : '#E7E2DB' }} />
-        <div style={{ width:40, height:pillH, borderRadius:20, flexShrink:0, background:color, display:'flex', alignItems:'center', justifyContent:'center',
+        <div style={{ position:'relative', overflow:'hidden', width:40, height:pillH, borderRadius:20, flexShrink:0, background:color, display:'flex', alignItems:'center', justifyContent:'center',
           boxShadow:isCurrent?`0 0 0 4px ${color}33`:'none' }}>
-          {shownIcon
-            ? <Icon value={shownIcon} size={20} color="#fff" />
-            : <span style={{ color:'white', fontWeight:700, fontSize:16 }}>{(title || '?').charAt(0).toUpperCase()}</span>}
+          {/* Elapsed shade — a lighter fill rises from the bottom as the current
+              event runs, so an in-progress task visibly "fills up". */}
+          {isCurrent && task._dur && timeMins!==null && (
+            <div style={{ position:'absolute', left:0, right:0, bottom:0, height:`${Math.max(0, Math.min(1, (now - timeMins) / task._dur)) * 100}%`, background:'rgba(255,255,255,.34)', transition:'height 1s linear' }} />
+          )}
+          <span style={{ position:'relative', display:'flex' }}>
+            {shownIcon
+              ? <Icon value={shownIcon} size={20} color="#fff" />
+              : <span style={{ color:'white', fontWeight:700, fontSize:16 }}>{(title || '?').charAt(0).toUpperCase()}</span>}
+          </span>
         </div>
         <div style={{ width:3, flex:1, minHeight:14, borderRadius:3, background: (elapsed && !isCurrent) ? color : '#E7E2DB' }} />
       </div>
@@ -394,12 +411,20 @@ function TimelineBlock({ task, categories, status, now, isDone, elapsed, onToggl
             {!isDone && <button onClick={e=>{ e.stopPropagation(); onManage() }} style={{ marginLeft:'auto', fontSize:14, padding:'0 4px', border:'none', background:'none', color:'#C0C6CE', cursor:'pointer', lineHeight:1 }}>···</button>}
           </div>
         </div>
-        {(isCurrent||isOverdue) && !INFLEXIBLE_TAGS.has(task.tag) && timeMins!==null && (
-          <button onClick={e=>{ e.stopPropagation(); onShiftToNow() }}
-            style={{ marginTop:9, padding:'7px 12px', borderRadius:9, border:`1px solid ${color}`, background:`${color}12`, color, cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontSize:11, fontWeight:600 }}>
-            ⏱ Start now · shift the rest
-          </button>
-        )}
+        <div style={{ display:'flex', flexWrap:'wrap', gap:8 }}>
+          {isCurrent && timeMins!==null && (
+            <button onClick={e=>{ e.stopPropagation(); onFocus&&onFocus() }}
+              style={{ marginTop:9, padding:'7px 14px', borderRadius:9, border:'none', background:color, color:'#fff', cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontSize:11, fontWeight:700, display:'inline-flex', alignItems:'center', gap:5 }}>
+              <TargetIcon /> Focus Now
+            </button>
+          )}
+          {(isCurrent||isOverdue) && !INFLEXIBLE_TAGS.has(task.tag) && timeMins!==null && (
+            <button onClick={e=>{ e.stopPropagation(); onShiftToNow() }}
+              style={{ marginTop:9, padding:'7px 12px', borderRadius:9, border:`1px solid ${color}`, background:`${color}12`, color, cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontSize:11, fontWeight:600 }}>
+              ⏱ Start now · shift the rest
+            </button>
+          )}
+        </div>
       </div>
     </div>
   )
@@ -508,6 +533,7 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
   const [managing,    setManaging]    = useState(null)
   const [editing,     setEditing]     = useState(null)  // full commitment being edited
   const [shiftPlan,   setShiftPlan]   = useState(null)  // {pivot, rest, selected} — "start now" push chooser
+  const [focusTask,   setFocusTask]   = useState(null)  // task shown in full-screen Focus mode
   const [addingTask,  setAddingTask]  = useState(false)
   const [morningOpen, setMorningOpen] = useState(false)
   const [nightOpen,   setNightOpen]   = useState(false)
@@ -903,6 +929,7 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
                   onManage={()=>setManaging(task)}
                   onOpen={()=>openTask(task)}
                   onShiftToNow={()=>handleShiftToNow(task)}
+                  onFocus={()=>setFocusTask(task)}
                 />
               </div>
             )
@@ -929,6 +956,14 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
         +
       </button>
 
+      {focusTask&&<FocusMode
+        title={focusTask.title || stripTimePrefix(focusTask.label)}
+        icon={focusTask.icon || (categories||[]).find(x=>x.id===focusTask.tag)?.icon || ''}
+        color={focusTask.color || (categories||[]).find(x=>x.id===focusTask.tag)?.color || TAG_COLORS[focusTask.tag] || 'var(--teal)'}
+        time={focusTask._time}
+        durationMins={focusTask._dur}
+        onDone={()=>{ if(!isDoneCheck(focusTask.id, focusTask.isCommitment)) syncToggle(focusTask.id, focusTask.label, focusTask.tag, focusTask.isCommitment?null:dateKey); setFocusTask(null) }}
+        onClose={()=>setFocusTask(null)} />}
       {shiftPlan&&<ShiftChooser plan={shiftPlan} onApply={(ids)=>{applyShift(shiftPlan.pivot, ids); setShiftPlan(null)}} onCancel={()=>setShiftPlan(null)}/>}
       {shiftResult&&<ShiftToast result={shiftResult} onClose={()=>setShiftResult(null)}/>}
       {addingTask&&<AddItemModal presetDate={dateKey} lockDate categories={categories} onSave={handleAdd} onSaveRecurring={addRecurringTask} onClose={()=>setAddingTask(false)} title="Add to Today"/>}

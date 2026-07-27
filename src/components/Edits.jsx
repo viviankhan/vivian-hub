@@ -5,6 +5,15 @@
 const EDIT_LOG = [
   {
     date: '2026-07-27',
+    summary: 'Live "happening now" progress shade + Focus Now timer',
+    changes: [
+      'A task that\'s happening right now fills up: the timeline pill shades from the bottom as it elapses, and its editor shows "Xm remaining" with a matching shade on the icon',
+      'Focus Now — a full-screen focus timer with a draining ring and live countdown, launchable from the current task on Today or from its editor',
+      'From Focus you can mark the task done or exit back',
+    ]
+  },
+  {
+    date: '2026-07-27',
     summary: 'Full repeat rules (daily/weekly/monthly + every-N) & streak summary',
     changes: [
       'Repeat now offers Once, Daily, Weekly and Monthly — with an “every N days/weeks/months” interval stepper',
