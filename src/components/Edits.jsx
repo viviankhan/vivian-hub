@@ -5,6 +5,16 @@
 const EDIT_LOG = [
   {
     date: '2026-07-27',
+    summary: 'Pills scale with duration + one add sheet for recurring tasks',
+    changes: [
+      'Timeline pills now grow with a task\'s duration — a 30-min task is clearly shorter than a 1-hour one (they were all clamped to the same size before)',
+      'Recurring tasks can carry a duration too, so their pills scale as well',
+      'The Recurring tab\'s “New Task” now opens the exact same add sheet as the rest of the app, straight into its Repeat section — so adding is identical from Today, Week, Calendar or the Recurring page',
+      'Daily and monthly recurring tasks no longer hide under the weekday filter, and show a DAILY / MONTHLY chip',
+    ]
+  },
+  {
+    date: '2026-07-27',
     summary: 'Prettier day-progress bar; bigger pills; keep the done-fade',
     changes: [
       'Redesigned the day-progress bar: a taller rounded track, a soft green gradient fill, a "% through today" label, and a ringed handle that rides along the day',

@@ -314,7 +314,8 @@ function hhmmToMins(t) {
 
 // Vertical pixels per minute — shared by task blocks and gaps so the whole
 // day reads at one consistent scale (a 2-hour task is twice a 1-hour task).
-const PX_PER_MIN = 1.15
+// Steep enough that a 30-min task is visibly shorter than a 1-hour one.
+const PX_PER_MIN = 2.4
 
 // A "free time" gap between two timed tasks, with a quick Add Task. Its height
 // grows with the length of the gap, so the day reads at relative scale.
@@ -375,9 +376,12 @@ function TimelineBlock({ task, categories, status, now, isDone, elapsed, dateKey
 
   // Block + pill height scale with the task's duration, so longer tasks visibly
   // take more of the day. The colored shape is a stadium: a circle for short
-  // tasks, a tall pill for long ones (Structured-style). The icon sits centered.
-  const blockMinH = task._dur ? Math.min(360, Math.max(76, Math.round(task._dur * PX_PER_MIN))) : undefined
-  const pillH = task._dur ? Math.min(320, Math.max(52, Math.round(task._dur * PX_PER_MIN))) : 52
+  // tasks (clamped to a legible minimum), a tall pill for long ones
+  // (Structured-style). The icon sits centered. Tasks with no duration render
+  // as the minimum circle.
+  const durH  = task._dur ? task._dur * PX_PER_MIN : 0
+  const pillH = task._dur ? Math.min(300, Math.max(52, Math.round(durH))) : 52
+  const blockMinH = task._dur ? Math.min(340, Math.max(84, Math.round(durH + 28))) : undefined
 
   return (
     <div style={{ display:'flex', gap:0, minHeight:blockMinH, opacity:isDone?.5:1, transition:'opacity .3s' }}>

@@ -269,15 +269,16 @@ export default function App() {
     try {
       const created = await addRecurringTask(task)
       setRecurringTaskRows(prev => [...prev, created])
-      // Repeat rule extras (freq/interval/monthDay) aren't table columns — stash
-      // them in the synced recurring_meta blob keyed by the new row's id.
-      const { freq, interval, monthDay } = task
-      if ((freq && freq !== 'weekly') || (interval && interval > 1) || monthDay) {
+      // Repeat rule extras (freq/interval/monthDay/durationMins) aren't table
+      // columns — stash them in the synced recurring_meta blob keyed by row id.
+      const { freq, interval, monthDay, durationMins } = task
+      if ((freq && freq !== 'weekly') || (interval && interval > 1) || monthDay || durationMins) {
         setRecurringMeta_(prev => {
           const next = { ...prev, [created.id]: {
             ...(freq ? { freq } : {}),
             ...(interval && interval > 1 ? { interval } : {}),
             ...(monthDay ? { monthDay } : {}),
+            ...(durationMins ? { durationMins } : {}),
           } }
           setRecurringMeta(next).catch(reportSaveError)
           return next
@@ -597,7 +598,7 @@ export default function App() {
         {tab==='thoughts'    && <ThoughtsBoard addCommitment={addCommitment} categories={categories} />}
         {tab==='events'      && <EventsManager events={events} addEvent={addEvent} deleteEvent={deleteEvent}
           vacations={vacations} addVacation={addVacation} deleteVacation={deleteVacation} />}
-        {tab==='recurring'   && <RecurringTasksManager recurringTasks={recurringTasksWrapped}
+        {tab==='recurring'   && <RecurringTasksManager recurringTasks={{ tasks: recurringTasksEnriched }}
           addRecurringTask={addRecurringTaskFn} updateRecurringTask={updateRecurringTaskFn}
           deleteRecurringTask={deleteRecurringTaskFn} clearRecurringTasks={clearRecurringTasksFn}
           categories={categories}

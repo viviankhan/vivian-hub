@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react'
 import { Icon } from './IconPicker.jsx'
 import DateField from './DateField.jsx'
+import AddItemModal from './AddItemModal.jsx'
 
 const DAYS = ['monday','tuesday','wednesday','thursday','friday','saturday','sunday']
 const DAY_SHORT = { monday:'Mon', tuesday:'Tue', wednesday:'Wed', thursday:'Thu', friday:'Fri', saturday:'Sat', sunday:'Sun' }
@@ -234,12 +235,17 @@ function TaskListRow({ task, onEdit, today, categories }) {
         )}
       </div>
       <Tag label={catLabel} color={catColor} icon={catIcon} />
-      <TypeBadge type={task.type} />
-      {/* Day labels — to the right of the title; current day highlighted in teal */}
+      {/* Frequency — a Daily/Monthly chip, or the weekday pills for weekly. */}
       <div style={{ display:'flex', gap:3, flexWrap:'wrap', justifyContent:'flex-end', maxWidth:150, flexShrink:0 }}>
-        {DAYS.filter(d=>task.days?.includes(d)).map(d=>(
-          <span key={d} style={{ fontSize:9, padding:'2px 6px', borderRadius:6, background:d===today?'var(--teal)':'var(--forest)', color:d===today?'white':'var(--green-light)', fontWeight:700, letterSpacing:.5 }}>{DAY_SHORT[d]}</span>
-        ))}
+        {task.freq==='daily' ? (
+          <span style={{ fontSize:9, padding:'2px 7px', borderRadius:6, background:'var(--forest)', color:'var(--green-light)', fontWeight:700, letterSpacing:.5 }}>DAILY{task.interval>1?` ×${task.interval}`:''}</span>
+        ) : task.freq==='monthly' ? (
+          <span style={{ fontSize:9, padding:'2px 7px', borderRadius:6, background:'var(--forest)', color:'var(--green-light)', fontWeight:700, letterSpacing:.5 }}>MONTHLY</span>
+        ) : (
+          DAYS.filter(d=>task.days?.includes(d)).map(d=>(
+            <span key={d} style={{ fontSize:9, padding:'2px 6px', borderRadius:6, background:d===today?'var(--teal)':'var(--forest)', color:d===today?'white':'var(--green-light)', fontWeight:700, letterSpacing:.5 }}>{DAY_SHORT[d]}</span>
+          ))
+        )}
       </div>
       <span style={{ fontSize:11, color:'var(--muted)', flexShrink:0 }}>›</span>
     </div>
@@ -318,10 +324,13 @@ export default function RecurringTasksManager({ recurringTasks, addRecurringTask
     }
   }
 
-  // Filter
+  // Filter. Daily and monthly tasks have no weekday list, so a day filter only
+  // narrows weekly tasks — daily/monthly always show (they land on every day /
+  // a day-of-month, not a weekday).
   const visible = flatData.filter(t => {
-    if (filterDay  !== 'all' && !(t.days||[]).includes(filterDay))  return false
-    if (filterType !== 'all' && t.type !== filterType)               return false
+    const freq = t.freq || 'weekly'
+    if (filterDay !== 'all' && freq === 'weekly' && !(t.days||[]).includes(filterDay)) return false
+    if (filterType !== 'all' && t.type !== filterType) return false
     return true
   })
 
@@ -401,10 +410,20 @@ export default function RecurringTasksManager({ recurringTasks, addRecurringTask
         )}
       </div>
 
-      {/* Modal */}
-      {editing && (
+      {/* New task — uses the same add sheet as the rest of the app, opened
+          straight into its Repeat section. */}
+      {editing==='new' && (
+        <AddItemModal
+          categories={categories}
+          defaultRepeat
+          onSaveRecurring={(task)=>{ addRecurringTask(task); setEditing(null) }}
+          onClose={()=>setEditing(null)}
+          title="New recurring task" />
+      )}
+      {/* Editing an existing recurring task keeps the detailed per-rule editor. */}
+      {editing && editing!=='new' && (
         <TaskModal
-          initial={editing==='new' ? null : editing}
+          initial={editing}
           onSave={handleSave}
           onDelete={handleDelete}
           onClose={()=>setEditing(null)}

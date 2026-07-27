@@ -163,7 +163,7 @@ const InboxIcon2 = () => (<svg viewBox="0 0 24 24" width="18" height="18" fill="
 const TrashIcon2 = () => (<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4.5 7h15M9 7V5.2A1.2 1.2 0 0 1 10.2 4h3.6A1.2 1.2 0 0 1 15 5.2V7M6.5 7l1 12.5h9L17.5 7"/></svg>)
 const TargetIcon = () => (<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4.5"/><circle cx="12" cy="12" r="1" fill="currentColor" stroke="none"/></svg>)
 
-export default function AddItemModal({ existing = null, presetDate = null, presetText = '', lockDate = false, categories = [], onSave, onSaveRecurring = null, onDelete = null, onDuplicate = null, onMoveToInbox = null, onClose, title = 'Add to calendar' }) {
+export default function AddItemModal({ existing = null, presetDate = null, presetText = '', lockDate = false, defaultRepeat = false, categories = [], onSave, onSaveRecurring = null, onDelete = null, onDuplicate = null, onMoveToInbox = null, onClose, title = 'Add to calendar' }) {
   const cats = (categories && categories.length) ? categories : DEFAULT_CATEGORIES
   const isEdit = !!existing
   const [label, setLabel]         = useState(existing?.text || presetText || '')
@@ -225,7 +225,7 @@ export default function AddItemModal({ existing = null, presetDate = null, prese
   // one-off shouldn't silently morph it into a series) and only when the parent
   // handed us an onSaveRecurring handler.
   const canRepeat = !isEdit && !!onSaveRecurring
-  const [repeatFreq, setRepeatFreq] = useState('once')   // once | daily | weekly | monthly
+  const [repeatFreq, setRepeatFreq] = useState(defaultRepeat ? 'weekly' : 'once')   // once | daily | weekly | monthly
   const [repeatInterval, setRepeatInterval] = useState(1)
   const [repeatDays, setRepeatDays] = useState(() => {
     const wd = weekdayOf(existing?.date || presetDate || '')
@@ -245,8 +245,9 @@ export default function AddItemModal({ existing = null, presetDate = null, prese
   const intervalUnit = repeatFreq === 'daily' ? 'day' : repeatFreq === 'monthly' ? 'month' : 'week'
   const bumpInterval = (d) => setRepeatInterval(n => Math.max(1, Math.min(99, n + d)))
 
-  // Which grouped row is expanded for editing (only one open at a time).
-  const [expanded, setExpanded] = useState(null)
+  // Which grouped row is expanded for editing (only one open at a time). On the
+  // recurring page the Repeat row opens by default so the days are right there.
+  const [expanded, setExpanded] = useState(defaultRepeat ? 'repeat' : null)
   const toggleRow = (k) => setExpanded(e => (e === k ? null : k))
   // Header ⋯ overflow menu (edit mode only) — Duplicate / Move to Inbox / Delete.
   const [menuOpen, setMenuOpen] = useState(false)
@@ -315,6 +316,7 @@ export default function AddItemModal({ existing = null, presetDate = null, prese
         tag: primaryCatId,
         label: time ? `${fmt12(time)} — ${label.trim()}` : label.trim(),
         note: description.trim() || '',
+        durationMins: durationMins || null,
         startDate,
         endDate: repeatEnd || null,
       }
@@ -496,7 +498,7 @@ export default function AddItemModal({ existing = null, presetDate = null, prese
                 hint={repeatOn ? 'On' : null} open={expanded==='repeat'} onClick={() => toggleRow('repeat')}>
                 {/* Once / Daily / Weekly / Monthly */}
                 <div style={{ display:'flex', gap:4, padding:4, borderRadius:12, background:'#EAE7EE', marginBottom: repeatOn ? 14 : 0 }}>
-                  {[['once','Once'],['daily','Daily'],['weekly','Weekly'],['monthly','Monthly']].map(([v,l]) => {
+                  {(defaultRepeat ? [['daily','Daily'],['weekly','Weekly'],['monthly','Monthly']] : [['once','Once'],['daily','Daily'],['weekly','Weekly'],['monthly','Monthly']]).map(([v,l]) => {
                     const on = repeatFreq === v
                     return (
                       <button key={v} onClick={() => pickFreq(v)}

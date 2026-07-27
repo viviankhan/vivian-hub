@@ -119,7 +119,7 @@ export function recurringOccurrence(task, dateStr) {
     note: task.note || '',
     carry: !!task.carry,
     _time: time,
-    _dur: null,
+    _dur: task.durationMins || null,
   }
 }
 
