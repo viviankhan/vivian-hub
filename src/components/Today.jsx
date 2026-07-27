@@ -380,7 +380,7 @@ function TimelineBlock({ task, categories, status, now, isDone, elapsed, dateKey
   const pillH = task._dur ? Math.min(320, Math.max(52, Math.round(task._dur * PX_PER_MIN))) : 52
 
   return (
-    <div style={{ display:'flex', gap:0, minHeight:blockMinH, transition:'opacity .3s' }}>
+    <div style={{ display:'flex', gap:0, minHeight:blockMinH, opacity:isDone?.5:1, transition:'opacity .3s' }}>
       {/* Time gutter */}
       <div style={{ width:52, flexShrink:0, paddingTop:16, textAlign:'right', paddingRight:10 }}>
         {timeMins!==null && (
@@ -393,7 +393,7 @@ function TimelineBlock({ task, categories, status, now, isDone, elapsed, dateKey
       <div style={{ width:52, flexShrink:0, display:'flex', flexDirection:'column', alignItems:'center' }}>
         <div style={{ width:3, height:14, borderRadius:3, background: elapsed ? color : '#E7E2DB' }} />
         <div style={{ position:'relative', overflow:'hidden', width:52, height:pillH, borderRadius:26, flexShrink:0, background:color, display:'flex', alignItems:'center', justifyContent:'center',
-          opacity:isDone?.9:1, boxShadow:isCurrent?`0 0 0 4px ${color}33`:'none' }}>
+          boxShadow:isCurrent?`0 0 0 4px ${color}33`:'none' }}>
           {/* Progress shade — a lighter fill rises from the bottom by how far
               along the task is: elapsed time while it's happening, and/or the
               share of its subtasks that are checked off. */}
@@ -412,8 +412,8 @@ function TimelineBlock({ task, categories, status, now, isDone, elapsed, dateKey
         </div>
         <div style={{ width:3, flex:1, minHeight:14, borderRadius:3, background: (elapsed && !isCurrent) ? color : '#E7E2DB' }} />
       </div>
-      {/* Card — dim the text on a done task, but keep the pill vivid. */}
-      <div style={{ flex:1, minWidth:0, paddingTop:8, paddingBottom:12, paddingLeft:10, opacity:isDone?.62:1 }}>
+      {/* Card */}
+      <div style={{ flex:1, minWidth:0, paddingTop:8, paddingBottom:12, paddingLeft:10 }}>
         <div onClick={()=>onOpen&&onOpen()} style={{ cursor:onOpen?'pointer':'default' }}>
           {timeLine && (
             <div style={{ fontSize:12, color:isCurrent?'var(--teal)':'var(--muted)', fontWeight:600, marginBottom:2, display:'flex', alignItems:'center', gap:6 }}>
@@ -554,14 +554,24 @@ function WeekStrip({ viewDate, setViewDate, commitments, categories, doneCount, 
         })}
       </div>
       {/* Progress bar — how far through the day we are, and how much is done. */}
-      <div style={{ display:'flex', alignItems:'center', gap:10, marginTop:14 }}>
-        <span style={{ fontSize:12, color:'var(--muted)', whiteSpace:'nowrap' }}>{doneCount} of {total} done</span>
-        <div style={{ flex:1, height:5, background:'var(--border)', borderRadius:3, overflow:'hidden', position:'relative' }}>
-          {/* Completed-share fill */}
-          <div style={{ position:'absolute', inset:0, width:`${total>0?(doneCount/total)*100:0}%`, background:'#52B788', borderRadius:3, transition:'width .4s' }} />
-          {/* "Where we are in the day" marker */}
+      <div style={{ marginTop:16 }}>
+        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:7 }}>
+          <span style={{ fontSize:12.5, color:'var(--text)', fontWeight:600 }}>{doneCount} of {total} done</span>
           {isToday && total>0 && (
-            <div style={{ position:'absolute', top:-2, bottom:-2, left:`calc(${(dayProgress*100).toFixed(1)}% - 1px)`, width:2, background:'var(--teal)', borderRadius:2 }} />
+            <span style={{ fontSize:11, color:'var(--muted)', fontWeight:500 }}>{Math.round(dayProgress*100)}% through today</span>
+          )}
+        </div>
+        <div style={{ position:'relative', height:10 }}>
+          {/* Track */}
+          <div style={{ position:'absolute', inset:0, borderRadius:999, background:'rgba(90,120,100,.12)', overflow:'hidden' }}>
+            {/* Completed-share fill — soft green gradient with a little glow. */}
+            <div style={{ height:'100%', width:`${total>0?(doneCount/total)*100:0}%`, borderRadius:999,
+              background:'linear-gradient(90deg, #46AE80, #77CE9F)', boxShadow:'0 1px 5px rgba(70,174,128,.45)', transition:'width .5s ease' }} />
+          </div>
+          {/* "You are here" handle — a ringed dot riding along the day. */}
+          {isToday && total>0 && (
+            <div style={{ position:'absolute', top:'50%', left:`${Math.max(3, Math.min(97, dayProgress*100))}%`, transform:'translate(-50%,-50%)',
+              width:15, height:15, borderRadius:'50%', background:'white', border:'3px solid var(--teal)', boxShadow:'0 1px 5px rgba(0,0,0,.22)' }} />
           )}
         </div>
       </div>

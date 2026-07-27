@@ -5,11 +5,11 @@
 const EDIT_LOG = [
   {
     date: '2026-07-27',
-    summary: 'Bolder, Structured-style timeline pills',
+    summary: 'Prettier day-progress bar; bigger pills; keep the done-fade',
     changes: [
-      'Timeline pills are bigger and stay fully colored when a task is done — only the text dims and strikes through, instead of the whole pill washing out',
-      'Pills almost never show a bare letter now — an icon is auto-suggested from the title when none is set',
-      'Larger icons and matching spine spacing so the timeline reads bolder, closer to Structured',
+      'Redesigned the day-progress bar: a taller rounded track, a soft green gradient fill, a "% through today" label, and a ringed handle that rides along the day',
+      'Timeline pills are bigger with larger icons, and auto-suggest an icon from the title so a pill almost never shows a bare letter',
+      'Completed tasks still fade out (kept as-is by request)',
     ]
   },
   {
