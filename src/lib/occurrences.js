@@ -42,12 +42,58 @@ export function splitTimePrefix(label = '') {
   return { time, title: label.slice(m[0].length).trim() }
 }
 
-// Is this recurring template active on the given date — within its optional
-// start/end range and repeating on that weekday?
+// Noon Date for a "YYYY-MM-DD" string (DST-safe for day math).
+function noon(dateStr) {
+  return new Date(dateStr + 'T12:00:00')
+}
+// Sunday (noon) of the week containing d.
+function weekStart(d) {
+  const x = new Date(d)
+  x.setHours(12, 0, 0, 0)
+  x.setDate(x.getDate() - x.getDay())
+  return x
+}
+function daysInMonth(year, monthIdx) {
+  return new Date(year, monthIdx + 1, 0).getDate()
+}
+
+// Is this recurring template active on the given date? Handles the optional
+// start/end range plus the frequency rule:
+//   • daily   — every `interval` days from the start date
+//   • weekly  — on the chosen weekdays, every `interval` weeks (default; also
+//               the back-compat path for tasks with no freq set)
+//   • monthly — on a day-of-month, every `interval` months
+// interval defaults to 1 (every day/week/month); intervals > 1 anchor on the
+// task's start date.
 export function recurringActiveOn(task, dateStr) {
   if (task.startDate && dateStr < task.startDate) return false
   if (task.endDate && dateStr > task.endDate) return false
-  return (task.days || []).includes(dowName(dateStr))
+
+  const freq = task.freq || 'weekly'
+  const interval = Math.max(1, Number(task.interval) || 1)
+  const date = noon(dateStr)
+  const anchor = task.startDate ? noon(task.startDate) : null
+
+  if (freq === 'daily') {
+    if (interval === 1 || !anchor) return true
+    const diff = Math.round((date - anchor) / 86400000)
+    return diff >= 0 && diff % interval === 0
+  }
+
+  if (freq === 'monthly') {
+    const wantDay = Number(task.monthDay) || (anchor ? anchor.getDate() : date.getDate())
+    const eff = Math.min(wantDay, daysInMonth(date.getFullYear(), date.getMonth()))
+    if (date.getDate() !== eff) return false
+    if (interval === 1 || !anchor) return true
+    const diff = (date.getFullYear() * 12 + date.getMonth()) - (anchor.getFullYear() * 12 + anchor.getMonth())
+    return diff >= 0 && diff % interval === 0
+  }
+
+  // weekly (default + legacy tasks)
+  if (!(task.days || []).includes(dowName(dateStr))) return false
+  if (interval === 1 || !anchor) return true
+  const diff = Math.round((weekStart(date) - weekStart(anchor)) / (7 * 86400000))
+  return diff >= 0 && diff % interval === 0
 }
 
 // Normalize one recurring template into a concrete occurrence on a date. The

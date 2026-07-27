@@ -40,6 +40,13 @@ export const LAYOUTS = [
   { id:'minimal',    label:'Minimal' },
 ]
 
+// The week-strip summary under each day: colored category dots, or a streak
+// flame that lights up on days you fully completed.
+export const SUMMARY_MODES = [
+  { id:'dots',   label:'Dots' },
+  { id:'streak', label:'Streak' },
+]
+
 export function getTheme(id) {
   return THEMES.find(t => t.id === id) || THEMES[0]
 }
@@ -99,6 +106,12 @@ export function getLayoutPref() {
 }
 export function setLayoutPref(v) {
   try { localStorage.setItem('bloom_layout', v) } catch {}
+}
+export function getSummaryPref() {
+  try { return localStorage.getItem('bloom_summary') || 'dots' } catch { return 'dots' }
+}
+export function setSummaryPref(v) {
+  try { localStorage.setItem('bloom_summary', v) } catch {}
 }
 // In-app sound effects (reminder chimes / previews). On by default.
 export function getSoundEnabled() {

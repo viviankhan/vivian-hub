@@ -189,6 +189,14 @@ export const setThoughts = v  => dbSet('thoughts', v)
 export const getRecurringExceptions = () => dbGet('recurring_exceptions').then(v => v ?? {})
 export const setRecurringExceptions = v  => dbSet('recurring_exceptions', v)
 
+// Recurrence rule extras (frequency, interval, monthly day) keyed by recurring
+// task id. Kept in a kv_store blob rather than new recurring_tasks columns, so
+// richer repeat rules (daily / weekly-every-N / monthly) need no schema
+// migration — mirrors how commitment_meta carries extra commitment fields.
+// Shape: { [recurringId]: { freq:'daily'|'weekly'|'monthly', interval:N, monthDay:D } }.
+export const getRecurringMeta = () => dbGet('recurring_meta').then(v => v ?? {})
+export const setRecurringMeta = v  => dbSet('recurring_meta', v)
+
 // ── Classes ────────────────────────────────────────────────────
 export async function getClasses() {
   if (USE_SUPABASE) {

@@ -11,6 +11,7 @@ import {
   getEvents, addEvent as dbAddEvent, deleteEvent as dbDeleteEvent,
   getRecurringTasks, addRecurringTask, updateRecurringTask, deleteRecurringTask, clearRecurringTasks,
   getRecurringExceptions, setRecurringExceptions,
+  getRecurringMeta, setRecurringMeta,
   addCategory as dbAddCategory, updateCategory as dbUpdateCategory, deleteCategory as dbDeleteCategory,
 } from './lib/storage.js'
 import { occKey } from './lib/occurrences.js'
@@ -34,7 +35,8 @@ import { registerServiceWorker, syncReminders } from './lib/notifications.js'
 import { Glyph } from './lib/glyphs.jsx'
 import Customization from './components/Customization.jsx'
 import { getFontPref, setFontPref, applyFont, getThemePref, setThemePref, applyTheme,
-  getLayoutPref, setLayoutPref, applyLayout, getSoundEnabled, setSoundEnabled } from './lib/appearance.js'
+  getLayoutPref, setLayoutPref, applyLayout, getSoundEnabled, setSoundEnabled,
+  getSummaryPref, setSummaryPref } from './lib/appearance.js'
 
 // Build id baked in at build time (see vite.config.js). Shown in Settings so
 // it's obvious on-device which version is actually running after a deploy.
@@ -51,7 +53,7 @@ const TABS = [
 ]
 
 // ── Settings Drawer ────────────────────────────────────────────
-function SettingsDrawer({ open, onClose, settingsTab, setSettingsTab, notes, updateNotes, categories, addCategory, updateCategory, deleteCategory, events, commitments, font, setFont, theme, setTheme, layout, setLayout, soundOn, setSound }) {
+function SettingsDrawer({ open, onClose, settingsTab, setSettingsTab, notes, updateNotes, categories, addCategory, updateCategory, deleteCategory, events, commitments, font, setFont, theme, setTheme, layout, setLayout, soundOn, setSound, summary, setSummary }) {
   if (!open) return null
   return (
     <>
@@ -72,7 +74,7 @@ function SettingsDrawer({ open, onClose, settingsTab, setSettingsTab, notes, upd
           ))}
         </div>
         <div style={{ padding:'20px 24px' }}>
-          {settingsTab==='customize'  && <Customization font={font} onFont={setFont} theme={theme} onTheme={setTheme} layout={layout} onLayout={setLayout} soundOn={soundOn} onSound={setSound} />}
+          {settingsTab==='customize'  && <Customization font={font} onFont={setFont} theme={theme} onTheme={setTheme} layout={layout} onLayout={setLayout} soundOn={soundOn} onSound={setSound} summary={summary} onSummary={setSummary} />}
           {settingsTab==='routines'   && <Routines />}
           {settingsTab==='reminders'  && <NotificationsSettings events={events} commitments={commitments} />}
           {settingsTab==='categories' && <CategoriesManager categories={categories} addCategory={addCategory} updateCategory={updateCategory} deleteCategory={deleteCategory} />}
@@ -167,10 +169,12 @@ export default function App() {
   const [theme,  setThemeState]  = useState(getThemePref)
   const [layout, setLayoutState] = useState(getLayoutPref)
   const [soundOn,setSoundState]  = useState(getSoundEnabled)
-  const setFont   = useCallback(v  => { setFontState(v);   setFontPref(v);    applyFont(v)   }, [])
-  const setTheme  = useCallback(v  => { setThemeState(v);  setThemePref(v);   applyTheme(v)  }, [])
-  const setLayout = useCallback(v  => { setLayoutState(v); setLayoutPref(v);  applyLayout(v) }, [])
-  const setSound  = useCallback(on => { setSoundState(on); setSoundEnabled(on) }, [])
+  const [summary,setSummaryState]= useState(getSummaryPref)
+  const setFont    = useCallback(v  => { setFontState(v);    setFontPref(v);    applyFont(v)   }, [])
+  const setTheme   = useCallback(v  => { setThemeState(v);   setThemePref(v);   applyTheme(v)  }, [])
+  const setLayout  = useCallback(v  => { setLayoutState(v);  setLayoutPref(v);  applyLayout(v) }, [])
+  const setSound   = useCallback(on => { setSoundState(on);  setSoundEnabled(on) }, [])
+  const setSummary = useCallback(v  => { setSummaryState(v); setSummaryPref(v) }, [])
   const [searchOpen,   setSearchOpen]   = useState(false)
   const [navOpen,      setNavOpen]      = useState(false)  // mobile side-nav drawer
   // Set when a search suggestion is picked → Calendar navigates to this date.
@@ -191,6 +195,7 @@ export default function App() {
   const [commitmentMeta,   setCommitmentMeta_]  = useState({})
   const [recurringTaskRows,setRecurringTaskRows]= useState([])
   const [recurringExceptions,setRecurringExceptions_] = useState({})
+  const [recurringMeta,    setRecurringMeta_]   = useState({})
   const [vacations,        setVacations_]       = useState([])
   const [events,           setEvents_]          = useState([])
   const [categories,       setCategories_]      = useState([])
@@ -199,16 +204,16 @@ export default function App() {
   useEffect(() => {
     async function load() {
       await runMigrationIfNeeded()
-      const [comp, l, n, fcp, fcs, sch, com, rt, vac, evs, cats, cmeta, rexc] = await Promise.all([
+      const [comp, l, n, fcp, fcs, sch, com, rt, vac, evs, cats, cmeta, rexc, rmeta] = await Promise.all([
         getCompletions(), getLogEntries(), getNotes(),
         getFcProgress(), getFcStudied(), getScheduledTasks(),
         getCommitments(), getRecurringTasks(), getVacations(), getEvents(),
-        seedCategoriesIfNeeded(), getCommitmentMeta(), getRecurringExceptions(),
+        seedCategoriesIfNeeded(), getCommitmentMeta(), getRecurringExceptions(), getRecurringMeta(),
       ])
       setCompletions_(comp); setLog_(l); setNotes_(n)
       setFcProgress_(fcp); setFcStudied_(fcs); setScheduled_(sch)
       setCommitments_(com); setRecurringTaskRows(rt); setVacations_(vac); setEvents_(evs)
-      setCategories_(cats); setCommitmentMeta_(cmeta); setRecurringExceptions_(rexc)
+      setCategories_(cats); setCommitmentMeta_(cmeta); setRecurringExceptions_(rexc); setRecurringMeta_(rmeta)
       setLoading(false)
     }
     load()
@@ -238,6 +243,9 @@ export default function App() {
   // pre-splits them into week/day maps here. The Recurring tab still takes the
   // wrapped form for its editor.
   const recurringTasksWrapped = { tasks: recurringTaskRows }
+  // Rows enriched with their recurrence rule (freq/interval/monthDay) from the
+  // meta blob — this is what Today/Week/Calendar compute occurrences from.
+  const recurringTasksEnriched = recurringTaskRows.map(t => ({ ...t, ...(recurringMeta[t.id] || {}) }))
 
   // ── Persist helpers ──────────────────────────────────────────
   // Cloud write failures are surfaced instead of swallowed — otherwise a delete
@@ -261,6 +269,20 @@ export default function App() {
     try {
       const created = await addRecurringTask(task)
       setRecurringTaskRows(prev => [...prev, created])
+      // Repeat rule extras (freq/interval/monthDay) aren't table columns — stash
+      // them in the synced recurring_meta blob keyed by the new row's id.
+      const { freq, interval, monthDay } = task
+      if ((freq && freq !== 'weekly') || (interval && interval > 1) || monthDay) {
+        setRecurringMeta_(prev => {
+          const next = { ...prev, [created.id]: {
+            ...(freq ? { freq } : {}),
+            ...(interval && interval > 1 ? { interval } : {}),
+            ...(monthDay ? { monthDay } : {}),
+          } }
+          setRecurringMeta(next).catch(reportSaveError)
+          return next
+        })
+      }
     } catch (e) { reportSaveError(e) }
   }, [])
   const updateRecurringTaskFn = useCallback(async (id, task) => {
@@ -271,10 +293,18 @@ export default function App() {
   }, [])
   const deleteRecurringTaskFn = useCallback(async id => {
     setRecurringTaskRows(prev => prev.filter(t => t.id !== id))
+    setRecurringMeta_(prev => {
+      if (!(id in prev)) return prev
+      const n = { ...prev }; delete n[id]
+      setRecurringMeta(n).catch(reportSaveError)
+      return n
+    })
     try { await deleteRecurringTask(id) } catch (e) { reportSaveError(e) }
   }, [])
   const clearRecurringTasksFn = useCallback(async () => {
     setRecurringTaskRows([])
+    setRecurringMeta_({})
+    setRecurringMeta({}).catch(reportSaveError)
     try { await clearRecurringTasks() } catch (e) { reportSaveError(e) }
   }, [])
 
@@ -513,14 +543,15 @@ export default function App() {
     vacations, addVacation, deleteVacation,
     events, addEvent, deleteEvent,
     categories,
-    // Unified recurring schedule — the raw templates, the synced skip map, and
-    // the operations Today/Week/Calendar share so all three stay in sync.
-    recurringTasks: recurringTaskRows,
+    // Unified recurring schedule — the rule-enriched templates, the synced skip
+    // map, and the operations Today/Week/Calendar share so all three stay in sync.
+    recurringTasks: recurringTasksEnriched,
     recurringExceptions,
     addRecurringTask: addRecurringTaskFn,
     deleteRecurringTask: deleteRecurringTaskFn,
     skipRecurringOccurrence,
     unskipRecurringOccurrence,
+    summary,
   }
 
   return (
@@ -581,7 +612,8 @@ export default function App() {
         updateCategory={updateCategoryFn} deleteCategory={deleteCategoryFn}
         events={events} commitments={commitments}
         font={font} setFont={setFont} theme={theme} setTheme={setTheme}
-        layout={layout} setLayout={setLayout} soundOn={soundOn} setSound={setSound} />
+        layout={layout} setLayout={setLayout} soundOn={soundOn} setSound={setSound}
+        summary={summary} setSummary={setSummary} />
 
       <SearchOverlay
         open={searchOpen} onClose={() => setSearchOpen(false)}

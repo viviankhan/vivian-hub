@@ -5,6 +5,18 @@
 const EDIT_LOG = [
   {
     date: '2026-07-27',
+    summary: 'Full repeat rules (daily/weekly/monthly + every-N) & streak summary',
+    changes: [
+      'Repeat now offers Once, Daily, Weekly and Monthly — with an “every N days/weeks/months” interval stepper',
+      'Weekly repeats keep the weekday picker; Monthly repeats on the start date’s day each month',
+      'Add an optional end date to any repeat, or leave it to repeat indefinitely',
+      'Today, Week and Calendar honor all of these when placing recurring instances',
+      'Settings → Look adds Summary Display: the week strip shows category dots, or a streak flame on days you fully completed',
+      'Repeat rules ride in a synced side-store, so no database changes are needed',
+    ]
+  },
+  {
+    date: '2026-07-27',
     summary: 'Task menu (Duplicate / Move to Inbox / Delete) + more Look options',
     changes: [
       'Editing a task now has a ⋯ menu in the top corner: Duplicate it, Move to Inbox (unschedule — strips its date/time so it returns to Commitments), or Delete',

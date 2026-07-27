@@ -56,7 +56,9 @@ function Switch({ on, onClick }) {
   )
 }
 
-export default function Customization({ font, onFont, theme, onTheme, layout, onLayout, soundOn, onSound }) {
+const FlameGlyph = () => (<svg viewBox="0 0 24 24" width="19" height="19" fill="currentColor"><path d="M12 3c1 3 4.8 4.3 4.8 8.6A4.8 4.8 0 0 1 7.2 12c0-2 1-3.2 2-4.2.5 2 1.6 2 2 1 .5-1.2-1.2-3.2-1.2-5.8Z"/></svg>)
+
+export default function Customization({ font, onFont, theme, onTheme, layout, onLayout, soundOn, onSound, summary, onSummary }) {
   return (
     <div>
       <div className="page-title" style={{ marginBottom:4 }}>Customization</div>
@@ -107,6 +109,27 @@ export default function Customization({ font, onFont, theme, onTheme, layout, on
       <div style={{ fontSize:12.5, color:'var(--muted)', lineHeight:1.55, margin:'0 2px 22px' }}>
         <i>Simplified</i> and <i>Minimal</i> hide certain elements — routine cards,
         then the free-time gaps on the timeline — to make the day less distracting.
+      </div>
+
+      {/* ── Summary Display ───────────────────────────────────── */}
+      <div style={sectionLabel}>Summary Display</div>
+      <div style={{ ...card, padding:6, display:'flex', gap:4, background:'white' }}>
+        {[['dots', <span key="d" style={{ display:'flex', gap:4 }}>{['#5FA85C','#E0A33E','#7C9CBF'].map(c => <span key={c} style={{ width:9, height:9, borderRadius:'50%', background:c }} />)}</span>],
+          ['streak', <span key="s" style={{ display:'inline-flex' }}><FlameGlyph /></span>]].map(([id, node]) => {
+          const on = summary === id
+          return (
+            <button key={id} onClick={() => onSummary(id)}
+              style={{ flex:1, height:44, borderRadius:12, border:'none', cursor:'pointer',
+                background: on ? 'var(--teal)' : 'transparent', color: on ? 'white' : 'var(--muted)',
+                display:'flex', alignItems:'center', justifyContent:'center' }}>
+              {node}
+            </button>
+          )
+        })}
+      </div>
+      <div style={{ fontSize:12.5, color:'var(--muted)', lineHeight:1.55, margin:'0 2px 22px' }}>
+        The week strip on Today shows either colored category <i>dots</i> per day, or
+        a <i>streak</i> flame on the days you fully completed.
       </div>
 
       {/* ── Sound Effects ─────────────────────────────────────── */}

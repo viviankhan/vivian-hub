@@ -433,12 +433,23 @@ function NowMarker({ now }) {
 function ymd(d) {
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
 }
-function WeekStrip({ viewDate, setViewDate, commitments, categories, doneCount, total, dayProgress, isToday }) {
+function WeekStrip({ viewDate, setViewDate, commitments, categories, doneCount, total, dayProgress, isToday, summary, todos, recurringTasks, recurringExceptions }) {
   const today = todayKey()
   const base = new Date(viewDate + 'T12:00:00')
   const start = new Date(base); start.setDate(base.getDate() - base.getDay())  // back to Sunday
   const days = Array.from({ length: 7 }, (_, i) => { const d = new Date(start); d.setDate(start.getDate() + i); return d })
   const colorFor = (c) => c.color || (categories || []).find(x => x.id === c.cat)?.color || TAG_COLORS[c.cat] || '#9CA3AF'
+  // Streak mode: a day "lights up" when it has scheduled items and every one is
+  // done (commitments + recurring instances, matching the timeline).
+  const dayAllDone = (key) => {
+    const cs = (commitments || []).filter(c => c.date === key)
+    const rs = recurringOccurrencesForDate(recurringTasks, key, recurringExceptions)
+    const items = [
+      ...cs.map(c => !!(todos?.[c.id] || c.done)),
+      ...rs.map(o => !!(todos?.[`${key}_${o.id}`])),
+    ]
+    return items.length > 0 && items.every(Boolean)
+  }
   const monthDay = base.toLocaleDateString('en-US', { month: 'long', day: 'numeric' })
   const year = base.getFullYear()
 
@@ -462,8 +473,10 @@ function WeekStrip({ viewDate, setViewDate, commitments, categories, doneCount, 
                 fontWeight: sel ? 700 : 600,
                 background: sel ? 'var(--teal)' : (isTod ? 'rgba(14,158,142,.14)' : 'transparent'),
                 color: sel ? 'white' : (isTod ? 'var(--teal)' : 'var(--text)') }}>{d.getDate()}</span>
-              <span style={{ display:'flex', gap:2, height:6, alignItems:'center' }}>
-                {dots.map((c, i) => <span key={i} style={{ width:5, height:5, borderRadius:'50%', background:c }} />)}
+              <span style={{ display:'flex', gap:2, height:15, alignItems:'center', justifyContent:'center' }}>
+                {summary === 'streak'
+                  ? (dayAllDone(key) ? <Icon value="glyph:flame" size={14} color="#E8863A" /> : null)
+                  : dots.map((c, i) => <span key={i} style={{ width:5, height:5, borderRadius:'50%', background:c }} />)}
               </span>
             </button>
           )
@@ -486,7 +499,7 @@ function WeekStrip({ viewDate, setViewDate, commitments, categories, doneCount, 
 }
 
 // ── Main ───────────────────────────────────────────────────────
-export default function Today({ todos, weekState, syncToggle, commitments, addCommitment, updateCommitment, deleteCommitment, appendLog, scheduled, categories, recurringTasks, recurringExceptions, skipRecurringOccurrence, deleteRecurringTask, addRecurringTask }) {
+export default function Today({ todos, weekState, syncToggle, commitments, addCommitment, updateCommitment, deleteCommitment, appendLog, scheduled, categories, recurringTasks, recurringExceptions, skipRecurringOccurrence, deleteRecurringTask, addRecurringTask, summary }) {
   const [now,         setNow]         = useState(nowMins())
   // The day the timeline is showing. Defaults to today; the week strip up top
   // navigates to any day. "Now" logic (the progress marker, current/overdue,
@@ -844,7 +857,9 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
         viewDate={viewDate} setViewDate={setViewDate}
         commitments={commitments} categories={categories}
         doneCount={doneCount} total={tasksWithStatus.length}
-        dayProgress={dayProgress} isToday={isToday} />
+        dayProgress={dayProgress} isToday={isToday}
+        summary={summary} todos={todos}
+        recurringTasks={recurringTasks} recurringExceptions={recurringExceptions} />
 
       {/* Morning routine */}
       {morningEnabled && (

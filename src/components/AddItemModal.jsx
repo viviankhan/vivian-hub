@@ -116,13 +116,21 @@ function weekdayOf(dateStr) {
   if (!dateStr) return null
   return WEEKDAYS[new Date(dateStr + 'T12:00:00').getDay()]
 }
-function repeatSummary(days) {
+function daysSummary(days) {
   if (!days || !days.length) return 'Pick days'
   const set = new Set(days)
   if (set.size === 7) return 'Every day'
   const weekdays = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday']
   if (weekdays.every(d => set.has(d)) && set.size === 5) return 'Weekdays'
   return WEEKDAY_ORDER.filter(d => set.has(d)).map(d => WEEKDAY_SHORT[d]).join(' · ')
+}
+function localTodayStr() {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
+}
+function ordinal(n) {
+  const s = ['th', 'st', 'nd', 'rd'], v = n % 100
+  return n + (s[(v - 20) % 10] || s[v] || s[0])
 }
 
 // Short relative label for the date row ("Today", "Tomorrow", weekday).
@@ -214,21 +222,25 @@ export default function AddItemModal({ existing = null, presetDate = null, prese
   // one-off shouldn't silently morph it into a series) and only when the parent
   // handed us an onSaveRecurring handler.
   const canRepeat = !isEdit && !!onSaveRecurring
-  const [repeat, setRepeat] = useState(false)
+  const [repeatFreq, setRepeatFreq] = useState('once')   // once | daily | weekly | monthly
+  const [repeatInterval, setRepeatInterval] = useState(1)
   const [repeatDays, setRepeatDays] = useState(() => {
     const wd = weekdayOf(existing?.date || presetDate || '')
     return wd ? [wd] : ['monday']
   })
+  const [repeatEnd, setRepeatEnd] = useState('')
+  const repeatOn = repeatFreq !== 'once'
   const toggleRepeatDay = (d) => setRepeatDays(prev =>
     prev.includes(d) ? prev.filter(x => x !== d) : [...prev, d])
-  const toggleRepeat = () => setRepeat(r => {
-    const nr = !r
-    if (nr) {
-      const wd = weekdayOf(date)
-      if (wd && repeatDays.length === 0) setRepeatDays([wd])
+  const pickFreq = (f) => {
+    setRepeatFreq(f)
+    setRepeatInterval(1)
+    if (f === 'weekly' && repeatDays.length === 0) {
+      const wd = weekdayOf(date); if (wd) setRepeatDays([wd])
     }
-    return nr
-  })
+  }
+  const intervalUnit = repeatFreq === 'daily' ? 'day' : repeatFreq === 'monthly' ? 'month' : 'week'
+  const bumpInterval = (d) => setRepeatInterval(n => Math.max(1, Math.min(99, n + d)))
 
   // Which grouped row is expanded for editing (only one open at a time).
   const [expanded, setExpanded] = useState(null)
@@ -242,8 +254,8 @@ export default function AddItemModal({ existing = null, presetDate = null, prese
   const endInvalid = !!(time && endTime && !durationMins)  // end set but ≤ start
   // Date is optional — a task with no date is a valid "unscheduled" commitment
   // (used by the Commitments tab). Today/Calendar preset or lock the date.
-  // A repeating item needs at least one weekday chosen.
-  const repeatInvalid = repeat && repeatDays.length === 0
+  // A weekly repeat needs at least one weekday chosen.
+  const repeatInvalid = repeatFreq === 'weekly' && repeatDays.length === 0
   const canSave = !!label.trim() && !endInvalid && !repeatInvalid
 
   // Quick-set: fill the end time as start + N minutes. Needs a start time.
@@ -270,20 +282,25 @@ export default function AddItemModal({ existing = null, presetDate = null, prese
     if (!canSave) return
     // Repeating → create a recurring template (Recurring tab format) rather than
     // a single commitment. It carries its time in the label prefix ('today'
-    // type) so it lands on the timeline; category, note and start date come
-    // along too. Duration/subtasks aren't part of the recurring schema.
-    if (repeat && onSaveRecurring) {
+    // type) so it lands on the timeline; category, note, start/end date and the
+    // repeat rule (freq/interval/day-of-month) come along too. Duration and
+    // subtasks aren't part of the recurring schema.
+    if (repeatOn && onSaveRecurring) {
       const primaryCatId = selectedCats[0]
+      const startDate = date || localTodayStr()
       const recurringTask = {
         id: 'r-' + Date.now(),
         type: 'today',
-        days: WEEKDAY_ORDER.filter(d => repeatDays.includes(d)),
+        freq: repeatFreq,
+        interval: Math.max(1, repeatInterval),
+        days: repeatFreq === 'weekly' ? WEEKDAY_ORDER.filter(d => repeatDays.includes(d)) : [],
+        monthDay: repeatFreq === 'monthly' ? parseInt(startDate.slice(8, 10), 10) : null,
         cat: primaryCatId,
         tag: primaryCatId,
         label: time ? `${fmt12(time)} — ${label.trim()}` : label.trim(),
         note: description.trim() || '',
-        startDate: date || null,
-        endDate: null,
+        startDate,
+        endDate: repeatEnd || null,
       }
       onSaveRecurring(recurringTask)
       onClose()
@@ -322,6 +339,18 @@ export default function AddItemModal({ existing = null, presetDate = null, prese
   const baseRemind = useDefault ? 'Default' : (reminders.length ? `${reminders.length} alert${reminders.length>1?'s':''}` : 'No alerts')
   const soundLabel = (SOUNDS.find(s => s.id === sound) || {}).label || 'Chime'
   const remindText = sound === 'none' ? baseRemind : `${baseRemind} · ${soundLabel}`
+  // One-line summary for the collapsed Repeat row.
+  const repeatRowSummary = (() => {
+    if (!repeatOn) return 'Does not repeat'
+    const every = repeatInterval > 1
+    if (repeatFreq === 'daily')   return every ? `Every ${repeatInterval} days` : 'Daily'
+    if (repeatFreq === 'monthly') {
+      const d = date ? parseInt(date.slice(8, 10), 10) : new Date().getDate()
+      return `Monthly on the ${ordinal(d)}${every ? ` · every ${repeatInterval} mo` : ''}`
+    }
+    const base = every ? `Every ${repeatInterval} weeks` : 'Weekly'
+    return `${base} · ${daysSummary(repeatDays)}`
+  })()
 
   return (
     <div onClick={onClose}
@@ -427,28 +456,65 @@ export default function AddItemModal({ existing = null, presetDate = null, prese
             {canRepeat && <>
               <RowDivider />
               {/* Repeat — turns this into a recurring task shown on every matching day */}
-              <DetailRow icon={<RepeatIcon />} text={repeat ? repeatSummary(repeatDays) : 'Does not repeat'} textMuted={!repeat}
-                hint={repeat ? 'On' : null} open={expanded==='repeat'} onClick={() => toggleRow('repeat')}>
-                <label style={{ display:'flex', alignItems:'center', gap:8, cursor:'pointer', marginBottom: repeat ? 12 : 0 }}>
-                  <input type="checkbox" checked={repeat} onChange={toggleRepeat} />
-                  <span style={{ fontSize:13, color:'var(--text)' }}>Repeat weekly</span>
-                </label>
-                {repeat && <>
-                  <div style={{ fontSize:10, color:'var(--muted)', letterSpacing:1, textTransform:'uppercase', marginBottom:7 }}>On these days</div>
-                  <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
-                    {WEEKDAY_ORDER.map(d => {
-                      const on = repeatDays.includes(d)
-                      return (
-                        <button key={d} onClick={() => toggleRepeatDay(d)}
-                          style={{ fontSize:11, padding:'5px 11px', borderRadius:20, border: on ? 'none' : '1px solid var(--border)', background: on ? 'var(--forest)' : 'white', color: on ? 'var(--green-light)' : 'var(--muted)', cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:600 }}>
-                          {WEEKDAY_SHORT[d]}
-                        </button>
-                      )
-                    })}
+              <DetailRow icon={<RepeatIcon />} text={repeatRowSummary} textMuted={!repeatOn}
+                hint={repeatOn ? 'On' : null} open={expanded==='repeat'} onClick={() => toggleRow('repeat')}>
+                {/* Once / Daily / Weekly / Monthly */}
+                <div style={{ display:'flex', gap:4, padding:4, borderRadius:12, background:'#EAE7EE', marginBottom: repeatOn ? 14 : 0 }}>
+                  {[['once','Once'],['daily','Daily'],['weekly','Weekly'],['monthly','Monthly']].map(([v,l]) => {
+                    const on = repeatFreq === v
+                    return (
+                      <button key={v} onClick={() => pickFreq(v)}
+                        style={{ flex:1, padding:'8px 4px', borderRadius:9, border:'none', cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontSize:12.5, fontWeight:600,
+                          background: on ? 'var(--forest)' : 'transparent', color: on ? 'var(--green-light)' : 'var(--muted)' }}>{l}</button>
+                    )
+                  })}
+                </div>
+                {repeatOn && <>
+                  {/* Interval stepper */}
+                  <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:8, marginBottom:14 }}>
+                    <span style={{ fontSize:13.5, color:'var(--text)' }}>Every {repeatInterval > 1 ? repeatInterval : ''} {intervalUnit}{repeatInterval > 1 ? 's' : ''}</span>
+                    <div style={{ display:'flex', alignItems:'center', gap:0, border:'1px solid var(--border)', borderRadius:10, overflow:'hidden' }}>
+                      <button onClick={() => bumpInterval(-1)} disabled={repeatInterval <= 1}
+                        style={{ width:38, height:34, border:'none', background:'white', cursor: repeatInterval<=1?'default':'pointer', fontSize:18, color: repeatInterval<=1?'#CBD2DA':'var(--text)' }}>−</button>
+                      <span style={{ width:34, textAlign:'center', fontSize:14, fontWeight:600, color:'var(--text)' }}>{repeatInterval}</span>
+                      <button onClick={() => bumpInterval(1)}
+                        style={{ width:38, height:34, border:'none', borderLeft:'1px solid var(--border)', background:'white', cursor:'pointer', fontSize:18, color:'var(--text)' }}>+</button>
+                    </div>
                   </div>
-                  <div style={{ fontSize:10.5, color: repeatInvalid ? '#DC2626' : 'var(--muted)', marginTop:8 }}>
-                    {repeatInvalid ? 'Pick at least one day.'
-                      : 'Shows on Today, Week and Calendar every chosen day. Manage it later in the Recurring tab.'}
+                  {/* Weekday picker (weekly) */}
+                  {repeatFreq === 'weekly' && (
+                    <>
+                      <div style={{ display:'flex', gap:6, flexWrap:'wrap', marginBottom:6 }}>
+                        {WEEKDAY_ORDER.map(d => {
+                          const on = repeatDays.includes(d)
+                          return (
+                            <button key={d} onClick={() => toggleRepeatDay(d)}
+                              style={{ width:38, height:38, borderRadius:'50%', border: on ? 'none' : '1px solid var(--border)', background: on ? 'var(--forest)' : 'white', color: on ? 'var(--green-light)' : 'var(--muted)', cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:600, fontSize:11.5 }}>
+                              {WEEKDAY_SHORT[d]}
+                            </button>
+                          )
+                        })}
+                      </div>
+                      {repeatInvalid && <div style={{ fontSize:10.5, color:'#DC2626', marginBottom:6 }}>Pick at least one day.</div>}
+                    </>
+                  )}
+                  {/* Monthly note */}
+                  {repeatFreq === 'monthly' && (
+                    <div style={{ fontSize:12.5, color:'var(--muted)', marginBottom:12 }}>
+                      Repeats on the <b style={{ color:'var(--text)' }}>{ordinal(date ? parseInt(date.slice(8,10), 10) : new Date().getDate())}</b> of each month{date ? '' : ' (from today)'}.
+                    </div>
+                  )}
+                  {/* End date */}
+                  <div style={{ fontSize:10, color:'var(--muted)', letterSpacing:1, textTransform:'uppercase', margin:'6px 0 6px' }}>Ends</div>
+                  <div style={{ display:'flex', gap:8, alignItems:'center' }}>
+                    <DateField value={repeatEnd} onChange={setRepeatEnd} style={{ ...inp, flex:1 }} />
+                    {repeatEnd && (
+                      <button onClick={() => setRepeatEnd('')}
+                        style={{ fontSize:11, padding:'8px 12px', borderRadius:16, cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:600, border:'1px solid var(--border)', background:'white', color:'var(--muted)', whiteSpace:'nowrap' }}>Clear</button>
+                    )}
+                  </div>
+                  <div style={{ fontSize:10.5, color:'var(--muted)', marginTop:8 }}>
+                    {repeatEnd ? 'Stops repeating after this date.' : 'No end date — repeats indefinitely. Shows on Today, Week & Calendar; manage it in the Recurring tab.'}
                   </div>
                 </>}
               </DetailRow>
@@ -572,7 +638,7 @@ export default function AddItemModal({ existing = null, presetDate = null, prese
           {/* ── Save ──────────────────────────────────────────── */}
           <button onClick={submit} disabled={!canSave}
             style={{ width:'100%', padding:'14px', borderRadius:14, border:'none', background: canSave ? headerColor : '#E1E1E6', color: canSave ? 'white' : '#9CA3AF', cursor: canSave ? 'pointer' : 'default', fontFamily:'DM Sans,sans-serif', fontWeight:700, fontSize:15, letterSpacing:.3 }}>
-            {isEdit ? 'Save changes' : (repeat ? 'Add recurring task' : title)}
+            {isEdit ? 'Save changes' : (repeatOn ? 'Add recurring task' : title)}
           </button>
         </div>
       </div>
