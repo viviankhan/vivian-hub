@@ -5,6 +5,15 @@
 const EDIT_LOG = [
   {
     date: '2026-07-27',
+    summary: 'The "now" line lands inside the task you\'re in',
+    changes: [
+      'When a task is in progress, the current-time dot now sits inside that task\'s pill at the right point — instead of floating in the gap after it',
+      'Day progress reads off the vertical spine: the pill fills like a gradient as time passes, with the current time on its right; the old full-width line is gone',
+      'When nothing is running, a small dot + time still marks now in the gap',
+    ]
+  },
+  {
+    date: '2026-07-27',
     summary: 'Pills scale with duration + one add sheet for recurring tasks',
     changes: [
       'Timeline pills now grow with a task\'s duration — a 30-min task is clearly shorter than a 1-hour one (they were all clamped to the same size before)',

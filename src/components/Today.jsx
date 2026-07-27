@@ -383,8 +383,13 @@ function TimelineBlock({ task, categories, status, now, isDone, elapsed, dateKey
   const pillH = task._dur ? Math.min(300, Math.max(52, Math.round(durH))) : 52
   const blockMinH = task._dur ? Math.min(340, Math.max(84, Math.round(durH + 28))) : undefined
 
+  // How far "now" sits into this task's pill (0–1), for the current task's
+  // now-line + time label. Null unless this task is the one in progress.
+  const nowFrac = (isToday && isCurrent && task._dur && timeMins !== null)
+    ? Math.max(0, Math.min(1, (now - timeMins) / task._dur)) : null
+
   return (
-    <div style={{ display:'flex', gap:0, minHeight:blockMinH, opacity:isDone?.5:1, transition:'opacity .3s' }}>
+    <div style={{ position:'relative', display:'flex', gap:0, minHeight:blockMinH, opacity:isDone?.5:1, transition:'opacity .3s' }}>
       {/* Time gutter */}
       <div style={{ width:52, flexShrink:0, paddingTop:16, textAlign:'right', paddingRight:10 }}>
         {timeMins!==null && (
@@ -404,8 +409,10 @@ function TimelineBlock({ task, categories, status, now, isDone, elapsed, dateKey
           {(() => {
             const p = isDone ? null : taskProgress({ date: dateKey, time: task._time, durationMins: task._dur, subDone: task.subDone, subCount: task.subCount })
             const shade = iconColorOn(color) === '#FFFFFF' ? 'rgba(255,255,255,.34)' : 'rgba(0,0,0,.16)'
+            // Fill from the top so the elapsed portion (and its lower edge)
+            // tracks downward as the day advances — matching the now-line.
             return p && p.show ? (
-              <div style={{ position:'absolute', left:0, right:0, bottom:0, height:`${p.frac * 100}%`, background:shade, transition:'height .5s ease' }} />
+              <div style={{ position:'absolute', left:0, right:0, top:0, height:`${p.frac * 100}%`, background:shade, transition:'height .5s ease' }} />
             ) : null
           })()}
           <span style={{ position:'relative', display:'flex' }}>
@@ -476,27 +483,35 @@ function TimelineBlock({ task, categories, status, now, isDone, elapsed, dateKey
           )}
         </div>
       </div>
+      {/* NOW — a ringed dot on the spine at the elapsed point of the current
+          task, with the time on its right. This lands inside the class you're
+          in, instead of floating after it. */}
+      {nowFrac !== null && (
+        <div style={{ position:'absolute', top:`${14 + nowFrac * pillH}px`, left:0, transform:'translateY(-50%)', display:'flex', alignItems:'center', zIndex:4, pointerEvents:'none' }}>
+          <div style={{ width:52, flexShrink:0 }} />
+          <div style={{ width:52, flexShrink:0, display:'flex', justifyContent:'center' }}>
+            <div style={{ width:13, height:13, borderRadius:'50%', background:'white', border:'3px solid var(--teal)', boxShadow:'0 0 0 3px rgba(74,158,181,.16)' }} />
+          </div>
+          <div style={{ marginLeft:6, fontSize:11, fontWeight:800, color:'var(--teal)', background:'var(--cream)', padding:'1px 7px', borderRadius:8, boxShadow:'0 1px 3px rgba(0,0,0,.14)', whiteSpace:'nowrap' }}>{fmtTimeLabel(now)}</div>
+        </div>
+      )}
     </div>
   )
 }
 
 // ── NOW marker ─────────────────────────────────────────────────
-// Structured-style: the current time sits in the left gutter (bold), with the
-// dot centered on the spine — using the SAME column widths as TimelineBlock and
-// GapRow (52 gutter + 52 spine) so it lines up exactly, never shifted to the
-// side. A faint hairline runs across so the moment reads at a glance.
+// Shown only when nothing is in progress (now falls in a gap). A ringed dot
+// sits on the spine with the time to its right — no full-width line — matching
+// the in-task now-line. Uses the SAME column widths as TimelineBlock and GapRow
+// (52 gutter + 52 spine) so the dot lands exactly on the spine.
 function NowMarker({ now }) {
   return (
-    <div style={{ display:'flex', gap:0, alignItems:'center', margin:'3px 0' }}>
-      <div style={{ width:52, flexShrink:0, textAlign:'right', paddingRight:10 }}>
-        <span style={{ fontSize:11, color:'var(--teal)', fontWeight:700, whiteSpace:'nowrap' }}>{fmtTimeLabel(now)}</span>
-      </div>
+    <div style={{ display:'flex', gap:0, alignItems:'center', margin:'4px 0' }}>
+      <div style={{ width:52, flexShrink:0 }} />
       <div style={{ width:52, flexShrink:0, display:'flex', justifyContent:'center' }}>
-        <div style={{ width:11, height:11, borderRadius:'50%', background:'var(--teal)', boxShadow:'0 0 0 4px rgba(74,158,181,.18)' }} />
+        <div style={{ width:13, height:13, borderRadius:'50%', background:'white', border:'3px solid var(--teal)', boxShadow:'0 0 0 3px rgba(74,158,181,.16)' }} />
       </div>
-      <div style={{ flex:1, minWidth:0, display:'flex', alignItems:'center', paddingLeft:6 }}>
-        <div style={{ flex:1, height:2, borderRadius:2, background:'rgba(74,158,181,.28)' }} />
-      </div>
+      <div style={{ marginLeft:6, fontSize:11, fontWeight:800, color:'var(--teal)', background:'var(--cream)', padding:'1px 7px', borderRadius:8, boxShadow:'0 1px 3px rgba(0,0,0,.14)', whiteSpace:'nowrap' }}>{fmtTimeLabel(now)}</div>
     </div>
   )
 }
@@ -729,9 +744,12 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
     .sort((a,b)=>(a._mins??99999)-(b._mins??99999))
 
   const doneCount = tasksWithStatus.filter(t=>t._status==='past').length
-  // The "now" line goes just before the first task that hasn't started yet
-  // (only when we're viewing today).
-  const nowInsertIdx = isToday ? tasksWithStatus.findIndex(t=>t._mins!==null&&t._mins>now) : -1
+  // When a task is in progress, the "now" indicator is drawn inside that task's
+  // pill (see TimelineBlock), so we don't also drop a separate marker in the gap
+  // after it. Only when nothing is current does the between-tasks marker show,
+  // just before the first task that hasn't started yet.
+  const hasCurrent = isToday && tasksWithStatus.some(t=>t._status==='current')
+  const nowInsertIdx = (isToday && !hasCurrent) ? tasksWithStatus.findIndex(t=>t._mins!==null&&t._mins>now) : -1
   // How far through today's schedule we are (0–1), for the header progress bar:
   // elapsed span from the first task's start to the last task's end.
   const dayStart = tasksWithStatus.find(t=>t._mins!==null)?._mins ?? null
@@ -1004,7 +1022,7 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
               </div>
             )
           })}
-          {isToday && nowInsertIdx===-1 && <NowMarker now={now}/>}
+          {isToday && !hasCurrent && nowInsertIdx===-1 && <NowMarker now={now}/>}
         </div>
       )}
 
