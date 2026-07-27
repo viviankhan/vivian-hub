@@ -4,7 +4,7 @@ import { findSlots } from '../lib/scheduler.js'
 import { getRoutines } from '../lib/storage.js'
 import { normalizeRoutineItems, sortByTime, to12 } from './Routines.jsx'
 import { Icon } from './IconPicker.jsx'
-import { iconColorOn } from '../lib/glyphs.jsx'
+import { iconColorOn, suggestGlyph } from '../lib/glyphs.jsx'
 import { bloomBurst } from '../lib/bloom.js'
 import AddItemModal from './AddItemModal.jsx'
 import FocusMode from './FocusMode.jsx'
@@ -330,7 +330,7 @@ function GapRow({ mins, prevColor, onAdd }) {
   return (
     <div className="today-gap" style={{ display:'flex', gap:0 }}>
       <div style={{ width:52, flexShrink:0 }} />
-      <div style={{ width:44, flexShrink:0, display:'flex', justifyContent:'center' }}>
+      <div style={{ width:52, flexShrink:0, display:'flex', justifyContent:'center' }}>
         <div style={{ width:3, minHeight:h, borderRadius:3, background:`repeating-linear-gradient(${dash} 0 5px, transparent 5px 11px)` }} />
       </div>
       <div style={{ flex:1, minWidth:0, paddingLeft:8, paddingTop:4 }}>
@@ -354,10 +354,12 @@ function TimelineBlock({ task, categories, status, now, isDone, elapsed, dateKey
   const color    = task.color || catColor
   const catLabel = catFound?.label || task.tag
   const catIcon  = catFound?.icon || ''
-  // The task's own icon wins; then its category's icon; else a letter avatar.
-  const shownIcon = task.icon || catIcon
   const timeMins = task._mins ?? parseTimeMins(task.label)
   const title    = task.title || stripTimePrefix(task.label)
+  // The task's own icon wins, then its category's, then one auto-suggested from
+  // the title, then (last resort) a letter — so a pill is almost never a bare
+  // letter the way Structured always shows a glyph.
+  const shownIcon = task.icon || catIcon || suggestGlyph(title)
 
   const isCurrent = status==='current' && !isDone
   const isOverdue = status==='overdue' && !isDone
@@ -374,11 +376,11 @@ function TimelineBlock({ task, categories, status, now, isDone, elapsed, dateKey
   // Block + pill height scale with the task's duration, so longer tasks visibly
   // take more of the day. The colored shape is a stadium: a circle for short
   // tasks, a tall pill for long ones (Structured-style). The icon sits centered.
-  const blockMinH = task._dur ? Math.min(360, Math.max(72, Math.round(task._dur * PX_PER_MIN))) : undefined
-  const pillH = task._dur ? Math.min(320, Math.max(40, Math.round(task._dur * PX_PER_MIN))) : 40
+  const blockMinH = task._dur ? Math.min(360, Math.max(76, Math.round(task._dur * PX_PER_MIN))) : undefined
+  const pillH = task._dur ? Math.min(320, Math.max(52, Math.round(task._dur * PX_PER_MIN))) : 52
 
   return (
-    <div style={{ display:'flex', gap:0, minHeight:blockMinH, opacity:isDone?.55:1, transition:'opacity .3s' }}>
+    <div style={{ display:'flex', gap:0, minHeight:blockMinH, transition:'opacity .3s' }}>
       {/* Time gutter */}
       <div style={{ width:52, flexShrink:0, paddingTop:16, textAlign:'right', paddingRight:10 }}>
         {timeMins!==null && (
@@ -388,10 +390,10 @@ function TimelineBlock({ task, categories, status, now, isDone, elapsed, dateKey
       {/* Colored duration pill + progress spine. The spine reads as a progress
           bar: segments you've worked through are solid in the task's color,
           upcoming segments stay light gray. */}
-      <div style={{ width:44, flexShrink:0, display:'flex', flexDirection:'column', alignItems:'center' }}>
+      <div style={{ width:52, flexShrink:0, display:'flex', flexDirection:'column', alignItems:'center' }}>
         <div style={{ width:3, height:14, borderRadius:3, background: elapsed ? color : '#E7E2DB' }} />
-        <div style={{ position:'relative', overflow:'hidden', width:40, height:pillH, borderRadius:20, flexShrink:0, background:color, display:'flex', alignItems:'center', justifyContent:'center',
-          boxShadow:isCurrent?`0 0 0 4px ${color}33`:'none' }}>
+        <div style={{ position:'relative', overflow:'hidden', width:52, height:pillH, borderRadius:26, flexShrink:0, background:color, display:'flex', alignItems:'center', justifyContent:'center',
+          opacity:isDone?.9:1, boxShadow:isCurrent?`0 0 0 4px ${color}33`:'none' }}>
           {/* Progress shade — a lighter fill rises from the bottom by how far
               along the task is: elapsed time while it's happening, and/or the
               share of its subtasks that are checked off. */}
@@ -404,14 +406,14 @@ function TimelineBlock({ task, categories, status, now, isDone, elapsed, dateKey
           })()}
           <span style={{ position:'relative', display:'flex' }}>
             {shownIcon
-              ? <Icon value={shownIcon} size={20} color={iconColorOn(color)} />
-              : <span style={{ color:iconColorOn(color), fontWeight:700, fontSize:16 }}>{(title || '?').charAt(0).toUpperCase()}</span>}
+              ? <Icon value={shownIcon} size={24} color={iconColorOn(color)} />
+              : <span style={{ color:iconColorOn(color), fontWeight:700, fontSize:20 }}>{(title || '?').charAt(0).toUpperCase()}</span>}
           </span>
         </div>
         <div style={{ width:3, flex:1, minHeight:14, borderRadius:3, background: (elapsed && !isCurrent) ? color : '#E7E2DB' }} />
       </div>
-      {/* Card */}
-      <div style={{ flex:1, minWidth:0, paddingTop:8, paddingBottom:12, paddingLeft:10 }}>
+      {/* Card — dim the text on a done task, but keep the pill vivid. */}
+      <div style={{ flex:1, minWidth:0, paddingTop:8, paddingBottom:12, paddingLeft:10, opacity:isDone?.62:1 }}>
         <div onClick={()=>onOpen&&onOpen()} style={{ cursor:onOpen?'pointer':'default' }}>
           {timeLine && (
             <div style={{ fontSize:12, color:isCurrent?'var(--teal)':'var(--muted)', fontWeight:600, marginBottom:2, display:'flex', alignItems:'center', gap:6 }}>
@@ -477,7 +479,7 @@ function TimelineBlock({ task, categories, status, now, isDone, elapsed, dateKey
 // ── NOW marker ─────────────────────────────────────────────────
 // Structured-style: the current time sits in the left gutter (bold), with the
 // dot centered on the spine — using the SAME column widths as TimelineBlock and
-// GapRow (52 gutter + 44 spine) so it lines up exactly, never shifted to the
+// GapRow (52 gutter + 52 spine) so it lines up exactly, never shifted to the
 // side. A faint hairline runs across so the moment reads at a glance.
 function NowMarker({ now }) {
   return (
@@ -485,7 +487,7 @@ function NowMarker({ now }) {
       <div style={{ width:52, flexShrink:0, textAlign:'right', paddingRight:10 }}>
         <span style={{ fontSize:11, color:'var(--teal)', fontWeight:700, whiteSpace:'nowrap' }}>{fmtTimeLabel(now)}</span>
       </div>
-      <div style={{ width:44, flexShrink:0, display:'flex', justifyContent:'center' }}>
+      <div style={{ width:52, flexShrink:0, display:'flex', justifyContent:'center' }}>
         <div style={{ width:11, height:11, borderRadius:'50%', background:'var(--teal)', boxShadow:'0 0 0 4px rgba(74,158,181,.18)' }} />
       </div>
       <div style={{ flex:1, minWidth:0, display:'flex', alignItems:'center', paddingLeft:6 }}>

@@ -5,6 +5,15 @@
 const EDIT_LOG = [
   {
     date: '2026-07-27',
+    summary: 'Bolder, Structured-style timeline pills',
+    changes: [
+      'Timeline pills are bigger and stay fully colored when a task is done — only the text dims and strikes through, instead of the whole pill washing out',
+      'Pills almost never show a bare letter now — an icon is auto-suggested from the title when none is set',
+      'Larger icons and matching spine spacing so the timeline reads bolder, closer to Structured',
+    ]
+  },
+  {
+    date: '2026-07-27',
     summary: 'The + button follows your theme color',
     changes: [
       'The Today + button now uses your chosen accent theme (Settings → Look → App Icon) instead of a fixed dark, so it changes with your mood',
