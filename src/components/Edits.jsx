@@ -5,6 +5,16 @@
 const EDIT_LOG = [
   {
     date: '2026-07-28',
+    summary: 'Emoji picker, beach-peach themes, and auto-completing routines',
+    changes: [
+      'The Color & Icon picker now has real emoji (dress, clothes, food, animals and more) — searchable alongside the line icons — and the sheet keeps a steady height instead of shrinking when you search',
+      'Themes are now a beach-peach family (Peach, Coral, Apricot, Shell, Sand, Sunset, Seafoam, Lagoon, Bloom), each with its own glimmer — a soft shimmer on the + button and the theme tiles',
+      'Pick any color and it derives a matching glimmer too',
+      'Routine tasks auto-check as their time passes (unless you uncheck them), and once done they collapse into “First thing in the morning” / “Last of the evening” — tap to expand and undo one',
+    ]
+  },
+  {
+    date: '2026-07-28',
     summary: 'Recurring tasks send reminders now',
     changes: [
       'Timed recurring tasks fire notifications just like commitments and events — using your reminder lead times from Settings',
