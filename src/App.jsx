@@ -587,13 +587,16 @@ export default function App() {
   }, [])
 
   // ── Unified toggle ───────────────────────────────────────────
-  const syncToggle = useCallback(async (id, label, tag, date) => {
+  const syncToggle = useCallback(async (id, label, tag, date, explicitNext) => {
     const storageKey = date ? `${date}_${id}` : id
     const isCommitment = commitments.some(c => c.id===id)
     const currentDone = isCommitment
       ? commitments.find(c => c.id===id)?.done
       : !!completions[storageKey]
-    const nowDone = !currentDone
+    // Callers that track an effective done-state (e.g. routine tasks that
+    // auto-complete by time) pass the exact next value so the tap always flips
+    // what's shown, not just the stored record.
+    const nowDone = explicitNext === undefined ? !currentDone : !!explicitNext
 
     if (isCommitment) {
       setCommitments_(prev => prev.map(c => c.id===id ? {...c, done:nowDone} : c))

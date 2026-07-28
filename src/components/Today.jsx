@@ -359,6 +359,38 @@ function GapRow({ mins, prevColor, nextColor, routineTint, onAdd }) {
   )
 }
 
+// A summary row that stands in for a routine's finished tasks — the morning
+// ones collapse into "First thing in the morning", the evening ones into "Last
+// of the evening". Tap to expand the individual done tasks (to uncheck one).
+function collapseLabelFor(routine) {
+  const n = (routine?.name || '').toLowerCase()
+  if (n.includes('morning')) return 'First thing in the morning'
+  if (n.includes('night') || n.includes('evening')) return 'Last of the evening'
+  return `${routine?.name || 'Routine'} — done`
+}
+function RoutineCollapseRow({ routine, count, expanded, onToggle }) {
+  const tint = routine?.tint || '#EDE7F0'
+  const n = (routine?.name || '').toLowerCase()
+  const glyph = n.includes('night') || n.includes('evening') ? 'glyph:moon' : 'glyph:sun'
+  return (
+    <div style={{ position:'relative', zIndex:0, display:'flex', gap:0, minHeight:52, opacity:.85 }}>
+      <div style={{ position:'absolute', top:6, bottom:6, left:44, right:0, background:tint, opacity:.4, borderRadius:16, zIndex:-1 }} />
+      <div style={{ width:52, flexShrink:0 }} />
+      <div style={{ width:52, flexShrink:0, display:'flex', justifyContent:'center', alignItems:'center' }}>
+        <div style={{ width:34, height:34, borderRadius:'50%', background:tint, display:'flex', alignItems:'center', justifyContent:'center' }}>
+          <Icon value={glyph} size={17} color="#5A5560" />
+        </div>
+      </div>
+      <button onClick={onToggle}
+        style={{ flex:1, minWidth:0, textAlign:'left', border:'none', background:'transparent', cursor:'pointer', padding:'10px 10px', display:'flex', alignItems:'center', gap:8, fontFamily:'DM Sans,sans-serif' }}>
+        <span style={{ fontSize:14.5, fontWeight:700, color:'var(--text)', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{collapseLabelFor(routine)}</span>
+        <span style={{ fontSize:12, color:'var(--muted)', flexShrink:0 }}>{count} done</span>
+        <span style={{ marginLeft:'auto', fontSize:11, color:'var(--muted)', transform:expanded?'rotate(180deg)':'none', transition:'transform .2s', flexShrink:0 }}>▾</span>
+      </button>
+    </div>
+  )
+}
+
 function TimelineBlock({ task, categories, status, now, prevColor, nextColor, routineTint, filmTop = true, filmBottom = true, isDone, elapsed, dateKey, onToggle, onManage, onShiftToNow, onOpen, onFocus, onToggleSub }) {
   const [subOpen, setSubOpen] = useState(false)
   const catFound = (categories || []).find(x => x.id === task.tag)
@@ -635,6 +667,7 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
   const [addingTask,  setAddingTask]  = useState(false)
   const [morningOpen, setMorningOpen] = useState(false)
   const [nightOpen,   setNightOpen]   = useState(false)
+  const [expandedRoutines, setExpandedRoutines] = useState({})  // routineId → show its done tasks individually
   const [shiftResult, setShiftResult] = useState(null)
   const [customTasks, setCustomTasks] = useState(()=>{
     try { return JSON.parse(localStorage.getItem('vivian_custom_'+todayKey())||'[]') } catch { return [] }
@@ -708,6 +741,21 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
     ? !!(todos[id]||weekState[id])
     : !!(todos[dateKey+'_'+id]||weekState[dateKey+'_'+id])
 
+  // Whether a stored check/uncheck record exists (vs. no record at all). A
+  // routine task with no record auto-completes once its time has passed; an
+  // explicit tap (check or uncheck) always wins over that default.
+  const routineIds = new Set((routines||[]).map(r=>r.id))
+  const hasCompletionRecord = (task) => task.isCommitment ? (task.id in (todos||{})) : ((dateKey+'_'+task.id) in (todos||{}))
+  const effectiveDone = (task) => {
+    if (hasCompletionRecord(task)) return isDoneCheck(task.id, task.isCommitment)
+    // No record: routine tasks default to done once their window has passed
+    // (only on the day being viewed as today).
+    if (task.routine && routineIds.has(task.routine) && isToday && task._mins!==null) {
+      return now >= task._mins + (task._dur || 0)
+    }
+    return false
+  }
+
   // Apply time overrides to task labels. Commitments carry their real start
   // time (_time) and are updated directly, so overrides only apply to the
   // local template/custom todos that have no stored time — otherwise a stale
@@ -748,7 +796,7 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
     .sort((a,b)=>a._mins-b._mins)
 
   function getStatus(task) {
-    if (isDoneCheck(task.id, task.isCommitment)) return 'past'
+    if (effectiveDone(task)) return 'past'
     // On any day other than today there's no "now" — nothing is current/overdue.
     if (!isToday) return task._mins===null ? 'anytime' : 'upcoming'
     if (task._mins===null) return 'anytime'
@@ -1025,8 +1073,43 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
           {' '}or set up recurring tasks in the Recurring tab.
         </div>
       ) : (
+        (() => {
+        // How many finished tasks each routine has, for the collapse summary.
+        const doneRoutineCounts = {}
+        tasksWithStatus.forEach(t => { if (t.routine && routineIds.has(t.routine) && t._status==='past') doneRoutineCounts[t.routine] = (doneRoutineCounts[t.routine]||0)+1 })
+        const emittedCollapse = {}  // one summary/header per routine, per render
+        return (
         <div style={{paddingBottom:8}}>
           {tasksWithStatus.map((task,i)=>{
+            // Finished routine tasks collapse into a single summary row unless
+            // their routine has been expanded. The first one emits the row (or
+            // the expanded header); the rest are hidden while collapsed.
+            const isDoneRoutine = task.routine && routineIds.has(task.routine) && task._status==='past'
+            if (isDoneRoutine) {
+              const r = routines.find(x=>x.id===task.routine)
+              const isExp = !!expandedRoutines[task.routine]
+              const firstOfRoutine = !emittedCollapse[task.routine]
+              const header = firstOfRoutine
+                ? (emittedCollapse[task.routine] = true,
+                   <RoutineCollapseRow key={'rc-'+task.routine} routine={r} count={doneRoutineCounts[task.routine]} expanded={isExp}
+                     onToggle={()=>setExpandedRoutines(p=>({...p,[task.routine]:!p[task.routine]}))} />)
+                : null
+              if (!isExp) return header   // collapsed: just the summary (once), nothing else
+              // expanded: header (once) then the task block below
+              return (
+                <div key={task.id}>
+                  {header}
+                  <TimelineBlock
+                    task={task} categories={categories} status={task._status} now={now}
+                    routineTint={routines.find(x=>x.id===task.routine)?.tint || null} filmTop filmBottom
+                    isDone dateKey={dateKey}
+                    onToggle={()=>syncToggle(task.id,task.label,task.tag,task.isCommitment?null:dateKey, !effectiveDone(task))}
+                    onManage={()=>setManaging(task)} onOpen={()=>openTask(task)}
+                    onShiftToNow={()=>handleShiftToNow(task)} onFocus={()=>setFocusTask(task)}
+                    onToggleSub={(sid)=>toggleSubtask(task, sid)} />
+                </div>
+              )
+            }
             // Free-time gap between the previous task's end and this one's start.
             const prev = tasksWithStatus[i-1]
             const next = tasksWithStatus[i+1]
@@ -1062,7 +1145,7 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
                   isDone={task._status==='past'}
                   elapsed={isToday && task._mins!==null && task._mins<=now}
                   dateKey={dateKey}
-                  onToggle={()=>syncToggle(task.id,task.label,task.tag,task.isCommitment?null:dateKey)}
+                  onToggle={()=>syncToggle(task.id,task.label,task.tag,task.isCommitment?null:dateKey, !effectiveDone(task))}
                   onManage={()=>setManaging(task)}
                   onOpen={()=>openTask(task)}
                   onShiftToNow={()=>handleShiftToNow(task)}
@@ -1074,6 +1157,8 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
           })}
           {isToday && !hasCurrent && nowInsertIdx===-1 && <NowMarker now={now}/>}
         </div>
+        )
+        })()
       )}
 
       {/* Night routine — end of day */}
@@ -1100,7 +1185,7 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
         color={focusTask.color || (categories||[]).find(x=>x.id===focusTask.tag)?.color || TAG_COLORS[focusTask.tag] || 'var(--teal)'}
         time={focusTask._time}
         durationMins={focusTask._dur}
-        onDone={()=>{ if(!isDoneCheck(focusTask.id, focusTask.isCommitment)) syncToggle(focusTask.id, focusTask.label, focusTask.tag, focusTask.isCommitment?null:dateKey); setFocusTask(null) }}
+        onDone={()=>{ if(!effectiveDone(focusTask)) syncToggle(focusTask.id, focusTask.label, focusTask.tag, focusTask.isCommitment?null:dateKey, true); setFocusTask(null) }}
         onClose={()=>setFocusTask(null)} />}
       {shiftPlan&&<ShiftChooser plan={shiftPlan} onApply={(ids)=>{applyShift(shiftPlan.pivot, ids); setShiftPlan(null)}} onCancel={()=>setShiftPlan(null)}/>}
       {shiftResult&&<ShiftToast result={shiftResult} onClose={()=>setShiftResult(null)}/>}
