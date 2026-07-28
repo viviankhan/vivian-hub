@@ -212,14 +212,14 @@ export default function AddItemModal({ existing = null, existingRecurring = null
   const removeSub = (id) => setSubtasks(prev => prev.filter(s => s.id !== id))
 
   // Optional per-task color. Empty = inherit the primary label's color.
-  const [color, setColor] = useState(existing?.color || '')
+  const [color, setColor] = useState(existing?.color ?? rec?.color ?? '')
   // Optional per-task icon (glyph / emoji / uploaded image). Empty = auto:
   // suggest one from the title, then inherit the label's icon, then a letter.
-  const [icon, setIcon] = useState(existing?.icon || '')
+  const [icon, setIcon] = useState(existing?.icon ?? rec?.icon ?? '')
   const [showColorIcon, setShowColorIcon] = useState(false)
   // Once you pick or clear an icon yourself, stop auto-suggesting from the
   // title. (Editing a task that already has an icon counts as "chosen".)
-  const [iconTouched, setIconTouched] = useState(!!existing?.icon)
+  const [iconTouched, setIconTouched] = useState(!!(existing?.icon || rec?.icon))
   const chooseIcon = (v) => { setIcon(v); setIconTouched(true) }
   // The icon actually shown/saved: your explicit pick if any, otherwise a
   // live suggestion matched from the title until you touch it.
@@ -333,6 +333,8 @@ export default function AddItemModal({ existing = null, existingRecurring = null
         note: description.trim() || '',
         durationMins: durationMins || null,
         routine: routine || null,
+        icon: effectiveIcon || null,
+        color: color || null,
         startDate,
         endDate: repeatEnd || null,
       }

@@ -5,6 +5,16 @@
 const EDIT_LOG = [
   {
     date: '2026-07-28',
+    summary: 'Routine film fixes + saved colors + the "now" marker stays put',
+    changes: [
+      'Consecutive tasks in the same routine now share one continuous color film — the wash runs right through the gap between them instead of breaking into separate boxes',
+      'Recurring tasks keep the icon and color you pick — they were being dropped on save before',
+      'The "now" indicator no longer jumps onto an unfinished morning task at night: a task only counts as happening now while now is actually inside its time window',
+      'Color & Icon picker: save custom colors to reuse, delete saved ones, and a Bloom-default swatch that matches your current theme',
+    ]
+  },
+  {
+    date: '2026-07-28',
     summary: 'Routine groups, a Bloom theme family, and one-color theming',
     changes: [
       'New routine groups: file recurring tasks under Morning / Night (or your own) routines — set from the same add/edit sheet, in its Repeat section',

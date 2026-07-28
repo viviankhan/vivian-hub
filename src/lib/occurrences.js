@@ -119,6 +119,10 @@ export function recurringOccurrence(task, dateStr) {
     note: task.note || '',
     carry: !!task.carry,
     routine: task.routine || null,
+    // Per-task icon/color live in the recurring_meta blob (merged onto the row
+    // before this runs), so a recurring task keeps the glyph + color you chose.
+    icon: task.icon || null,
+    color: task.color || null,
     _time: time,
     _dur: task.durationMins || null,
   }

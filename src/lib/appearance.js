@@ -94,6 +94,30 @@ export function setCustomColor(v) {
   try { localStorage.setItem('bloom_custom_color', v) } catch {}
 }
 
+// Per-task color swatches the user has saved for reuse (device-local). Deduped,
+// most-recent first, capped so the row stays tidy.
+export function getSavedColors() {
+  try { const v = JSON.parse(localStorage.getItem('bloom_saved_colors') || '[]'); return Array.isArray(v) ? v : [] } catch { return [] }
+}
+export function addSavedColor(hex) {
+  const h = (hex || '').toUpperCase()
+  if (!/^#[0-9A-F]{6}$/.test(h)) return getSavedColors()
+  const next = [h, ...getSavedColors().filter(c => c.toUpperCase() !== h)].slice(0, 16)
+  try { localStorage.setItem('bloom_saved_colors', JSON.stringify(next)) } catch {}
+  return next
+}
+export function removeSavedColor(hex) {
+  const h = (hex || '').toUpperCase()
+  const next = getSavedColors().filter(c => c.toUpperCase() !== h)
+  try { localStorage.setItem('bloom_saved_colors', JSON.stringify(next)) } catch {}
+  return next
+}
+// The active theme's accent — the "default Bloom color" for the current scheme,
+// read live from the CSS variable the theme sets.
+export function activeAccent() {
+  try { return (getComputedStyle(document.documentElement).getPropertyValue('--teal') || '').trim() || '#4A9EB5' } catch { return '#4A9EB5' }
+}
+
 // Multi-stripe backgrounds for the Pride / Trans swatches.
 export const TILE_GRADIENTS = {
   pride: 'linear-gradient(135deg, #E8503A 0%, #E8503A 16%, #F0A028 16%, #F0A028 33%, #F5D400 33%, #F5D400 50%, #4CA64C 50%, #4CA64C 66%, #3A6FD8 66%, #3A6FD8 83%, #8E44AD 83%, #8E44AD 100%)',

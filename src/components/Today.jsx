@@ -319,7 +319,7 @@ const PX_PER_MIN = 2.4
 
 // A "free time" gap between two timed tasks, with a quick Add Task. Its height
 // grows with the length of the gap, so the day reads at relative scale.
-function GapRow({ mins, prevColor, nextColor, onAdd }) {
+function GapRow({ mins, prevColor, nextColor, routineTint, onAdd }) {
   const h = Math.min(150, Math.max(34, Math.round(mins * PX_PER_MIN)))
   const dur = <b style={{ color:'var(--teal)' }}>{fmtMins(mins).trim()}</b>
   // Structured-style copy: a long empty stretch reads as opportunity, a
@@ -335,7 +335,12 @@ function GapRow({ mins, prevColor, nextColor, onAdd }) {
   // cuts it into dashes (‑webkit‑ prefix for iOS Safari / the PWA).
   const dashMask = 'repeating-linear-gradient(black 0 5px, transparent 5px 11px)'
   return (
-    <div className="today-gap" style={{ display:'flex', gap:0 }}>
+    <div className="today-gap" style={{ position:'relative', zIndex:0, display:'flex', gap:0 }}>
+      {/* Continue a routine's film through the gap between two same-routine
+          tasks, square-edged so it butts flush against the pills above/below. */}
+      {routineTint && (
+        <div style={{ position:'absolute', top:0, bottom:0, left:44, right:0, background:routineTint, opacity:.5, zIndex:-1 }} />
+      )}
       <div style={{ width:52, flexShrink:0 }} />
       <div style={{ width:52, flexShrink:0, display:'flex', justifyContent:'center' }}>
         <div style={{ width:3, minHeight:h, borderRadius:3, background:`linear-gradient(to bottom, ${top}, ${bot})`, WebkitMask:dashMask, mask:dashMask }} />
@@ -354,7 +359,7 @@ function GapRow({ mins, prevColor, nextColor, onAdd }) {
   )
 }
 
-function TimelineBlock({ task, categories, status, now, prevColor, nextColor, routineTint, isDone, elapsed, dateKey, onToggle, onManage, onShiftToNow, onOpen, onFocus, onToggleSub }) {
+function TimelineBlock({ task, categories, status, now, prevColor, nextColor, routineTint, filmTop = true, filmBottom = true, isDone, elapsed, dateKey, onToggle, onManage, onShiftToNow, onOpen, onFocus, onToggleSub }) {
   const [subOpen, setSubOpen] = useState(false)
   const catFound = (categories || []).find(x => x.id === task.tag)
   const catColor = catFound?.color || TAG_COLORS[task.tag] || '#9CA3AF'
@@ -400,9 +405,12 @@ function TimelineBlock({ task, categories, status, now, prevColor, nextColor, ro
     <div style={{ position:'relative', zIndex:0, display:'flex', gap:0, minHeight:blockMinH, opacity:isDone?.5:1, transition:'opacity .3s' }}>
       {/* Routine film — a soft wash of the routine's color behind the whole row
           (pink morning / blue night by default). zIndex:-1 keeps it under the
-          pill + text; the block's zIndex:0 pins it to this row. */}
+          pill + text; the block's zIndex:0 pins it to this row. When the
+          neighbour shares the routine, the film runs to that edge (no inset +
+          square corner) so consecutive tasks read as one continuous band. */}
       {routineTint && (
-        <div style={{ position:'absolute', top:6, bottom:6, left:44, right:0, background:routineTint, opacity:.5, borderRadius:16, zIndex:-1 }} />
+        <div style={{ position:'absolute', top:filmTop?6:0, bottom:filmBottom?6:0, left:44, right:0, background:routineTint, opacity:.5,
+          borderTopLeftRadius:filmTop?16:0, borderTopRightRadius:filmTop?16:0, borderBottomLeftRadius:filmBottom?16:0, borderBottomRightRadius:filmBottom?16:0, zIndex:-1 }} />
       )}
       {/* Time gutter */}
       <div style={{ width:52, flexShrink:0, paddingTop:16, textAlign:'right', paddingRight:10 }}>
@@ -745,9 +753,14 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
     if (!isToday) return task._mins===null ? 'anytime' : 'upcoming'
     if (task._mins===null) return 'anytime'
     if (task._mins>now) return 'upcoming'
-    const lastStarted = timedSorted.filter(t=>t._mins<=now&&!isDoneCheck(t.id,t.isCommitment)).at(-1)
-    if (task._mins===lastStarted?._mins) return 'current'
-    return 'overdue'
+    // It's started and isn't done. "Current" means now is genuinely inside its
+    // window — for a timed task that's [start, start+duration]; a task with no
+    // duration only counts as current for a short grace period after its start.
+    // Anything older than that is overdue, so the now-indicator never sticks to
+    // a task that ended hours ago (e.g. a 7 AM task still showing "now" at 8 PM).
+    const dur = task._dur ?? task.durationMins ?? 0
+    if (dur) return (now < task._mins + dur) ? 'current' : 'overdue'
+    return (now - task._mins <= 30) ? 'current' : 'overdue'
   }
 
   // Pure chronological order — a completed task keeps its place on the
@@ -1016,8 +1029,16 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
           {tasksWithStatus.map((task,i)=>{
             // Free-time gap between the previous task's end and this one's start.
             const prev = tasksWithStatus[i-1]
+            const next = tasksWithStatus[i+1]
             const colorOf = t => t && (t.color || (categories||[]).find(x=>x.id===t.tag)?.color || TAG_COLORS[t.tag] || null)
-            let gap = null, gapColor = null, gapNextColor = null
+            const tintOf = t => t && t.routine ? (routines.find(r=>r.id===t.routine)?.tint || null) : null
+            const myTint = tintOf(task)
+            // Consecutive tasks in the SAME routine read as one band: their films
+            // touch (no top/bottom inset on the shared edge) and, when a gap sits
+            // between them, that gap is tinted too so the wash is continuous.
+            const prevSameRoutine = !!(myTint && prev && prev.routine === task.routine)
+            const nextSameRoutine = !!(myTint && next && next.routine === task.routine)
+            let gap = null, gapColor = null, gapNextColor = null, gapTint = null
             if (prev && prev._mins!==null && task._mins!==null && task._status!=='past') {
               const prevEnd = (prev._time && prev._dur) ? (hhmmToMins(prev._time)+prev._dur) : prev._mins
               const g = task._mins - prevEnd
@@ -1027,14 +1048,17 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
                 gapNextColor = colorOf(task) || gapColor
               }
             }
+            // Gap film only when both sides share the routine (so the band is
+            // truly continuous, not bleeding into an unrelated next task).
+            if (prevSameRoutine) gapTint = myTint
             return (
               <div key={task.id}>
                 {i===nowInsertIdx&&<NowMarker now={now}/>}
-                {gap&&<GapRow mins={gap} prevColor={gapColor} nextColor={gapNextColor} onAdd={()=>setAddingTask(true)}/>}
+                {gap&&<GapRow mins={gap} prevColor={gapColor} nextColor={gapNextColor} routineTint={gapTint} onAdd={()=>setAddingTask(true)}/>}
                 <TimelineBlock
                   task={task} categories={categories} status={task._status} now={now}
-                  routineTint={task.routine ? (routines.find(r=>r.id===task.routine)?.tint || null) : null}
-                  prevColor={colorOf(prev)} nextColor={colorOf(tasksWithStatus[i+1])}
+                  routineTint={myTint} filmTop={!prevSameRoutine} filmBottom={!nextSameRoutine}
+                  prevColor={colorOf(prev)} nextColor={colorOf(next)}
                   isDone={task._status==='past'}
                   elapsed={isToday && task._mins!==null && task._mins<=now}
                   dateKey={dateKey}
