@@ -47,9 +47,13 @@ const BUILD_ID = typeof __BUILD_ID__ !== 'undefined' ? __BUILD_ID__ : 'dev'
 // washes behind its tasks on the timeline (pink morning, blue night by default).
 // Users can rename/add/delete these; these two are just the initial seed.
 const DEFAULT_ROUTINES = [
-  { id:'morning', name:'Morning routine', tint:'#F9C9D9' },
+  { id:'morning', name:'Morning routine', tint:'#FBE79E' },
   { id:'night',   name:'Night routine',   tint:'#BBD5F0' },
 ]
+// Old seed tints we quietly upgrade on load (so an existing morning routine
+// still on the original pink picks up the new pale yellow, without touching a
+// tint the user has since customized).
+const LEGACY_ROUTINE_TINTS = { morning: '#F9C9D9' }
 
 const TABS = [
   { id:'today',       label:'Today',       glyph:'list' },
@@ -256,8 +260,22 @@ export default function App() {
       setCommitments_(com); setRecurringTaskRows(rt); setVacations_(vac); setEvents_(evs)
       setCategories_(cats); setCommitmentMeta_(cmeta); setRecurringExceptions_(rexc); setRecurringMeta_(rmeta)
       // Routine groups: use what's saved, or seed the Morning/Night defaults.
-      if (rout) setRoutines_(rout)
-      else setRoutineGroups(DEFAULT_ROUTINES).catch(() => {})
+      if (rout) {
+        // One-time tint upgrade: bump any routine still on an old seed tint to
+        // its current default (leaves customized tints alone).
+        let changed = false
+        const upgraded = rout.map(r => {
+          const legacy = LEGACY_ROUTINE_TINTS[r.id]
+          if (legacy && (r.tint || '').toUpperCase() === legacy.toUpperCase()) {
+            changed = true
+            const def = DEFAULT_ROUTINES.find(d => d.id === r.id)
+            return { ...r, tint: def ? def.tint : r.tint }
+          }
+          return r
+        })
+        setRoutines_(upgraded)
+        if (changed) setRoutineGroups(upgraded).catch(() => {})
+      } else setRoutineGroups(DEFAULT_ROUTINES).catch(() => {})
       setLoading(false)
     }
     load()

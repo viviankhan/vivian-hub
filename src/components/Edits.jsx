@@ -5,6 +5,14 @@
 const EDIT_LOG = [
   {
     date: '2026-07-28',
+    summary: 'Pale-yellow morning film + a cleaner minimalist icon set',
+    changes: [
+      'The morning routine film is now a soft pale yellow (an existing morning routine still on the old pink gets upgraded automatically)',
+      'Switched back to a single minimalist line-icon set to match Structured — no more colour emoji — and added clothing & beauty icons, so searching “dress” finds one (258 icons total)',
+    ]
+  },
+  {
+    date: '2026-07-28',
     summary: 'Emoji picker, beach-peach themes, and auto-completing routines',
     changes: [
       'The Color & Icon picker now has real emoji (dress, clothes, food, animals and more) — searchable alongside the line icons — and the sheet keeps a steady height instead of shrinking when you search',
