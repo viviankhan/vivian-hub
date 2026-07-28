@@ -5,6 +5,14 @@
 const EDIT_LOG = [
   {
     date: '2026-07-28',
+    summary: '178 new icons + smarter icon auto-pick',
+    changes: [
+      'Added 178 new line icons in the Structured style — food & drink, sport, health, nature & weather, travel, home, tech, money, hobbies, animals, symbols and time (240 total now)',
+      'The auto-icon guess is smarter: richer keywords, common abbreviations (appt, mtg, dr, meds…), and a bias toward the most on-the-nose match',
+    ]
+  },
+  {
+    date: '2026-07-28',
     summary: 'Routine film fixes + saved colors + the "now" marker stays put',
     changes: [
       'Consecutive tasks in the same routine now share one continuous color film — the wash runs right through the gap between them instead of breaking into separate boxes',

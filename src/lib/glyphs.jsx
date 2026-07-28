@@ -4,6 +4,8 @@
 // (see <Icon> in IconPicker.jsx). They inherit a single color, so they read
 // cleanly white on a colored timeline pill and dark on a light picker chip.
 
+import { EXTRA_GLYPHS, EXTRA_GROUPS } from './glyphsExtra.jsx'
+
 const P = (d) => <path d={d} />
 
 // id → inner SVG elements. All drawn on a 24×24 grid, stroke-based (the caller
@@ -81,6 +83,9 @@ const GLYPHS = {
   bus:     { el: <><rect x="4" y="4.5" width="16" height="12" rx="2.5"/>{P("M4 11h16M9 4.5v6.5M15 4.5v6.5M6 16.5v2M18 16.5v2")}<circle cx="8" cy="13.6" r="0.9" fill="currentColor" stroke="none"/><circle cx="16" cy="13.6" r="0.9" fill="currentColor" stroke="none"/></> },
   car:     { el: <>{P("M4 13l1.6-4.5A2.2 2.2 0 0 1 7.7 7h8.6a2.2 2.2 0 0 1 2.1 1.5L20 13")}{P("M3.5 13h17v3.3a1 1 0 0 1-1 1H18.5M5.5 17.3H4.5a1 1 0 0 1-1-1V13")}<circle cx="8" cy="17.2" r="1.6"/><circle cx="16" cy="17.2" r="1.6"/></> },
   wifi:    { el: <>{P("M4 9.5a13 13 0 0 1 16 0M6.7 12.7a9 9 0 0 1 10.6 0M9.3 15.9a5 5 0 0 1 5.4 0")}<circle cx="12" cy="19" r="1.1" fill="currentColor" stroke="none"/></> },
+  // The big second batch (see glyphsExtra.jsx) is folded in here, so every
+  // consumer that renders "glyph:<id>" can reach these too.
+  ...EXTRA_GLYPHS,
 }
 
 export function hasGlyph(id) { return !!GLYPHS[id] }
@@ -112,8 +117,9 @@ export function Glyph({ id, size = 22, color = 'currentColor', style }) {
   )
 }
 
-// Grouped for the picker, each with search keywords.
-export const GLYPH_GROUPS = [
+// Grouped for the picker, each with search keywords. The base groups first,
+// then the large extra set (glyphsExtra.jsx) appended after.
+const BASE_GROUPS = [
   { name:'Daily', items:[
     ['sun','morning day wake rise sunrise dawn am'],['moon','night sleep evening bedtime pm dusk'],['alarm','clock wake time alarm snooze'],
     ['coffee','drink tea morning cup coffee brew caffeine espresso latte breakfast'],['droplet','water hydrate drink hydration bottle rain'],
@@ -174,6 +180,8 @@ export const GLYPH_GROUPS = [
   ]},
 ]
 
+export const GLYPH_GROUPS = [...BASE_GROUPS, ...EXTRA_GROUPS]
+
 export const GLYPH_ALL = GLYPH_GROUPS.flatMap(g => g.items.map(([id, k]) => ({ id, k, group:g.name })))
 
 // Common filler words that shouldn't drive an icon choice.
@@ -196,30 +204,58 @@ function related(a, b) {
   return a.startsWith(b) || b.startsWith(a)
 }
 
+// Everyday task words → a canonical keyword the icon set actually uses, so
+// abbreviations and common phrasings still resolve (e.g. "appt" → appointment,
+// "workout" → gym, "groceries" → grocery). Applied to each title word before
+// scoring; both the original and the mapped form are considered.
+const SYNONYMS = {
+  appt:'appointment', mtg:'meeting', dr:'doctor', doc:'doctor', gym:'workout',
+  jog:'run', jogging:'run', workout:'gym', groceries:'grocery', shopping:'shop',
+  laundry:'clean', dishes:'clean', clean:'cleaning', vacuum:'clean',
+  meds:'medicine', med:'medicine', rx:'prescription', vax:'vaccine',
+  standup:'meeting', sync:'meeting', call:'phone', zoom:'meeting', pt:'fitness',
+  bday:'birthday', anniversary:'gift', payday:'money', invoice:'bill',
+  studying:'study', revision:'study', hw:'homework', essay:'write',
+  commute:'car', flight:'plane', vacay:'vacation', holiday:'vacation',
+  brekkie:'breakfast', lunch:'restaurant', dinner:'restaurant', supper:'restaurant',
+  walk:'run', hike:'hiking', yoga:'yoga', meditate:'meditation',
+}
+
+// Precompute each icon's searchable stems once (id name + keywords). Fast to
+// scan across the whole set on every keystroke of a title.
+const GLYPH_INDEX = GLYPH_ALL.map(it => ({
+  id: it.id,
+  name: stem(it.id.toLowerCase()),
+  tokens: new Set(`${it.id} ${it.k}`.toLowerCase().split(/\s+/).map(stem)),
+}))
+
 // Guess the best-matching icon for a task title, e.g. "Gym session" → dumbbell,
-// "Dinner with parents" → utensils, "Budgeting plan" → dollar, "Take the bus" →
-// bus. Meaningful words of the title are stemmed and scored against each glyph's
-// name + keywords (also stemmed): an exact stem hit counts most, a shared
-// prefix (running↔run) counts less. Returns "glyph:<id>" or null on no match.
+// "Dinner with parents" → restaurant, "Budgeting plan" → dollar, "Take the bus"
+// → bus. Meaningful title words (stemmed, synonym-expanded) are scored against
+// each glyph's name + keywords: an exact stem hit counts most, a shared prefix
+// (running↔run) counts less, and a hit on the icon's own name gets a small
+// bonus so the most on-the-nose icon wins ties. Returns "glyph:<id>" or null.
 export function suggestGlyph(title) {
   const raw = (title || '').toLowerCase().match(/[a-z]+/g) || []
-  const words = [...new Set(raw.filter(w => w.length >= 3 && !STOPWORDS.has(w)).map(stem))]
+  const base = raw.filter(w => w.length >= 3 && !STOPWORDS.has(w))
+  // Expand synonyms, then stem, then dedupe.
+  const expanded = []
+  for (const w of base) { expanded.push(w); if (SYNONYMS[w]) expanded.push(SYNONYMS[w]) }
+  const words = [...new Set(expanded.map(stem))]
   if (!words.length) return null
   let bestId = null, best = 0
-  for (const it of GLYPH_ALL) {
-    // Match on the icon's own name + keywords only — not its group name, or
-    // every item in a group would tie on the group word (e.g. "study").
-    const tokens = [...new Set(`${it.id} ${it.k}`.toLowerCase().split(/\s+/).map(stem))]
+  for (const it of GLYPH_INDEX) {
     let score = 0
     for (const w of words) {
       let s = 0
-      for (const t of tokens) {
+      for (const t of it.tokens) {
         if (t === w) { s = 3; break }
         if (related(w, t)) s = Math.max(s, 2)
       }
+      // A hit on the icon's own name is the strongest signal.
+      if (w === it.name) s = 4
       score += s
     }
-    // Tiebreak toward the icon with fewer keywords (a more specific match).
     if (score > best) { best = score; bestId = it.id }
   }
   // Only suggest when we're actually confident — require at least one exact
