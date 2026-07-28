@@ -193,15 +193,18 @@ function saveFired(map) {
   try { localStorage.setItem(FIRED_KEY, JSON.stringify(map)) } catch {}
 }
 
-// ── Turn commitments + events into concrete reminders ──────────
+// ── Turn commitments + events + recurring into concrete reminders ──
 // Returns [{ id, title, body, at (ms epoch), startMs, url }]
-function buildReminders(events = [], commitments = []) {
+function buildReminders(events = [], commitments = [], recurring = []) {
   const out = []
   const now = Date.now()
 
   const globalLeads = activeLeads()
+  // `leadId` (when given) picks per-item reminder overrides while `id` stays
+  // the unique fired-bookkeeping key — recurring occurrences share a template's
+  // lead settings but need a per-date id so each day fires once.
   const push = (item, startMs, name, body) => {
-    for (const lead of leadsForItem(item.id, globalLeads)) {
+    for (const lead of leadsForItem(item.leadId || item.id, globalLeads)) {
       const at = startMs - lead.mins * 60 * 1000
       out.push({
         id: `${item.id}:${lead.key}`,
@@ -235,19 +238,29 @@ function buildReminders(events = [], commitments = []) {
     push(ev, startMs, ev.label || 'Event', `${dateLabel(ev.startDate)}${timeLabel}`)
   }
 
+  // Recurring occurrences: pre-expanded by App into concrete {id, leadId, date,
+  // time, text} for the days ahead. Only timed ones remind. `id` already
+  // carries the date so today's and tomorrow's fire independently.
+  for (const r of recurring) {
+    if (!r || !r.date || !r.time) continue
+    const startMs = toEpoch(r.date, r.time)
+    if (startMs == null) continue
+    push({ id: r.id, leadId: r.leadId }, startMs, r.text || 'Task', `${dateLabel(r.date)} at ${fmt12(r.time)}`)
+  }
+
   return out
 }
 
 // ── The main entry point ────────────────────────────────────────
 // Call on app load and whenever events/commitments change. Fires anything
 // due now (catch-up) and sets live timers for anything due soon.
-export function syncReminders(events, commitments) {
+export function syncReminders(events, commitments, recurring = []) {
   clearTimers()
   const settings = getSettings()
   if (!settings.enabled) return
   if (permissionState() !== 'granted') return
 
-  const reminders = buildReminders(events, commitments)
+  const reminders = buildReminders(events, commitments, recurring)
   const fired = loadFired()
   const now = Date.now()
   let firedChanged = false
@@ -303,8 +316,8 @@ function headingFor(reminder) {
 // whose moment has already passed as "handled", so enabling doesn't replay a
 // backlog of notifications for items already on the calendar. Anything still
 // in the future fires normally from here on.
-export function primeBaseline(events, commitments) {
-  const reminders = buildReminders(events, commitments)
+export function primeBaseline(events, commitments, recurring = []) {
+  const reminders = buildReminders(events, commitments, recurring)
   const fired = loadFired()
   const now = Date.now()
   for (const r of reminders) {

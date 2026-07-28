@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import {
   isUsingSupabase,
   getCompletions, setCompletion,
@@ -15,7 +15,7 @@ import {
   getRoutineGroups, setRoutineGroups,
   addCategory as dbAddCategory, updateCategory as dbUpdateCategory, deleteCategory as dbDeleteCategory,
 } from './lib/storage.js'
-import { occKey } from './lib/occurrences.js'
+import { occKey, recurringOccurrencesForDate } from './lib/occurrences.js'
 import { runMigrationIfNeeded, seedCategoriesIfNeeded } from './lib/migrate.js'
 import { DEFAULT_RECURRING_TASKS, DEFAULT_DAILY_TODOS } from './data/schedule.js'
 
@@ -268,18 +268,6 @@ export default function App() {
   // show even when the tab is backgrounded).
   useEffect(() => { console.log('[Bloom] build', BUILD_ID); registerServiceWorker() }, [])
 
-  // Recompute reminders whenever the data that drives them changes, and again
-  // each time the app is brought back to the foreground (so it "catches up" on
-  // anything that came due while it was closed). No-ops unless the user has
-  // turned reminders on in Settings.
-  useEffect(() => {
-    if (loading) return
-    syncReminders(events, commitments)
-    const onVis = () => { if (!document.hidden) syncReminders(events, commitments) }
-    document.addEventListener('visibilitychange', onVis)
-    return () => document.removeEventListener('visibilitychange', onVis)
-  }, [loading, events, commitments])
-
   // ── Derived schedule ─────────────────────────────────────────
   // recurring_tasks is a real table (one row per task). Today, Week and
   // Calendar now compute their own per-day recurring instances from these raw
@@ -290,6 +278,40 @@ export default function App() {
   // Rows enriched with their recurrence rule (freq/interval/monthDay) from the
   // meta blob — this is what Today/Week/Calendar compute occurrences from.
   const recurringTasksEnriched = recurringTaskRows.map(t => ({ ...t, ...(recurringMeta[t.id] || {}) }))
+
+  // Expand the next week of timed recurring occurrences into reminder items so
+  // notifications fire for them too (commitments/events already do). Each id
+  // carries its date so every day's instance fires once; the leadId is the
+  // template so per-item reminder overrides still apply. Completed instances
+  // and skipped occurrences are dropped.
+  const recurringReminderItems = useMemo(() => {
+    const enriched = recurringTaskRows.map(t => ({ ...t, ...(recurringMeta[t.id] || {}) }))
+    const out = []
+    const base = new Date()
+    for (let d = 0; d < 8; d++) {
+      const day = new Date(base.getFullYear(), base.getMonth(), base.getDate() + d)
+      const key = `${day.getFullYear()}-${String(day.getMonth()+1).padStart(2,'0')}-${String(day.getDate()).padStart(2,'0')}`
+      for (const o of recurringOccurrencesForDate(enriched, key, recurringExceptions)) {
+        if (!o._time) continue                          // only timed tasks remind
+        if (completions[`${key}_${o.id}`]) continue     // already done that day
+        out.push({ id: `rec:${o.id}@${key}`, leadId: o.id, date: key, time: o._time, text: o.title || o.text || 'Task' })
+      }
+    }
+    return out
+  }, [recurringTaskRows, recurringMeta, recurringExceptions, completions])
+
+  // ── Reminders ────────────────────────────────────────────────
+  // Recompute reminders whenever the data that drives them changes, and again
+  // each time the app is brought back to the foreground (so it "catches up" on
+  // anything that came due while it was closed). No-ops unless the user has
+  // turned reminders on in Settings.
+  useEffect(() => {
+    if (loading) return
+    syncReminders(events, commitments, recurringReminderItems)
+    const onVis = () => { if (!document.hidden) syncReminders(events, commitments, recurringReminderItems) }
+    document.addEventListener('visibilitychange', onVis)
+    return () => document.removeEventListener('visibilitychange', onVis)
+  }, [loading, events, commitments, recurringReminderItems])
 
   // ── Persist helpers ──────────────────────────────────────────
   // Cloud write failures are surfaced instead of swallowed — otherwise a delete

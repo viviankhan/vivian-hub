@@ -5,6 +5,14 @@
 const EDIT_LOG = [
   {
     date: '2026-07-28',
+    summary: 'Recurring tasks send reminders now',
+    changes: [
+      'Timed recurring tasks fire notifications just like commitments and events — using your reminder lead times from Settings',
+      'Each day\'s instance reminds independently, and a task you\'ve already checked off that day is skipped',
+    ]
+  },
+  {
+    date: '2026-07-28',
     summary: '178 new icons + smarter icon auto-pick',
     changes: [
       'Added 178 new line icons in the Structured style — food & drink, sport, health, nature & weather, travel, home, tech, money, hobbies, animals, symbols and time (240 total now)',
