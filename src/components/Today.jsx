@@ -354,7 +354,7 @@ function GapRow({ mins, prevColor, nextColor, onAdd }) {
   )
 }
 
-function TimelineBlock({ task, categories, status, now, prevColor, nextColor, isDone, elapsed, dateKey, onToggle, onManage, onShiftToNow, onOpen, onFocus, onToggleSub }) {
+function TimelineBlock({ task, categories, status, now, prevColor, nextColor, routineTint, isDone, elapsed, dateKey, onToggle, onManage, onShiftToNow, onOpen, onFocus, onToggleSub }) {
   const [subOpen, setSubOpen] = useState(false)
   const catFound = (categories || []).find(x => x.id === task.tag)
   const catColor = catFound?.color || TAG_COLORS[task.tag] || '#9CA3AF'
@@ -397,7 +397,13 @@ function TimelineBlock({ task, categories, status, now, prevColor, nextColor, is
     ? Math.max(0, Math.min(1, (now - timeMins) / task._dur)) : null
 
   return (
-    <div style={{ position:'relative', display:'flex', gap:0, minHeight:blockMinH, opacity:isDone?.5:1, transition:'opacity .3s' }}>
+    <div style={{ position:'relative', zIndex:0, display:'flex', gap:0, minHeight:blockMinH, opacity:isDone?.5:1, transition:'opacity .3s' }}>
+      {/* Routine film — a soft wash of the routine's color behind the whole row
+          (pink morning / blue night by default). zIndex:-1 keeps it under the
+          pill + text; the block's zIndex:0 pins it to this row. */}
+      {routineTint && (
+        <div style={{ position:'absolute', top:6, bottom:6, left:44, right:0, background:routineTint, opacity:.5, borderRadius:16, zIndex:-1 }} />
+      )}
       {/* Time gutter */}
       <div style={{ width:52, flexShrink:0, paddingTop:16, textAlign:'right', paddingRight:10 }}>
         {timeMins!==null && (
@@ -607,7 +613,7 @@ function WeekStrip({ viewDate, setViewDate, commitments, categories, doneCount, 
 }
 
 // ── Main ───────────────────────────────────────────────────────
-export default function Today({ todos, weekState, syncToggle, commitments, addCommitment, updateCommitment, deleteCommitment, appendLog, scheduled, categories, recurringTasks, recurringExceptions, skipRecurringOccurrence, deleteRecurringTask, addRecurringTask, updateRecurringTask, summary }) {
+export default function Today({ todos, weekState, syncToggle, commitments, addCommitment, updateCommitment, deleteCommitment, appendLog, scheduled, categories, recurringTasks, recurringExceptions, skipRecurringOccurrence, deleteRecurringTask, addRecurringTask, updateRecurringTask, routines = [], summary }) {
   const [now,         setNow]         = useState(nowMins())
   // The day the timeline is showing. Defaults to today; the week strip up top
   // navigates to any day. "Now" logic (the progress marker, current/overdue,
@@ -1027,6 +1033,7 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
                 {gap&&<GapRow mins={gap} prevColor={gapColor} nextColor={gapNextColor} onAdd={()=>setAddingTask(true)}/>}
                 <TimelineBlock
                   task={task} categories={categories} status={task._status} now={now}
+                  routineTint={task.routine ? (routines.find(r=>r.id===task.routine)?.tint || null) : null}
                   prevColor={colorOf(prev)} nextColor={colorOf(tasksWithStatus[i+1])}
                   isDone={task._status==='past'}
                   elapsed={isToday && task._mins!==null && task._mins<=now}
@@ -1073,14 +1080,14 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
         onClose={()=>setFocusTask(null)} />}
       {shiftPlan&&<ShiftChooser plan={shiftPlan} onApply={(ids)=>{applyShift(shiftPlan.pivot, ids); setShiftPlan(null)}} onCancel={()=>setShiftPlan(null)}/>}
       {shiftResult&&<ShiftToast result={shiftResult} onClose={()=>setShiftResult(null)}/>}
-      {addingTask&&<AddItemModal presetDate={dateKey} categories={categories} onSave={handleAdd} onSaveRecurring={addRecurringTask} onClose={()=>setAddingTask(false)} title="Add to Today"/>}
-      {editing&&<AddItemModal existing={editing} categories={categories} onSave={handleSaveEdit}
+      {addingTask&&<AddItemModal presetDate={dateKey} categories={categories} routines={routines} onSave={handleAdd} onSaveRecurring={addRecurringTask} onClose={()=>setAddingTask(false)} title="Add to Today"/>}
+      {editing&&<AddItemModal existing={editing} categories={categories} routines={routines} onSave={handleSaveEdit}
         onSaveRecurring={addRecurringTask}
         onDelete={c=>deleteCommitment&&deleteCommitment(c.id)}
         onDuplicate={c=>addCommitment&&addCommitment({ ...c, id:'c-'+Date.now(), text:(c.text||'')+' (copy)', done:false, createdAt:new Date().toISOString() })}
         onMoveToInbox={c=>updateCommitment&&updateCommitment(c.id, { date:null, time:null, durationMins:null })}
         onClose={()=>setEditing(null)} title="Edit task"/>}
-      {editingRec&&<AddItemModal existingRecurring={editingRec} categories={categories}
+      {editingRec&&<AddItemModal existingRecurring={editingRec} categories={categories} routines={routines}
         onSaveRecurring={t=>{ updateRecurringTask&&updateRecurringTask(t.id,t); setEditingRec(null) }}
         onDelete={t=>{ deleteRecurringTask&&deleteRecurringTask(t.id); setEditingRec(null) }}
         onClose={()=>setEditingRec(null)} title="Edit recurring task"/>}

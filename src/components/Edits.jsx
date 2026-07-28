@@ -4,6 +4,18 @@
 
 const EDIT_LOG = [
   {
+    date: '2026-07-28',
+    summary: 'Routine groups, a Bloom theme family, and one-color theming',
+    changes: [
+      'New routine groups: file recurring tasks under Morning / Night (or your own) routines — set from the same add/edit sheet, in its Repeat section',
+      'Tasks in a routine get a soft color film behind them on the timeline (pink morning, blue night by default — every routine\'s color is yours to change)',
+      'Recurring tab has a new Routines sub-tab that groups tasks by routine; add new routine groups, rename them, recolor their film, or delete them (deleting keeps the tasks, just un-grouped)',
+      'Themes are now a Bloom family — Bloom, Blush, Lilac, Meadow, Sky, Apricot and the rest — plus a Custom color that derives every surface from one color you pick',
+      'Settings no longer has a Routines section (routines live in the Recurring tab now), and opens on Look',
+      'Icons are only auto-suggested when the title clearly implies one — no more confidently-wrong guesses on vague tasks',
+    ]
+  },
+  {
     date: '2026-07-27',
     summary: 'Tap a recurring task to edit it like any other; whole spine blends colors',
     changes: [

@@ -211,17 +211,19 @@ function TaskModal({ initial, onSave, onDelete, onClose, categories }) {
 }
 
 // ── Task list row ──────────────────────────────────────────────
-function TaskListRow({ task, onEdit, today, categories }) {
+function TaskListRow({ task, onEdit, today, categories, routines }) {
   const text = task.text||task.label||''
   const catId = task.cat||task.tag||'other'
   const { label: catLabel, color: catColor, icon: catIcon } = resolveCat(catId, categories)
   const hasDateRange = task.startDate || task.endDate
   const isToday = task.days?.includes(today)
+  const routine = task.routine ? (routines||[]).find(r => r.id === task.routine) : null
   return (
     <div onClick={onEdit}
       style={{ display:'flex', gap:10, alignItems:'center', background:isToday?'#F0FDFB':'white', borderRadius:11, border:`1px solid ${isToday?'var(--teal)':'var(--border)'}`, borderLeft:isToday?'3px solid var(--teal)':'1px solid var(--border)', padding:'11px 14px', marginBottom:7, cursor:'pointer', transition:'border-color .15s' }}
       onMouseEnter={e=>e.currentTarget.style.borderColor='#52B788'}
       onMouseLeave={e=>e.currentTarget.style.borderColor=isToday?'var(--teal)':'var(--border)'}>
+      {routine && <span title={routine.name} style={{ width:9, height:9, borderRadius:'50%', background:routine.tint, boxShadow:'inset 0 0 0 1px rgba(0,0,0,.12)', flexShrink:0 }} />}
       {/* Text */}
       <div style={{ flex:1, minWidth:0 }}>
         <div style={{ fontSize:13, color:'var(--text)', fontWeight:500, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{text}</div>
@@ -252,9 +254,93 @@ function TaskListRow({ task, onEdit, today, categories }) {
   )
 }
 
+// ── Routines view — tasks grouped by routine, with group management ─────
+function RoutinesView({ routines, tasks, categories, today, onEditTask, addRoutine, updateRoutine, deleteRoutine }) {
+  const [newName, setNewName] = useState('')
+  const [newTint, setNewTint] = useState('#D9C7EE')
+  const [confirmDel, setConfirmDel] = useState(null)
+  const rInp = { fontSize:13, padding:'9px 12px', borderRadius:10, border:'1px solid var(--border)', fontFamily:'DM Sans,sans-serif', outline:'none', background:'white', color:'var(--text)', boxSizing:'border-box' }
+
+  const byRoutine = (rid) => tasks.filter(t => (t.routine || '') === rid)
+  const unassigned = tasks.filter(t => !t.routine || !routines.some(r => r.id === t.routine))
+  const addNew = () => { if (newName.trim()) { addRoutine(newName.trim(), newTint); setNewName('') } }
+
+  return (
+    <div>
+      <div className="page-sub" style={{ marginBottom:16 }}>
+        Group recurring tasks into routines. A task's routine washes a soft color film behind it on the timeline — set it when you add or edit the task.
+      </div>
+
+      {routines.map(r => {
+        const items = byRoutine(r.id)
+        return (
+          <div key={r.id} style={{ marginBottom:18 }}>
+            {/* Group header — swatch (tap to recolor), editable name, count, delete */}
+            <div style={{ display:'flex', alignItems:'center', gap:9, marginBottom:8 }}>
+              <label style={{ position:'relative', width:24, height:24, borderRadius:7, background:r.tint, border:'1px solid rgba(0,0,0,.12)', cursor:'pointer', flexShrink:0 }} title="Change film color">
+                <input type="color" value={/^#[0-9a-fA-F]{6}$/.test(r.tint)?r.tint:'#D9C7EE'} onChange={e=>updateRoutine(r.id,{ tint:e.target.value })}
+                  style={{ position:'absolute', inset:0, opacity:0, cursor:'pointer' }} />
+              </label>
+              <input value={r.name} onChange={e=>updateRoutine(r.id,{ name:e.target.value })} aria-label="Routine name"
+                style={{ flex:1, minWidth:0, fontSize:15, fontWeight:700, color:'var(--text)', border:'none', background:'transparent', fontFamily:'DM Sans,sans-serif', outline:'none', padding:'2px 0' }} />
+              <span style={{ fontSize:11, color:'var(--muted)', flexShrink:0 }}>{items.length} task{items.length===1?'':'s'}</span>
+              <button onClick={()=>setConfirmDel(confirmDel===r.id?null:r.id)} title="Delete routine"
+                style={{ background:'none', border:'none', cursor:'pointer', color:'#C08872', fontSize:14, padding:'0 4px', flexShrink:0 }}>✕</button>
+            </div>
+            {confirmDel===r.id && (
+              <div style={{ background:'#FFF5F5', border:'1px solid #FECACA', borderRadius:10, padding:11, marginBottom:9 }}>
+                <div style={{ fontSize:12, color:'#991B1B', marginBottom:8 }}>Delete “{r.name}”? Its {items.length} task{items.length===1?'':'s'} stay — they just lose this routine.</div>
+                <div style={{ display:'flex', gap:8 }}>
+                  <button onClick={()=>{ deleteRoutine(r.id); setConfirmDel(null) }}
+                    style={{ fontSize:12, padding:'6px 14px', borderRadius:8, border:'none', background:'#EF4444', color:'white', cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:600 }}>Delete routine</button>
+                  <button onClick={()=>setConfirmDel(null)}
+                    style={{ fontSize:12, padding:'6px 12px', borderRadius:8, border:'1px solid var(--border)', background:'white', color:'var(--muted)', cursor:'pointer', fontFamily:'DM Sans,sans-serif' }}>Cancel</button>
+                </div>
+              </div>
+            )}
+            {/* A tinted rail down the group's tasks so the film color reads here too */}
+            <div style={{ borderLeft:`3px solid ${r.tint}`, paddingLeft:10, borderRadius:2 }}>
+              {items.length===0 ? (
+                <div style={{ fontSize:12, color:'var(--muted)', padding:'4px 2px 6px', fontStyle:'italic' }}>No tasks yet — open a task and pick this routine.</div>
+              ) : items.map(task => (
+                <TaskListRow key={task.id+task.type+(task.days||[]).join('')} task={task} onEdit={()=>onEditTask(task)} today={today} categories={categories} routines={routines} />
+              ))}
+            </div>
+          </div>
+        )
+      })}
+
+      {/* Unassigned tasks */}
+      {unassigned.length>0 && (
+        <div style={{ marginBottom:18 }}>
+          <div style={{ fontSize:15, fontWeight:700, color:'var(--muted)', marginBottom:8 }}>No routine</div>
+          {unassigned.map(task => (
+            <TaskListRow key={task.id+task.type+(task.days||[]).join('')} task={task} onEdit={()=>onEditTask(task)} today={today} categories={categories} routines={routines} />
+          ))}
+        </div>
+      )}
+
+      {/* Add a routine group */}
+      <div style={{ marginTop:8, paddingTop:16, borderTop:'1px solid var(--border)' }}>
+        <div style={{ fontSize:10, color:'var(--muted)', letterSpacing:1, textTransform:'uppercase', marginBottom:8 }}>New routine group</div>
+        <div style={{ display:'flex', gap:8, alignItems:'center' }}>
+          <label style={{ position:'relative', width:34, height:34, borderRadius:9, background:newTint, border:'1px solid rgba(0,0,0,.12)', cursor:'pointer', flexShrink:0 }} title="Film color">
+            <input type="color" value={newTint} onChange={e=>setNewTint(e.target.value)} style={{ position:'absolute', inset:0, opacity:0, cursor:'pointer' }} />
+          </label>
+          <input value={newName} onChange={e=>setNewName(e.target.value)} placeholder="e.g. Afternoon routine…"
+            onKeyDown={e=>{ if(e.key==='Enter') addNew() }} style={{ ...rInp, flex:1, minWidth:0 }} />
+          <button onClick={addNew} disabled={!newName.trim()}
+            style={{ fontSize:12, padding:'10px 16px', borderRadius:10, border:'none', background:'var(--forest)', color:'var(--green-light)', cursor:newName.trim()?'pointer':'default', opacity:newName.trim()?1:.5, fontFamily:'DM Sans,sans-serif', fontWeight:600, flexShrink:0 }}>Add</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── Main ───────────────────────────────────────────────────────
-export default function RecurringTasksManager({ recurringTasks, addRecurringTask, updateRecurringTask, deleteRecurringTask, clearRecurringTasks, categories, defaultWeekTasks, defaultDailyTodos }) {
+export default function RecurringTasksManager({ recurringTasks, addRecurringTask, updateRecurringTask, deleteRecurringTask, clearRecurringTasks, categories, routines = [], addRoutine, updateRoutine, deleteRoutine, defaultWeekTasks, defaultDailyTodos }) {
   const [editing,     setEditing]     = useState(null) // null | 'new' | task object
+  const [view,        setView]        = useState('schedule') // 'schedule' | 'routines'
   const [filterDay,   setFilterDay]   = useState(todayName())
   const [filterType,  setFilterType]  = useState('all')
   const [confirmClear, setConfirmClear] = useState(false)
@@ -345,13 +431,27 @@ export default function RecurringTasksManager({ recurringTasks, addRecurringTask
 
   return (
     <div>
-      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:6 }}>
-        <div className="page-title" style={{ marginBottom:0 }}>Recurring Schedule</div>
+      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:10 }}>
+        <div className="page-title" style={{ marginBottom:0 }}>Recurring</div>
         <button onClick={()=>setEditing('new')}
           style={{ fontSize:12, padding:'8px 16px', borderRadius:10, border:'none', background:'var(--forest)', color:'var(--green-light)', cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:600, flexShrink:0 }}>
           + New Task
         </button>
       </div>
+
+      {/* Sub-tabs: the full schedule, or grouped by routine. */}
+      <div style={{ display:'flex', gap:4, padding:4, borderRadius:12, background:'#EAE7EE', marginBottom:14 }}>
+        {[['schedule','Schedule'],['routines','Routines']].map(([v,l])=>(
+          <button key={v} onClick={()=>setView(v)}
+            style={{ flex:1, padding:'9px 6px', borderRadius:9, border:'none', cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontSize:13, fontWeight:700,
+              background: view===v ? 'var(--forest)' : 'transparent', color: view===v ? 'var(--green-light)' : 'var(--muted)' }}>{l}</button>
+        ))}
+      </div>
+
+      {view==='routines' ? (
+        <RoutinesView routines={routines} tasks={flatData} categories={categories} today={today}
+          onEditTask={(t)=>setEditing(t)} addRoutine={addRoutine} updateRoutine={updateRoutine} deleteRoutine={deleteRoutine} />
+      ) : (<>
       <div className="page-sub">
         {filterDay==='all'
           ? `${flatData.length} recurring tasks across the week`
@@ -387,7 +487,7 @@ export default function RecurringTasksManager({ recurringTasks, addRecurringTask
           No tasks match this filter.
         </div>
       ) : sorted.map(task=>(
-        <TaskListRow key={task.id+task.type+(task.days||[]).join('')} task={task} onEdit={()=>setEditing(task)} today={today} categories={categories} />
+        <TaskListRow key={task.id+task.type+(task.days||[]).join('')} task={task} onEdit={()=>setEditing(task)} today={today} categories={categories} routines={routines} />
       ))}
 
       {/* Clear all */}
@@ -409,12 +509,14 @@ export default function RecurringTasksManager({ recurringTasks, addRecurringTask
           </div>
         )}
       </div>
+      </>)}
 
       {/* New task — uses the same add sheet as the rest of the app, opened
           straight into its Repeat section. */}
       {editing==='new' && (
         <AddItemModal
           categories={categories}
+          routines={routines}
           defaultRepeat
           onSaveRecurring={(task)=>{ addRecurringTask(task); setEditing(null) }}
           onClose={()=>setEditing(null)}
@@ -425,6 +527,7 @@ export default function RecurringTasksManager({ recurringTasks, addRecurringTask
         <AddItemModal
           existingRecurring={editing}
           categories={categories}
+          routines={routines}
           onSaveRecurring={(task)=>{ updateRecurringTask(task.id, task); setEditing(null) }}
           onDelete={(t)=>{ deleteRecurringTask(t.id); setEditing(null) }}
           onClose={()=>setEditing(null)}

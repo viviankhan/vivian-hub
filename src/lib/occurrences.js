@@ -118,6 +118,7 @@ export function recurringOccurrence(task, dateStr) {
     label: rawLabel,
     note: task.note || '',
     carry: !!task.carry,
+    routine: task.routine || null,
     _time: time,
     _dur: task.durationMins || null,
   }

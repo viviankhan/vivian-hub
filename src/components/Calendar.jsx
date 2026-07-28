@@ -34,7 +34,7 @@ function endTimeFrom(start, mins) {
   return `${String(Math.floor(total/60)).padStart(2,'0')}:${String(total%60).padStart(2,'0')}`
 }
 
-export default function Calendar({ commitments, vacations, events, log, categories, jumpTo, addCommitment, updateCommitment, deleteCommitment, todos, recurringTasks, recurringExceptions, skipRecurringOccurrence, addRecurringTask, updateRecurringTask, deleteRecurringTask }) {
+export default function Calendar({ commitments, vacations, events, log, categories, jumpTo, addCommitment, updateCommitment, deleteCommitment, todos, recurringTasks, recurringExceptions, skipRecurringOccurrence, addRecurringTask, updateRecurringTask, deleteRecurringTask, routines = [] }) {
   // monthOffset shifts by whole months from the current month: 0 = this month,
   // -1 = last month, +1 = next month, and so on — unbounded either way.
   const [monthOffset, setMonthOffset] = useState(0)
@@ -311,6 +311,7 @@ export default function Calendar({ commitments, vacations, events, log, categori
 
       {adding && (
         <AddItemModal
+          routines={routines}
           presetDate={selected || ''}
           categories={categories}
           onSave={handleAdd}
@@ -322,6 +323,7 @@ export default function Calendar({ commitments, vacations, events, log, categori
         <AddItemModal
           existing={editing}
           categories={categories}
+          routines={routines}
           onSave={handleEdit}
           onSaveRecurring={addRecurringTask}
           onDelete={c => deleteCommitment && deleteCommitment(c.id)}
@@ -334,6 +336,7 @@ export default function Calendar({ commitments, vacations, events, log, categori
         <AddItemModal
           existingRecurring={editingRec}
           categories={categories}
+          routines={routines}
           onSaveRecurring={t => { updateRecurringTask && updateRecurringTask(t.id, t); setEditingRec(null) }}
           onDelete={t => { deleteRecurringTask && deleteRecurringTask(t.id); setEditingRec(null) }}
           onClose={()=>setEditingRec(null)}

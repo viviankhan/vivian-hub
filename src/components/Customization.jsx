@@ -2,7 +2,7 @@
 // Look & feel — Font (System / OpenDyslexic) and "App Icon" (accent theme),
 // modeled on Structured's Customization screen. Font and theme are applied live
 // by the parent (App) and persisted per-device.
-import { THEMES, FONTS, LAYOUTS, tileBackground } from '../lib/appearance.js'
+import { THEMES, FONTS, LAYOUTS, tileBackground, deriveTheme } from '../lib/appearance.js'
 
 const sectionLabel = { fontSize:13, fontWeight:700, color:'var(--muted)', letterSpacing:.2, margin:'6px 2px 10px' }
 const card = { background:'white', borderRadius:16, border:'1px solid var(--border)', padding:16, marginBottom:12 }
@@ -58,7 +58,34 @@ function Switch({ on, onClick }) {
 
 const FlameGlyph = () => (<svg viewBox="0 0 24 24" width="19" height="19" fill="currentColor"><path d="M12 3c1 3 4.8 4.3 4.8 8.6A4.8 4.8 0 0 1 7.2 12c0-2 1-3.2 2-4.2.5 2 1.6 2 2 1 .5-1.2-1.2-3.2-1.2-5.8Z"/></svg>)
 
-export default function Customization({ font, onFont, theme, onTheme, layout, onLayout, soundOn, onSound, summary, onSummary }) {
+// A single-color picker that derives the whole theme from one accent. The
+// swatch previews the derived deep/light so you see what one color populates.
+function CustomColorCard({ active, value, onChange }) {
+  const t = deriveTheme(value)
+  return (
+    <div style={{ ...card, display:'flex', alignItems:'center', gap:14 }}>
+      <label style={{ position:'relative', width:66, height:66, borderRadius:17, background:t.accent, cursor:'pointer', flexShrink:0,
+        boxShadow: active ? '0 0 0 3px var(--teal)' : '0 2px 8px rgba(20,30,40,.16)', display:'flex', alignItems:'center', justifyContent:'center' }}>
+        <input type="color" value={/^#[0-9a-fA-F]{6}$/.test(value) ? value : '#7BA7B0'} onChange={e => onChange(e.target.value)}
+          style={{ position:'absolute', inset:0, opacity:0, cursor:'pointer' }} />
+        <svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="#fff" strokeWidth="3.2" strokeLinecap="round" strokeLinejoin="round" style={{ filter:'drop-shadow(0 1px 1px rgba(0,0,0,.25))' }}>
+          <polyline points="20 6 9 17 4 12" />
+        </svg>
+      </label>
+      <div style={{ flex:1, minWidth:0 }}>
+        <div style={{ fontSize:14, fontWeight:700, color:'var(--text)', marginBottom:3 }}>Custom color</div>
+        <div style={{ fontSize:12, color:'var(--muted)', lineHeight:1.5, marginBottom:8 }}>Pick one color — Bloom derives every surface from it.</div>
+        {/* Preview of the three derived surfaces */}
+        <div style={{ display:'flex', gap:6, alignItems:'center' }}>
+          {[t.deep, t.accent, t.light].map((c,i) => <span key={i} style={{ width:24, height:16, borderRadius:5, background:c, border:'1px solid rgba(0,0,0,.08)' }} />)}
+          <span style={{ fontSize:11, color: active ? 'var(--teal)' : 'var(--muted)', fontWeight:600, marginLeft:4 }}>{active ? 'Active' : value?.toUpperCase()}</span>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+export default function Customization({ font, onFont, theme, onTheme, customColor, onCustomColor, layout, onLayout, soundOn, onSound, summary, onSummary }) {
   return (
     <div>
       <div className="page-title" style={{ marginBottom:4 }}>Customization</div>
@@ -78,7 +105,7 @@ export default function Customization({ font, onFont, theme, onTheme, layout, on
       </div>
 
       {/* ── App Icon / accent theme ───────────────────────────── */}
-      <div style={sectionLabel}>App Icon</div>
+      <div style={sectionLabel}>Theme</div>
       <div style={card}>
         <div style={{ display:'grid', gridTemplateColumns:'repeat(3, 1fr)', gap:'18px 8px', justifyItems:'center' }}>
           {THEMES.map(t => (
@@ -86,6 +113,8 @@ export default function Customization({ font, onFont, theme, onTheme, layout, on
           ))}
         </div>
       </div>
+      {/* One color that auto-populates the whole palette */}
+      {onCustomColor && <CustomColorCard active={theme === 'custom'} value={customColor} onChange={onCustomColor} />}
       <div style={{ fontSize:12.5, color:'var(--muted)', lineHeight:1.55, margin:'0 2px 22px' }}>
         Recolors Bloom’s accent throughout the app; it won’t change the color of
         existing tasks. On the web the installed home-screen icon can’t be

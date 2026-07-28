@@ -197,6 +197,14 @@ export const setRecurringExceptions = v  => dbSet('recurring_exceptions', v)
 export const getRecurringMeta = () => dbGet('recurring_meta').then(v => v ?? {})
 export const setRecurringMeta = v  => dbSet('recurring_meta', v)
 
+// ── Routine groups ─────────────────────────────────────────────
+// User-defined groups (Morning routine, Night routine, …) that recurring tasks
+// can be filed under. Each: { id, name, tint }. A synced kv_store blob (like
+// the meta above) so grouping needs no schema migration. Stored under its own
+// key — separate from the legacy `routines` item-list blob. `null` → seed.
+export const getRoutineGroups = () => dbGet('routine_groups').then(v => Array.isArray(v) ? v : null)
+export const setRoutineGroups = v  => dbSet('routine_groups', v)
+
 // ── Classes ────────────────────────────────────────────────────
 export async function getClasses() {
   if (USE_SUPABASE) {

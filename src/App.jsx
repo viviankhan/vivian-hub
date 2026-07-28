@@ -12,6 +12,7 @@ import {
   getRecurringTasks, addRecurringTask, updateRecurringTask, deleteRecurringTask, clearRecurringTasks,
   getRecurringExceptions, setRecurringExceptions,
   getRecurringMeta, setRecurringMeta,
+  getRoutineGroups, setRoutineGroups,
   addCategory as dbAddCategory, updateCategory as dbUpdateCategory, deleteCategory as dbDeleteCategory,
 } from './lib/storage.js'
 import { occKey } from './lib/occurrences.js'
@@ -25,7 +26,6 @@ import Calendar    from './components/Calendar.jsx'
 import Notes       from './components/Notes.jsx'
 import Edits       from './components/Edits.jsx'
 import RecurringTasksManager from './components/RecurringTasksManager.jsx'
-import Routines from './components/Routines.jsx'
 import CategoriesManager from './components/CategoriesManager.jsx'
 import EventsManager from './components/EventsManager.jsx'
 import ThoughtsBoard from './components/ThoughtsBoard.jsx'
@@ -35,12 +35,21 @@ import { registerServiceWorker, syncReminders } from './lib/notifications.js'
 import { Glyph } from './lib/glyphs.jsx'
 import Customization from './components/Customization.jsx'
 import { getFontPref, setFontPref, applyFont, getThemePref, setThemePref, applyTheme,
+  getCustomColor, setCustomColor,
   getLayoutPref, setLayoutPref, applyLayout, getSoundEnabled, setSoundEnabled,
   getSummaryPref, setSummaryPref } from './lib/appearance.js'
 
 // Build id baked in at build time (see vite.config.js). Shown in Settings so
 // it's obvious on-device which version is actually running after a deploy.
 const BUILD_ID = typeof __BUILD_ID__ !== 'undefined' ? __BUILD_ID__ : 'dev'
+
+// Routine groups tasks can be filed under. Each carries a soft "film" tint that
+// washes behind its tasks on the timeline (pink morning, blue night by default).
+// Users can rename/add/delete these; these two are just the initial seed.
+const DEFAULT_ROUTINES = [
+  { id:'morning', name:'Morning routine', tint:'#F9C9D9' },
+  { id:'night',   name:'Night routine',   tint:'#BBD5F0' },
+]
 
 const TABS = [
   { id:'today',       label:'Today',       glyph:'list' },
@@ -53,11 +62,10 @@ const TABS = [
 ]
 
 // ── Settings Drawer ────────────────────────────────────────────
-function SettingsDrawer({ open, onClose, settingsTab, setSettingsTab, notes, updateNotes, categories, addCategory, updateCategory, deleteCategory, events, commitments, font, setFont, theme, setTheme, layout, setLayout, soundOn, setSound, summary, setSummary }) {
+function SettingsDrawer({ open, onClose, settingsTab, setSettingsTab, notes, updateNotes, categories, addCategory, updateCategory, deleteCategory, events, commitments, font, setFont, theme, setTheme, customColor, setCustom, layout, setLayout, soundOn, setSound, summary, setSummary }) {
   if (!open) return null
   const SECTIONS = [
     ['customize','Look','sun'],
-    ['routines','Routines','repeat'],
     ['reminders','Reminders','bell'],
     ['categories','Categories','grid'],
     ['notes','Notes','book'],
@@ -76,8 +84,8 @@ function SettingsDrawer({ open, onClose, settingsTab, setSettingsTab, notes, upd
         {/* Scrollable content */}
         <div style={{ flex:1, minHeight:0, overflowY:'auto', WebkitOverflowScrolling:'touch' }}>
           <div style={{ padding:'20px 24px' }}>
-            {settingsTab==='customize'  && <Customization font={font} onFont={setFont} theme={theme} onTheme={setTheme} layout={layout} onLayout={setLayout} soundOn={soundOn} onSound={setSound} summary={summary} onSummary={setSummary} />}
-            {settingsTab==='routines'   && <Routines />}
+            {settingsTab==='customize'  && <Customization font={font} onFont={setFont} theme={theme} onTheme={setTheme} customColor={customColor} onCustomColor={setCustom} layout={layout} onLayout={setLayout} soundOn={soundOn} onSound={setSound} summary={summary} onSummary={setSummary} />}
+
             {settingsTab==='reminders'  && <NotificationsSettings events={events} commitments={commitments} />}
             {settingsTab==='categories' && <CategoriesManager categories={categories} addCategory={addCategory} updateCategory={updateCategory} deleteCategory={deleteCategory} />}
             {settingsTab==='notes'      && <Notes notes={notes} updateNotes={updateNotes} />}
@@ -189,7 +197,7 @@ export default function App() {
     try { localStorage.setItem('vivian_last_tab', tab) } catch {}
   }, [tab])
   const [settingsOpen, setSettingsOpen] = useState(false)
-  const [settingsTab,  setSettingsTab]  = useState('routines')
+  const [settingsTab,  setSettingsTab]  = useState('customize')
   // Appearance — device-local font + accent theme. main.jsx applies the saved
   // values before first paint; these setters keep the live app in step.
   const [font,   setFontState]   = useState(getFontPref)
@@ -199,6 +207,10 @@ export default function App() {
   const [summary,setSummaryState]= useState(getSummaryPref)
   const setFont    = useCallback(v  => { setFontState(v);    setFontPref(v);    applyFont(v)   }, [])
   const setTheme   = useCallback(v  => { setThemeState(v);   setThemePref(v);   applyTheme(v)  }, [])
+  const [customColor, setCustomColorState] = useState(getCustomColor)
+  // Picking a custom color stores it, switches the theme to 'custom', and
+  // re-derives every surface from that one color.
+  const setCustom  = useCallback(hex => { setCustomColorState(hex); setCustomColor(hex); setThemeState('custom'); setThemePref('custom'); applyTheme('custom') }, [])
   const setLayout  = useCallback(v  => { setLayoutState(v);  setLayoutPref(v);  applyLayout(v) }, [])
   const setSound   = useCallback(on => { setSoundState(on);  setSoundEnabled(on) }, [])
   const setSummary = useCallback(v  => { setSummaryState(v); setSummaryPref(v) }, [])
@@ -226,21 +238,26 @@ export default function App() {
   const [vacations,        setVacations_]       = useState([])
   const [events,           setEvents_]          = useState([])
   const [categories,       setCategories_]      = useState([])
+  const [routines,         setRoutines_]         = useState(DEFAULT_ROUTINES)
   const [loading,          setLoading]          = useState(true)
 
   useEffect(() => {
     async function load() {
       await runMigrationIfNeeded()
-      const [comp, l, n, fcp, fcs, sch, com, rt, vac, evs, cats, cmeta, rexc, rmeta] = await Promise.all([
+      const [comp, l, n, fcp, fcs, sch, com, rt, vac, evs, cats, cmeta, rexc, rmeta, rout] = await Promise.all([
         getCompletions(), getLogEntries(), getNotes(),
         getFcProgress(), getFcStudied(), getScheduledTasks(),
         getCommitments(), getRecurringTasks(), getVacations(), getEvents(),
         seedCategoriesIfNeeded(), getCommitmentMeta(), getRecurringExceptions(), getRecurringMeta(),
+        getRoutineGroups(),
       ])
       setCompletions_(comp); setLog_(l); setNotes_(n)
       setFcProgress_(fcp); setFcStudied_(fcs); setScheduled_(sch)
       setCommitments_(com); setRecurringTaskRows(rt); setVacations_(vac); setEvents_(evs)
       setCategories_(cats); setCommitmentMeta_(cmeta); setRecurringExceptions_(rexc); setRecurringMeta_(rmeta)
+      // Routine groups: use what's saved, or seed the Morning/Night defaults.
+      if (rout) setRoutines_(rout)
+      else setRoutineGroups(DEFAULT_ROUTINES).catch(() => {})
       setLoading(false)
     }
     load()
@@ -296,16 +313,18 @@ export default function App() {
     try {
       const created = await addRecurringTask(task)
       setRecurringTaskRows(prev => [...prev, created])
-      // Repeat rule extras (freq/interval/monthDay/durationMins) aren't table
-      // columns — stash them in the synced recurring_meta blob keyed by row id.
-      const { freq, interval, monthDay, durationMins } = task
-      if ((freq && freq !== 'weekly') || (interval && interval > 1) || monthDay || durationMins) {
+      // Repeat rule extras (freq/interval/monthDay/durationMins) + routine group
+      // aren't table columns — stash them in the synced recurring_meta blob
+      // keyed by row id.
+      const { freq, interval, monthDay, durationMins, routine } = task
+      if ((freq && freq !== 'weekly') || (interval && interval > 1) || monthDay || durationMins || routine) {
         setRecurringMeta_(prev => {
           const next = { ...prev, [created.id]: {
             ...(freq ? { freq } : {}),
             ...(interval && interval > 1 ? { interval } : {}),
             ...(monthDay ? { monthDay } : {}),
             ...(durationMins ? { durationMins } : {}),
+            ...(routine ? { routine } : {}),
           } }
           setRecurringMeta(next).catch(reportSaveError)
           return next
@@ -318,15 +337,16 @@ export default function App() {
       const updated = await updateRecurringTask(id, task)
       setRecurringTaskRows(prev => prev.map(t => t.id===id ? updated : t))
     } catch (e) { reportSaveError(e) }
-    // Keep the rule extras (freq/interval/monthDay/durationMins) in sync with
-    // the edit — set them when present, clear them when it's back to plain
-    // weekly with no duration.
-    const { freq, interval, monthDay, durationMins } = task
+    // Keep the rule extras (freq/interval/monthDay/durationMins) + routine group
+    // in sync with the edit — set them when present, clear them when it's back
+    // to plain weekly with no duration and no routine.
+    const { freq, interval, monthDay, durationMins, routine } = task
     const extra = {
       ...(freq && freq !== 'weekly' ? { freq } : {}),
       ...(interval && interval > 1 ? { interval } : {}),
       ...(monthDay ? { monthDay } : {}),
       ...(durationMins ? { durationMins } : {}),
+      ...(routine ? { routine } : {}),
     }
     setRecurringMeta_(prev => {
       const has = id in prev
@@ -404,6 +424,32 @@ export default function App() {
     setCategories_(prev => prev.filter(c => c.id !== id))
     try { await dbDeleteCategory(id) } catch (e) { reportSaveError(e) }
   }, [])
+
+  // ── Routine groups CRUD (one synced kv blob) ─────────────────
+  // The whole list is one blob, so each op writes the next array. Deleting a
+  // group also unfiles any recurring task that pointed at it (clears the
+  // routine key in the meta blob) so no task references a ghost group.
+  const persistRoutines = useCallback(next => { setRoutines_(next); setRoutineGroups(next).catch(reportSaveError); return next }, [])
+  const addRoutineFn = useCallback((name, tint) => {
+    const id = 'rt-' + Date.now().toString(36)
+    setRoutines_(prev => persistRoutines([...prev, { id, name: (name || 'New routine').trim(), tint: tint || '#D9C7EE' }]))
+  }, [persistRoutines])
+  const updateRoutineFn = useCallback((id, changes) => {
+    setRoutines_(prev => persistRoutines(prev.map(r => r.id === id ? { ...r, ...changes } : r)))
+  }, [persistRoutines])
+  const deleteRoutineFn = useCallback(id => {
+    setRoutines_(prev => persistRoutines(prev.filter(r => r.id !== id)))
+    setRecurringMeta_(prev => {
+      let touched = false
+      const next = {}
+      for (const [k, v] of Object.entries(prev)) {
+        if (v && v.routine === id) { const { routine, ...rest } = v; if (Object.keys(rest).length) next[k] = rest; touched = true }
+        else next[k] = v
+      }
+      if (touched) setRecurringMeta(next).catch(reportSaveError)
+      return touched ? next : prev
+    })
+  }, [persistRoutines])
 
   const addScheduledTask = useCallback(async task => {
     setScheduled_(prev => { const next = [...prev, task]; setScheduledTasks(next); return next })
@@ -599,6 +645,12 @@ export default function App() {
     deleteRecurringTask: deleteRecurringTaskFn,
     skipRecurringOccurrence,
     unskipRecurringOccurrence,
+    // Routine groups + their CRUD, shared so Today/Calendar can tint by them
+    // and the Recurring tab can manage them.
+    routines,
+    addRoutine: addRoutineFn,
+    updateRoutine: updateRoutineFn,
+    deleteRoutine: deleteRoutineFn,
     summary,
   }
 
@@ -649,6 +701,7 @@ export default function App() {
           addRecurringTask={addRecurringTaskFn} updateRecurringTask={updateRecurringTaskFn}
           deleteRecurringTask={deleteRecurringTaskFn} clearRecurringTasks={clearRecurringTasksFn}
           categories={categories}
+          routines={routines} addRoutine={addRoutineFn} updateRoutine={updateRoutineFn} deleteRoutine={deleteRoutineFn}
           defaultWeekTasks={DEFAULT_RECURRING_TASKS} defaultDailyTodos={DEFAULT_DAILY_TODOS} />}
       </main>
 
@@ -660,6 +713,7 @@ export default function App() {
         updateCategory={updateCategoryFn} deleteCategory={deleteCategoryFn}
         events={events} commitments={commitments}
         font={font} setFont={setFont} theme={theme} setTheme={setTheme}
+        customColor={customColor} setCustom={setCustom}
         layout={layout} setLayout={setLayout} soundOn={soundOn} setSound={setSound}
         summary={summary} setSummary={setSummary} />
 

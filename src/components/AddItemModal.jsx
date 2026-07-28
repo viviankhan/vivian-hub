@@ -163,7 +163,7 @@ const InboxIcon2 = () => (<svg viewBox="0 0 24 24" width="18" height="18" fill="
 const TrashIcon2 = () => (<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4.5 7h15M9 7V5.2A1.2 1.2 0 0 1 10.2 4h3.6A1.2 1.2 0 0 1 15 5.2V7M6.5 7l1 12.5h9L17.5 7"/></svg>)
 const TargetIcon = () => (<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4.5"/><circle cx="12" cy="12" r="1" fill="currentColor" stroke="none"/></svg>)
 
-export default function AddItemModal({ existing = null, existingRecurring = null, presetDate = null, presetText = '', lockDate = false, defaultRepeat = false, categories = [], onSave, onSaveRecurring = null, onDelete = null, onDuplicate = null, onMoveToInbox = null, onClose, title = 'Add to calendar' }) {
+export default function AddItemModal({ existing = null, existingRecurring = null, presetDate = null, presetText = '', lockDate = false, defaultRepeat = false, categories = [], routines = [], onSave, onSaveRecurring = null, onDelete = null, onDuplicate = null, onMoveToInbox = null, onClose, title = 'Add to calendar' }) {
   const cats = (categories && categories.length) ? categories : DEFAULT_CATEGORIES
   const isEdit = !!existing
   // Editing an existing recurring task: it comes in the Recurring-tab row shape
@@ -255,6 +255,10 @@ export default function AddItemModal({ existing = null, existingRecurring = null
   }
   const intervalUnit = repeatFreq === 'daily' ? 'day' : repeatFreq === 'monthly' ? 'month' : 'week'
   const bumpInterval = (d) => setRepeatInterval(n => Math.max(1, Math.min(99, n + d)))
+  // Routine group this recurring task belongs to ('' = none). Files it under a
+  // Morning/Night (or custom) group in the Recurring tab + tints its timeline
+  // block with that group's film.
+  const [routine, setRoutine] = useState(existing?.routine ?? rec?.routine ?? '')
 
   // Which grouped row is expanded for editing (only one open at a time). On the
   // recurring page the Repeat row opens by default so the days are right there.
@@ -328,6 +332,7 @@ export default function AddItemModal({ existing = null, existingRecurring = null
         label: time ? `${fmt12(time)} — ${label.trim()}` : label.trim(),
         note: description.trim() || '',
         durationMins: durationMins || null,
+        routine: routine || null,
         startDate,
         endDate: repeatEnd || null,
       }
@@ -572,6 +577,30 @@ export default function AddItemModal({ existing = null, existingRecurring = null
                   <div style={{ fontSize:10.5, color:'var(--muted)', marginTop:8 }}>
                     {repeatEnd ? 'Stops repeating after this date.' : 'No end date — repeats indefinitely. Shows on Today, Week & Calendar; manage it in the Recurring tab.'}
                   </div>
+                  {/* Routine group — files this under a Morning/Night (or custom)
+                      routine, groups it in the Recurring tab, and tints its
+                      timeline block with the routine's film. */}
+                  {routines.length > 0 && <>
+                    <div style={{ fontSize:10, color:'var(--muted)', letterSpacing:1, textTransform:'uppercase', margin:'16px 0 8px' }}>Routine</div>
+                    <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
+                      <button onClick={() => setRoutine('')}
+                        style={{ fontSize:12, padding:'7px 13px', borderRadius:16, cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:600,
+                          border: routine ? '1px solid var(--border)' : '1.5px solid var(--forest)',
+                          background: routine ? 'white' : 'var(--forest)', color: routine ? 'var(--muted)' : 'var(--green-light)' }}>None</button>
+                      {routines.map(r => {
+                        const on = routine === r.id
+                        return (
+                          <button key={r.id} onClick={() => setRoutine(r.id)}
+                            style={{ display:'inline-flex', alignItems:'center', gap:6, fontSize:12, padding:'7px 13px', borderRadius:16, cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:600,
+                              border: on ? `1.5px solid ${r.tint}` : '1px solid var(--border)',
+                              background: on ? r.tint : 'white', color: on ? '#3A3A3A' : 'var(--muted)' }}>
+                            <span style={{ width:10, height:10, borderRadius:'50%', background:r.tint, boxShadow: on ? 'inset 0 0 0 1px rgba(0,0,0,.15)' : 'none', flexShrink:0 }} />
+                            {r.name}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </>}
                 </>}
               </DetailRow>
             </>}

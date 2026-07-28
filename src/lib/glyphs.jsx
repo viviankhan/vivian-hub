@@ -222,5 +222,8 @@ export function suggestGlyph(title) {
     // Tiebreak toward the icon with fewer keywords (a more specific match).
     if (score > best) { best = score; bestId = it.id }
   }
-  return best > 0 ? 'glyph:' + bestId : null
+  // Only suggest when we're actually confident — require at least one exact
+  // word→token hit (score 3), not a merely "related" guess (score 2). Below
+  // that we return null so an item isn't auto-labeled with a wrong icon.
+  return best >= 3 ? 'glyph:' + bestId : null
 }
