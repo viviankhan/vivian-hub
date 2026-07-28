@@ -31,32 +31,41 @@ function mix(hex, target, amt) {
   const a = hexToRgb(hex), b = hexToRgb(target)
   return rgbToHex({ r: a.r + (b.r - a.r) * amt, g: a.g + (b.g - a.g) * amt, b: a.b + (b.b - a.b) * amt })
 }
-// A full Bloom-style theme derived from one accent color.
+// A full Bloom-style theme derived from one accent color (with a glimmer built
+// from a lighter and a darker shade of it).
 export function deriveTheme(hex, label = 'Custom', id = 'custom') {
   const accent = (hex && /^#?[0-9a-fA-F]{3,6}$/.test(hex)) ? (hex[0] === '#' ? hex : '#' + hex) : '#4A9EB5'
-  return { id, label, accent, deep: mix(accent, '#0C0F13', 0.46), light: mix(accent, '#FFFFFF', 0.86), tile: accent }
+  const light = mix(accent, '#FFFFFF', 0.86)
+  const deep = mix(accent, '#0C0F13', 0.46)
+  const glimmer = `linear-gradient(135deg, rgba(255,255,255,.5) 0%, rgba(255,255,255,0) 34%), linear-gradient(135deg, ${mix(accent, '#FFFFFF', 0.28)} 0%, ${mix(accent, '#000000', 0.16)} 100%)`
+  return { id, label, accent, deep, light, tile: accent, glimmer }
 }
 
-// Each theme is a variation on Bloom — same soft, calm structure, shifted hue.
-// `accent` drives buttons, nav, links and timeline spines; `deep` is the dark
-// surface (drawer header, FAB); `light` is the pale on-dark text/tint. `tile`
-// is how the icon swatch is drawn — a solid color, or a multi-stripe fill.
-// The first group are Bloom family variations; the originals stay below.
+// Bloom's identity is a warm beach-peach. Every theme below is a variation on
+// that — sunlit corals, apricots, sands and shells, plus a few cool seaside
+// tones — and each carries its own `glimmer`: a soft gradient sheen (a diagonal
+// light streak over the accent) so the FAB + theme tiles literally shimmer, a
+// different shine per theme. `accent` drives buttons/nav/spines; `deep` is the
+// dark surface (drawer header); `light` is the pale on-dark tint; `tile`/glimmer
+// paint the swatch. A helper builds the streak so they stay consistent.
+const streak = (a, b, deg = 135) =>
+  `linear-gradient(${deg}deg, rgba(255,255,255,.5) 0%, rgba(255,255,255,0) 34%), linear-gradient(${deg}deg, ${a} 0%, ${b} 100%)`
+
 export const THEMES = [
-  { id:'bloom',    label:'Bloom',    accent:'#4A9EB5', deep:'#2A4858', light:'#E8F6FA', tile:'#4A9EB5' },
-  { id:'blush',    label:'Blush',    accent:'#E08AA0', deep:'#7C3F50', light:'#FBEDF1', tile:'#E08AA0' },
-  { id:'lilac',    label:'Lilac',    accent:'#9B8BD0', deep:'#4C4183', light:'#EFEBF9', tile:'#9B8BD0' },
-  { id:'meadow',   label:'Meadow',   accent:'#5FB891', deep:'#2F6B54', light:'#E6F5EE', tile:'#5FB891' },
-  { id:'sky',      label:'Sky',      accent:'#6AA8DE', deep:'#345E86', light:'#E8F1FA', tile:'#6AA8DE' },
-  { id:'apricot',  label:'Apricot',  accent:'#E0975B', deep:'#8A5427', light:'#FBEEE0', tile:'#E0975B' },
-  { id:'day',      label:'Day',      accent:'#E5849A', deep:'#7E3B4C', light:'#FDEEF1', tile:'#E5849A' },
-  { id:'night',    label:'Night',    accent:'#4A6C93', deep:'#22344B', light:'#E7EDF5', tile:'#3E5C82' },
-  { id:'nature',   label:'Nature',   accent:'#5FA85C', deep:'#35602F', light:'#E9F5E7', tile:'#5FA85C' },
-  { id:'classic',  label:'Classic',  accent:'#4A4A4A', deep:'#1C1C1C', light:'#ECECEC', tile:'#2E2E2E' },
+  { id:'peach',    label:'Peach',    accent:'#E8956F', deep:'#7E4636', light:'#FCEDE4', tile:'#E8956F', glimmer: streak('#F3B389', '#DE7C5E', 135) },
+  { id:'coral',    label:'Coral',    accent:'#E87A6B', deep:'#7E3A32', light:'#FCE9E5', tile:'#E87A6B', glimmer: streak('#F49E86', '#DC6152', 120) },
+  { id:'apricot',  label:'Apricot',  accent:'#E7A85C', deep:'#835525', light:'#FBEFDD', tile:'#E7A85C', glimmer: streak('#F6C57F', '#DB9140', 150) },
+  { id:'shell',    label:'Shell',    accent:'#E890A6', deep:'#7E3F51', light:'#FCEAF0', tile:'#E890A6', glimmer: streak('#F5AEBF', '#DE7690', 125) },
+  { id:'sand',     label:'Sand',     accent:'#CDAF80', deep:'#6D5A39', light:'#F6EFE0', tile:'#CDAF80', glimmer: streak('#E0C99E', '#B9975F', 140) },
+  { id:'sunset',   label:'Sunset',   accent:'#E58463', deep:'#7C3E2C', light:'#FCEAE1', tile:'#E58463', glimmer: streak('#F6B27E', '#D96A54', 115) },
+  { id:'seafoam',  label:'Seafoam',  accent:'#6FB6A4', deep:'#356257', light:'#E7F4EF', tile:'#6FB6A4', glimmer: streak('#96D0BF', '#4E9A87', 145) },
+  { id:'lagoon',   label:'Lagoon',   accent:'#5FA9C0', deep:'#2F5E6E', light:'#E6F3F7', tile:'#5FA9C0', glimmer: streak('#8AC7D8', '#4189A0', 135) },
+  { id:'bloom',    label:'Bloom',    accent:'#4A9EB5', deep:'#2A4858', light:'#E8F6FA', tile:'#4A9EB5', glimmer: streak('#78C0D2', '#3A8296', 135) },
+  // A few non-beach options kept for choice / identity.
+  { id:'night',    label:'Night',    accent:'#4A6C93', deep:'#22344B', light:'#E7EDF5', tile:'#3E5C82', glimmer: streak('#6E8FB5', '#3A5578', 135) },
+  { id:'classic',  label:'Classic',  accent:'#4A4A4A', deep:'#1C1C1C', light:'#ECECEC', tile:'#2E2E2E', glimmer: streak('#6E6E6E', '#333333', 135) },
   { id:'pride',    label:'Pride',    accent:'#C64B8C', deep:'#6A2E63', light:'#F6E7F1', tile:'pride' },
   { id:'trans',    label:'Trans',    accent:'#57B7E6', deep:'#2E6E8E', light:'#E7F4FB', tile:'trans' },
-  { id:'ocean',    label:'Ocean',    accent:'#3A82C2', deep:'#1E4C78', light:'#E6F0F9', tile:'#3A82C2' },
-  { id:'amber',    label:'Amber',    accent:'#D2952F', deep:'#855420', light:'#F7EDD9', tile:'#D2952F' },
 ]
 
 export const FONTS = [
@@ -124,7 +133,10 @@ export const TILE_GRADIENTS = {
   trans: 'linear-gradient(135deg, #5BCEFA 0%, #5BCEFA 25%, #F5A9B8 25%, #F5A9B8 40%, #FFFFFF 40%, #FFFFFF 60%, #F5A9B8 60%, #F5A9B8 75%, #5BCEFA 75%, #5BCEFA 100%)',
 }
 export function tileBackground(theme) {
-  return TILE_GRADIENTS[theme.tile] || theme.tile
+  // Multi-stripe identity tiles win; otherwise show the theme's glimmer so the
+  // shimmer is visible right on the picker swatch, falling back to a flat color.
+  if (TILE_GRADIENTS[theme.tile]) return TILE_GRADIENTS[theme.tile]
+  return theme.glimmer || theme.tile
 }
 
 // ── Apply to the document ────────────────────────────────────
@@ -141,6 +153,8 @@ export function applyTheme(id) {
     '--on-accent': iconColorOn(t.accent),
   }
   Object.entries(map).forEach(([k, v]) => r.setProperty(k, v))
+  // The shimmer gradient for the FAB / accents. Falls back to the flat accent.
+  r.setProperty('--glimmer', t.glimmer || t.accent)
   // Keep the iOS status-bar / browser chrome color in step with the theme.
   const meta = document.querySelector('meta[name="theme-color"]')
   if (meta) meta.setAttribute('content', t.deep)
@@ -160,7 +174,7 @@ export function applyLayout(id) {
 
 // ── Persistence (device-local) ───────────────────────────────
 export function getThemePref() {
-  try { return localStorage.getItem('bloom_theme') || 'bloom' } catch { return 'bloom' }
+  try { return localStorage.getItem('bloom_theme') || 'peach' } catch { return 'peach' }
 }
 export function setThemePref(v) {
   try { localStorage.setItem('bloom_theme', v) } catch {}
