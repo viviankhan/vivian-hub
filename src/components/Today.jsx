@@ -354,7 +354,7 @@ function GapRow({ mins, prevColor, nextColor, onAdd }) {
   )
 }
 
-function TimelineBlock({ task, categories, status, now, isDone, elapsed, dateKey, onToggle, onManage, onShiftToNow, onOpen, onFocus, onToggleSub }) {
+function TimelineBlock({ task, categories, status, now, prevColor, nextColor, isDone, elapsed, dateKey, onToggle, onManage, onShiftToNow, onOpen, onFocus, onToggleSub }) {
   const [subOpen, setSubOpen] = useState(false)
   const catFound = (categories || []).find(x => x.id === task.tag)
   const catColor = catFound?.color || TAG_COLORS[task.tag] || '#9CA3AF'
@@ -408,7 +408,7 @@ function TimelineBlock({ task, categories, status, now, isDone, elapsed, dateKey
           bar: segments you've worked through are solid in the task's color,
           upcoming segments stay light gray. */}
       <div style={{ width:52, flexShrink:0, display:'flex', flexDirection:'column', alignItems:'center' }}>
-        <div style={{ width:3, height:14, borderRadius:3, background: elapsed ? color : '#E7E2DB' }} />
+        <div style={{ width:3, height:14, borderRadius:3, background: prevColor ? `linear-gradient(to bottom, ${prevColor}, ${color})` : color }} />
         <div style={{ position:'relative', overflow:'hidden', width:52, height:pillH, borderRadius:26, flexShrink:0, background:color, display:'flex', alignItems:'center', justifyContent:'center',
           boxShadow:isCurrent?`0 0 0 4px ${color}33`:'none' }}>
           {/* Progress shade — a lighter fill rises from the bottom by how far
@@ -429,7 +429,7 @@ function TimelineBlock({ task, categories, status, now, isDone, elapsed, dateKey
               : <span style={{ color:iconColorOn(color), fontWeight:700, fontSize:20 }}>{(title || '?').charAt(0).toUpperCase()}</span>}
           </span>
         </div>
-        <div style={{ width:3, flex:1, minHeight:14, borderRadius:3, background: (elapsed && !isCurrent) ? color : '#E7E2DB' }} />
+        <div style={{ width:3, flex:1, minHeight:14, borderRadius:3, background: nextColor ? `linear-gradient(to bottom, ${color}, ${nextColor})` : color }} />
       </div>
       {/* Card */}
       <div style={{ flex:1, minWidth:0, paddingTop:8, paddingBottom:12, paddingLeft:10 }}>
@@ -607,7 +607,7 @@ function WeekStrip({ viewDate, setViewDate, commitments, categories, doneCount, 
 }
 
 // ── Main ───────────────────────────────────────────────────────
-export default function Today({ todos, weekState, syncToggle, commitments, addCommitment, updateCommitment, deleteCommitment, appendLog, scheduled, categories, recurringTasks, recurringExceptions, skipRecurringOccurrence, deleteRecurringTask, addRecurringTask, summary }) {
+export default function Today({ todos, weekState, syncToggle, commitments, addCommitment, updateCommitment, deleteCommitment, appendLog, scheduled, categories, recurringTasks, recurringExceptions, skipRecurringOccurrence, deleteRecurringTask, addRecurringTask, updateRecurringTask, summary }) {
   const [now,         setNow]         = useState(nowMins())
   // The day the timeline is showing. Defaults to today; the week strip up top
   // navigates to any day. "Now" logic (the progress marker, current/overdue,
@@ -615,6 +615,7 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
   const [viewDate,    setViewDate]    = useState(todayKey())
   const [managing,    setManaging]    = useState(null)
   const [editing,     setEditing]     = useState(null)  // full commitment being edited
+  const [editingRec,  setEditingRec]  = useState(null)  // recurring template being edited
   const [shiftPlan,   setShiftPlan]   = useState(null)  // {pivot, rest, selected} — "start now" push chooser
   const [focusTask,   setFocusTask]   = useState(null)  // task shown in full-screen Focus mode
   const [addingTask,  setAddingTask]  = useState(false)
@@ -907,6 +908,13 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
       const c = (commitments || []).find(x => x.id === task.id)
       if (c) { setEditing(c); return }
     }
+    // Tapping a recurring occurrence opens the same full editor as a normal
+    // task — pre-filled from its template (edits the whole series). Per-day
+    // actions (skip / reschedule this occurrence) stay on the ⋯ menu.
+    if (task.isRecurring && updateRecurringTask) {
+      const tmpl = (recurringTasks || []).find(t => t.id === (task.recurringId || task.id))
+      if (tmpl) { setEditingRec(tmpl); return }
+    }
     setManaging(task)
   }
   // Unschedule → strip the date/time so it drops off the timeline and returns
@@ -1019,6 +1027,7 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
                 {gap&&<GapRow mins={gap} prevColor={gapColor} nextColor={gapNextColor} onAdd={()=>setAddingTask(true)}/>}
                 <TimelineBlock
                   task={task} categories={categories} status={task._status} now={now}
+                  prevColor={colorOf(prev)} nextColor={colorOf(tasksWithStatus[i+1])}
                   isDone={task._status==='past'}
                   elapsed={isToday && task._mins!==null && task._mins<=now}
                   dateKey={dateKey}
@@ -1071,6 +1080,10 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
         onDuplicate={c=>addCommitment&&addCommitment({ ...c, id:'c-'+Date.now(), text:(c.text||'')+' (copy)', done:false, createdAt:new Date().toISOString() })}
         onMoveToInbox={c=>updateCommitment&&updateCommitment(c.id, { date:null, time:null, durationMins:null })}
         onClose={()=>setEditing(null)} title="Edit task"/>}
+      {editingRec&&<AddItemModal existingRecurring={editingRec} categories={categories}
+        onSaveRecurring={t=>{ updateRecurringTask&&updateRecurringTask(t.id,t); setEditingRec(null) }}
+        onDelete={t=>{ deleteRecurringTask&&deleteRecurringTask(t.id); setEditingRec(null) }}
+        onClose={()=>setEditingRec(null)} title="Edit recurring task"/>}
       {managing&&<ManageModal task={managing} dateKey={dateKey} onClose={()=>setManaging(null)} onDelete={handleDelete} onReschedule={handleReschedule} onUnschedule={handleUnschedule} onDeleteSeries={handleDeleteSeries} scheduled={scheduled}/>}
     </div>
   )

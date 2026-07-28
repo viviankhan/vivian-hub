@@ -34,13 +34,14 @@ function endTimeFrom(start, mins) {
   return `${String(Math.floor(total/60)).padStart(2,'0')}:${String(total%60).padStart(2,'0')}`
 }
 
-export default function Calendar({ commitments, vacations, events, log, categories, jumpTo, addCommitment, updateCommitment, deleteCommitment, todos, recurringTasks, recurringExceptions, skipRecurringOccurrence, addRecurringTask }) {
+export default function Calendar({ commitments, vacations, events, log, categories, jumpTo, addCommitment, updateCommitment, deleteCommitment, todos, recurringTasks, recurringExceptions, skipRecurringOccurrence, addRecurringTask, updateRecurringTask, deleteRecurringTask }) {
   // monthOffset shifts by whole months from the current month: 0 = this month,
   // -1 = last month, +1 = next month, and so on — unbounded either way.
   const [monthOffset, setMonthOffset] = useState(0)
   const [selected, setSelected] = useState(null)
   const [adding, setAdding] = useState(false)
   const [editing, setEditing] = useState(null)
+  const [editingRec, setEditingRec] = useState(null)  // recurring template being edited
   const today = todayStr()
 
   // Add a commitment on any date (long-term planning), with its own optional
@@ -283,6 +284,8 @@ export default function Calendar({ commitments, vacations, events, log, categori
               </span>
               <div style={{ flex:1, fontSize:13, color:'var(--text)', textDecoration: e.done ? 'line-through' : 'none' }}>{e.label}</div>
               <span style={{ fontSize:9, letterSpacing:.5, textTransform:'uppercase', color:'var(--muted)', flexShrink:0 }}>Repeats</span>
+              <button onClick={() => { const t=(recurringTasks||[]).find(r=>r.id===e.id); if(t) setEditingRec(t) }} title="Edit"
+                style={{ background:'none', border:'none', cursor:'pointer', color:'#9CA3AF', fontSize:13, padding:'0 2px', flexShrink:0 }}>✎</button>
               <button onClick={() => skipRecurringOccurrence && skipRecurringOccurrence(e.id, selected)} title="Skip just this day"
                 style={{ background:'none', border:'none', cursor:'pointer', color:'#9CA3AF', fontSize:14, padding:'0 2px', flexShrink:0 }}>✕</button>
             </div>
@@ -326,6 +329,15 @@ export default function Calendar({ commitments, vacations, events, log, categori
           onMoveToInbox={c => updateCommitment && updateCommitment(c.id, { date:null, time:null, durationMins:null })}
           onClose={()=>setEditing(null)}
           title="Edit event" />
+      )}
+      {editingRec && (
+        <AddItemModal
+          existingRecurring={editingRec}
+          categories={categories}
+          onSaveRecurring={t => { updateRecurringTask && updateRecurringTask(t.id, t); setEditingRec(null) }}
+          onDelete={t => { deleteRecurringTask && deleteRecurringTask(t.id); setEditingRec(null) }}
+          onClose={()=>setEditingRec(null)}
+          title="Edit recurring task" />
       )}
     </div>
   )

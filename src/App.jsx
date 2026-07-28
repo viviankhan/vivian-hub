@@ -595,6 +595,7 @@ export default function App() {
     recurringTasks: recurringTasksEnriched,
     recurringExceptions,
     addRecurringTask: addRecurringTaskFn,
+    updateRecurringTask: updateRecurringTaskFn,
     deleteRecurringTask: deleteRecurringTaskFn,
     skipRecurringOccurrence,
     unskipRecurringOccurrence,

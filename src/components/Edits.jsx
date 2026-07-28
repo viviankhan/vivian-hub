@@ -5,6 +5,15 @@
 const EDIT_LOG = [
   {
     date: '2026-07-27',
+    summary: 'Tap a recurring task to edit it like any other; whole spine blends colors',
+    changes: [
+      'Tapping a recurring task on the timeline now opens the exact same full editor as a normal task — pre-filled with its time, duration, category, note and repeat rule — instead of the stripped-down Manage sheet (that\'s still on the ⋯ button for per-day skip / reschedule)',
+      'Calendar\'s recurring rows got an edit (✎) button that opens the same editor',
+      'Every connector on the timeline — not just the dashed gaps — now blends from one task\'s color into the next, so the whole spine flows through your day\'s colors',
+    ]
+  },
+  {
+    date: '2026-07-27',
     summary: 'Connector line blends between task colors',
     changes: [
       'The dashed line in a gap now fades from the last task\'s color at the top into the next task\'s color at the bottom — so the spine visibly bridges the two',
