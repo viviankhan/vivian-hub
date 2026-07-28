@@ -7,6 +7,7 @@
 import { useState, useRef } from 'react'
 import { isImageIcon, fileToIconDataUri } from './IconPicker.jsx'
 import { Glyph, GLYPH_GROUPS, GLYPH_ALL, iconColorOn } from '../lib/glyphs.jsx'
+import { EMOJI_GROUPS, EMOJI_ALL } from '../lib/emojis.js'
 import { getSavedColors, addSavedColor, removeSavedColor, activeAccent } from '../lib/appearance.js'
 
 // Same palette the detail sheet uses, so a color picked here matches.
@@ -30,10 +31,13 @@ export default function ColorIconPicker({ color, icon, onColor, onIcon, onClose 
   const deleteSaved = (c) => { setSaved(removeSavedColor(c)); }
 
   const term = q.trim().toLowerCase()
-  // Match the icon name, its keywords, or its group name — so searching a
-  // category like "health" surfaces that whole group, not one stray icon.
-  const results = term ? GLYPH_ALL.filter(it =>
-    it.id.toLowerCase().includes(term) || it.k.includes(term) || it.group.toLowerCase().includes(term)) : null
+  const words = term ? term.split(/\s+/) : []
+  const matches = (hay) => words.every(w => hay.includes(w))
+  // Search across BOTH the emoji set and the line glyphs. Emoji come first
+  // (Structured-style), then matching line icons.
+  const emojiResults = term ? EMOJI_ALL.filter(e => matches(e.k)).map(e => e.c) : null
+  const glyphResults = term ? GLYPH_ALL.filter(it =>
+    matches(`${it.id.toLowerCase()} ${it.k} ${it.group.toLowerCase()}`)).map(it => it.id) : null
 
   const onFile = async (e) => {
     const f = e.target.files?.[0]
@@ -56,12 +60,24 @@ export default function ColorIconPicker({ color, icon, onColor, onIcon, onClose 
       </button>
     )
   }
+  const EmojiBtn = ({ c }) => {
+    const on = icon === c
+    return (
+      <button onClick={() => onIcon(c)} title={c}
+        style={{ width:52, height:52, borderRadius:'50%', border:'none', cursor:'pointer', flexShrink:0,
+          display:'flex', alignItems:'center', justifyContent:'center', fontSize:28, lineHeight:1,
+          background: on ? selColor : '#F0EEF3', transition:'background .15s' }}>
+        <span style={{ filter: on ? 'drop-shadow(0 0 2px rgba(0,0,0,.25))' : 'none' }}>{c}</span>
+      </button>
+    )
+  }
 
   return (
     <div onClick={e => { e.stopPropagation(); onClose() }}
       style={{ position:'fixed', inset:0, background:'rgba(20,28,38,.5)', zIndex:700, display:'flex', alignItems:'flex-end', justifyContent:'center' }}>
+      {/* Fixed height so searching (fewer results) doesn't shrink the sheet. */}
       <div onClick={e => e.stopPropagation()}
-        style={{ background:'white', borderRadius:'22px 22px 0 0', width:'100%', maxWidth:480, maxHeight:'88vh', display:'flex', flexDirection:'column', boxShadow:'0 -10px 44px rgba(20,40,60,.28)' }}>
+        style={{ background:'white', borderRadius:'22px 22px 0 0', width:'100%', maxWidth:480, height:'86vh', display:'flex', flexDirection:'column', boxShadow:'0 -10px 44px rgba(20,40,60,.28)' }}>
 
         {/* Header */}
         <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'16px 18px 12px', flexShrink:0 }}>
@@ -120,31 +136,54 @@ export default function ColorIconPicker({ color, icon, onColor, onIcon, onClose 
 
         {/* Search */}
         <div style={{ padding:'0 18px 12px', flexShrink:0 }}>
-          <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search icons"
+          <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search emoji & icons"
             autoCapitalize="none" autoCorrect="off" spellCheck={false}
             style={{ width:'100%', fontSize:14, padding:'10px 14px', borderRadius:20, border:'none', background:'#F0EEF3', fontFamily:'DM Sans,sans-serif', outline:'none', boxSizing:'border-box', color:'var(--text)' }} />
         </div>
 
-        {/* Grid — sizes to its content (so a short search result doesn't leave a
-            big empty sheet) but shrinks + scrolls when the full list is tall. */}
-        <div style={{ flex:'0 1 auto', minHeight:0, overflowY:'auto', padding:'2px 18px calc(16px + env(safe-area-inset-bottom))' }}>
-          {results ? (
-            results.length ? (
-              <div style={{ display:'flex', flexWrap:'wrap', gap:10, paddingTop:6 }}>
-                {results.map(it => <IconBtn key={it.id} id={it.id} />)}
-              </div>
+        {/* Grid — fixed-flex so the sheet keeps a constant height whether the
+            full list or a short search result is showing (no jarring shrink). */}
+        <div style={{ flex:1, minHeight:0, overflowY:'auto', padding:'2px 18px calc(16px + env(safe-area-inset-bottom))' }}>
+          {term ? (
+            (emojiResults.length || glyphResults.length) ? (
+              <>
+                {emojiResults.length > 0 && (
+                  <div style={{ display:'flex', flexWrap:'wrap', gap:10, paddingTop:6 }}>
+                    {emojiResults.map(c => <EmojiBtn key={c} c={c} />)}
+                  </div>
+                )}
+                {glyphResults.length > 0 && (
+                  <>
+                    <div style={{ fontSize:11, color:'var(--muted)', fontWeight:700, letterSpacing:.6, textTransform:'uppercase', margin:'14px 0 8px' }}>Line icons</div>
+                    <div style={{ display:'flex', flexWrap:'wrap', gap:10 }}>
+                      {glyphResults.map(id => <IconBtn key={id} id={id} />)}
+                    </div>
+                  </>
+                )}
+              </>
             ) : (
-              <div style={{ fontSize:13, color:'var(--muted)', padding:'20px 0', textAlign:'center' }}>No icons match “{q}”.</div>
+              <div style={{ fontSize:13, color:'var(--muted)', padding:'20px 0', textAlign:'center' }}>Nothing matches “{q}”.</div>
             )
           ) : (
-            GLYPH_GROUPS.map(g => (
-              <div key={g.name} style={{ marginBottom:16 }}>
-                <div style={{ fontSize:11, color:'var(--muted)', fontWeight:700, letterSpacing:.6, textTransform:'uppercase', margin:'10px 0 8px' }}>{g.name}</div>
-                <div style={{ display:'flex', flexWrap:'wrap', gap:10 }}>
-                  {g.items.map(([id]) => <IconBtn key={id} id={id} />)}
+            <>
+              {EMOJI_GROUPS.map(g => (
+                <div key={g.name} style={{ marginBottom:16 }}>
+                  <div style={{ fontSize:11, color:'var(--muted)', fontWeight:700, letterSpacing:.6, textTransform:'uppercase', margin:'10px 0 8px' }}>{g.name}</div>
+                  <div style={{ display:'flex', flexWrap:'wrap', gap:10 }}>
+                    {g.items.map(([c]) => <EmojiBtn key={c} c={c} />)}
+                  </div>
                 </div>
-              </div>
-            ))
+              ))}
+              <div style={{ fontSize:11, color:'var(--muted)', fontWeight:700, letterSpacing:.6, textTransform:'uppercase', margin:'18px 0 8px' }}>Line icons</div>
+              {GLYPH_GROUPS.map(g => (
+                <div key={g.name} style={{ marginBottom:16 }}>
+                  <div style={{ fontSize:11, color:'var(--muted)', fontWeight:600, letterSpacing:.4, margin:'8px 0 8px' }}>{g.name}</div>
+                  <div style={{ display:'flex', flexWrap:'wrap', gap:10 }}>
+                    {g.items.map(([id]) => <IconBtn key={id} id={id} />)}
+                  </div>
+                </div>
+              ))}
+            </>
           )}
 
           {/* Upload / clear */}
