@@ -204,21 +204,93 @@ function related(a, b) {
   return a.startsWith(b) || b.startsWith(a)
 }
 
-// Everyday task words → a canonical keyword the icon set actually uses, so
-// abbreviations and common phrasings still resolve (e.g. "appt" → appointment,
-// "workout" → gym, "groceries" → grocery). Applied to each title word before
-// scoring; both the original and the mapped form are considered.
-const SYNONYMS = {
-  appt:'appointment', mtg:'meeting', dr:'doctor', doc:'doctor', gym:'workout',
-  jog:'run', jogging:'run', workout:'gym', groceries:'grocery', shopping:'shop',
-  laundry:'clean', dishes:'clean', clean:'cleaning', vacuum:'clean',
-  meds:'medicine', med:'medicine', rx:'prescription', vax:'vaccine',
-  standup:'meeting', sync:'meeting', call:'phone', zoom:'meeting', pt:'fitness',
-  bday:'birthday', anniversary:'gift', payday:'money', invoice:'bill',
-  studying:'study', revision:'study', hw:'homework', essay:'write',
-  commute:'car', flight:'plane', vacay:'vacation', holiday:'vacation',
-  brekkie:'breakfast', lunch:'restaurant', dinner:'restaurant', supper:'restaurant',
-  walk:'run', hike:'hiking', yoga:'yoga', meditate:'meditation',
+// Direct word → icon map: the fast, intuitive path. If a meaningful word in the
+// title is in here (e.g. "walk" → walk, "dentist" → tooth, "budget" → dollar),
+// that icon wins immediately — no scoring guesswork. Keys are lowercase; both
+// the raw word and its stem are looked up, so plurals/verb forms resolve too.
+// Every value must be a real glyph id.
+const INTENT = {
+  // Movement & transport
+  walk:'walk', walking:'walk', stroll:'walk', steps:'walk', pedestrian:'walk',
+  run:'run', running:'run', jog:'run', jogging:'run', sprint:'run', marathon:'run',
+  gym:'dumbbell', workout:'dumbbell', exercise:'dumbbell', lift:'dumbbell', weights:'dumbbell', fitness:'pulse',
+  yoga:'yoga', stretch:'yoga', pilates:'yoga', meditate:'meditation', meditation:'meditation', mindfulness:'meditation',
+  swim:'waves', swimming:'waves', pool:'waves', surf:'waves',
+  bike:'bike', biking:'bike', cycle:'bike', cycling:'bike', spin:'bike',
+  hike:'hiking', hiking:'hiking', trek:'hiking',
+  drive:'car', driving:'car', car:'car', taxi:'car', uber:'car', lyft:'car', parking:'car', gas:'fuel', fuel:'fuel',
+  commute:'bus', bus:'bus', train:'train', subway:'subway', metro:'subway', tram:'subway',
+  flight:'plane', fly:'plane', plane:'plane', airport:'plane', travel:'plane', trip:'plane', vacation:'plane', holiday:'plane',
+  boat:'boat', sail:'boat', cruise:'ship', scooter:'scooter', motorcycle:'motorcycle',
+  // Food & drink
+  eat:'utensils', meal:'utensils', cook:'utensils', cooking:'utensils', recipe:'utensils', kitchen:'utensils', dishes:'utensils',
+  breakfast:'coffee', brunch:'restaurant', lunch:'restaurant', dinner:'restaurant', supper:'restaurant', restaurant:'restaurant', reservation:'restaurant',
+  coffee:'coffee', espresso:'coffee', latte:'coffee', cafe:'coffee', tea:'mug', drink:'mug',
+  water:'droplet', hydrate:'droplet', hydration:'droplet',
+  pizza:'pizza', burger:'burger', taco:'taco', salad:'salad', snack:'apple', fruit:'apple', apple:'apple',
+  bake:'cake', baking:'cake', cake:'cake', dessert:'icecream', cookie:'cookie',
+  wine:'wine', beer:'beer', bar:'beer', drinks:'cocktail', cocktail:'cocktail', brewery:'beer',
+  groceries:'cart', grocery:'cart', shop:'cart', shopping:'cart', store:'cart', market:'cart',
+  // Sleep & daily
+  sleep:'bed', nap:'bed', bed:'bed', bedtime:'moon', rest:'bed', relax:'bed',
+  wake:'sunrise', wakeup:'sunrise', morning:'sunrise', sunrise:'sunrise', rise:'sunrise',
+  night:'moon', evening:'sunset', sunset:'sunset', dusk:'sunset', winddown:'moon',
+  shower:'droplet', bath:'bath', bathe:'bath',
+  brush:'toothbrush', teeth:'tooth', tooth:'tooth', floss:'tooth', dental:'tooth', dentist:'tooth',
+  skincare:'lipstick', makeup:'lipstick', beauty:'lipstick', haircut:'scissors', hair:'scissors',
+  dress:'dress', clothes:'dress', outfit:'dress', wardrobe:'dress', shirt:'shirt', tshirt:'tshirt',
+  pants:'pants', jeans:'pants', shorts:'shorts', shoe:'sneaker', shoes:'sneaker', sneakers:'sneaker',
+  boots:'boot', hat:'hat', cap:'cap', socks:'socks', glasses:'glasses', ring:'ring',
+  jacket:'jacket', coat:'jacket', scarf:'scarf', backpack:'backpack2', purse:'bag', handbag:'bag',
+  laundry:'broom', clean:'broom', cleaning:'broom', tidy:'broom', chores:'broom', chore:'broom', vacuum:'broom', sweep:'broom',
+  // Work & study
+  work:'briefcase', job:'briefcase', office:'briefcase', career:'briefcase', interview:'briefcase', client:'briefcase', boss:'briefcase',
+  meeting:'chat', meet:'chat', standup:'chat', sync:'chat', catchup:'chat', oneonone:'chat',
+  call:'phone', phone:'phone', dial:'phone',
+  email:'mail', emails:'mail', inbox:'mail', newsletter:'mail',
+  zoom:'laptop', code:'code', coding:'code', program:'code', dev:'code', develop:'code', laptop:'laptop', computer:'laptop',
+  study:'book', studying:'book', read:'book', reading:'book', book:'book', revise:'bookOpen', revision:'bookOpen',
+  homework:'pencil', essay:'pencil', write:'pencil', writing:'pencil', journal:'pencil', draft:'pencil', sign:'pencil',
+  notes:'clipboard', note:'clipboard', todo:'clipboard', checklist:'clipboard', tasks:'clipboard', agenda:'clipboard',
+  plan:'clipboard', planning:'calendar', schedule:'calendar', calendar:'calendar', booking:'calendar', appointment:'calendar', appt:'calendar',
+  deadline:'clock', due:'clock', reminder:'bell', remind:'bell', alert:'bell', alarm:'alarm',
+  exam:'gradcap', test:'gradcap', quiz:'gradcap', class:'gradcap', lecture:'gradcap', school:'gradcap', college:'gradcap', university:'gradcap', course:'gradcap', degree:'gradcap',
+  lab:'flask', research:'flask', science:'flask', experiment:'flask', chemistry:'flask', biology:'flask',
+  design:'palette', present:'presentation', presentation:'presentation', pitch:'presentation', deck:'presentation', slides:'presentation',
+  review:'chart', report:'chart', data:'chart', analytics:'chart', stats:'chart', metrics:'chart', dashboard:'chart',
+  // Money
+  budget:'dollar', budgeting:'dollar', finance:'dollar', money:'dollar', save:'piggybank', savings:'piggybank',
+  pay:'creditcard', payment:'creditcard', venmo:'creditcard', bill:'receipt', bills:'receipt', invoice:'receipt', expense:'receipt',
+  taxes:'calculator', tax:'calculator', bank:'building', rent:'house', mortgage:'house', salary:'coins', payday:'coins',
+  // Health
+  doctor:'cross', clinic:'cross', hospital:'cross', checkup:'stethoscope', nurse:'cross',
+  medicine:'capsule', meds:'capsule', med:'capsule', pill:'capsule', pills:'capsule', vitamin:'capsule', vitamins:'capsule', supplement:'capsule', prescription:'pillbottle', pharmacy:'pillbottle', refill:'pillbottle',
+  vaccine:'syringe', shot:'syringe', jab:'syringe', therapy:'heart', therapist:'chat', doctorappt:'cross',
+  // Home & errands
+  home:'house', house:'house', apartment:'house', garden:'sprout', plant:'sprout', plants:'sprout', gardening:'sprout', water_plants:'sprout',
+  fix:'wrench', repair:'wrench', maintenance:'wrench', install:'wrench', assemble:'wrench', handyman:'wrench', plumber:'wrench',
+  wifi:'wifi', internet:'wifi', router:'wifi', trash:'trash', garbage:'trash', recycle:'trash', recycling:'trash', bins:'trash',
+  pet:'paw', dog:'dog', puppy:'dog', cat:'cat', kitten:'cat', vet:'cross', feed:'paw', litter:'paw', bird:'bird', fish:'fish',
+  key:'key', keys:'key', lock:'lock', move:'box', moving:'box', pack:'box', packing:'box',
+  delivery:'package', package:'package', order:'package', parcel:'package', amazon:'package',
+  // Fun & social
+  gift:'gift', birthday:'cake', anniversary:'heart', party:'party', celebrate:'party', celebration:'party',
+  game:'controller', gaming:'controller', play:'controller', video:'controller',
+  movie:'film', movies:'film', film:'film', cinema:'film', tv:'tv', show:'tv', stream:'tv', netflix:'tv', series:'tv',
+  music:'music', song:'music', playlist:'music', sing:'mic', karaoke:'mic', band:'guitar', guitar:'guitar', piano:'piano', practice:'music',
+  podcast:'headphones', listen:'headphones', audiobook:'headphones',
+  photo:'camera', photos:'camera', picture:'camera', pictures:'camera', camera:'camera', selfie:'camera',
+  chat:'chat', talk:'chat', text:'chat', message:'chat', friend:'chat', friends:'chat', hangout:'chat', social:'chat',
+  date:'heart', concert:'ticket', festival:'ticket', event:'ticket', ticket:'ticket', museum:'building', church:'church',
+  // Ideas & misc
+  idea:'bulb', brainstorm:'bulb', inspiration:'bulb', think:'brain', thinking:'brain',
+  important:'star', favorite:'star', priority:'flame', urgent:'flame', streak:'flame',
+  goal:'target', focus:'target', habit:'target', objective:'target', milestone:'target',
+  done:'check', complete:'check', finish:'check', search:'search', find:'search',
+  timer:'timer', pomodoro:'timer', time:'clock', wait:'hourglass', pray:'heart',
+  // Weather & nature
+  sun:'sun', sunny:'sun', rain:'rain', rainy:'rain', snow:'snow', storm:'storm', cloud:'cloud', cloudy:'cloud',
+  beach:'waves', ocean:'waves', sea:'waves', mountain:'mountain', tree:'tree', flower:'flower', hiking_trail:'hiking',
 }
 
 // Precompute each icon's searchable stems once (id name + keywords). Fast to
@@ -229,19 +301,21 @@ const GLYPH_INDEX = GLYPH_ALL.map(it => ({
   tokens: new Set(`${it.id} ${it.k}`.toLowerCase().split(/\s+/).map(stem)),
 }))
 
-// Guess the best-matching icon for a task title, e.g. "Gym session" → dumbbell,
-// "Dinner with parents" → restaurant, "Budgeting plan" → dollar, "Take the bus"
-// → bus. Meaningful title words (stemmed, synonym-expanded) are scored against
-// each glyph's name + keywords: an exact stem hit counts most, a shared prefix
-// (running↔run) counts less, and a hit on the icon's own name gets a small
-// bonus so the most on-the-nose icon wins ties. Returns "glyph:<id>" or null.
+// Guess the best-matching icon for a task title. First the direct INTENT map
+// (walk → walk, dentist → tooth) in title order — the intuitive, on-the-nose
+// path. If nothing matches there, fall back to scoring meaningful words against
+// every glyph's name + keywords (exact stem hit counts most). Returns
+// "glyph:<id>" or null when there's no confident match.
 export function suggestGlyph(title) {
   const raw = (title || '').toLowerCase().match(/[a-z]+/g) || []
-  const base = raw.filter(w => w.length >= 3 && !STOPWORDS.has(w))
-  // Expand synonyms, then stem, then dedupe.
-  const expanded = []
-  for (const w of base) { expanded.push(w); if (SYNONYMS[w]) expanded.push(SYNONYMS[w]) }
-  const words = [...new Set(expanded.map(stem))]
+  const meaningful = raw.filter(w => w.length >= 2 && !STOPWORDS.has(w))
+  // 1) Direct intent hit, honoring title word order (the first real word wins).
+  for (const w of meaningful) {
+    const hit = INTENT[w] || INTENT[stem(w)]
+    if (hit && GLYPHS[hit]) return 'glyph:' + hit
+  }
+  // 2) Keyword scoring fallback.
+  const words = [...new Set(meaningful.filter(w => w.length >= 3).map(stem))]
   if (!words.length) return null
   let bestId = null, best = 0
   for (const it of GLYPH_INDEX) {
@@ -252,14 +326,10 @@ export function suggestGlyph(title) {
         if (t === w) { s = 3; break }
         if (related(w, t)) s = Math.max(s, 2)
       }
-      // A hit on the icon's own name is the strongest signal.
-      if (w === it.name) s = 4
+      if (w === it.name) s = 4   // a hit on the icon's own name is strongest
       score += s
     }
     if (score > best) { best = score; bestId = it.id }
   }
-  // Only suggest when we're actually confident — require at least one exact
-  // word→token hit (score 3), not a merely "related" guess (score 2). Below
-  // that we return null so an item isn't auto-labeled with a wrong icon.
   return best >= 3 ? 'glyph:' + bestId : null
 }

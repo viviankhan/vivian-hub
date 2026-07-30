@@ -9,6 +9,10 @@ const P = (d) => <path d={d} />
 
 // ── id → inner SVG ──────────────────────────────────────────────
 export const EXTRA_GLYPHS = {
+  // Movement (also used by the base Fitness group + auto-suggest)
+  walk:        { el: <><circle cx="13.5" cy="4.3" r="2"/>{P("M13 6.6l-1.6 5 2.6 2 1.8 6M11.4 11.6 8 18M13 8.3l3 1.4M12 9l-3 1")}</> },
+  run:         { el: <><circle cx="14.5" cy="4.3" r="2"/>{P("M13.8 6.6l-3 3 2.2 2 1.4 6M13 11.6 9.5 16M15.2 8.6l3.3 1M11 10 8 9M15.5 13.6l2 5")}</> },
+  hourglass:   { el: P("M6 3h12M6 21h12M7 3c0 4 4 5 4 9M17 3c0 4-4 5-4 9M7 21c0-4 4-5 4-9M17 21c0-4-4-5-4-9") },
   // Activity & Sport
   yoga:        { el: <><circle cx="12" cy="5" r="2"/>{P("M12 7v5M4 10c3 1.5 5 1.5 8 1.5S17 11.5 20 10M8 20l4-8 4 8")}</> },
   meditation:  { el: <><circle cx="12" cy="6" r="2"/>{P("M6 20c0-3 2.5-5 6-5s6 2 6 5M4 15l4 1M20 15l-4 1")}</> },
@@ -233,6 +237,8 @@ export const EXTRA_GLYPHS = {
 // ── Picker groups (id + rich search keywords) ───────────────────
 export const EXTRA_GROUPS = [
   { name:'Activity & Sport', items:[
+    ['walk','walk walking stroll steps commute dog pedestrian'],
+    ['run','run running jog jogging sprint marathon exercise cardio'],
     ['yoga','yoga stretch pilates flexibility pose zen calm'],
     ['meditation','meditate meditation mindfulness calm breathe zen relax'],
     ['basketball','basketball hoops nba ball court sport game'],

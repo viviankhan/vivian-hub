@@ -5,6 +5,14 @@
 const EDIT_LOG = [
   {
     date: '2026-07-28',
+    summary: 'Icons auto-pick intuitively — “walk” finds a walking icon',
+    changes: [
+      'Fixed two icons that were showing up blank (walk/run and hourglass were referenced but never drawn) — now they render',
+      'Rebuilt the auto-icon guess around a direct word→icon map: typing “walk” gives a walking figure, “dentist” a tooth, “budget” a dollar, “groceries” a cart, and ~140 other everyday words map straight to a sensible icon',
+    ]
+  },
+  {
+    date: '2026-07-28',
     summary: 'Pale-yellow morning film + a cleaner minimalist icon set',
     changes: [
       'The morning routine film is now a soft pale yellow (an existing morning routine still on the old pink gets upgraded automatically)',
