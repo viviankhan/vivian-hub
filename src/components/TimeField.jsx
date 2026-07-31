@@ -52,22 +52,51 @@ export function parseTypedTime(raw) {
   return `${pad(hh)}:${pad(mm)}`
 }
 
-// One scrollable wheel column: scroll to (or tap) the value you want.
+// Height of a single wheel row. With a 150px-tall column, 57px top/bottom
+// spacers put row `i`'s center at exactly `i * ITEM_H` of scroll — so the
+// centered row is just `round(scrollTop / ITEM_H)`.
+const ITEM_H = 36
+
+// One scrollable wheel column — an iOS-style picker. Whatever row lands in the
+// middle is selected automatically when you stop scrolling; no tap required.
 function WheelCol({ items, value, onPick, fmt }) {
   const ref = useRef(null)
+  const settle = useRef(null)
+  const startIdx = Math.max(0, items.indexOf(value))
+
+  // Center the current value when the wheel opens (jump, no animation).
   useEffect(() => {
-    // Center the selected item when the wheel opens.
-    const el = ref.current?.querySelector('[data-on="1"]')
-    if (el) el.scrollIntoView({ block: 'center' })
+    if (ref.current) ref.current.scrollTop = startIdx * ITEM_H
+    return () => clearTimeout(settle.current)
   }, [])
+
+  // Debounced: once scrolling stops, snap to the nearest row and select it.
+  const onScroll = () => {
+    const el = ref.current
+    if (!el) return
+    clearTimeout(settle.current)
+    settle.current = setTimeout(() => {
+      const i = Math.max(0, Math.min(items.length - 1, Math.round(el.scrollTop / ITEM_H)))
+      const snapTop = i * ITEM_H
+      if (Math.abs(el.scrollTop - snapTop) > 1) el.scrollTo({ top: snapTop, behavior: 'smooth' })
+      if (items[i] !== value) onPick(items[i])
+    }, 110)
+  }
+
+  const jumpTo = (it) => {
+    const i = items.indexOf(it)
+    if (ref.current) ref.current.scrollTo({ top: i * ITEM_H, behavior: 'smooth' })
+    onPick(it)
+  }
+
   return (
-    <div ref={ref} style={{ flex:1, height:150, overflowY:'auto', scrollSnapType:'y mandatory', WebkitOverflowScrolling:'touch' }}>
+    <div ref={ref} onScroll={onScroll} style={{ flex:1, height:150, overflowY:'auto', scrollSnapType:'y mandatory', WebkitOverflowScrolling:'touch' }}>
       <div style={{ height:57 }} />
       {items.map(it => {
         const on = value === it
         return (
-          <div key={it} data-on={on ? '1' : '0'} onClick={() => onPick(it)}
-            style={{ scrollSnapAlign:'center', padding:'8px 0', textAlign:'center', fontSize:16, cursor:'pointer', borderRadius:9,
+          <div key={it} onClick={() => jumpTo(it)}
+            style={{ scrollSnapAlign:'center', height:ITEM_H, lineHeight:`${ITEM_H}px`, textAlign:'center', fontSize:16, cursor:'pointer', borderRadius:9,
               fontWeight: on ? 700 : 500, color: on ? 'white' : 'var(--text)', background: on ? 'var(--teal)' : 'transparent',
               fontVariantNumeric:'tabular-nums' }}>
             {fmt ? fmt(it) : it}
@@ -82,26 +111,17 @@ function WheelCol({ items, value, onPick, fmt }) {
 const HOURS = [12, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
 const MINUTES = [0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55]
 
-// "From now" offsets, in minutes — the intuitive way to set a start time
-// relative to the moment you're adding the task ("in 30 min", "in 2 hours").
-const REL_OFFSETS = [0, 5, 10, 15, 20, 30, 45, 60, 75, 90, 105, 120, 150, 180, 240, 300, 360]
-function relLabel(mins) {
-  if (mins === 0) return 'Now'
-  if (mins < 60) return `in ${mins} min`
-  const h = Math.floor(mins / 60), m = mins % 60
-  if (m === 0) return `in ${h} hr`
-  return `in ${h}h ${m}m`
-}
-// The clock time you'd land on if you picked this offset right now.
-function fromNow(mins) {
-  const d = new Date(Date.now() + mins * 60000)
-  return `${pad(d.getHours())}:${pad(d.getMinutes())}`
+// The current time, rounded to the nearest 5 minutes — what the wheel opens on
+// when no time is set yet, so it "starts at now".
+function nowRounded() {
+  const d = new Date()
+  const total = (d.getHours() * 60 + Math.round(d.getMinutes() / 5) * 5) % (24 * 60)
+  return `${pad(Math.floor(total / 60))}:${pad(total % 60)}`
 }
 
 export default function TimeField({ value, onChange, style, placeholder = 'e.g. 9:30 AM', disabled, ...rest }) {
   const [text, setText] = useState(() => timeToDisplay(value))
   const [open, setOpen] = useState(false)
-  const [mode, setMode] = useState('clock')   // 'clock' | 'rel' (from now)
   const lastEmit = useRef(value || '')
   const wrapRef = useRef(null)
 
@@ -130,8 +150,9 @@ export default function TimeField({ value, onChange, style, placeholder = 'e.g. 
     else if (!shown.trim()) { lastEmit.current = ''; onChange('') }
   }
 
-  // Current value broken into wheel parts (defaults to 9:00 AM when empty).
-  const parsed = parseTypedTime(text) || parseTypedTime(value) || '09:00'
+  // Current value broken into wheel parts. With nothing set yet, the wheel
+  // opens on the current time rather than a fixed default.
+  const parsed = parseTypedTime(text) || parseTypedTime(value) || nowRounded()
   let [H, M] = parsed.split(':').map(Number)
   const mer = H >= 12 ? 'PM' : 'AM'
   const h12 = H % 12 || 12
@@ -143,17 +164,12 @@ export default function TimeField({ value, onChange, style, placeholder = 'e.g. 
 
   const invalid = text.trim() !== '' && !parseTypedTime(text)
 
-  // Which "from now" offset best matches the current value, so that column can
-  // highlight it. Null when there's no value yet (nothing highlighted).
-  const relSelected = (() => {
-    const cur = parseTypedTime(text) || (value ? parseTypedTime(value) : null)
-    if (!cur) return null
-    const [hh, mm] = cur.split(':').map(Number)
-    const nowD = new Date()
-    let off = (hh * 60 + mm) - (nowD.getHours() * 60 + nowD.getMinutes())
-    if (off < 0) off += 24 * 60           // treat an earlier clock time as tomorrow-ish
-    return REL_OFFSETS.reduce((best, o) => Math.abs(o - off) < Math.abs(best - off) ? o : best, REL_OFFSETS[0])
-  })()
+  // Closing the wheel: if nothing's been set yet, accept whatever's centered
+  // (which starts at "now") — so a time can be picked entirely by scrolling.
+  const closeWheel = () => {
+    if (!lastEmit.current) setPart(h12, M, mer)
+    setOpen(false)
+  }
 
   return (
     <div ref={wrapRef} style={{ position:'relative', width: (style && style.width) || '100%' }}>
@@ -172,37 +188,15 @@ export default function TimeField({ value, onChange, style, placeholder = 'e.g. 
       </button>
       {open && (
         <div style={{ position:'absolute', zIndex:60, top:'106%', left:0, minWidth:'100%', width:'max(100%, 230px)', background:'white', border:'1px solid var(--border)', borderRadius:14, boxShadow:'0 16px 40px rgba(40,60,80,.22)', padding:'8px 8px 10px' }}>
-            {/* Mode switch: pick a clock time, or scroll to a time from now. */}
-            <div style={{ display:'flex', gap:4, padding:3, borderRadius:10, background:'#EFECF2', marginBottom:8 }}>
-              {[['clock','Clock'],['rel','From now']].map(([v, l]) => (
-                <button key={v} type="button" onClick={() => setMode(v)}
-                  style={{ flex:1, padding:'6px 4px', borderRadius:8, border:'none', cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontSize:12, fontWeight:600,
-                    background: mode === v ? 'white' : 'transparent', color: mode === v ? 'var(--teal)' : 'var(--muted)',
-                    boxShadow: mode === v ? '0 1px 3px rgba(40,60,80,.14)' : 'none' }}>{l}</button>
-              ))}
-            </div>
-          {mode === 'clock' ? (
-            <div style={{ position:'relative', display:'flex', gap:4 }}>
-              {/* center highlight guides */}
-              <div style={{ position:'absolute', left:0, right:0, top:'50%', transform:'translateY(-50%)', height:34, borderTop:'1px solid #EEE9F0', borderBottom:'1px solid #EEE9F0', pointerEvents:'none' }} />
-              <WheelCol items={HOURS} value={h12} onPick={h => setPart(h, M, mer)} />
-              <div style={{ alignSelf:'center', fontSize:16, fontWeight:700, color:'var(--muted)' }}>:</div>
-              <WheelCol items={MINUTES} value={M - (M % 5)} onPick={m => setPart(h12, m, mer)} fmt={m => String(m).padStart(2, '0')} />
-              <WheelCol items={['AM', 'PM']} value={mer} onPick={me => setPart(h12, M, me)} />
-            </div>
-          ) : (
-            <div style={{ position:'relative', display:'flex' }}>
-              <div style={{ position:'absolute', left:0, right:0, top:'50%', transform:'translateY(-50%)', height:34, borderTop:'1px solid #EEE9F0', borderBottom:'1px solid #EEE9F0', pointerEvents:'none' }} />
-              <WheelCol items={REL_OFFSETS} value={relSelected} onPick={off => emit(fromNow(off))}
-                fmt={off => (
-                  <span style={{ display:'inline-flex', alignItems:'baseline', gap:7, justifyContent:'center' }}>
-                    <span>{relLabel(off)}</span>
-                    <span style={{ fontSize:11, opacity:.7 }}>{timeToDisplay(fromNow(off))}</span>
-                  </span>
-                )} />
-            </div>
-          )}
-          <button type="button" onClick={() => setOpen(false)}
+          <div style={{ position:'relative', display:'flex', gap:4 }}>
+            {/* center highlight band — whatever sits here is the selected value */}
+            <div style={{ position:'absolute', left:0, right:0, top:'50%', transform:'translateY(-50%)', height:ITEM_H, borderTop:'1px solid #EEE9F0', borderBottom:'1px solid #EEE9F0', pointerEvents:'none' }} />
+            <WheelCol items={HOURS} value={h12} onPick={h => setPart(h, M, mer)} />
+            <div style={{ alignSelf:'center', fontSize:16, fontWeight:700, color:'var(--muted)' }}>:</div>
+            <WheelCol items={MINUTES} value={M - (M % 5)} onPick={m => setPart(h12, m, mer)} fmt={m => String(m).padStart(2, '0')} />
+            <WheelCol items={['AM', 'PM']} value={mer} onPick={me => setPart(h12, M, me)} />
+          </div>
+          <button type="button" onClick={closeWheel}
             style={{ width:'100%', marginTop:8, padding:'8px', borderRadius:10, border:'none', background:'var(--forest)', color:'var(--green-light)', fontWeight:600, fontSize:12, cursor:'pointer', fontFamily:'DM Sans,sans-serif' }}>Done</button>
         </div>
       )}

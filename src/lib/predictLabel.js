@@ -39,19 +39,28 @@ function stripTimePrefix(label) {
   return String(label || '').replace(/^~?\s*\d{1,2}:\d{2}\s*(?:AM|PM)?\s*[—–-]\s*/i, '')
 }
 
-// Build a word → { catId: count } model from history. `history` is a list of
-// { title, cat } pairs (commitments + recurring templates the user has made).
+// Build a model from history. `history` is a list of { title, cat } pairs
+// (commitments + recurring templates the user has made). Returns:
+//   words  — Map(word -> Map(catId -> count))
+//   catDocs — Map(catId -> how many items carry that label)
+//   total  — number of labeled items
+// catDocs/total let us down-weight a label that's on nearly everything (e.g.
+// tasks that were auto-tagged "Lab" before), so it doesn't drown real signal.
 export function buildLabelModel(history = []) {
-  const model = new Map()   // word -> Map(catId -> count)
+  const words = new Map()
+  const catDocs = new Map()
+  let total = 0
   for (const item of history) {
     if (!item || !item.cat) continue
+    total++
+    catDocs.set(item.cat, (catDocs.get(item.cat) || 0) + 1)
     for (const w of tokens(item.title)) {
-      let counts = model.get(w)
-      if (!counts) { counts = new Map(); model.set(w, counts) }
+      let counts = words.get(w)
+      if (!counts) { counts = new Map(); words.set(w, counts) }
       counts.set(item.cat, (counts.get(item.cat) || 0) + 1)
     }
   }
-  return model
+  return { words, catDocs, total }
 }
 
 // Turn the app's raw data into the { title, cat } history the model wants.
@@ -68,34 +77,58 @@ export function historyFromData({ commitments = [], recurring = [] } = {}) {
   return out
 }
 
+// Two words count as related if one is a prefix of the other (min length 4), so
+// "work" lines up with "workout"/"working" and "meet" with "meeting".
+function related(a, b) {
+  if (a === b) return true
+  if (a.length < 4 || b.length < 4) return false
+  return a.startsWith(b) || b.startsWith(a)
+}
+
 // Predict a category id for a title, or null when there isn't enough signal.
 // `validIds` (when given) restricts predictions to categories that still exist.
 export function predictLabel(title, model, validIds = null) {
-  if (!model || !model.size) return null
+  if (!model || !model.words || !model.words.size) return null
   const words = tokens(title)
   if (!words.length) return null
 
+  // Inverse-frequency weight per category: a label that's on almost every task
+  // (like a stale blanket "Lab") carries little signal; a selective one carries
+  // a lot. log(1 + total/catDocs) → ~0.7 for an everything-label, larger for
+  // rare ones.
+  const idf = (cat) => {
+    const dc = model.catDocs.get(cat) || 1
+    return Math.log(1 + (model.total || 1) / dc)
+  }
+
   const score = new Map()   // catId -> summed evidence
   let anyEvidence = false
-  for (const w of words) {
-    const counts = model.get(w)
-    if (!counts) continue
+  const addFrom = (counts, weight) => {
     for (const [cat, n] of counts) {
       if (validIds && !validIds.has(cat)) continue
-      score.set(cat, (score.get(cat) || 0) + n)
+      score.set(cat, (score.get(cat) || 0) + n * weight * idf(cat))
       anyEvidence = true
+    }
+  }
+  for (const w of words) {
+    const exact = model.words.get(w)
+    if (exact) addFrom(exact, 2)   // an exact word match is the strongest signal
+    // Also credit related words (prefix match) at a lower weight, so a close
+    // variant of a word you've labeled before still contributes.
+    for (const [key, counts] of model.words) {
+      if (key !== w && related(w, key)) addFrom(counts, 0.5)
     }
   }
   if (!anyEvidence) return null
 
-  // Highest-scoring category, requiring a small margin so a single ambiguous
-  // word (one that's gone with several labels equally) doesn't force a guess.
+  // Highest-scoring category, requiring a clear lead over the runner-up so a
+  // word that's gone with several labels equally doesn't force a guess.
   let bestCat = null, best = 0, second = 0
   for (const [cat, s] of score) {
     if (s > best) { second = best; best = s; bestCat = cat }
     else if (s > second) { second = s }
   }
-  // Need at least 2 supporting observations, and a clear lead over the runner-up.
-  if (best >= 2 && best > second) return bestCat
+  // A single confident, unambiguous past match is enough to predict.
+  if (best >= 1 && best > second + 0.01) return bestCat
   return null
 }
