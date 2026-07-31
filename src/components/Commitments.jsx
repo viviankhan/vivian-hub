@@ -507,7 +507,7 @@ function CommitCard({ c, todos, weekState, syncToggle, onDelete, onSchedule, onE
 }
 
 // ── Main ───────────────────────────────────────────────────────
-export default function Commitments({ commitments, addCommitment, updateCommitment, deleteCommitment, todos, weekState, syncToggle, scheduled, categories, addRecurringTask }) {
+export default function Commitments({ commitments, addCommitment, updateCommitment, deleteCommitment, todos, weekState, syncToggle, scheduled, categories, addRecurringTask, labelModel = null }) {
   const [filter, setFilter] = useState('toschedule')
   const [confirmClear, setConfirmClear] = useState(false)
   const [editing, setEditing] = useState(null)
@@ -601,7 +601,7 @@ export default function Commitments({ commitments, addCommitment, updateCommitme
         <span style={{ fontFamily:'DM Sans, sans-serif', fontSize:13, color:'#1A3A4E', fontWeight:600 }}>Add a commitment</span>
       </button>
       {adding && (
-        <AddItemModal categories={categories} onSave={handleAddNew} onClose={() => setAdding(false)} title="Add a commitment" />
+        <AddItemModal categories={categories} labelModel={labelModel} onSave={handleAddNew} onClose={() => setAdding(false)} title="Add a commitment" />
       )}
 
       {(commitments||[]).length > 0 && (

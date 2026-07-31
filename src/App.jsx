@@ -31,7 +31,9 @@ import EventsManager from './components/EventsManager.jsx'
 import ThoughtsBoard from './components/ThoughtsBoard.jsx'
 import NotificationsSettings from './components/NotificationsSettings.jsx'
 import SearchOverlay, { SearchIcon } from './components/SearchOverlay.jsx'
-import { registerServiceWorker, syncReminders } from './lib/notifications.js'
+import { registerServiceWorker, syncReminders, notifyArrival } from './lib/notifications.js'
+import { buildLabelModel, historyFromData } from './lib/predictLabel.js'
+import { geolocationSupported, watchArrivals } from './lib/geofence.js'
 import { Glyph } from './lib/glyphs.jsx'
 import Customization from './components/Customization.jsx'
 import { getFontPref, setFontPref, applyFont, getThemePref, setThemePref, applyTheme,
@@ -331,6 +333,41 @@ export default function App() {
     return () => document.removeEventListener('visibilitychange', onVis)
   }, [loading, events, commitments, recurringReminderItems])
 
+  // ── Label prediction model ───────────────────────────────────
+  // Learn which labels your tasks tend to carry, so the add sheet can predict a
+  // label from a new title instead of forcing a blind default. Rebuilds when the
+  // history (commitments / recurring templates) changes.
+  const labelModel = useMemo(
+    () => buildLabelModel(historyFromData({ commitments, recurring: recurringTaskRows })),
+    [commitments, recurringTaskRows],
+  )
+
+  // ── Location arrival auto-start ──────────────────────────────
+  // Watch the device position while Bloom is open; when it reaches a task's
+  // tagged location, stamp `startedAt` so the task's progress begins — no matter
+  // the time it was set for — and nudge you that it started.
+  useEffect(() => {
+    if (loading || !geolocationSupported()) return
+    // Current set of not-done, located, not-yet-started commitments. Read fresh
+    // on each position update via the getter so it tracks live state.
+    const getLocatedTasks = () => commitments
+      .filter(c => !c.done && commitmentMeta[c.id]?.location && !commitmentMeta[c.id]?.startedAt)
+      .map(c => ({ id: c.id, name: c.text, location: commitmentMeta[c.id].location }))
+    if (!getLocatedTasks().length) return
+
+    const stop = watchArrivals(getLocatedTasks, (task) => {
+      setCommitmentMeta_(prev => {
+        if (prev[task.id]?.startedAt) return prev            // already started
+        const merged = { ...(prev[task.id] || {}), startedAt: Date.now() }
+        const next = { ...prev, [task.id]: merged }
+        setCommitmentMeta(next).catch(reportSaveError)
+        return next
+      })
+      notifyArrival(task.name)
+    })
+    return stop
+  }, [loading, commitments, commitmentMeta])
+
   // ── Persist helpers ──────────────────────────────────────────
   // Cloud write failures are surfaced instead of swallowed — otherwise a delete
   // looks like it worked (local state updates) but silently reverts on next load.
@@ -508,13 +545,13 @@ export default function App() {
   // commitments table has a single `cat` column). Only stored when there's more
   // than one — a single label is fully covered by the `cat` column.
   const addCommitment = useCallback(async c => {
-    const { description, subtasks, cats, color, icon, ...core } = c
+    const { description, subtasks, cats, color, icon, location, startedAt, ...core } = c
     try {
       const created = await dbAddCommitment(core)
       setCommitments_(prev => [created, ...prev])
       const hasCats = Array.isArray(cats) && cats.length > 1
-      const extra = { ...(hasCats ? { cats } : {}), ...(color ? { color } : {}), ...(icon ? { icon } : {}) }
-      if ((description && description.trim()) || (subtasks && subtasks.length) || hasCats || color || icon) {
+      const extra = { ...(hasCats ? { cats } : {}), ...(color ? { color } : {}), ...(icon ? { icon } : {}), ...(location ? { location } : {}), ...(startedAt ? { startedAt } : {}) }
+      if ((description && description.trim()) || (subtasks && subtasks.length) || hasCats || color || icon || location || startedAt) {
         setCommitmentMeta_(prev => {
           const next = { ...prev, [created.id]: { description: description || '', subtasks: subtasks || [], ...extra } }
           setCommitmentMeta(next).catch(reportSaveError)
@@ -524,13 +561,13 @@ export default function App() {
     } catch (e) { reportSaveError(e) }
   }, [])
   const updateCommitment = useCallback(async (id, changes) => {
-    const { description, subtasks, cats, color, icon, ...core } = changes
+    const { description, subtasks, cats, color, icon, location, startedAt, ...core } = changes
     try {
       if (Object.keys(core).length) {
         const updated = await dbUpdateCommitment(id, core)
         setCommitments_(prev => prev.map(c => c.id===id ? updated : c))
       }
-      if (description !== undefined || subtasks !== undefined || cats !== undefined || color !== undefined || icon !== undefined) {
+      if (description !== undefined || subtasks !== undefined || cats !== undefined || color !== undefined || icon !== undefined || location !== undefined || startedAt !== undefined) {
         setCommitmentMeta_(prev => {
           const merged = { ...(prev[id] || {}) }
           if (description !== undefined) merged.description = description
@@ -546,6 +583,14 @@ export default function App() {
           if (icon !== undefined) {
             if (icon) merged.icon = icon
             else delete merged.icon
+          }
+          if (location !== undefined) {
+            if (location) merged.location = location
+            else delete merged.location
+          }
+          if (startedAt !== undefined) {
+            if (startedAt) merged.startedAt = startedAt
+            else delete merged.startedAt
           }
           const next = { ...prev, [id]: merged }
           setCommitmentMeta(next).catch(reportSaveError)
@@ -670,6 +715,8 @@ export default function App() {
     cats: commitmentMeta[c.id]?.cats ?? (c.cat ? [c.cat] : []),
     color: commitmentMeta[c.id]?.color ?? null,
     icon: commitmentMeta[c.id]?.icon ?? null,
+    location: commitmentMeta[c.id]?.location ?? null,
+    startedAt: commitmentMeta[c.id]?.startedAt ?? null,
   }))
 
   const sharedProps = {
@@ -683,6 +730,8 @@ export default function App() {
     vacations, addVacation, deleteVacation,
     events, addEvent, deleteEvent,
     categories,
+    // History-based label prediction for the add sheet (no blind defaults).
+    labelModel,
     // Unified recurring schedule — the rule-enriched templates, the synced skip
     // map, and the operations Today/Week/Calendar share so all three stay in sync.
     recurringTasks: recurringTasksEnriched,

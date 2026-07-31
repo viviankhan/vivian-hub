@@ -82,9 +82,26 @@ function WheelCol({ items, value, onPick, fmt }) {
 const HOURS = [12, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
 const MINUTES = [0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55]
 
+// "From now" offsets, in minutes — the intuitive way to set a start time
+// relative to the moment you're adding the task ("in 30 min", "in 2 hours").
+const REL_OFFSETS = [0, 5, 10, 15, 20, 30, 45, 60, 75, 90, 105, 120, 150, 180, 240, 300, 360]
+function relLabel(mins) {
+  if (mins === 0) return 'Now'
+  if (mins < 60) return `in ${mins} min`
+  const h = Math.floor(mins / 60), m = mins % 60
+  if (m === 0) return `in ${h} hr`
+  return `in ${h}h ${m}m`
+}
+// The clock time you'd land on if you picked this offset right now.
+function fromNow(mins) {
+  const d = new Date(Date.now() + mins * 60000)
+  return `${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
 export default function TimeField({ value, onChange, style, placeholder = 'e.g. 9:30 AM', disabled, ...rest }) {
   const [text, setText] = useState(() => timeToDisplay(value))
   const [open, setOpen] = useState(false)
+  const [mode, setMode] = useState('clock')   // 'clock' | 'rel' (from now)
   const lastEmit = useRef(value || '')
   const wrapRef = useRef(null)
 
@@ -126,6 +143,18 @@ export default function TimeField({ value, onChange, style, placeholder = 'e.g. 
 
   const invalid = text.trim() !== '' && !parseTypedTime(text)
 
+  // Which "from now" offset best matches the current value, so that column can
+  // highlight it. Null when there's no value yet (nothing highlighted).
+  const relSelected = (() => {
+    const cur = parseTypedTime(text) || (value ? parseTypedTime(value) : null)
+    if (!cur) return null
+    const [hh, mm] = cur.split(':').map(Number)
+    const nowD = new Date()
+    let off = (hh * 60 + mm) - (nowD.getHours() * 60 + nowD.getMinutes())
+    if (off < 0) off += 24 * 60           // treat an earlier clock time as tomorrow-ish
+    return REL_OFFSETS.reduce((best, o) => Math.abs(o - off) < Math.abs(best - off) ? o : best, REL_OFFSETS[0])
+  })()
+
   return (
     <div ref={wrapRef} style={{ position:'relative', width: (style && style.width) || '100%' }}>
       <input
@@ -143,14 +172,36 @@ export default function TimeField({ value, onChange, style, placeholder = 'e.g. 
       </button>
       {open && (
         <div style={{ position:'absolute', zIndex:60, top:'106%', left:0, minWidth:'100%', width:'max(100%, 230px)', background:'white', border:'1px solid var(--border)', borderRadius:14, boxShadow:'0 16px 40px rgba(40,60,80,.22)', padding:'8px 8px 10px' }}>
-          <div style={{ position:'relative', display:'flex', gap:4 }}>
-            {/* center highlight guides */}
-            <div style={{ position:'absolute', left:0, right:0, top:'50%', transform:'translateY(-50%)', height:34, borderTop:'1px solid #EEE9F0', borderBottom:'1px solid #EEE9F0', pointerEvents:'none' }} />
-            <WheelCol items={HOURS} value={h12} onPick={h => setPart(h, M, mer)} />
-            <div style={{ alignSelf:'center', fontSize:16, fontWeight:700, color:'var(--muted)' }}>:</div>
-            <WheelCol items={MINUTES} value={M - (M % 5)} onPick={m => setPart(h12, m, mer)} fmt={m => String(m).padStart(2, '0')} />
-            <WheelCol items={['AM', 'PM']} value={mer} onPick={me => setPart(h12, M, me)} />
-          </div>
+            {/* Mode switch: pick a clock time, or scroll to a time from now. */}
+            <div style={{ display:'flex', gap:4, padding:3, borderRadius:10, background:'#EFECF2', marginBottom:8 }}>
+              {[['clock','Clock'],['rel','From now']].map(([v, l]) => (
+                <button key={v} type="button" onClick={() => setMode(v)}
+                  style={{ flex:1, padding:'6px 4px', borderRadius:8, border:'none', cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontSize:12, fontWeight:600,
+                    background: mode === v ? 'white' : 'transparent', color: mode === v ? 'var(--teal)' : 'var(--muted)',
+                    boxShadow: mode === v ? '0 1px 3px rgba(40,60,80,.14)' : 'none' }}>{l}</button>
+              ))}
+            </div>
+          {mode === 'clock' ? (
+            <div style={{ position:'relative', display:'flex', gap:4 }}>
+              {/* center highlight guides */}
+              <div style={{ position:'absolute', left:0, right:0, top:'50%', transform:'translateY(-50%)', height:34, borderTop:'1px solid #EEE9F0', borderBottom:'1px solid #EEE9F0', pointerEvents:'none' }} />
+              <WheelCol items={HOURS} value={h12} onPick={h => setPart(h, M, mer)} />
+              <div style={{ alignSelf:'center', fontSize:16, fontWeight:700, color:'var(--muted)' }}>:</div>
+              <WheelCol items={MINUTES} value={M - (M % 5)} onPick={m => setPart(h12, m, mer)} fmt={m => String(m).padStart(2, '0')} />
+              <WheelCol items={['AM', 'PM']} value={mer} onPick={me => setPart(h12, M, me)} />
+            </div>
+          ) : (
+            <div style={{ position:'relative', display:'flex' }}>
+              <div style={{ position:'absolute', left:0, right:0, top:'50%', transform:'translateY(-50%)', height:34, borderTop:'1px solid #EEE9F0', borderBottom:'1px solid #EEE9F0', pointerEvents:'none' }} />
+              <WheelCol items={REL_OFFSETS} value={relSelected} onPick={off => emit(fromNow(off))}
+                fmt={off => (
+                  <span style={{ display:'inline-flex', alignItems:'baseline', gap:7, justifyContent:'center' }}>
+                    <span>{relLabel(off)}</span>
+                    <span style={{ fontSize:11, opacity:.7 }}>{timeToDisplay(fromNow(off))}</span>
+                  </span>
+                )} />
+            </div>
+          )}
           <button type="button" onClick={() => setOpen(false)}
             style={{ width:'100%', marginTop:8, padding:'8px', borderRadius:10, border:'none', background:'var(--forest)', color:'var(--green-light)', fontWeight:600, fontSize:12, cursor:'pointer', fontFamily:'DM Sans,sans-serif' }}>Done</button>
         </div>
