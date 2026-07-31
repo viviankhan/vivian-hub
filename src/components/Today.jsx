@@ -396,7 +396,7 @@ function TimelineBlock({ task, categories, status, now, prevColor, nextColor, ro
   const catFound = (categories || []).find(x => x.id === task.tag)
   const catColor = catFound?.color || TAG_COLORS[task.tag] || '#9CA3AF'
   const color    = task.color || catColor
-  const catLabel = catFound?.label || task.tag
+  const catLabel = catFound?.label || (task.tag || '')
   const catIcon  = catFound?.icon || ''
   const timeMins = task._mins ?? parseTimeMins(task.label)
   const title    = task.title || stripTimePrefix(task.label)
@@ -461,7 +461,7 @@ function TimelineBlock({ task, categories, status, now, prevColor, nextColor, ro
               along the task is: elapsed time while it's happening, and/or the
               share of its subtasks that are checked off. */}
           {(() => {
-            const p = isDone ? null : taskProgress({ date: dateKey, time: task._time, durationMins: task._dur, subDone: task.subDone, subCount: task.subCount })
+            const p = isDone ? null : taskProgress({ date: dateKey, time: task._time, durationMins: task._dur, subDone: task.subDone, subCount: task.subCount, startedAt: task.startedAt })
             const shade = iconColorOn(color) === '#FFFFFF' ? 'rgba(255,255,255,.34)' : 'rgba(0,0,0,.16)'
             // Fill from the top so the elapsed portion (and its lower edge)
             // tracks downward as the day advances — matching the now-line.
@@ -496,7 +496,7 @@ function TimelineBlock({ task, categories, status, now, prevColor, nextColor, ro
           </div>
           {task.note && <div style={{ fontSize:12, color:'var(--muted)', marginTop:3, lineHeight:1.4 }}>{task.note}</div>}
           <div style={{ display:'flex', gap:6, marginTop:7, flexWrap:'wrap', alignItems:'center' }}>
-            <span style={{ display:'inline-flex', alignItems:'center', gap:3, fontSize:9, padding:'2px 7px', borderRadius:6, background:`${color}1c`, color, fontWeight:700, letterSpacing:.6, textTransform:'uppercase' }}>{catIcon && <Icon value={catIcon} size={11} />}{catLabel}</span>
+            {catLabel && <span style={{ display:'inline-flex', alignItems:'center', gap:3, fontSize:9, padding:'2px 7px', borderRadius:6, background:`${color}1c`, color, fontWeight:700, letterSpacing:.6, textTransform:'uppercase' }}>{catIcon && <Icon value={catIcon} size={11} />}{catLabel}</span>}
             {task.subCount>0 && (
               <button onClick={e=>{ e.stopPropagation(); onToggleSub ? setSubOpen(o=>!o) : null }}
                 style={{ display:'inline-flex', alignItems:'center', gap:4, fontSize:10, fontWeight:700, padding:'2px 8px', borderRadius:12, border:'none', background:'#EEECF0', color:'var(--muted)', cursor:onToggleSub?'pointer':'default', fontFamily:'DM Sans,sans-serif' }}>
@@ -653,7 +653,7 @@ function WeekStrip({ viewDate, setViewDate, commitments, categories, doneCount, 
 }
 
 // ── Main ───────────────────────────────────────────────────────
-export default function Today({ todos, weekState, syncToggle, commitments, addCommitment, updateCommitment, deleteCommitment, appendLog, scheduled, categories, recurringTasks, recurringExceptions, skipRecurringOccurrence, deleteRecurringTask, addRecurringTask, updateRecurringTask, routines = [], summary }) {
+export default function Today({ todos, weekState, syncToggle, commitments, addCommitment, updateCommitment, deleteCommitment, appendLog, scheduled, categories, recurringTasks, recurringExceptions, skipRecurringOccurrence, deleteRecurringTask, addRecurringTask, updateRecurringTask, routines = [], summary, labelModel = null }) {
   const [now,         setNow]         = useState(nowMins())
   // The day the timeline is showing. Defaults to today; the week strip up top
   // navigates to any day. "Now" logic (the progress marker, current/overdue,
@@ -779,8 +779,9 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
       id:c.id, label:c.time?`${fmt12(c.time)} — ${c.text}`:c.text,
       title:c.text,
       note:[c.person&&`With: ${c.person}`,c.prepMin&&`Leave ${c.prepMin} min early`].filter(Boolean).join(' · '),
-      tag:c.cat||'personal', isCommitment:true,
+      tag:c.cat||null, isCommitment:true,
       color:c.color||null, icon:c.icon||null, _time:c.time||null, _dur:c.durationMins||null,
+      startedAt:c.startedAt||null,
       subtasks:Array.isArray(c.subtasks)?c.subtasks:[],
       subCount:Array.isArray(c.subtasks)?c.subtasks.length:0,
       subDone:Array.isArray(c.subtasks)?c.subtasks.filter(s=>s.done).length:0,
@@ -1189,7 +1190,7 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
         onClose={()=>setFocusTask(null)} />}
       {shiftPlan&&<ShiftChooser plan={shiftPlan} onApply={(ids)=>{applyShift(shiftPlan.pivot, ids); setShiftPlan(null)}} onCancel={()=>setShiftPlan(null)}/>}
       {shiftResult&&<ShiftToast result={shiftResult} onClose={()=>setShiftResult(null)}/>}
-      {addingTask&&<AddItemModal presetDate={dateKey} categories={categories} routines={routines} onSave={handleAdd} onSaveRecurring={addRecurringTask} onClose={()=>setAddingTask(false)} title="Add to Today"/>}
+      {addingTask&&<AddItemModal presetDate={dateKey} categories={categories} routines={routines} labelModel={labelModel} onSave={handleAdd} onSaveRecurring={addRecurringTask} onClose={()=>setAddingTask(false)} title="Add to Today"/>}
       {editing&&<AddItemModal existing={editing} categories={categories} routines={routines} onSave={handleSaveEdit}
         onSaveRecurring={addRecurringTask}
         onDelete={c=>deleteCommitment&&deleteCommitment(c.id)}

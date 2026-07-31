@@ -7,13 +7,16 @@
 // "in 1 hour" nudges before each one starts.
 //
 // How it fires:
-//   • While Bloom is open, a timer fires each reminder at its moment.
-//   • When you (re)open Bloom, we "catch up" — anything whose reminder time
-//     passed while the app was closed, but whose event is still upcoming,
-//     fires right away so you don't miss it.
+//   • Where the browser supports the Notification Triggers API (Chrome/Android
+//     and installed PWAs), each upcoming reminder is handed to the OS ahead of
+//     time, so it fires at the right moment even if Bloom has been fully closed
+//     for days — you no longer have to open the app for a reminder to arrive.
+//   • Everywhere else we fall back to the older scheme: a timer fires each
+//     reminder while Bloom is open, and on (re)open we "catch up" — anything
+//     whose reminder time passed while the app was closed, but whose event is
+//     still upcoming, fires right away so you don't miss it.
 // Each reminder is remembered as "fired" in localStorage so you only ever get
-// it once. Truly-in-the-background reminders (app fully closed) need a push
-// server — see SETUP.md.
+// it once.
 // ─────────────────────────────────────────────────────────────
 
 const FIRED_KEY = 'vivian_fired_reminders'
@@ -104,6 +107,57 @@ const MAX_TIMER_MS = 6 * 60 * 60 * 1000 // 6 hours
 
 let timers = []
 let swRegistration = null
+
+// ── Background scheduling (Notification Triggers API) ──────────
+// Where supported, a notification can be handed to the OS with a TimestampTrigger
+// so it fires at its moment even when the app is fully closed — no push server,
+// no open tab required. This is what makes reminders arrive when you haven't
+// opened Bloom recently. Feature-detected; everything degrades to the timer +
+// catch-up path when it's missing (Safari/iOS, Firefox).
+export function triggersSupported() {
+  return typeof window !== 'undefined' &&
+    'Notification' in window &&
+    'showTrigger' in Notification.prototype &&
+    typeof window.TimestampTrigger !== 'undefined'
+}
+// Tags we've scheduled as OS triggers this session, so a later sync can cancel
+// any that no longer correspond to a live reminder (deleted/rescheduled items).
+const scheduledTriggerTags = new Set()
+
+async function scheduleTriggeredReminder(reminder) {
+  if (!swRegistration) return
+  try {
+    await swRegistration.showNotification(headingFor(reminder, reminder.at), {
+      body: reminder.body,
+      tag: reminder.id,
+      data: { url: reminder.url },
+      icon: BASE + 'icon-192.png',
+      badge: BASE + 'icon-192.png',
+      requireInteraction: false,
+      showTrigger: new window.TimestampTrigger(reminder.at),
+    })
+    scheduledTriggerTags.add(reminder.id)
+  } catch (e) {
+    // A browser can advertise the API but reject a specific trigger; fall back
+    // to the timer path for anything due soon.
+    console.warn('[notifications] trigger schedule failed:', e)
+  }
+}
+
+// Cancel any OS-scheduled (not-yet-fired) reminders whose tag is no longer live
+// — e.g. the item was deleted, retimed, or completed since we scheduled it.
+async function reconcileTriggered(liveTags) {
+  if (!swRegistration || !swRegistration.getNotifications) return
+  try {
+    const pending = await swRegistration.getNotifications({ includeTriggered: true })
+    for (const n of pending) {
+      if (n.tag && scheduledTriggerTags.has(n.tag) && !liveTags.has(n.tag)) {
+        n.close()
+        scheduledTriggerTags.delete(n.tag)
+      }
+    }
+  } catch {}
+}
 
 // ── Settings (persisted, local-only) ───────────────────────────
 export function getSettings() {
@@ -257,8 +311,12 @@ function buildReminders(events = [], commitments = [], recurring = []) {
 export function syncReminders(events, commitments, recurring = []) {
   clearTimers()
   const settings = getSettings()
-  if (!settings.enabled) return
-  if (permissionState() !== 'granted') return
+  // Turned off (or not permitted): also drop any OS-scheduled triggers so
+  // reminders stop arriving in the background too.
+  if (!settings.enabled || permissionState() !== 'granted') {
+    if (triggersSupported() && swRegistration) reconcileTriggered(new Set())
+    return
+  }
 
   const reminders = buildReminders(events, commitments, recurring)
   const fired = loadFired()
@@ -272,36 +330,60 @@ export function syncReminders(events, commitments, recurring = []) {
     if (!liveIds.has(key)) { delete fired[key]; firedChanged = true }
   }
 
-  for (const r of reminders) {
-    if (fired[r.id]) continue
-    // Don't bother reminding about something that has already started.
-    if (r.startMs <= now) { fired[r.id] = now; firedChanged = true; continue }
+  // Prefer OS-scheduled triggers when the browser supports them: they fire even
+  // when Bloom is fully closed. The live-timer + catch-up path is the fallback.
+  const useTriggers = triggersSupported() && !!swRegistration
+  const liveTags = new Set()
 
-    const delay = r.at - now
-    if (delay <= 0) {
-      // Catch-up: its reminder moment passed, but the event is still ahead.
-      fire(r)
+  for (const r of reminders) {
+    // Don't bother reminding about something that has already started.
+    if (r.startMs <= now) {
+      if (!fired[r.id]) { fired[r.id] = now; firedChanged = true }
+      continue
+    }
+
+    if (r.at > now) {
+      // Future reminder.
+      if (useTriggers) {
+        // Hand it to the OS (idempotent by tag — rescheduling just replaces).
+        liveTags.add(r.id)
+        scheduleTriggeredReminder(r)
+      } else if (!fired[r.id]) {
+        const delay = r.at - now
+        if (delay <= MAX_TIMER_MS) {
+          // Due soon — schedule a live timer while the app stays open.
+          const t = setTimeout(() => {
+            fire(r)
+            const f = loadFired(); f[r.id] = Date.now(); saveFired(f)
+          }, delay)
+          timers.push(t)
+        }
+        // else: too far out — will be caught on a future open.
+      }
+      continue
+    }
+
+    // r.at <= now < startMs: the reminder moment has passed but the event is
+    // still ahead. With triggers, the OS already fired it (or will, if it's
+    // still queued) — mark it handled so the catch-up path doesn't double it.
+    // Without triggers, catch up now.
+    if (!fired[r.id]) {
+      if (!useTriggers) fire(r)
       fired[r.id] = now
       firedChanged = true
-    } else if (delay <= MAX_TIMER_MS) {
-      // Due soon — schedule a live timer while the app stays open.
-      const t = setTimeout(() => {
-        fire(r)
-        const f = loadFired(); f[r.id] = Date.now(); saveFired(f)
-      }, delay)
-      timers.push(t)
     }
-    // else: too far out — will be caught on a future open.
   }
 
+  if (useTriggers) reconcileTriggered(liveTags)
   if (firedChanged) saveFired(fired)
 }
 
-// Build the notification heading from how far the start is *now* (fire time),
-// so a catch-up reminder that pops late still reads accurately.
-function headingFor(reminder) {
+// Build the notification heading from how far the start is at fire time, so a
+// catch-up reminder that pops late — or one pre-scheduled with a trigger —
+// still reads accurately. `atMs` is when it fires (defaults to now).
+function headingFor(reminder, atMs = Date.now()) {
   if (!reminder.startMs) return reminder.name || '🌸 Bloom'
-  const mins = Math.round((reminder.startMs - Date.now()) / 60000)
+  const mins = Math.round((reminder.startMs - atMs) / 60000)
   let when
   if (mins <= 0)          when = 'Now'
   else if (mins < 60)     when = `In ${mins} min`
@@ -354,6 +436,18 @@ function fire(reminder) {
       if (s && s !== 'none') playSound(s)
     }
   } catch {}
+}
+
+// Announce that a location-tagged task auto-started because you arrived. Fires
+// only when notifications are permitted (it's a nudge, not a scheduled remind).
+export function notifyArrival(name) {
+  if (permissionState() !== 'granted') return
+  fire({
+    id: 'arrive:' + Date.now(),
+    name: `📍 Started: ${name || 'task'}`,
+    body: "You've arrived — Bloom started this task's progress.",
+    url: BASE,
+  })
 }
 
 // Fire a one-off test notification so the user can confirm it works.

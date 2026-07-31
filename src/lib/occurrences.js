@@ -141,7 +141,17 @@ export function recurringOccurrencesForDate(rows, dateStr, exceptions = {}) {
 // start→end window), returns { remaining, frac } for the live "Xm remaining"
 // label and the elapsed shade. Returns null otherwise. Shared by the timeline
 // pill, the task editor, and the Week/Calendar rows so they all agree.
-export function nowProgress(dateStr, time, durationMins) {
+//
+// `startedAt` (an epoch-ms timestamp, e.g. set when you arrive at a location-
+// tagged task) overrides the scheduled window: progress then runs from that
+// moment over the task's duration, no matter what time or day it was set for.
+export function nowProgress(dateStr, time, durationMins, startedAt = null) {
+  if (startedAt && durationMins) {
+    const elapsedMin = (Date.now() - startedAt) / 60000
+    if (elapsedMin < 0 || elapsedMin >= durationMins) return null
+    const remaining = Math.round(durationMins - elapsedMin)
+    return { remaining, frac: Math.max(0, Math.min(1, elapsedMin / durationMins)) }
+  }
   if (!dateStr || !time || !durationMins) return null
   const d = new Date()
   const today = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
@@ -159,8 +169,8 @@ export function nowProgress(dateStr, time, durationMins) {
 // its subtasks are checked off. `show` is true when there's any progress to
 // show; `remaining` is the minutes left when it's mid-window (for the "Xm left"
 // label), else null.
-export function taskProgress({ date, time, durationMins, subDone = 0, subCount = 0 }) {
-  const timeP = nowProgress(date, time, durationMins)
+export function taskProgress({ date, time, durationMins, subDone = 0, subCount = 0, startedAt = null }) {
+  const timeP = nowProgress(date, time, durationMins, startedAt)
   const timeFrac = timeP ? timeP.frac : null
   const subFrac = subCount > 0 ? Math.max(0, Math.min(1, subDone / subCount)) : null
   const frac = Math.max(timeFrac ?? 0, subFrac ?? 0)

@@ -6,7 +6,7 @@ import {
   notificationsSupported, permissionState, requestPermission,
   getSettings, saveSettings, registerServiceWorker,
   sendTestNotification, syncReminders, primeBaseline,
-  LEAD_OPTIONS,
+  LEAD_OPTIONS, triggersSupported,
 } from '../lib/notifications.js'
 
 const card = { background:'white', borderRadius:12, border:'1px solid var(--border)', padding:'16px 18px', marginBottom:14 }
@@ -46,6 +46,7 @@ export default function NotificationsSettings({ events, commitments }) {
   }
   const standalone = isStandalone()
   const ios = isIOS()
+  const background = supported && triggersSupported()
 
   useEffect(() => {
     const onVis = () => setPerm(permissionState())
@@ -190,9 +191,15 @@ export default function NotificationsSettings({ events, commitments }) {
           <li>Timed items remind relative to their <b>start time</b>.</li>
           <li>Untimed items are anchored to <b>9:00 AM</b> on their day.</li>
         </ul>
-        <div style={{ fontSize:11, color:'var(--muted)', marginTop:10, lineHeight:1.6 }}>
-          Reminders fire while Bloom is open, and catch up the moment you reopen it — so nothing gets missed. Longer lead times (a day / a week out) are delivered when you next open Bloom within that window. For alerts while the app is fully closed, see the note in SETUP.md about adding a push server.
-        </div>
+        {background ? (
+          <div style={{ fontSize:11.5, color:'#2F6B4F', background:'#F1FBF5', border:'1px solid #CDE9D8', borderRadius:8, padding:'9px 11px', marginTop:12, lineHeight:1.6 }}>
+            ✓ This device can deliver reminders <b>in the background</b> — they'll arrive at the right time even if you haven't opened Bloom recently.
+          </div>
+        ) : (
+          <div style={{ fontSize:11, color:'var(--muted)', marginTop:10, lineHeight:1.6 }}>
+            On this device, reminders fire while Bloom is open and catch up the moment you reopen it — so nothing gets missed. Longer lead times (a day / a week out) are delivered when you next open Bloom within that window. Add Bloom to your Home Screen (and, on Android/Chrome, keep it installed) for reminders that arrive even when the app is closed.
+          </div>
+        )}
       </div>
     </div>
   )

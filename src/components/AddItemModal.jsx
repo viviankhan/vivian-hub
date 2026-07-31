@@ -16,19 +16,15 @@ import ColorIconPicker from './ColorIconPicker.jsx'
 import { suggestGlyph, iconColorOn } from '../lib/glyphs.jsx'
 import { LEAD_OPTIONS, getItemReminders, getItemSound, setItemSound } from '../lib/notifications.js'
 import { SOUNDS, playSound } from '../lib/sounds.js'
+import { getDurationPresets, setDurationPresets, resetDurationPresets, parseDuration, durationLabel } from '../lib/durations.js'
+import { predictLabel } from '../lib/predictLabel.js'
+import { geolocationSupported, getCurrentLocation, DEFAULT_RADIUS_M } from '../lib/geofence.js'
 
 const DEFAULT_CATEGORIES = [{ id:'other', label:'Other', color:'#8899AA' }]
 
-// Quick-set buttons: each fills in the end time as (start + this many minutes).
-const QUICK_DURATIONS = [
-  { label:'15m',  mins:15 },
-  { label:'30m',  mins:30 },
-  { label:'45m',  mins:45 },
-  { label:'1h',   mins:60 },
-  { label:'1.5h', mins:90 },
-  { label:'2h',   mins:120 },
-  { label:'3h',   mins:180 },
-]
+// A neutral slate used for the header when a task has no label yet (so an
+// unlabeled task doesn't borrow a real category's color and read as tagged).
+const UNLABELED_COLOR = '#6B7A8D'
 
 // A per-task color palette (overrides the label color when picked).
 const TASK_COLORS = ['#E0A33E','#C4728E','#EC6F9C','#7C9CBF','#4A9EB5','#52B788','#2A9D8F','#7C3AED','#E07B2E','#EF6B6B','#6B7A8D','#111827']
@@ -89,6 +85,7 @@ const RepeatIcon = () => (<svg viewBox="0 0 24 24" width="16" height="16" fill="
 const ClockIcon = () => (<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9"/><polyline points="12 7.5 12 12 15.5 14"/></svg>)
 const TagIcon   = () => (<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20.5 13.3 12.7 21a2 2 0 0 1-2.8 0l-6.9-6.9a2 2 0 0 1-.6-1.4V4.5a2 2 0 0 1 2-2h7.2a2 2 0 0 1 1.4.6l7 7a2 2 0 0 1 0 2.6Z"/><circle cx="7.6" cy="7.6" r="1.3"/></svg>)
 const BellIcon  = () => (<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9a6 6 0 0 1 12 0c0 5.5 2.3 6.8 2.3 6.8H3.7S6 14.5 6 9Z"/><path d="M10 20a2 2 0 0 0 4 0"/></svg>)
+const PinIcon   = () => (<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 21s6-5.6 6-10.2A6 6 0 0 0 6 10.8C6 15.4 12 21 12 21Z"/><circle cx="12" cy="10.8" r="2.2"/></svg>)
 
 // A tappable grouped-list row: [icon] main text … [hint] [chevron], with an
 // optional expanded body underneath.
@@ -163,7 +160,7 @@ const InboxIcon2 = () => (<svg viewBox="0 0 24 24" width="18" height="18" fill="
 const TrashIcon2 = () => (<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4.5 7h15M9 7V5.2A1.2 1.2 0 0 1 10.2 4h3.6A1.2 1.2 0 0 1 15 5.2V7M6.5 7l1 12.5h9L17.5 7"/></svg>)
 const TargetIcon = () => (<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4.5"/><circle cx="12" cy="12" r="1" fill="currentColor" stroke="none"/></svg>)
 
-export default function AddItemModal({ existing = null, existingRecurring = null, presetDate = null, presetText = '', lockDate = false, defaultRepeat = false, categories = [], routines = [], onSave, onSaveRecurring = null, onDelete = null, onDuplicate = null, onMoveToInbox = null, onClose, title = 'Add to calendar' }) {
+export default function AddItemModal({ existing = null, existingRecurring = null, presetDate = null, presetText = '', lockDate = false, defaultRepeat = false, categories = [], routines = [], labelModel = null, onSave, onSaveRecurring = null, onDelete = null, onDuplicate = null, onMoveToInbox = null, onClose, title = 'Add to calendar' }) {
   const cats = (categories && categories.length) ? categories : DEFAULT_CATEGORIES
   const isEdit = !!existing
   // Editing an existing recurring task: it comes in the Recurring-tab row shape
@@ -182,19 +179,53 @@ export default function AddItemModal({ existing = null, existingRecurring = null
   })
   // One or more category labels. The first stays the "primary" — it drives the
   // color dot, scheduling behavior, and everything that still reads a single
-  // `cat`. Extra labels are purely additional tags.
+  // `cat`. Extra labels are purely additional tags. A brand-new task starts
+  // with NO label — we only ever fill one in when it can be predicted from
+  // past tasks (see `predictedCat` below), never a blind default.
   const [selectedCats, setSelectedCats] = useState(() => {
     if (Array.isArray(existing?.cats) && existing.cats.length) return existing.cats
-    return [existing?.cat || rec?.cat || rec?.tag || cats[0]?.id || 'other']
+    const explicit = existing?.cat || rec?.cat || rec?.tag
+    return explicit ? [explicit] : []
   })
-  const toggleCat = (id) => setSelectedCats(prev =>
-    prev.includes(id)
-      ? (prev.length > 1 ? prev.filter(c => c !== id) : prev)  // keep at least one
-      : [...prev, id]
-  )
+  // Once you touch the labels yourself, stop auto-predicting from the title.
+  // (Editing something that already carries a label counts as chosen.)
+  const [catsTouched, setCatsTouched] = useState(!!(existing?.cat || rec?.cat || rec?.tag || (existing?.cats && existing.cats.length)))
+  // A prediction from history — only offered for a still-untouched, unlabeled
+  // task, and only when the model is confident. Otherwise null (stays unlabeled).
+  const validCatIds = new Set(cats.map(c => c.id))
+  const predictedCat = (!catsTouched && !selectedCats.length && labelModel)
+    ? predictLabel(label, labelModel, validCatIds) : null
+  // What the task actually gets: your explicit picks, else the live prediction.
+  const effectiveCats = selectedCats.length ? selectedCats : (predictedCat ? [predictedCat] : [])
+  const usingPrediction = !selectedCats.length && !!predictedCat
+  const toggleCat = (id) => {
+    setCatsTouched(true)
+    setSelectedCats(prev => {
+      const base = prev.length ? prev : effectiveCats
+      return base.includes(id) ? base.filter(c => c !== id) : [...base, id]
+    })
+  }
   const [description, setDescription] = useState(existing?.description ?? rec?.note ?? '')
   const [subtasks, setSubtasks]   = useState(() => Array.isArray(existing?.subtasks) ? existing.subtasks : [])
   const [newSub, setNewSub]       = useState('')
+
+  // ── Duration ─────────────────────────────────────────────────
+  // A task's length can come from an end time, a tapped preset, or a typed
+  // duration. `manualDur` holds the length when there's no end time to derive
+  // it from (e.g. a duration with no fixed start). The quick presets are
+  // user-editable and stored per-device.
+  const [manualDur, setManualDur] = useState(existing?.durationMins ?? rec?.durationMins ?? null)
+  const [durText, setDurText]     = useState('')
+  const [presets, setPresets]     = useState(() => getDurationPresets())
+  const [editingPresets, setEditingPresets] = useState(false)
+  const [newPreset, setNewPreset] = useState('')
+
+  // ── Location ─────────────────────────────────────────────────
+  // An optional place. When the device arrives within its radius, the task's
+  // progress auto-starts regardless of the time it's set for (see App wiring).
+  const [location, setLocation] = useState(existing?.location ?? null)
+  const [locBusy, setLocBusy]   = useState(false)
+  const [locErr, setLocErr]     = useState('')
   // Reminders: default (use global) unless the user customizes. When editing,
   // prefill from the item's saved override.
   const existingReminders = isEdit ? getItemReminders(existing.id) : null
@@ -278,30 +309,70 @@ export default function AddItemModal({ existing = null, existingRecurring = null
   }, [isEdit])
   // Time window drives "Xm remaining" + Focus Now; the icon fill reflects the
   // combined progress (time elapsed and/or live subtask completion).
-  const timeProg = isEdit ? nowProgress(existing?.date, existing?.time, existing?.durationMins) : null
-  const fill = isEdit ? taskProgress({ date: existing?.date, time: existing?.time, durationMins: existing?.durationMins, subDone: subtasks.filter(s => s.done).length, subCount: subtasks.length }) : null
+  const timeProg = isEdit ? nowProgress(existing?.date, existing?.time, existing?.durationMins, existing?.startedAt) : null
+  const fill = isEdit ? taskProgress({ date: existing?.date, time: existing?.time, durationMins: existing?.durationMins, subDone: subtasks.filter(s => s.done).length, subCount: subtasks.length, startedAt: existing?.startedAt }) : null
   const [focusOpen, setFocusOpen] = useState(false)
 
-  const durationMins = diffMinutes(time, endTime)          // null unless a valid span
-  const endInvalid = !!(time && endTime && !durationMins)  // end set but ≤ start
+  const spanDur = diffMinutes(time, endTime)               // from start→end, if valid
+  const endInvalid = !!(time && endTime && !spanDur)       // end set but ≤ start
+  // The effective length: a valid start→end span wins; otherwise a typed/tapped
+  // duration (which also works with no start time set).
+  const durationMins = endInvalid ? null : (spanDur || manualDur)
   // Date is optional — a task with no date is a valid "unscheduled" commitment
   // (used by the Commitments tab). Today/Calendar preset or lock the date.
   // A weekly repeat needs at least one weekday chosen.
   const repeatInvalid = repeatFreq === 'weekly' && repeatDays.length === 0
   const canSave = !!label.trim() && !endInvalid && !repeatInvalid
 
-  // Quick-set: fill the end time as start + N minutes. Needs a start time.
-  const setQuickDuration = (mins) => {
-    if (!time) return
-    setEndTime(addMinutes(time, mins))
+  // Quick-set / manual: record the length. When there's a start time we also
+  // fill the end from it; with no start we just remember the duration.
+  const applyDuration = (mins) => {
+    if (!mins) return
+    setManualDur(mins)
+    setDurText('')
+    if (time) setEndTime(addMinutes(time, mins))
   }
-  // If they set/adjust the start after picking an end, keep the same duration
-  // by shifting the end along with it (feels like "move the block").
+  const onDurTextChange = (v) => {
+    setDurText(v)
+    const mins = parseDuration(v)
+    if (mins) { setManualDur(mins); if (time) setEndTime(addMinutes(time, mins)) }
+    else if (!v.trim()) setManualDur(spanDur || null)
+  }
+  const commitDurText = () => {
+    if (parseDuration(durText)) setDurText('')   // parsed already applied it
+  }
+  // If they set/adjust the start after choosing a length, keep it by shifting
+  // the end along with it (feels like "move the block").
   const onStartChange = (v) => {
     const keep = durationMins
     setTime(v)
     if (v && keep) setEndTime(addMinutes(v, keep))
   }
+
+  // ── Duration-preset editing (persisted per-device) ───────────
+  const addPreset = () => {
+    const mins = parseDuration(newPreset)
+    if (!mins) return
+    setPresets(setDurationPresets([...presets, mins]))
+    setNewPreset('')
+  }
+  const removePreset = (mins) => setPresets(setDurationPresets(presets.filter(p => p !== mins)))
+  const resetPresets = () => setPresets(resetDurationPresets())
+
+  // ── Location helpers ─────────────────────────────────────────
+  const useCurrentLocation = async () => {
+    setLocErr(''); setLocBusy(true)
+    try {
+      const { lat, lng } = await getCurrentLocation()
+      setLocation(prev => ({ name: prev?.name || '', radius: prev?.radius || DEFAULT_RADIUS_M, lat, lng }))
+    } catch (e) {
+      setLocErr(e && e.code === 1 ? 'Location permission denied. Allow it to tag a place.' : 'Couldn’t get your location. Try again.')
+    } finally { setLocBusy(false) }
+  }
+  const setLocName   = (name) => setLocation(prev => ({ ...(prev || { radius: DEFAULT_RADIUS_M }), name }))
+  const setLocRadius = (radius) => setLocation(prev => prev ? { ...prev, radius } : prev)
+  const clearLocation = () => { setLocation(null); setLocErr('') }
+  const locHasCoords = !!(location && typeof location.lat === 'number' && typeof location.lng === 'number')
 
   const toggleLead = (mins) => {
     // Choosing a specific lead switches this item off the global defaults.
@@ -318,7 +389,7 @@ export default function AddItemModal({ existing = null, existingRecurring = null
     // repeat rule (freq/interval/day-of-month) come along too. Duration and
     // subtasks aren't part of the recurring schema.
     if (repeatOn && onSaveRecurring) {
-      const primaryCatId = selectedCats[0]
+      const primaryCatId = effectiveCats[0] || null
       const startDate = date || localTodayStr()
       const recurringTask = {
         id: isRecEdit ? rec.id : ('r-' + Date.now()),
@@ -358,12 +429,16 @@ export default function AddItemModal({ existing = null, existingRecurring = null
       date: date || null,
       time: time || null,
       durationMins: durationMins || null,
-      cat: selectedCats[0],
-      cats: selectedCats,
+      cat: effectiveCats[0] || null,
+      cats: effectiveCats,
       color: color || null,
       icon: effectiveIcon || null,
       description: description.trim() || '',
       subtasks,
+      // An arrival location, if tagged. Preserve any prior startedAt so editing
+      // the task doesn't wipe an in-progress arrival.
+      location: locHasCoords ? { name: (location.name || '').trim(), lat: location.lat, lng: location.lng, radius: location.radius || DEFAULT_RADIUS_M } : null,
+      startedAt: existing?.startedAt ?? null,
     }
     setItemSound(commitment.id, sound)
     // null → use global defaults; otherwise this item's own lead-minute list.
@@ -371,9 +446,11 @@ export default function AddItemModal({ existing = null, existingRecurring = null
     onClose()
   }
 
-  // Primary label drives the header color + icon.
-  const primaryCat = cats.find(c => c.id === selectedCats[0]) || cats[0] || { color:'#4A9EB5', label:'', icon:'' }
-  const headerColor = color || primaryCat.color || '#4A9EB5'
+  // Primary label drives the header color + icon. With no label (and no
+  // prediction), fall back to a neutral slate rather than borrowing a real
+  // category's color — an unlabeled task shouldn't look tagged.
+  const primaryCat = cats.find(c => c.id === effectiveCats[0]) || null
+  const headerColor = color || primaryCat?.color || UNLABELED_COLOR
   // Foreground that stays readable on the header band — dark on light colors,
   // light on dark ones — with matching muted/hairline/button tints.
   const headerFg   = iconColorOn(headerColor)
@@ -382,9 +459,9 @@ export default function AddItemModal({ existing = null, existingRecurring = null
   const headerHair = onLight ? 'rgba(0,0,0,.28)' : 'rgba(255,255,255,.45)'
   const headerBtnBg= onLight ? 'rgba(0,0,0,.10)' : 'rgba(255,255,255,.26)'
   // The task's shown icon: explicit/suggested, else the label's, else a letter.
-  const shownIcon = effectiveIcon || primaryCat.icon || ''
+  const shownIcon = effectiveIcon || primaryCat?.icon || ''
   const isCustomColor = !!color && !TASK_COLORS.includes(color)
-  const labelNames = selectedCats.map(id => (cats.find(c => c.id === id)?.label) || id)
+  const labelNames = effectiveCats.map(id => (cats.find(c => c.id === id)?.label) || id)
   const card = { background:'white', borderRadius:16, boxShadow:'0 1px 4px rgba(60,72,88,.06)', marginBottom:16, overflow:'hidden' }
   const baseRemind = useDefault ? 'Default' : (reminders.length ? `${reminders.length} alert${reminders.length>1?'s':''}` : 'No alerts')
   const soundLabel = (SOUNDS.find(s => s.id === sound) || {}).label || 'Chime'
@@ -486,7 +563,9 @@ export default function AddItemModal({ existing = null, existingRecurring = null
             </DetailRow>
             <RowDivider />
             {/* Time */}
-            <DetailRow icon={<ClockIcon />} text={time ? `${fmt12(time)}${endTime && durationMins ? ' – '+fmt12(endTime) : ''}` : 'Add a time'} textMuted={!time}
+            <DetailRow icon={<ClockIcon />}
+              text={time ? `${fmt12(time)}${endTime && durationMins ? ' – '+fmt12(endTime) : ''}` : (durationMins ? `${prettyDur(durationMins)} · no start time` : 'Add a time')}
+              textMuted={!time && !durationMins}
               open={expanded==='time'} onClick={() => toggleRow('time')}>
               <div style={{ display:'flex', gap:8, marginBottom:8 }}>
                 <div style={{ flex:1, minWidth:0 }}>
@@ -498,22 +577,60 @@ export default function AddItemModal({ existing = null, existingRecurring = null
                   <TimeField value={endTime} onChange={setEndTime} style={{ ...inp, borderColor: endInvalid ? '#DC2626' : 'var(--border)' }} />
                 </div>
               </div>
-              <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
-                {QUICK_DURATIONS.map(q => {
-                  const on = durationMins === q.mins
+              {/* Duration presets + a manual entry. Presets fill the length (and
+                  the end time, when a start is set); the field takes anything
+                  like "90", "1h30", "45 min". Both work with or without a start. */}
+              <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:6 }}>
+                <div style={fieldLabel}>Duration</div>
+                <button type="button" onClick={() => setEditingPresets(e => !e)}
+                  style={{ fontSize:10.5, fontWeight:700, letterSpacing:.4, border:'none', background:'none', cursor:'pointer', color:'var(--teal)', padding:0 }}>
+                  {editingPresets ? 'Done' : 'Edit'}
+                </button>
+              </div>
+              <div style={{ display:'flex', gap:6, flexWrap:'wrap', alignItems:'center' }}>
+                {presets.map(mins => {
+                  const on = durationMins === mins
                   return (
-                    <button key={q.mins} onClick={() => setQuickDuration(q.mins)} disabled={!time}
-                      style={{ fontSize:11, padding:'4px 11px', borderRadius:16, cursor: time ? 'pointer' : 'not-allowed', fontFamily:'DM Sans,sans-serif', fontWeight:600,
-                        border: on ? 'none' : '1px solid var(--border)', background: on ? 'var(--teal)' : 'white', color: on ? 'white' : (time ? 'var(--muted)' : '#C7CDD4') }}>
-                      {q.label}
-                    </button>
+                    <span key={mins} style={{ position:'relative', display:'inline-flex' }}>
+                      <button onClick={() => editingPresets ? removePreset(mins) : applyDuration(mins)}
+                        style={{ fontSize:11, padding:'4px 11px', borderRadius:16, cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:600,
+                          border: on && !editingPresets ? 'none' : '1px solid var(--border)',
+                          background: editingPresets ? '#FDECEC' : (on ? 'var(--teal)' : 'white'),
+                          color: editingPresets ? '#DC2626' : (on ? 'white' : 'var(--muted)') }}>
+                        {editingPresets ? '✕ ' : ''}{durationLabel(mins)}
+                      </button>
+                    </span>
                   )
                 })}
+                {editingPresets && (
+                  <button onClick={resetPresets} style={{ fontSize:10.5, padding:'4px 10px', borderRadius:16, cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:600, border:'1px dashed var(--border)', background:'white', color:'var(--muted)' }}>
+                    Reset
+                  </button>
+                )}
               </div>
+              {editingPresets ? (
+                <div style={{ display:'flex', gap:6, marginTop:8 }}>
+                  <input value={newPreset} onChange={e => setNewPreset(e.target.value)} placeholder="Add preset, e.g. 25m or 1h30"
+                    onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addPreset() } }}
+                    style={{ ...inp, flex:1, fontSize:12.5 }} />
+                  <button onClick={addPreset} disabled={!parseDuration(newPreset)}
+                    style={{ fontSize:12, padding:'0 14px', borderRadius:10, border:'none', cursor: parseDuration(newPreset) ? 'pointer' : 'default', fontFamily:'DM Sans,sans-serif', fontWeight:700, background: parseDuration(newPreset) ? ROW_ACCENT : '#E1E1E6', color: parseDuration(newPreset) ? 'white' : '#9CA3AF' }}>Add</button>
+                </div>
+              ) : (
+                <div style={{ display:'flex', gap:6, marginTop:8, alignItems:'center' }}>
+                  <input value={durText} onChange={e => onDurTextChange(e.target.value)} onBlur={commitDurText}
+                    placeholder="Or type a duration — 90, 1h30, 45 min"
+                    style={{ ...inp, flex:1, fontSize:12.5 }} />
+                  {durationMins > 0 && (
+                    <button onClick={() => { setManualDur(null); setDurText(''); setEndTime('') }}
+                      style={{ fontSize:11, padding:'0 12px', borderRadius:10, border:'1px solid var(--border)', background:'white', color:'var(--muted)', cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:600, whiteSpace:'nowrap' }}>Clear</button>
+                  )}
+                </div>
+              )}
               <div style={{ fontSize:11, color: endInvalid ? '#DC2626' : 'var(--muted)', marginTop:8 }}>
                 {endInvalid ? 'End time must be after the start time.'
-                  : (time && durationMins) ? `${prettyDur(durationMins)} long`
-                  : (!time ? 'Type a start time, then tap a duration.' : '')}
+                  : durationMins ? `${prettyDur(durationMins)} long${!time ? ' · add a start time to place it on the timeline' : ''}`
+                  : 'Tap a preset or type a length. Add a start time to also set the end.'}
               </div>
             </DetailRow>
             {canRepeat && <>
@@ -607,14 +724,16 @@ export default function AddItemModal({ existing = null, existingRecurring = null
               </DetailRow>
             </>}
             <RowDivider />
-            {/* Labels */}
-            <DetailRow icon={<TagIcon />} iconColor={headerColor} text={labelNames.join(', ')}
-              hint={selectedCats.length > 1 ? `${selectedCats.length}` : null}
+            {/* Labels — no blind default: unlabeled until you pick one or the
+                title matches your past tasks well enough to predict one. */}
+            <DetailRow icon={<TagIcon />} iconColor={effectiveCats.length ? headerColor : '#B7BEC8'}
+              text={labelNames.length ? labelNames.join(', ') : 'No label'} textMuted={!labelNames.length}
+              hint={usingPrediction ? 'Predicted' : (effectiveCats.length > 1 ? `${effectiveCats.length}` : null)}
               open={expanded==='labels'} onClick={() => toggleRow('labels')}>
               <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
                 {cats.map(c => {
-                  const on = selectedCats.includes(c.id)
-                  const primary = selectedCats[0] === c.id
+                  const on = effectiveCats.includes(c.id)
+                  const primary = effectiveCats[0] === c.id
                   return (
                     <button key={c.id} onClick={() => toggleCat(c.id)}
                       style={{ fontSize:11, padding:'5px 12px', borderRadius:20, border: on ? 'none' : '1px solid var(--border)', background: on ? c.color : 'white', color: on ? 'white' : 'var(--muted)', cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight: on ? 600 : 400, boxShadow: primary ? '0 0 0 2px rgba(0,0,0,.16)' : 'none' }}>
@@ -623,7 +742,13 @@ export default function AddItemModal({ existing = null, existingRecurring = null
                   )
                 })}
               </div>
-              {selectedCats.length > 1 && (
+              {usingPrediction && (
+                <div style={{ fontSize:10.5, color:'var(--muted)', marginTop:7 }}>Predicted from your past tasks — tap to change, or tap it again to leave this task unlabeled.</div>
+              )}
+              {!effectiveCats.length && !usingPrediction && (
+                <div style={{ fontSize:10.5, color:'var(--muted)', marginTop:7 }}>Optional — leave it unlabeled, or pick a label above.</div>
+              )}
+              {effectiveCats.length > 1 && (
                 <div style={{ fontSize:10.5, color:'var(--muted)', marginTop:7 }}>The outlined label is the primary — it sets the color and scheduling.</div>
               )}
             </DetailRow>
@@ -692,6 +817,47 @@ export default function AddItemModal({ existing = null, existingRecurring = null
               </div>
               <div style={{ fontSize:10.5, color:'var(--muted)', marginTop:6 }}>Plays in-app when a reminder fires. Your phone controls the system notification sound.</div>
             </DetailRow>
+            {/* Location — a place that auto-starts this task when you arrive.
+                Offered for one-off commitments (not recurring templates). */}
+            {!!onSave && !repeatOn && geolocationSupported() && <>
+              <RowDivider />
+              <DetailRow icon={<PinIcon />}
+                text={locHasCoords ? (location.name?.trim() || 'Location set') : 'Add a location'} textMuted={!locHasCoords}
+                hint={locHasCoords ? 'On' : null} open={expanded==='location'} onClick={() => toggleRow('location')}>
+                <div style={{ fontSize:11.5, color:'var(--muted)', lineHeight:1.5, marginBottom:10 }}>
+                  Tag where this happens. When you arrive, Bloom starts the task's progress automatically — no matter the time it's set for.
+                </div>
+                <button type="button" onClick={useCurrentLocation} disabled={locBusy}
+                  style={{ width:'100%', padding:'10px', borderRadius:10, border: locHasCoords ? '1px solid var(--border)' : 'none', background: locHasCoords ? 'white' : 'var(--forest)', color: locHasCoords ? 'var(--text)' : 'var(--green-light)', fontWeight:600, fontSize:13, cursor: locBusy ? 'default' : 'pointer', fontFamily:'DM Sans,sans-serif', display:'flex', alignItems:'center', justifyContent:'center', gap:8 }}>
+                  <PinIcon />{locBusy ? 'Getting location…' : (locHasCoords ? 'Update to my current location' : 'Use my current location')}
+                </button>
+                {locErr && <div style={{ fontSize:10.5, color:'#DC2626', marginTop:8 }}>{locErr}</div>}
+                {locHasCoords && <>
+                  <div style={{ fontSize:10, color:'var(--muted)', letterSpacing:1, textTransform:'uppercase', margin:'14px 0 4px' }}>Name</div>
+                  <input value={location.name || ''} onChange={e => setLocName(e.target.value)} placeholder="e.g. Gym, Office, Library"
+                    style={{ ...inp, fontSize:13 }} />
+                  <div style={{ fontSize:10.5, color:'var(--muted)', marginTop:6 }}>
+                    Pinned at {location.lat.toFixed(4)}, {location.lng.toFixed(4)}.
+                  </div>
+                  <div style={{ fontSize:10, color:'var(--muted)', letterSpacing:1, textTransform:'uppercase', margin:'14px 0 6px' }}>Arrival radius</div>
+                  <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
+                    {[100, 150, 300, 500].map(r => {
+                      const on = (location.radius || DEFAULT_RADIUS_M) === r
+                      return (
+                        <button key={r} onClick={() => setLocRadius(r)}
+                          style={{ fontSize:11, padding:'5px 12px', borderRadius:16, cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:600, border: on ? 'none' : '1px solid var(--border)', background: on ? 'var(--forest)' : 'white', color: on ? 'var(--green-light)' : 'var(--muted)' }}>
+                          {on ? '✓ ' : ''}{r} m
+                        </button>
+                      )
+                    })}
+                  </div>
+                  <button onClick={clearLocation}
+                    style={{ marginTop:12, fontSize:11, padding:'5px 12px', borderRadius:16, cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:600, border:'1px solid var(--border)', background:'white', color:'var(--muted)' }}>
+                    Remove location
+                  </button>
+                </>}
+              </DetailRow>
+            </>}
           </div>
 
           {/* ── Subtasks + notes ──────────────────────────────── */}
