@@ -5,6 +5,15 @@
 const EDIT_LOG = [
   {
     date: '2026-07-28',
+    summary: 'Polished filled icon set (Material Design Icons)',
+    changes: [
+      'Task icons are now filled, solid Material Design Icons — a big, consistent, professional set (like Structured) instead of the thin hand-drawn lines',
+      'Auto-pick and search run on the new set, so “walk” gives a filled walking figure, “dentist” a tooth, “dress” a hanger, and so on',
+      'Icons you\'d already chosen keep working; the app\'s nav/menu chrome is unchanged',
+    ]
+  },
+  {
+    date: '2026-07-28',
     summary: 'Icons auto-pick intuitively — “walk” finds a walking icon',
     changes: [
       'Fixed two icons that were showing up blank (walk/run and hourglass were referenced but never drawn) — now they render',

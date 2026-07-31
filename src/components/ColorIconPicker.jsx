@@ -5,8 +5,9 @@
 // stored on the task ("glyph:<id>") and renders white on the timeline pill,
 // on the detail header, and on the Commitments card.
 import { useState, useRef } from 'react'
-import { isImageIcon, fileToIconDataUri } from './IconPicker.jsx'
-import { Glyph, GLYPH_GROUPS, GLYPH_ALL, iconColorOn } from '../lib/glyphs.jsx'
+import { isImageIcon, fileToIconDataUri, Icon } from './IconPicker.jsx'
+import { iconColorOn } from '../lib/glyphs.jsx'
+import { ICON_GROUPS, ICON_ALL } from '../lib/iconset.js'
 import { getSavedColors, addSavedColor, removeSavedColor, activeAccent } from '../lib/appearance.js'
 
 // Same palette the detail sheet uses, so a color picked here matches.
@@ -32,9 +33,9 @@ export default function ColorIconPicker({ color, icon, onColor, onIcon, onClose 
   const term = q.trim().toLowerCase()
   const words = term ? term.split(/\s+/) : []
   const matches = (hay) => words.every(w => hay.includes(w))
-  // Minimalist monochrome line icons (Structured's style) — search across each
-  // icon's name, keywords and group.
-  const glyphResults = term ? GLYPH_ALL.filter(it =>
+  // Filled Material icons (Structured's style) — search across each icon's
+  // name, keywords and group.
+  const glyphResults = term ? ICON_ALL.filter(it =>
     matches(`${it.id.toLowerCase()} ${it.k} ${it.group.toLowerCase()}`)).map(it => it.id) : null
 
   const onFile = async (e) => {
@@ -54,7 +55,7 @@ export default function ColorIconPicker({ color, icon, onColor, onIcon, onClose 
         style={{ width:52, height:52, borderRadius:'50%', border:'none', cursor:'pointer', flexShrink:0,
           display:'flex', alignItems:'center', justifyContent:'center',
           background: on ? selColor : '#F0EEF3', transition:'background .15s' }}>
-        <Glyph id={id} size={25} color={on ? iconColorOn(selColor) : GLYPH_DARK} />
+        <Icon value={'glyph:' + id} size={26} color={on ? iconColorOn(selColor) : GLYPH_DARK} />
       </button>
     )
   }
@@ -139,11 +140,11 @@ export default function ColorIconPicker({ color, icon, onColor, onIcon, onClose 
               <div style={{ fontSize:13, color:'var(--muted)', padding:'20px 0', textAlign:'center' }}>No icons match “{q}”.</div>
             )
           ) : (
-            GLYPH_GROUPS.map(g => (
-              <div key={g.name} style={{ marginBottom:16 }}>
-                <div style={{ fontSize:11, color:'var(--muted)', fontWeight:700, letterSpacing:.6, textTransform:'uppercase', margin:'10px 0 8px' }}>{g.name}</div>
+            ICON_GROUPS.map(([group, items]) => (
+              <div key={group} style={{ marginBottom:16 }}>
+                <div style={{ fontSize:11, color:'var(--muted)', fontWeight:700, letterSpacing:.6, textTransform:'uppercase', margin:'10px 0 8px' }}>{group}</div>
                 <div style={{ display:'flex', flexWrap:'wrap', gap:10 }}>
-                  {g.items.map(([id]) => <IconBtn key={id} id={id} />)}
+                  {items.map(([id]) => <IconBtn key={id} id={id} />)}
                 </div>
               </div>
             ))

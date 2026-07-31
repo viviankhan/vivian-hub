@@ -5,6 +5,7 @@
 // cleanly white on a colored timeline pill and dark on a light picker chip.
 
 import { EXTRA_GLYPHS, EXTRA_GROUPS } from './glyphsExtra.jsx'
+import { ICON_ALL, ICONS } from './iconset.js'
 
 const P = (d) => <path d={d} />
 
@@ -215,7 +216,7 @@ const INTENT = {
   run:'run', running:'run', jog:'run', jogging:'run', sprint:'run', marathon:'run',
   gym:'dumbbell', workout:'dumbbell', exercise:'dumbbell', lift:'dumbbell', weights:'dumbbell', fitness:'pulse',
   yoga:'yoga', stretch:'yoga', pilates:'yoga', meditate:'meditation', meditation:'meditation', mindfulness:'meditation',
-  swim:'waves', swimming:'waves', pool:'waves', surf:'waves',
+  swim:'swim', swimming:'swim', pool:'swim', surf:'swim',
   bike:'bike', biking:'bike', cycle:'bike', cycling:'bike', spin:'bike',
   hike:'hiking', hiking:'hiking', trek:'hiking',
   drive:'car', driving:'car', car:'car', taxi:'car', uber:'car', lyft:'car', parking:'car', gas:'fuel', fuel:'fuel',
@@ -239,9 +240,9 @@ const INTENT = {
   brush:'toothbrush', teeth:'tooth', tooth:'tooth', floss:'tooth', dental:'tooth', dentist:'tooth',
   skincare:'lipstick', makeup:'lipstick', beauty:'lipstick', haircut:'scissors', hair:'scissors',
   dress:'dress', clothes:'dress', outfit:'dress', wardrobe:'dress', shirt:'shirt', tshirt:'tshirt',
-  pants:'pants', jeans:'pants', shorts:'shorts', shoe:'sneaker', shoes:'sneaker', sneakers:'sneaker',
-  boots:'boot', hat:'hat', cap:'cap', socks:'socks', glasses:'glasses', ring:'ring',
-  jacket:'jacket', coat:'jacket', scarf:'scarf', backpack:'backpack2', purse:'bag', handbag:'bag',
+  pants:'dress', jeans:'dress', shorts:'dress', shoe:'sneaker', shoes:'sneaker', sneakers:'sneaker',
+  boots:'boot', hat:'hat', cap:'cap', socks:'shoe', glasses:'glasses', ring:'ring',
+  jacket:'jacket', coat:'jacket', scarf:'scarf', backpack:'backpack', purse:'bag', handbag:'bag',
   laundry:'broom', clean:'broom', cleaning:'broom', tidy:'broom', chores:'broom', chore:'broom', vacuum:'broom', sweep:'broom',
   // Work & study
   work:'briefcase', job:'briefcase', office:'briefcase', career:'briefcase', interview:'briefcase', client:'briefcase', boss:'briefcase',
@@ -290,12 +291,12 @@ const INTENT = {
   timer:'timer', pomodoro:'timer', time:'clock', wait:'hourglass', pray:'heart',
   // Weather & nature
   sun:'sun', sunny:'sun', rain:'rain', rainy:'rain', snow:'snow', storm:'storm', cloud:'cloud', cloudy:'cloud',
-  beach:'waves', ocean:'waves', sea:'waves', mountain:'mountain', tree:'tree', flower:'flower', hiking_trail:'hiking',
+  beach:'beach', ocean:'beach', sea:'beach', mountain:'mountain', tree:'tree', flower:'flower', hiking_trail:'hiking',
 }
 
-// Precompute each icon's searchable stems once (id name + keywords). Fast to
-// scan across the whole set on every keystroke of a title.
-const GLYPH_INDEX = GLYPH_ALL.map(it => ({
+// Precompute each icon's searchable stems once (id name + keywords), over the
+// filled icon set so suggestions resolve to icons that actually render.
+const GLYPH_INDEX = ICON_ALL.map(it => ({
   id: it.id,
   name: stem(it.id.toLowerCase()),
   tokens: new Set(`${it.id} ${it.k}`.toLowerCase().split(/\s+/).map(stem)),
@@ -312,7 +313,7 @@ export function suggestGlyph(title) {
   // 1) Direct intent hit, honoring title word order (the first real word wins).
   for (const w of meaningful) {
     const hit = INTENT[w] || INTENT[stem(w)]
-    if (hit && GLYPHS[hit]) return 'glyph:' + hit
+    if (hit && (ICONS[hit] || GLYPHS[hit])) return 'glyph:' + hit
   }
   // 2) Keyword scoring fallback.
   const words = [...new Set(meaningful.filter(w => w.length >= 3).map(stem))]

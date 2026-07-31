@@ -5,6 +5,7 @@
 // or routine item, and it renders anywhere that item appears via <Icon />.
 import { useState, useRef, useEffect } from 'react'
 import { Glyph } from '../lib/glyphs.jsx'
+import { ICONS } from '../lib/iconset.js'
 
 const QUICK_EMOJIS = ['☀️','🌙','💧','☕','🏃‍♀️','🧘','📚','📝','💊','🪥','🛁','🍽️','📵','🎹','💤','✨','🔬','💼','🎯','❤️','⭐','🔥','📌','🎨']
 
@@ -15,12 +16,21 @@ export function isGlyphIcon(v) {
   return typeof v === 'string' && v.startsWith('glyph:')
 }
 
-// Render an icon value. Three kinds: "glyph:<id>" → a monochrome line icon
-// (inherits `color`), a data/URL string → an uploaded image, else emoji text.
+// Render an icon value. "glyph:<id>" → a filled Material icon from the curated
+// set (falling back to the legacy line glyph for chrome-only ids); a data/URL
+// string → an uploaded image; else emoji/plain text. Filled icons carry their
+// own fill="currentColor", so we drive color via the CSS color property.
 export function Icon({ value, size = 18, color, style }) {
   if (!value) return null
   if (isGlyphIcon(value)) {
-    return <Glyph id={value.slice(6)} size={size} color={color || 'currentColor'} style={style} />
+    const id = value.slice(6)
+    const mdi = ICONS[id]
+    if (mdi) {
+      return <svg viewBox="0 0 24 24" width={size} height={size} aria-hidden="true"
+        style={{ display:'block', color: color || undefined, ...style }}
+        dangerouslySetInnerHTML={{ __html: mdi.body }} />
+    }
+    return <Glyph id={id} size={size} color={color || 'currentColor'} style={style} />
   }
   if (isImageIcon(value)) {
     return <img src={value} alt="" style={{ width:size, height:size, objectFit:'contain', verticalAlign:'middle', display:'inline-block', ...style }} />
