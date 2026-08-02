@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { buildWeekPlanFromTasks } from '../data/schedule.js'
-import { recurringOccurrencesForDate } from '../lib/occurrences.js'
+import { recurringOccurrencesForDate, recursDaily } from '../lib/occurrences.js'
 import { Icon } from './IconPicker.jsx'
 import { bloomBurst } from '../lib/bloom.js'
 import TimeField from './TimeField.jsx'
@@ -101,6 +101,9 @@ export default function ThisWeek({ todos, weekState, syncToggle, commitments, ad
   // Just the 7-day Sun→Sat scaffold; recurring items are filled per-day below
   // from the same shared computation Today and Calendar use.
   const weekPlan = buildWeekPlanFromTasks({}, weekOffset)
+  // Everyday habits (daily / weekly-on-all-7-days) are kept off the Week view —
+  // they only belong on the daily Today screen — mirroring the month calendar.
+  const weekRecurring = (recurringTasks || []).filter(t => !recursDaily(t))
   const [addingDay, setAddingDay] = useState(null)
   // Custom tasks per day stored in localStorage (keyed by date)
   const [customByDay, setCustomByDay] = useState(() => {
@@ -172,14 +175,16 @@ export default function ThisWeek({ todos, weekState, syncToggle, commitments, ad
           .sort((a,b) => (a.time||'99').localeCompare(b.time||'99'))
 
         // Recurring instances for this day (minus per-occurrence skips and any
-        // legacy per-day localStorage deletions).
-        const recurringForDay = recurringOccurrencesForDate(recurringTasks, day.date, recurringExceptions)
+        // legacy per-day localStorage deletions). Everyday habits (daily, or
+        // weekly-on-all-7-days) are left off the Week view — they belong on the
+        // daily Today screen — matching how the month calendar treats them.
+        const recurringForDay = recurringOccurrencesForDate(weekRecurring, day.date, recurringExceptions)
           .filter(t => !deleted.includes(t.id))
 
         // Carry-forward: yesterday's carry-flagged recurring items left undone.
         const prevDate = i > 0 ? weekPlan[i-1].date : null
         const carriedFromPrev = prevDate
-          ? recurringOccurrencesForDate(recurringTasks, prevDate, recurringExceptions)
+          ? recurringOccurrencesForDate(weekRecurring, prevDate, recurringExceptions)
               .filter(t => t.carry && !isDone(t.id, prevDate, false))
           : []
 
