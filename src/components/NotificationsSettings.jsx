@@ -8,6 +8,7 @@ import {
   sendTestNotification, syncReminders, primeBaseline,
   LEAD_OPTIONS, triggersSupported,
 } from '../lib/notifications.js'
+import { Icon } from './IconPicker.jsx'
 
 const card = { background:'white', borderRadius:12, border:'1px solid var(--border)', padding:'16px 18px', marginBottom:14 }
 const btn = (active) => ({
@@ -89,7 +90,7 @@ export default function NotificationsSettings({ events, commitments }) {
       {/* ── Install as an app ─────────────────────────────── */}
       {!standalone && (
         <div style={{ ...card, borderColor:'var(--teal)', background:'#F2FAFC' }}>
-          <div style={{ fontSize:13, fontWeight:700, color:'var(--text)', marginBottom:6 }}>📲 Put Bloom on your Home Screen</div>
+          <div style={{ display:'inline-flex', alignItems:'center', gap:7, fontSize:13, fontWeight:700, color:'var(--text)', marginBottom:6 }}><Icon value="glyph:phone" size={16} color="var(--teal)" />Put Bloom on your Home Screen</div>
           {ios ? (
             <ol style={{ margin:0, paddingLeft:18, fontSize:12.5, color:'var(--text)', lineHeight:1.9 }}>
               <li>Open Bloom in <b>Safari</b> (not this in-app browser).</li>

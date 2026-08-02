@@ -187,16 +187,19 @@ export const SEASONS = [
   { id:'spring', label:'Spring', accent:'#7FAE6B', effect:'petals',
     banner:['#D8E9C6','#E7DCEF','#F5D6DF','#DDECD1'],
     wash:['rgba(198,224,176,.50)','rgba(224,206,236,.45)','rgba(244,208,216,.42)','rgba(214,232,198,.42)'] },
-  // Summer — dappled sunlight through leaves over a light-green wash.
+  // Summer — dappled sunlight through leaves. Sunny meadow-to-sky: green, gold,
+  // warm sand, sky-teal — multi-hued so the banner pops like Bloom's.
   { id:'summer', label:'Summer', accent:'#5F9E6B', effect:'dapple',
-    banner:['#D9ECC6','#E6F1D2','#EEF5DC','#D2E7BC'],
-    wash:['rgba(196,224,158,.52)','rgba(224,240,196,.46)','rgba(255,244,196,.42)','rgba(178,214,146,.44)'] },
+    banner:['#C2E4A2','#E9E79E','#F3D29A','#A9D9DD'],
+    wash:['rgba(190,224,150,.50)','rgba(232,228,150,.45)','rgba(246,214,150,.42)','rgba(168,214,220,.44)'] },
+  // Fall — gold, amber, rust, and a berry pop for depth.
   { id:'fall', label:'Fall', accent:'#D2814B', effect:'leaves',
-    banner:['#F1D9B4','#EFC291','#E7A06E','#DE9A62'],
-    wash:['rgba(240,214,176,.50)','rgba(233,168,110,.44)','rgba(216,128,80,.38)','rgba(226,180,120,.42)'] },
+    banner:['#F2D89E','#EBAB6E','#DE8257','#C77A8E'],
+    wash:['rgba(240,214,158,.50)','rgba(233,168,110,.45)','rgba(216,120,80,.40)','rgba(196,122,142,.42)'] },
+  // Winter — ice blue, periwinkle, frost pink, mint: a multi-hued frost.
   { id:'winter', label:'Winter', accent:'#6E93B8', effect:'snow',
-    banner:['#D7E6F1','#E5EAF3','#EEF3F8','#CFE0EC'],
-    wash:['rgba(200,222,240,.50)','rgba(220,228,240,.45)','rgba(180,205,228,.42)','rgba(210,224,238,.42)'] },
+    banner:['#D2E4F0','#DCD9F1','#EFDCEC','#CDEBE6'],
+    wash:['rgba(200,222,240,.50)','rgba(214,210,240,.45)','rgba(238,214,232,.42)','rgba(200,232,224,.44)'] },
 ]
 const ALL_LOOKS = [BLOOM_LOOK, ...SEASONS]
 // Northern-hemisphere calendar season for a month index (0=Jan).
