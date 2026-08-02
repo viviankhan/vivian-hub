@@ -1,11 +1,13 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { buildWeekPlanFromTasks } from '../data/schedule.js'
-import { recurringOccurrencesForDate, recursDaily } from '../lib/occurrences.js'
+import { recurringOccurrencesForDate } from '../lib/occurrences.js'
 import { Icon } from './IconPicker.jsx'
 import { bloomBurst } from '../lib/bloom.js'
 import TimeField from './TimeField.jsx'
 import AddItemModal from './AddItemModal.jsx'
 import { setItemReminders } from '../lib/notifications.js'
+import RecurringFilter from './RecurringFilter.jsx'
+import { getRecurringFilter, RECURRING_FILTER_EVENT, visibleRecurring } from '../lib/viewFilter.js'
 
 const CAT_COLORS = {
   lab:     { dot:'#059669', bg:'#ECFDF5', text:'#065F46' },
@@ -95,15 +97,21 @@ function fmtRange(startDate, endDate) {
   return `${s} – ${e}`
 }
 
-export default function ThisWeek({ todos, weekState, syncToggle, commitments, addCommitment, deleteCommitment, categories, recurringTasks, recurringExceptions, skipRecurringOccurrence, addRecurringTask, labelModel = null }) {
+export default function ThisWeek({ todos, weekState, syncToggle, commitments, addCommitment, deleteCommitment, categories, recurringTasks, recurringExceptions, skipRecurringOccurrence, addRecurringTask, routines = [], labelModel = null }) {
   const today = todayStr()
   const [weekOffset, setWeekOffset] = useState(0)
   // Just the 7-day Sun→Sat scaffold; recurring items are filled per-day below
   // from the same shared computation Today and Calendar use.
   const weekPlan = buildWeekPlanFromTasks({}, weekOffset)
-  // Everyday habits (daily / weekly-on-all-7-days) are kept off the Week view —
-  // they only belong on the daily Today screen — mirroring the month calendar.
-  const weekRecurring = (recurringTasks || []).filter(t => !recursDaily(t))
+  // Which repeating groups / everyday habits show here — user-controlled via the
+  // Repeating filter (synced with the Calendar). Everyday habits hidden default.
+  const [recFilter, setRecFilter] = useState(getRecurringFilter)
+  useEffect(() => {
+    const h = () => setRecFilter(getRecurringFilter())
+    window.addEventListener(RECURRING_FILTER_EVENT, h)
+    return () => window.removeEventListener(RECURRING_FILTER_EVENT, h)
+  }, [])
+  const weekRecurring = visibleRecurring(recurringTasks, recFilter)
   const [addingDay, setAddingDay] = useState(null)
   // Custom tasks per day stored in localStorage (keyed by date)
   const [customByDay, setCustomByDay] = useState(() => {
@@ -154,6 +162,7 @@ export default function ThisWeek({ todos, weekState, syncToggle, commitments, ad
       <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:10, marginBottom:6, flexWrap:'wrap' }}>
         <div className="page-title" style={{ marginBottom:0 }}>{weekTitle}</div>
         <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+          <RecurringFilter routines={routines} rows={recurringTasks} />
           {weekOffset !== 0 && (
             <button onClick={()=>setWeekOffset(0)}
               style={{ fontSize:11, padding:'7px 12px', borderRadius:9, border:'1px solid var(--teal)', background:'#F0FDFB', color:'var(--teal)', cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:600, flexShrink:0 }}>

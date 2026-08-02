@@ -2,8 +2,10 @@ import { useState, useEffect } from 'react'
 import { Icon } from './IconPicker.jsx'
 import AddItemModal from './AddItemModal.jsx'
 import { setItemReminders } from '../lib/notifications.js'
-import { recurringOccurrencesForDate, recursDaily } from '../lib/occurrences.js'
+import { recurringOccurrencesForDate } from '../lib/occurrences.js'
 import { iconColorOn } from '../lib/glyphs.jsx'
+import RecurringFilter from './RecurringFilter.jsx'
+import { getRecurringFilter, RECURRING_FILTER_EVENT, visibleRecurring } from '../lib/viewFilter.js'
 
 // Pastel shading for how busy a day is (number of events on it).
 const BUSY_SHADES = ['#F4F0FA', '#EAE1F4', '#DBC9EC', '#C9AEDF']
@@ -42,6 +44,13 @@ export default function Calendar({ commitments, vacations, events, log, categori
   const [adding, setAdding] = useState(false)
   const [editing, setEditing] = useState(null)
   const [editingRec, setEditingRec] = useState(null)  // recurring template being edited
+  // Which repeating groups / everyday habits show here (synced with the Week view).
+  const [recFilter, setRecFilter] = useState(getRecurringFilter)
+  useEffect(() => {
+    const h = () => setRecFilter(getRecurringFilter())
+    window.addEventListener(RECURRING_FILTER_EVENT, h)
+    return () => window.removeEventListener(RECURRING_FILTER_EVENT, h)
+  }, [])
   const today = todayStr()
 
   // Add a commitment on any date (long-term planning), with its own optional
@@ -123,11 +132,10 @@ export default function Calendar({ commitments, vacations, events, log, categori
   const selectedEvents = selected ? allEvents.filter(e => e.date === selected) : []
 
   // Recurring instances landing on a date — the SAME computation Today and Week
-  // use, so the month view shows the recurring schedule too. Everyday habits
-  // (daily, or weekly-on-all-7-days) are left off the month view on purpose:
-  // they'd land on every cell and bury the things you actually plan around.
-  // They still show on Today and Week, where daily items belong.
-  const calendarRecurring = (recurringTasks || []).filter(t => !recursDaily(t))
+  // use. Which repeating groups (and whether everyday habits) show is up to the
+  // user via the Repeating filter; everyday habits are hidden here by default so
+  // they don't land on every cell.
+  const calendarRecurring = visibleRecurring(recurringTasks, recFilter)
   const recurringEventsOn = (dateStr) => recurringOccurrencesForDate(calendarRecurring, dateStr, recurringExceptions).map(o => {
     const cat = resolveCat(o.cat)
     return {
@@ -161,6 +169,7 @@ export default function Calendar({ commitments, vacations, events, log, categori
               This month
             </button>
           )}
+          <RecurringFilter routines={routines} rows={recurringTasks} />
           <button onClick={()=>setAdding(true)}
             style={{ fontSize:11, padding:'7px 14px', borderRadius:9, border:'none', background:'var(--forest)', color:'var(--green-light)', cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:600 }}>
             + Add
