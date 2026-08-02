@@ -136,8 +136,9 @@ export default function Customization({ font, onFont, theme, onTheme, season, on
       <div style={help}>
         <b>Bloom</b> is the signature look — iridescent bubbles drifting up over
         the sea-breeze pastels. The seasons restyle the banner and swap the
-        ambient motion (petals, dappled summer sun, falling leaves, snow), each
-        with a matching accent. <b>Auto</b> follows the calendar. Motion is slow
+        ambient motion (spring petals, drifting green summer leaves, autumn
+        leaves, winter snow), each with a matching accent. <b>Auto</b> follows
+        the calendar. Motion is slow
         and subtle, and skipped entirely if your device prefers reduced motion.
       </div>
 
