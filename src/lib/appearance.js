@@ -293,8 +293,90 @@ export function setSoundEnabled(on) {
 
 // Apply whatever's saved — call once as early as possible to avoid a flash of
 // the default look before React mounts.
+// ── Background illustration ──────────────────────────────────
+// An optional decorative scene behind the app content. A few soft, built-in
+// SVG scenes (self-contained, no assets) plus your own uploaded image. Kept
+// subtle so text stays readable; device-local like the rest of the look.
+const BG_ART = {
+  hills: { label:'Hills', layout:'center bottom / 100% auto no-repeat', svg:
+    `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1440 560'>
+      <path d='M0 360 Q 360 270 720 340 T 1440 320 V560 H0Z' fill='#9BC47A' fill-opacity='.35'/>
+      <path d='M0 420 Q 320 350 700 400 T 1440 400 V560 H0Z' fill='#79AE5E' fill-opacity='.40'/>
+      <path d='M0 480 Q 420 430 860 460 T 1440 470 V560 H0Z' fill='#5E9A4C' fill-opacity='.45'/>
+    </svg>` },
+  waves: { label:'Waves', layout:'center bottom / 100% auto no-repeat', svg:
+    `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1440 520'>
+      <path d='M0 360 C 240 320 360 400 600 380 S 1080 320 1440 370 V520 H0Z' fill='#7FC0D8' fill-opacity='.32'/>
+      <path d='M0 420 C 260 380 380 450 640 430 S 1120 390 1440 430 V520 H0Z' fill='#59A7C4' fill-opacity='.38'/>
+      <path d='M0 470 C 300 445 420 500 700 485 S 1160 455 1440 485 V520 H0Z' fill='#3F8DAE' fill-opacity='.42'/>
+    </svg>` },
+  mountains: { label:'Mountains', layout:'center bottom / 100% auto no-repeat', svg:
+    `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1440 560'>
+      <path d='M0 470 L 380 300 L 660 470 Z' fill='#9AA6D6' fill-opacity='.35'/>
+      <path d='M300 470 L 740 240 L 1160 470 Z' fill='#7E8CC4' fill-opacity='.42'/>
+      <path d='M700 244 L 782 290 L 700 320 L 660 288 Z' fill='#FFFFFF' fill-opacity='.5'/>
+      <path d='M840 470 L 1160 320 L 1440 470 Z' fill='#8E9AD0' fill-opacity='.35'/>
+      <rect x='0' y='466' width='1440' height='94' fill='#6E7CB6' fill-opacity='.22'/>
+    </svg>` },
+  sunrise: { label:'Sunrise', layout:'center bottom / 100% auto no-repeat', svg:
+    `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1440 560'>
+      <circle cx='720' cy='430' r='200' fill='#F6C98A' fill-opacity='.34'/>
+      <circle cx='720' cy='430' r='130' fill='#F3B36A' fill-opacity='.30'/>
+      <path d='M0 460 Q 360 400 720 440 T 1440 440 V560 H0Z' fill='#E0A36A' fill-opacity='.40'/>
+    </svg>` },
+}
+const encSvg = (svg) => `url("data:image/svg+xml,${encodeURIComponent(svg.replace(/\s{2,}/g, ' '))}")`
+
+export const BACKGROUNDS = [
+  { id:'none', label:'None' },
+  ...Object.entries(BG_ART).map(([id, a]) => ({ id, label: a.label })),
+  { id:'custom', label:'Custom' },
+]
+export function getBackgroundPref() { try { return localStorage.getItem('bloom_background') || 'none' } catch { return 'none' } }
+export function setBackgroundPref(v) { try { localStorage.setItem('bloom_background', v) } catch {} }
+export function getCustomBackground() { try { return localStorage.getItem('bloom_bg_custom') || '' } catch { return '' } }
+export function setCustomBackground(uri) {
+  try { uri ? localStorage.setItem('bloom_bg_custom', uri) : localStorage.removeItem('bloom_bg_custom') } catch {}
+}
+// The CSS `background` shorthand for an illustration id (for the layer + previews).
+export function bgCss(id) {
+  if (id === 'custom') {
+    const uri = getCustomBackground()
+    // A translucent white veil over the photo keeps foreground text readable.
+    return uri ? `linear-gradient(rgba(255,255,255,.55), rgba(255,255,255,.55)), url("${uri}") center / cover no-repeat` : 'none'
+  }
+  const a = BG_ART[id]
+  return a ? `${encSvg(a.svg)} ${a.layout}` : 'none'
+}
+export function applyBackground(id) {
+  if (typeof document === 'undefined') return
+  document.documentElement.style.setProperty('--bloom-illustration', bgCss(id))
+}
+// Resize an uploaded image to a reasonably small JPEG data URI for a background.
+export function fileToBackgroundDataUri(file, maxSize = 1400, quality = 0.82) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onerror = () => reject(new Error('read failed'))
+    reader.onload = () => {
+      const img = new Image()
+      img.onerror = () => reject(new Error('decode failed'))
+      img.onload = () => {
+        const scale = Math.min(maxSize / img.width, maxSize / img.height, 1)
+        const w = Math.max(1, Math.round(img.width * scale))
+        const h = Math.max(1, Math.round(img.height * scale))
+        const c = document.createElement('canvas'); c.width = w; c.height = h
+        c.getContext('2d').drawImage(img, 0, 0, w, h)
+        resolve(c.toDataURL('image/jpeg', quality))
+      }
+      img.src = reader.result
+    }
+    reader.readAsDataURL(file)
+  })
+}
+
 export function applySavedAppearance() {
   applyLook(getSeasonPref(), getThemePref())
   applyFont(getFontPref())
   applyLayout(getLayoutPref())
+  applyBackground(getBackgroundPref())
 }

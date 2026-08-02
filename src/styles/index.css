@@ -99,6 +99,16 @@ body {
   transition: background .6s ease;
 }
 
+/* Optional decorative background illustration, layered above the wash and below
+   the app content. Driven by --bloom-illustration (set in applyBackground). */
+.bg-illustration {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background: var(--bloom-illustration, none);
+}
+
 /* ── SEASONAL AMBIENT MOTION ────────────────────────────────── */
 /* Drives SeasonalEffects.jsx particles. season-fall: petals/leaves/snow drift
    down with a gentle sway + spin. season-rise: summer sparkles float up and

@@ -40,7 +40,9 @@ import { getFontPref, setFontPref, applyFont, getThemePref, setThemePref, applyT
   getCustomColor, setCustomColor,
   getLayoutPref, setLayoutPref, applyLayout, getSoundEnabled, setSoundEnabled,
   getSummaryPref, setSummaryPref,
-  getSeasonPref, setSeasonPref, applyLook, resolveSeason } from './lib/appearance.js'
+  getSeasonPref, setSeasonPref, applyLook, resolveSeason,
+  getBackgroundPref, setBackgroundPref, applyBackground,
+  getCustomBackground, setCustomBackground } from './lib/appearance.js'
 import SeasonalEffects from './components/SeasonalEffects.jsx'
 
 // Build id baked in at build time (see vite.config.js). Shown in Settings so
@@ -70,7 +72,7 @@ const TABS = [
 ]
 
 // ── Settings Drawer ────────────────────────────────────────────
-function SettingsDrawer({ open, onClose, settingsTab, setSettingsTab, notes, updateNotes, categories, addCategory, updateCategory, deleteCategory, events, commitments, font, setFont, theme, setTheme, season, setSeason, customColor, setCustom, layout, setLayout, soundOn, setSound, summary, setSummary }) {
+function SettingsDrawer({ open, onClose, settingsTab, setSettingsTab, notes, updateNotes, categories, addCategory, updateCategory, deleteCategory, events, commitments, font, setFont, theme, setTheme, season, setSeason, customColor, setCustom, background, setBackground, customBg, setCustomBg, layout, setLayout, soundOn, setSound, summary, setSummary }) {
   if (!open) return null
   const SECTIONS = [
     ['customize','Look','sun'],
@@ -92,7 +94,7 @@ function SettingsDrawer({ open, onClose, settingsTab, setSettingsTab, notes, upd
         {/* Scrollable content */}
         <div style={{ flex:1, minHeight:0, overflowY:'auto', WebkitOverflowScrolling:'touch' }}>
           <div style={{ padding:'20px 24px' }}>
-            {settingsTab==='customize'  && <Customization font={font} onFont={setFont} theme={theme} onTheme={setTheme} season={season} onSeason={setSeason} customColor={customColor} onCustomColor={setCustom} layout={layout} onLayout={setLayout} soundOn={soundOn} onSound={setSound} summary={summary} onSummary={setSummary} />}
+            {settingsTab==='customize'  && <Customization font={font} onFont={setFont} theme={theme} onTheme={setTheme} season={season} onSeason={setSeason} customColor={customColor} onCustomColor={setCustom} background={background} onBackground={setBackground} customBackground={customBg} onCustomBackground={setCustomBg} layout={layout} onLayout={setLayout} soundOn={soundOn} onSound={setSound} summary={summary} onSummary={setSummary} />}
 
             {settingsTab==='reminders'  && <NotificationsSettings events={events} commitments={commitments} />}
             {settingsTab==='categories' && <CategoriesManager categories={categories} addCategory={addCategory} updateCategory={updateCategory} deleteCategory={deleteCategory} />}
@@ -224,6 +226,11 @@ export default function App() {
   // Picking a custom color stores it, switches the accent to 'custom', and
   // re-derives every surface from that one color (banner stays season-driven).
   const setCustom  = useCallback(hex => { setCustomColorState(hex); setCustomColor(hex); setThemeState('custom'); setThemePref('custom'); applyLook(getSeasonPref(), 'custom') }, [])
+  // Optional decorative background illustration (built-in scene or an upload).
+  const [background, setBackgroundState] = useState(getBackgroundPref)
+  const [customBg, setCustomBgState] = useState(getCustomBackground)
+  const setBackground = useCallback(id => { setBackgroundState(id); setBackgroundPref(id); applyBackground(id) }, [])
+  const setCustomBg   = useCallback(uri => { setCustomBackground(uri); setCustomBgState(uri); setBackgroundState('custom'); setBackgroundPref('custom'); applyBackground('custom') }, [])
   const setLayout  = useCallback(v  => { setLayoutState(v);  setLayoutPref(v);  applyLayout(v) }, [])
   const setSound   = useCallback(on => { setSoundState(on);  setSoundEnabled(on) }, [])
   const setSummary = useCallback(v  => { setSummaryState(v); setSummaryPref(v) }, [])
@@ -760,6 +767,7 @@ export default function App() {
   return (
     <div>
       <div className="shimmer-bg" aria-hidden="true" />
+      <div className="bg-illustration" aria-hidden="true" />
       <SeasonalEffects effect={resolveSeason(season).effect} />
       <header className="header">
         <div className="header-top">
@@ -819,6 +827,7 @@ export default function App() {
         font={font} setFont={setFont} theme={theme} setTheme={setTheme}
         season={season} setSeason={setSeason}
         customColor={customColor} setCustom={setCustom}
+        background={background} setBackground={setBackground} customBg={customBg} setCustomBg={setCustomBg}
         layout={layout} setLayout={setLayout} soundOn={soundOn} setSound={setSound}
         summary={summary} setSummary={setSummary} />
 
