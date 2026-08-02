@@ -3,14 +3,14 @@
 // accent), Accent color (follow the season, a preset, or a custom color),
 // Layout, Summary display, and in-app sound. All applied live by App and
 // persisted per-device.
-import { THEMES, FONTS, LAYOUTS, tileBackground, SEASONS, resolveSeason } from '../lib/appearance.js'
+import { THEMES, FONTS, LAYOUTS, tileBackground, SEASONS, BLOOM_LOOK, resolveSeason } from '../lib/appearance.js'
 import ColorSwatchRow from './ColorSwatchRow.jsx'
 
 const sectionLabel = { fontSize:13, fontWeight:700, color:'var(--muted)', letterSpacing:.2, margin:'6px 2px 10px' }
 const card = { background:'white', borderRadius:16, border:'1px solid var(--border)', padding:16, marginBottom:12 }
 const help = { fontSize:12.5, color:'var(--muted)', lineHeight:1.55, margin:'0 2px 22px' }
 
-const SEASON_HINT = { spring:'🌸', summer:'✨', fall:'🍂', winter:'❄️' }
+const SEASON_HINT = { bloom:'🫧', spring:'🌸', summer:'☀️', fall:'🍂', winter:'❄️' }
 const gradOf = (s) => `linear-gradient(135deg, ${s.banner.join(', ')})`
 
 function CheckBadge() {
@@ -84,10 +84,12 @@ export default function Customization({ font, onFont, theme, onTheme, season, on
         app; some fine details may not switch.
       </div>
 
-      {/* ── Season (the seasonal skin) ────────────────────────── */}
-      <div style={sectionLabel}>Season</div>
+      {/* ── Theme (Bloom + seasonal skins) ────────────────────── */}
+      <div style={sectionLabel}>Theme</div>
       <div style={card}>
         <div style={{ display:'flex', gap:14, overflowX:'auto', paddingBottom:4, WebkitOverflowScrolling:'touch' }}>
+          <SeasonTile label="Bloom" gradient={gradOf(BLOOM_LOOK)} hint={SEASON_HINT.bloom} sub="Signature"
+            selected={season === 'bloom'} onClick={() => onSeason('bloom')} />
           <SeasonTile label="Auto" gradient={gradOf(autoSeason)} hint="🗓️" sub={autoSeason.label}
             selected={season === 'auto'} onClick={() => onSeason('auto')} />
           {SEASONS.map(s => (
@@ -97,10 +99,11 @@ export default function Customization({ font, onFont, theme, onTheme, season, on
         </div>
       </div>
       <div style={help}>
-        Each season restyles the banner, adds a gentle ambient animation
-        (petals, sea shimmer, falling leaves, snow), and sets a matching accent.
-        <b> Auto</b> follows the calendar; pick one to lock it. Motion is skipped
-        automatically if your device prefers reduced motion.
+        <b>Bloom</b> is the signature look — iridescent bubbles drifting up over
+        the sea-breeze pastels. The seasons restyle the banner and swap the
+        ambient motion (petals, dappled summer sun, falling leaves, snow), each
+        with a matching accent. <b>Auto</b> follows the calendar. Motion is slow
+        and subtle, and skipped entirely if your device prefers reduced motion.
       </div>
 
       {/* ── Accent color ──────────────────────────────────────── */}
