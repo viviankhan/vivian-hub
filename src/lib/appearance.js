@@ -187,9 +187,9 @@ export const SEASONS = [
   { id:'spring', label:'Spring', accent:'#7FAE6B', effect:'petals',
     banner:['#D8E9C6','#E7DCEF','#F5D6DF','#DDECD1'],
     wash:['rgba(198,224,176,.50)','rgba(224,206,236,.45)','rgba(244,208,216,.42)','rgba(214,232,198,.42)'] },
-  // Summer — dappled sunlight through leaves. Sunny meadow-to-sky: green, gold,
-  // warm sand, sky-teal — multi-hued so the banner pops like Bloom's.
-  { id:'summer', label:'Summer', accent:'#5F9E6B', effect:'dapple',
+  // Summer — green leaves drifting through a sunny meadow-to-sky banner (green,
+  // gold, warm sand, sky-teal — multi-hued so it pops like Bloom's).
+  { id:'summer', label:'Summer', accent:'#5F9E6B', effect:'greenleaves',
     banner:['#C2E4A2','#E9E79E','#F3D29A','#A9D9DD'],
     wash:['rgba(190,224,150,.50)','rgba(232,228,150,.45)','rgba(246,214,150,.42)','rgba(168,214,220,.44)'] },
   // Fall — gold, amber, rust, and a berry pop for depth.

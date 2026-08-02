@@ -16,13 +16,12 @@ const pick = arr => arr[Math.floor(Math.random() * arr.length)]
 // Per-effect look. `mode` picks how a particle moves/renders; durations are long
 // on purpose (slow drift), and opacities stay low (unobtrusive).
 const EFFECTS = {
-  petals:  { count: 12, size: [10, 17], mode: 'fall',   dur: [18, 30], op: [0.26, 0.48], colors: ['#F6C6D4', '#F1BFCE', '#EFD3DE', '#FBE6EC'] },
-  leaves:  { count: 12, size: [12, 20], mode: 'fall',   dur: [18, 32], op: [0.30, 0.52], colors: ['#D2814B', '#C85A3A', '#E0A24E', '#B8632E'] },
-  snow:    { count: 18, size: [4, 9],   mode: 'fall',   dur: [22, 38], op: [0.34, 0.60], colors: ['#FFFFFF', '#EAF2FA', '#E3EEF8'] },
-  bubbles: { count: 12, size: [16, 46], mode: 'bubble', dur: [20, 34], op: [0.26, 0.5],  colors: ['iris'] },
-  // Dappled light — more spots, crisper edges, and warmer/greener tones so the
-  // texture actually reads as sun filtering through leaves.
-  dapple:  { count: 20, size: [34, 104], mode: 'dapple', dur: [9, 17], op: [0.28, 0.6], colors: ['#FFEC9E', '#FFF6CE', '#FFFFFF', '#D6E9A0', '#F7DFA0'] },
+  petals:      { count: 12, size: [10, 17], mode: 'fall',   dur: [18, 30], op: [0.26, 0.48], colors: ['#F6C6D4', '#F1BFCE', '#EFD3DE', '#FBE6EC'] },
+  leaves:      { count: 12, size: [12, 20], mode: 'fall',   dur: [18, 32], op: [0.30, 0.52], colors: ['#D2814B', '#C85A3A', '#E0A24E', '#B8632E'] },
+  // Summer — green leaves, a touch slower so they drift rather than fall.
+  greenleaves: { count: 12, size: [12, 20], mode: 'fall',   dur: [22, 38], op: [0.30, 0.52], colors: ['#6FA84E', '#84B85C', '#5C9A46', '#A6C97E'] },
+  snow:        { count: 18, size: [4, 9],   mode: 'fall',   dur: [22, 38], op: [0.34, 0.60], colors: ['#FFFFFF', '#EAF2FA', '#E3EEF8'] },
+  bubbles:     { count: 12, size: [16, 46], mode: 'bubble', dur: [20, 34], op: [0.26, 0.5],  colors: ['iris'] },
 }
 
 // A soap-bubble: translucent, with a soft white highlight and an iridescent rim.
@@ -39,7 +38,7 @@ function bubbleStyle(size) {
 
 function Shape({ effect, size, color }) {
   if (effect === 'bubbles') return <span style={bubbleStyle(size)} />
-  if (effect === 'leaves') {
+  if (effect === 'leaves' || effect === 'greenleaves') {
     return (
       <svg width={size} height={size} viewBox="0 0 24 24" fill={color} aria-hidden="true">
         <path d="M12 2c5 3 8 7 8 12 0 4-3 8-8 8-1-6 0-12 3-16-4 2-7 6-8 11-1-4 0-11 5-15Z" />
@@ -77,46 +76,9 @@ export default function SeasonalEffects({ effect }) {
     }))
   }, [effect]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Dappled light — a mottled mix of warm light patches AND cool shadow patches,
-  // irregular and scattered like sun through a canopy (not glowing circles).
-  const dapplePatches = useMemo(() => {
-    if (effect !== 'dapple') return []
-    const LIGHT = ['#FFF1B4', '#FFF8DC', '#F7E7A2', '#FFFFFF']
-    const SHADOW = ['#5A7838', '#6C883F', '#496B2E', '#647E3A']
-    const irregular = () => `${rnd(38,66)}% ${rnd(38,66)}% ${rnd(38,66)}% ${rnd(38,66)}% / ${rnd(40,64)}% ${rnd(40,64)}% ${rnd(40,64)}% ${rnd(40,64)}%`
-    return Array.from({ length: 28 }, (_, i) => {
-      const isLight = i % 2 === 0     // roughly half light, half shadow
-      const w = Math.round(rnd(44, 190))
-      return {
-        key: i, isLight, top: rnd(-4, 96), left: rnd(-4, 98),
-        w, h: Math.round(w * rnd(0.6, 1.05)), radius: irregular(),
-        dur: rnd(8, 18), delay: rnd(-18, 0),
-        op: isLight ? rnd(0.28, 0.55) : rnd(0.16, 0.36),
-        color: isLight ? pick(LIGHT) : pick(SHADOW),
-      }
-    })
-  }, [effect])
-
   if (!cfg || reduce) return null
 
   const wrap = { position:'fixed', inset:0, zIndex:40, pointerEvents:'none', overflow:'hidden' }
-
-  if (cfg.mode === 'dapple') {
-    return (
-      <div aria-hidden="true" style={wrap}>
-        {dapplePatches.map(p => (
-          <div key={p.key} style={{
-            position:'absolute', top:`${p.top}%`, left:`${p.left}%`, width:p.w, height:p.h,
-            borderRadius:p.radius,
-            background:`radial-gradient(circle, ${p.color} 0%, ${p.color} 30%, transparent 70%)`,
-            filter:`blur(${Math.round(p.w/7)}px)`, mixBlendMode: p.isLight ? 'screen' : 'multiply',
-            '--pk': p.op, willChange:'opacity, transform',
-            animation:`dapple-drift ${p.dur}s ease-in-out ${p.delay}s infinite`,
-          }} />
-        ))}
-      </div>
-    )
-  }
 
   // Bubbles — rise from the bottom (outer) while gently swaying (inner).
   if (cfg.mode === 'bubble') {
