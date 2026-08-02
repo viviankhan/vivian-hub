@@ -120,10 +120,12 @@ body {
   0%   { transform: translateX(-14px) rotate(-4deg); }
   100% { transform: translateX(14px)  rotate(4deg); }
 }
-/* Dappled light — soft blotches that breathe (fade + drift) in place. */
-@keyframes dapple-breathe {
-  0%, 100% { opacity: 0;             transform: translate(0, 0)      scale(.85); }
-  50%      { opacity: var(--pk, .3); transform: translate(12px, -9px) scale(1.12); }
+/* Dappled light — mottled patches that stay present and drift slowly, like sun
+   through swaying leaves (they never fully fade, so the texture holds). */
+@keyframes dapple-drift {
+  0%   { opacity: calc(var(--pk, .3) * .68); transform: translate(0, 0)        scale(1); }
+  50%  { opacity: var(--pk, .3);             transform: translate(16px, -11px) scale(1.09); }
+  100% { opacity: calc(var(--pk, .3) * .72); transform: translate(-9px, 7px)   scale(.95); }
 }
 
 /* ── HEADER ────────────────────────────────────────────────── */

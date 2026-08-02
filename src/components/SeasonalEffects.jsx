@@ -77,20 +77,41 @@ export default function SeasonalEffects({ effect }) {
     }))
   }, [effect]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Dappled light — a mottled mix of warm light patches AND cool shadow patches,
+  // irregular and scattered like sun through a canopy (not glowing circles).
+  const dapplePatches = useMemo(() => {
+    if (effect !== 'dapple') return []
+    const LIGHT = ['#FFF1B4', '#FFF8DC', '#F7E7A2', '#FFFFFF']
+    const SHADOW = ['#5A7838', '#6C883F', '#496B2E', '#647E3A']
+    const irregular = () => `${rnd(38,66)}% ${rnd(38,66)}% ${rnd(38,66)}% ${rnd(38,66)}% / ${rnd(40,64)}% ${rnd(40,64)}% ${rnd(40,64)}% ${rnd(40,64)}%`
+    return Array.from({ length: 28 }, (_, i) => {
+      const isLight = i % 2 === 0     // roughly half light, half shadow
+      const w = Math.round(rnd(44, 190))
+      return {
+        key: i, isLight, top: rnd(-4, 96), left: rnd(-4, 98),
+        w, h: Math.round(w * rnd(0.6, 1.05)), radius: irregular(),
+        dur: rnd(8, 18), delay: rnd(-18, 0),
+        op: isLight ? rnd(0.28, 0.55) : rnd(0.16, 0.36),
+        color: isLight ? pick(LIGHT) : pick(SHADOW),
+      }
+    })
+  }, [effect])
+
   if (!cfg || reduce) return null
 
   const wrap = { position:'fixed', inset:0, zIndex:40, pointerEvents:'none', overflow:'hidden' }
 
-  // Dappled light — soft blurred blobs that breathe in place (no travel).
   if (cfg.mode === 'dapple') {
     return (
       <div aria-hidden="true" style={wrap}>
-        {particles.map(p => (
+        {dapplePatches.map(p => (
           <div key={p.key} style={{
-            position:'absolute', top:`${p.top}%`, left:`${p.left}%`, width:p.size, height:p.size,
-            borderRadius:'50%', background:`radial-gradient(circle, ${p.color} 0%, ${p.color} 22%, transparent 62%)`,
-            filter:`blur(${Math.round(p.size/10)}px)`, mixBlendMode:'screen', '--pk': p.op, willChange:'opacity, transform',
-            animation:`dapple-breathe ${p.dur}s ease-in-out ${p.delay}s infinite`,
+            position:'absolute', top:`${p.top}%`, left:`${p.left}%`, width:p.w, height:p.h,
+            borderRadius:p.radius,
+            background:`radial-gradient(circle, ${p.color} 0%, ${p.color} 30%, transparent 70%)`,
+            filter:`blur(${Math.round(p.w/7)}px)`, mixBlendMode: p.isLight ? 'screen' : 'multiply',
+            '--pk': p.op, willChange:'opacity, transform',
+            animation:`dapple-drift ${p.dur}s ease-in-out ${p.delay}s infinite`,
           }} />
         ))}
       </div>
