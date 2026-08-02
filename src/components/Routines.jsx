@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { getRoutines, setRoutines } from '../lib/storage.js'
 import { IconPicker, useOutsideClose } from './IconPicker.jsx'
 import TimeField from './TimeField.jsx'
+import ColorSwatchRow from './ColorSwatchRow.jsx'
 
 // ── Shared helpers (also used by Today's routine cards) ─────────
 export const ROUTINE_PRESET_COLORS = [
@@ -70,19 +71,9 @@ function ColorInput({ value, onChange }) {
       <button onClick={() => setOpen(o => !o)} title="Color"
         style={{ width:28, height:28, borderRadius:8, border:'1px solid var(--border)', background:value, cursor:'pointer' }} />
       {open && (
-        <div style={{ position:'absolute', top:'110%', left:0, background:'white', border:'1px solid var(--border)', borderRadius:10, padding:10, boxShadow:'0 8px 24px rgba(0,0,0,.12)', zIndex:60, width:180 }}>
-          <div style={{ display:'flex', flexWrap:'wrap', gap:5, marginBottom:8 }}>
-            {ROUTINE_PRESET_COLORS.map(c => (
-              <button key={c} onClick={() => onChange(c)}
-                style={{ width:22, height:22, borderRadius:6, background:c, cursor:'pointer', border: value===c ? '2px solid var(--text)' : '2px solid transparent' }} />
-            ))}
-          </div>
-          <div style={{ display:'flex', alignItems:'center', gap:8 }}>
-            <input type="color" value={value} onChange={e => onChange(e.target.value)}
-              style={{ width:32, height:28, border:'none', borderRadius:6, cursor:'pointer', padding:0, background:'none' }} />
-            <span style={{ fontSize:11, color:'var(--muted)' }}>Custom</span>
-            <button onClick={() => setOpen(false)} style={{ marginLeft:'auto', fontSize:11, background:'none', border:'1px solid var(--border)', borderRadius:6, padding:'4px 8px', cursor:'pointer', color:'var(--muted)' }}>Done</button>
-          </div>
+        <div style={{ position:'absolute', top:'110%', left:0, background:'white', border:'1px solid var(--border)', borderRadius:10, padding:'8px 10px', boxShadow:'0 8px 24px rgba(0,0,0,.12)', zIndex:60, width:240 }}>
+          <ColorSwatchRow value={value} onChange={onChange} size={26} />
+          <button onClick={() => setOpen(false)} style={{ width:'100%', marginTop:4, fontSize:11, background:'none', border:'1px solid var(--border)', borderRadius:6, padding:'5px 8px', cursor:'pointer', color:'var(--muted)', fontFamily:'DM Sans,sans-serif' }}>Done</button>
         </div>
       )}
     </div>

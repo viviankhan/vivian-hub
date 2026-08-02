@@ -103,8 +103,11 @@ export function setCustomColor(v) {
   try { localStorage.setItem('bloom_custom_color', v) } catch {}
 }
 
-// Per-task color swatches the user has saved for reuse (device-local). Deduped,
-// most-recent first, capped so the row stays tidy.
+// Saved color swatches the user can reuse anywhere a color is picked
+// (device-local). Deduped, most-recent first, capped so the row stays tidy.
+// A change fires a 'bloom-saved-colors' event so every open picker refreshes,
+// keeping the palette in sync across the whole app.
+function emitSavedColors() { try { window.dispatchEvent(new Event('bloom-saved-colors')) } catch {} }
 export function getSavedColors() {
   try { const v = JSON.parse(localStorage.getItem('bloom_saved_colors') || '[]'); return Array.isArray(v) ? v : [] } catch { return [] }
 }
@@ -113,12 +116,14 @@ export function addSavedColor(hex) {
   if (!/^#[0-9A-F]{6}$/.test(h)) return getSavedColors()
   const next = [h, ...getSavedColors().filter(c => c.toUpperCase() !== h)].slice(0, 16)
   try { localStorage.setItem('bloom_saved_colors', JSON.stringify(next)) } catch {}
+  emitSavedColors()
   return next
 }
 export function removeSavedColor(hex) {
   const h = (hex || '').toUpperCase()
   const next = getSavedColors().filter(c => c.toUpperCase() !== h)
   try { localStorage.setItem('bloom_saved_colors', JSON.stringify(next)) } catch {}
+  emitSavedColors()
   return next
 }
 // The active theme's accent — the "default Bloom color" for the current scheme,

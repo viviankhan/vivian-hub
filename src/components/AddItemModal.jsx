@@ -13,6 +13,7 @@ import FocusMode from './FocusMode.jsx'
 import { nowProgress, taskProgress, splitTimePrefix } from '../lib/occurrences.js'
 import { Icon } from './IconPicker.jsx'
 import ColorIconPicker from './ColorIconPicker.jsx'
+import ColorSwatchRow, { TASK_COLORS } from './ColorSwatchRow.jsx'
 import { suggestGlyph, iconColorOn } from '../lib/glyphs.jsx'
 import { LEAD_OPTIONS, getItemReminders, getItemSound, setItemSound } from '../lib/notifications.js'
 import { SOUNDS, playSound } from '../lib/sounds.js'
@@ -25,9 +26,6 @@ const DEFAULT_CATEGORIES = [{ id:'other', label:'Other', color:'#8899AA' }]
 // A neutral slate used for the header when a task has no label yet (so an
 // unlabeled task doesn't borrow a real category's color and read as tagged).
 const UNLABELED_COLOR = '#6B7A8D'
-
-// A per-task color palette (overrides the label color when picked).
-const TASK_COLORS = ['#E0A33E','#C4728E','#EC6F9C','#7C9CBF','#4A9EB5','#52B788','#2A9D8F','#7C3AED','#E07B2E','#EF6B6B','#6B7A8D','#111827']
 
 const inp = { width:'100%', fontSize:14, padding:'10px 12px', borderRadius:10, border:'1px solid var(--border)', fontFamily:'DM Sans,sans-serif', outline:'none', boxSizing:'border-box' }
 const fieldLabel = { fontSize:10, color:'var(--muted)', letterSpacing:1, textTransform:'uppercase', marginBottom:4 }
@@ -756,22 +754,7 @@ export default function AddItemModal({ existing = null, existingRecurring = null
             {/* Color */}
             <DetailRow icon={<span style={{ width:15, height:15, borderRadius:'50%', background:headerColor }} />} iconColor={headerColor}
               text="Color" hint={color ? 'Custom' : 'From label'} open={expanded==='color'} onClick={() => toggleRow('color')}>
-              <div style={{ display:'flex', gap:9, flexWrap:'wrap', alignItems:'center' }}>
-                {TASK_COLORS.map(cx => (
-                  <button key={cx} onClick={() => setColor(cx)} aria-label={`Color ${cx}`}
-                    style={{ width:28, height:28, borderRadius:'50%', background:cx, cursor:'pointer', padding:0,
-                      border: color===cx ? '3px solid white' : '3px solid transparent',
-                      boxShadow: color===cx ? `0 0 0 2px ${cx}` : '0 0 0 1px rgba(0,0,0,.10)' }} />
-                ))}
-                {/* Any custom color via the native color wheel */}
-                <label title="Custom color" style={{ width:28, height:28, borderRadius:'50%', cursor:'pointer', position:'relative', overflow:'hidden', display:'inline-block',
-                  background: isCustomColor ? color : 'conic-gradient(from 90deg, #EF6B6B, #E0A33E, #52B788, #4A9EB5, #7C3AED, #EC6F9C, #EF6B6B)',
-                  border: isCustomColor ? '3px solid white' : '3px solid transparent',
-                  boxShadow: isCustomColor ? `0 0 0 2px ${color}` : '0 0 0 1px rgba(0,0,0,.10)' }}>
-                  <input type="color" value={color || '#4A9EB5'} onChange={e => setColor(e.target.value)}
-                    style={{ position:'absolute', top:'-40%', left:'-40%', width:'180%', height:'180%', opacity:0, cursor:'pointer', border:'none', padding:0 }} />
-                </label>
-              </div>
+              <ColorSwatchRow value={color} onChange={setColor} size={28} />
               <button onClick={() => setColor('')}
                 style={{ marginTop:11, fontSize:11, padding:'5px 12px', borderRadius:16, cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:600,
                   border: color ? '1px solid var(--border)' : 'none', background: color ? 'white' : 'var(--forest)', color: color ? 'var(--muted)' : 'var(--green-light)' }}>
