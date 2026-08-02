@@ -5,12 +5,14 @@
 // persisted per-device.
 import { THEMES, FONTS, LAYOUTS, tileBackground, SEASONS, BLOOM_LOOK, resolveSeason } from '../lib/appearance.js'
 import ColorSwatchRow from './ColorSwatchRow.jsx'
+import { Icon } from './IconPicker.jsx'
 
 const sectionLabel = { fontSize:13, fontWeight:700, color:'var(--muted)', letterSpacing:.2, margin:'6px 2px 10px' }
 const card = { background:'white', borderRadius:16, border:'1px solid var(--border)', padding:16, marginBottom:12 }
 const help = { fontSize:12.5, color:'var(--muted)', lineHeight:1.55, margin:'0 2px 22px' }
 
-const SEASON_HINT = { bloom:'🫧', spring:'🌸', summer:'☀️', fall:'🍂', winter:'❄️' }
+// The app's own line icons for each look (no colored emoji).
+const SEASON_ICON = { bloom:'glyph:flower', spring:'glyph:sprout', summer:'glyph:sun', fall:'glyph:leaf', winter:'glyph:snow', auto:'glyph:calendar' }
 const gradOf = (s) => `linear-gradient(135deg, ${s.banner.join(', ')})`
 
 function CheckBadge() {
@@ -21,14 +23,16 @@ function CheckBadge() {
   )
 }
 
-// A season swatch — a banner-gradient tile with the season's ambient hint.
-function SeasonTile({ label, gradient, hint, sub, selected, onClick }) {
+// A look swatch — a banner-gradient tile with the app's line icon on it.
+function SeasonTile({ label, gradient, icon, sub, selected, onClick }) {
   return (
     <button onClick={onClick} aria-label={label}
       style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:6, background:'none', border:'none', cursor:'pointer', padding:0, fontFamily:'DM Sans,sans-serif', flexShrink:0, width:70 }}>
       <span style={{ position:'relative', width:66, height:66, borderRadius:17, background:gradient,
-        boxShadow: selected ? '0 0 0 3px var(--teal)' : '0 2px 8px rgba(20,30,40,.16)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:26 }}>
-        <span style={{ filter:'drop-shadow(0 1px 2px rgba(0,0,0,.28))' }}>{hint}</span>
+        boxShadow: selected ? '0 0 0 3px var(--teal)' : '0 2px 8px rgba(20,30,40,.16)', display:'flex', alignItems:'center', justifyContent:'center' }}>
+        <span style={{ display:'flex', filter:'drop-shadow(0 1px 1px rgba(255,255,255,.5))' }}>
+          <Icon value={icon} size={30} color="#38424F" />
+        </span>
         {selected && <CheckBadge />}
       </span>
       <span style={{ fontSize:13, fontWeight:600, color: selected ? 'var(--text)' : 'var(--muted)' }}>{label}</span>
@@ -88,12 +92,12 @@ export default function Customization({ font, onFont, theme, onTheme, season, on
       <div style={sectionLabel}>Theme</div>
       <div style={card}>
         <div style={{ display:'flex', gap:14, overflowX:'auto', paddingBottom:4, WebkitOverflowScrolling:'touch' }}>
-          <SeasonTile label="Bloom" gradient={gradOf(BLOOM_LOOK)} hint={SEASON_HINT.bloom} sub="Signature"
+          <SeasonTile label="Bloom" gradient={gradOf(BLOOM_LOOK)} icon={SEASON_ICON.bloom} sub="Signature"
             selected={season === 'bloom'} onClick={() => onSeason('bloom')} />
-          <SeasonTile label="Auto" gradient={gradOf(autoSeason)} hint="🗓️" sub={autoSeason.label}
+          <SeasonTile label="Auto" gradient={gradOf(autoSeason)} icon={SEASON_ICON.auto} sub={autoSeason.label}
             selected={season === 'auto'} onClick={() => onSeason('auto')} />
           {SEASONS.map(s => (
-            <SeasonTile key={s.id} label={s.label} gradient={gradOf(s)} hint={SEASON_HINT[s.id]}
+            <SeasonTile key={s.id} label={s.label} gradient={gradOf(s)} icon={SEASON_ICON[s.id]}
               selected={season === s.id} onClick={() => onSeason(s.id)} />
           ))}
         </div>

@@ -20,7 +20,9 @@ const EFFECTS = {
   leaves:  { count: 12, size: [12, 20], mode: 'fall',   dur: [18, 32], op: [0.30, 0.52], colors: ['#D2814B', '#C85A3A', '#E0A24E', '#B8632E'] },
   snow:    { count: 18, size: [4, 9],   mode: 'fall',   dur: [22, 38], op: [0.34, 0.60], colors: ['#FFFFFF', '#EAF2FA', '#E3EEF8'] },
   bubbles: { count: 12, size: [16, 46], mode: 'bubble', dur: [20, 34], op: [0.26, 0.5],  colors: ['iris'] },
-  dapple:  { count: 8,  size: [90, 190],mode: 'dapple', dur: [11, 20], op: [0.16, 0.36], colors: ['#FFF3BE', '#FFFFFF', '#EAF3C4'] },
+  // Dappled light — more spots, crisper edges, and warmer/greener tones so the
+  // texture actually reads as sun filtering through leaves.
+  dapple:  { count: 20, size: [34, 104], mode: 'dapple', dur: [9, 17], op: [0.28, 0.6], colors: ['#FFEC9E', '#FFF6CE', '#FFFFFF', '#D6E9A0', '#F7DFA0'] },
 }
 
 // A soap-bubble: translucent, with a soft white highlight and an iridescent rim.
@@ -86,8 +88,8 @@ export default function SeasonalEffects({ effect }) {
         {particles.map(p => (
           <div key={p.key} style={{
             position:'absolute', top:`${p.top}%`, left:`${p.left}%`, width:p.size, height:p.size,
-            borderRadius:'50%', background:`radial-gradient(circle, ${p.color} 0%, transparent 68%)`,
-            filter:`blur(${Math.round(p.size/6)}px)`, '--pk': p.op, willChange:'opacity, transform',
+            borderRadius:'50%', background:`radial-gradient(circle, ${p.color} 0%, ${p.color} 22%, transparent 62%)`,
+            filter:`blur(${Math.round(p.size/10)}px)`, mixBlendMode:'screen', '--pk': p.op, willChange:'opacity, transform',
             animation:`dapple-breathe ${p.dur}s ease-in-out ${p.delay}s infinite`,
           }} />
         ))}

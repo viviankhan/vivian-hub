@@ -72,7 +72,7 @@ function EventSection({ events, addEvent, deleteEvent }) {
   return (
     <div style={{ marginBottom:24 }}>
       <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:8 }}>
-        <div style={{ fontSize:11, color:'var(--muted)', letterSpacing:1.5, textTransform:'uppercase', fontWeight:600 }}>📅 Events</div>
+        <div style={{ display:'inline-flex', alignItems:'center', gap:6, fontSize:11, color:'var(--muted)', letterSpacing:1.5, textTransform:'uppercase', fontWeight:600 }}><Icon value="glyph:calendar" size={14} color="currentColor" />Events</div>
         <button onClick={() => setOpen(o => !o)}
           style={{ fontSize:11, padding:'5px 12px', borderRadius:20, border:'1px solid var(--border)', background: open ? 'var(--forest)' : 'white', color: open ? 'var(--green-light)' : 'var(--muted)', cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:600 }}>
           {open ? 'Cancel' : '+ Add event'}
@@ -187,7 +187,7 @@ function VacationSection({ vacations, addVacation, deleteVacation }) {
   return (
     <div style={{ marginBottom:16 }}>
       <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:8 }}>
-        <div style={{ fontSize:11, color:'var(--muted)', letterSpacing:1.5, textTransform:'uppercase', fontWeight:600 }}>🏝 Vacation / Time Off</div>
+        <div style={{ display:'inline-flex', alignItems:'center', gap:6, fontSize:11, color:'var(--muted)', letterSpacing:1.5, textTransform:'uppercase', fontWeight:600 }}><Icon value="glyph:beach" size={14} color="currentColor" />Vacation / Time Off</div>
         <button onClick={() => setOpen(o => !o)}
           style={{ fontSize:11, padding:'5px 12px', borderRadius:20, border:'1px solid var(--border)', background: open ? '#4A9EB5' : 'white', color: open ? 'white' : 'var(--muted)', cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:600 }}>
           {open ? 'Cancel' : '+ Add vacation'}

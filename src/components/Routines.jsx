@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { getRoutines, setRoutines } from '../lib/storage.js'
-import { IconPicker, useOutsideClose } from './IconPicker.jsx'
+import { IconPicker, Icon, useOutsideClose } from './IconPicker.jsx'
 import TimeField from './TimeField.jsx'
 import ColorSwatchRow from './ColorSwatchRow.jsx'
 
@@ -121,7 +121,7 @@ function RoutineEditor({ title, icon, items, enabled, onChangeItems, onSetEnable
       {/* Header with enable toggle */}
       <div style={{ padding:'14px 18px', display:'flex', alignItems:'center', justifyContent:'space-between', gap:10 }}>
         <div style={{ display:'flex', alignItems:'center', gap:10 }}>
-          <span style={{ fontSize:22 }}>{icon}</span>
+          <span style={{ display:'flex' }}><Icon value={icon} size={22} color="var(--sand)" /></span>
           <div>
             <div className="serif" style={{ fontSize:18, color:'var(--sand)', fontWeight:600 }}>{title}</div>
             <div style={{ fontSize:11, color:'var(--green-mid)', marginTop:1 }}>
@@ -210,9 +210,9 @@ export default function Routines() {
     <div>
       <div className="page-title">Routines</div>
       <div className="page-sub">Set a time, emoji, and color for each step. Toggle a routine off if you don't use it. Changes save automatically.</div>
-      <RoutineEditor title="Morning Routine" icon="☀️" items={morning} enabled={morningEnabled}
+      <RoutineEditor title="Morning Routine" icon="glyph:sun" items={morning} enabled={morningEnabled}
         onChangeItems={changeMorning} onSetEnabled={enableMorning} />
-      <RoutineEditor title="Night Routine" icon="🌙" items={night} enabled={nightEnabled}
+      <RoutineEditor title="Night Routine" icon="glyph:moon" items={night} enabled={nightEnabled}
         onChangeItems={changeNight} onSetEnabled={enableNight} />
     </div>
   )
