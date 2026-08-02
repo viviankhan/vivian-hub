@@ -3,11 +3,7 @@
 // Commitments and Recurring tasks. Lives in Settings → Categories.
 import { useState } from 'react'
 import { IconPicker, Icon } from './IconPicker.jsx'
-
-const PRESET_COLORS = [
-  '#059669','#7C3AED','#4A9EB5','#C4728E','#D97706','#7A8EC4',
-  '#E07B2E','#3B82F6','#A855F7','#9A7CC4','#EF4444','#52B788','#8899AA',
-]
+import ColorSwatchRow from './ColorSwatchRow.jsx'
 
 function slugify(label) {
   return label.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '').slice(0, 24)
@@ -15,9 +11,10 @@ function slugify(label) {
 
 export default function CategoriesManager({ categories, addCategory, updateCategory, deleteCategory }) {
   const [newLabel, setNewLabel] = useState('')
-  const [newColor, setNewColor] = useState(PRESET_COLORS[0])
+  const [newColor, setNewColor] = useState('#4A9EB5')
   const [newIcon,  setNewIcon]  = useState('')
   const [confirmDelete, setConfirmDelete] = useState(null)
+  const [colorOpen, setColorOpen] = useState(null)   // category id whose color row is expanded
 
   const existingIds = new Set((categories || []).map(c => c.id))
 
@@ -39,29 +36,34 @@ export default function CategoriesManager({ categories, addCategory, updateCateg
       {/* Existing categories */}
       <div style={{ marginBottom:18 }}>
         {(categories || []).map(cat => (
-          <div key={cat.id} style={{ display:'flex', alignItems:'center', gap:10, background:'white', border:'1px solid var(--border)', borderRadius:11, padding:'9px 12px', marginBottom:7 }}>
-            <IconPicker value={cat.icon} onChange={v => updateCategory(cat.id, { icon: v })} allowClear size={32} />
-            <input type="color" value={cat.color}
-              onChange={e => updateCategory(cat.id, { color: e.target.value })}
-              title="Change color"
-              style={{ width:28, height:28, border:'none', borderRadius:6, cursor:'pointer', padding:0, background:'none', flexShrink:0 }} />
-            <input value={cat.label}
-              onChange={e => updateCategory(cat.id, { label: e.target.value })}
-              style={{ flex:1, minWidth:80, fontSize:13, padding:'6px 10px', borderRadius:8, border:'1px solid var(--border)', fontFamily:'DM Sans,sans-serif', color:'var(--text)', background:'white' }} />
-            <span style={{ display:'flex', alignItems:'center', gap:4, fontSize:9, letterSpacing:1, textTransform:'uppercase', padding:'3px 8px', borderRadius:10, background:`${cat.color}20`, color:cat.color, fontWeight:700, flexShrink:0 }}>
-              {cat.icon && <Icon value={cat.icon} size={12} />}{cat.label}
-            </span>
-            {confirmDelete === cat.id ? (
-              <div style={{ display:'flex', gap:4, flexShrink:0 }}>
-                <button onClick={() => { deleteCategory(cat.id); setConfirmDelete(null) }}
-                  style={{ fontSize:11, padding:'6px 10px', borderRadius:8, border:'none', background:'#EF4444', color:'white', cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:600 }}>Delete</button>
-                <button onClick={() => setConfirmDelete(null)}
-                  style={{ fontSize:11, padding:'6px 10px', borderRadius:8, border:'1px solid var(--border)', background:'white', color:'var(--muted)', cursor:'pointer', fontFamily:'DM Sans,sans-serif' }}>Cancel</button>
+          <div key={cat.id} style={{ background:'white', border:'1px solid var(--border)', borderRadius:11, padding:'9px 12px', marginBottom:7 }}>
+            <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+              <IconPicker value={cat.icon} onChange={v => updateCategory(cat.id, { icon: v })} allowClear size={32} />
+              <button onClick={() => setColorOpen(o => o === cat.id ? null : cat.id)} title="Change color"
+                style={{ width:28, height:28, borderRadius:8, border: colorOpen===cat.id ? '2px solid var(--text)' : '1px solid rgba(0,0,0,.12)', background:cat.color, cursor:'pointer', padding:0, flexShrink:0 }} />
+              <input value={cat.label}
+                onChange={e => updateCategory(cat.id, { label: e.target.value })}
+                style={{ flex:1, minWidth:80, fontSize:13, padding:'6px 10px', borderRadius:8, border:'1px solid var(--border)', fontFamily:'DM Sans,sans-serif', color:'var(--text)', background:'white' }} />
+              <span style={{ display:'flex', alignItems:'center', gap:4, fontSize:9, letterSpacing:1, textTransform:'uppercase', padding:'3px 8px', borderRadius:10, background:`${cat.color}20`, color:cat.color, fontWeight:700, flexShrink:0 }}>
+                {cat.icon && <Icon value={cat.icon} size={12} />}{cat.label}
+              </span>
+              {confirmDelete === cat.id ? (
+                <div style={{ display:'flex', gap:4, flexShrink:0 }}>
+                  <button onClick={() => { deleteCategory(cat.id); setConfirmDelete(null) }}
+                    style={{ fontSize:11, padding:'6px 10px', borderRadius:8, border:'none', background:'#EF4444', color:'white', cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:600 }}>Delete</button>
+                  <button onClick={() => setConfirmDelete(null)}
+                    style={{ fontSize:11, padding:'6px 10px', borderRadius:8, border:'1px solid var(--border)', background:'white', color:'var(--muted)', cursor:'pointer', fontFamily:'DM Sans,sans-serif' }}>Cancel</button>
+                </div>
+              ) : (
+                <button onClick={() => setConfirmDelete(cat.id)}
+                  style={{ background:'none', border:'none', cursor:'pointer', color:'#D1D5DB', fontSize:16, padding:'0 2px', flexShrink:0 }}
+                  title="Delete category">✕</button>
+              )}
+            </div>
+            {colorOpen === cat.id && (
+              <div style={{ marginTop:8, paddingTop:8, borderTop:'1px solid #F1EDF2' }}>
+                <ColorSwatchRow value={cat.color} onChange={v => updateCategory(cat.id, { color: v })} />
               </div>
-            ) : (
-              <button onClick={() => setConfirmDelete(cat.id)}
-                style={{ background:'none', border:'none', cursor:'pointer', color:'#D1D5DB', fontSize:16, padding:'0 2px', flexShrink:0 }}
-                title="Delete category">✕</button>
             )}
           </div>
         ))}
@@ -75,20 +77,14 @@ export default function CategoriesManager({ categories, addCategory, updateCateg
         <div style={{ fontSize:10, color:'var(--muted)', letterSpacing:1.5, textTransform:'uppercase', marginBottom:10, fontWeight:600 }}>New category</div>
         <div style={{ display:'flex', gap:8, alignItems:'center', marginBottom:10 }}>
           <IconPicker value={newIcon} onChange={setNewIcon} allowClear size={32} />
-          <input type="color" value={newColor} onChange={e => setNewColor(e.target.value)}
-            style={{ width:32, height:32, border:'none', borderRadius:6, cursor:'pointer', padding:0, background:'none', flexShrink:0 }} />
+          <span style={{ width:28, height:28, borderRadius:8, background:newColor, flexShrink:0, boxShadow:'0 0 0 1px rgba(0,0,0,.12)' }} />
           <input value={newLabel} onChange={e => setNewLabel(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter') handleAdd() }}
             placeholder="e.g. Work, Study, Errand…"
             style={{ flex:1, minWidth:80, fontSize:13, padding:'8px 12px', borderRadius:8, border:'1px solid var(--border)', fontFamily:'DM Sans,sans-serif', color:'var(--text)', background:'white' }} />
         </div>
-        <div style={{ display:'flex', gap:5, flexWrap:'wrap', marginBottom:12 }}>
-          {PRESET_COLORS.map(c => (
-            <button key={c} onClick={() => setNewColor(c)}
-              style={{ width:22, height:22, borderRadius:6, background:c, cursor:'pointer',
-                border: newColor===c ? '2px solid var(--text)' : '2px solid transparent' }}
-              title={c} />
-          ))}
+        <div style={{ marginBottom:12 }}>
+          <ColorSwatchRow value={newColor} onChange={setNewColor} />
         </div>
         <button onClick={handleAdd} disabled={!newLabel.trim()}
           style={{ fontSize:13, padding:'9px 18px', borderRadius:10, border:'none', background:'var(--forest)', color:'var(--green-light)', cursor: newLabel.trim() ? 'pointer' : 'default', fontFamily:'DM Sans,sans-serif', fontWeight:600, opacity: newLabel.trim() ? 1 : .5 }}>

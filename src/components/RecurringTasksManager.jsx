@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react'
 import { Icon } from './IconPicker.jsx'
 import DateField from './DateField.jsx'
 import AddItemModal from './AddItemModal.jsx'
+import ColorSwatchRow from './ColorSwatchRow.jsx'
 
 const DAYS = ['monday','tuesday','wednesday','thursday','friday','saturday','sunday']
 const DAY_SHORT = { monday:'Mon', tuesday:'Tue', wednesday:'Wed', thursday:'Thu', friday:'Fri', saturday:'Sat', sunday:'Sun' }
@@ -259,6 +260,8 @@ function RoutinesView({ routines, tasks, categories, today, onEditTask, addRouti
   const [newName, setNewName] = useState('')
   const [newTint, setNewTint] = useState('#D9C7EE')
   const [confirmDel, setConfirmDel] = useState(null)
+  const [tintOpen, setTintOpen] = useState(null)     // routine id whose tint picker is open
+  const [newTintOpen, setNewTintOpen] = useState(false)
   const rInp = { fontSize:13, padding:'9px 12px', borderRadius:10, border:'1px solid var(--border)', fontFamily:'DM Sans,sans-serif', outline:'none', background:'white', color:'var(--text)', boxSizing:'border-box' }
 
   const byRoutine = (rid) => tasks.filter(t => (t.routine || '') === rid)
@@ -277,16 +280,19 @@ function RoutinesView({ routines, tasks, categories, today, onEditTask, addRouti
           <div key={r.id} style={{ marginBottom:18 }}>
             {/* Group header — swatch (tap to recolor), editable name, count, delete */}
             <div style={{ display:'flex', alignItems:'center', gap:9, marginBottom:8 }}>
-              <label style={{ position:'relative', width:24, height:24, borderRadius:7, background:r.tint, border:'1px solid rgba(0,0,0,.12)', cursor:'pointer', flexShrink:0 }} title="Change film color">
-                <input type="color" value={/^#[0-9a-fA-F]{6}$/.test(r.tint)?r.tint:'#D9C7EE'} onChange={e=>updateRoutine(r.id,{ tint:e.target.value })}
-                  style={{ position:'absolute', inset:0, opacity:0, cursor:'pointer' }} />
-              </label>
+              <button onClick={()=>setTintOpen(o=>o===r.id?null:r.id)} title="Change film color"
+                style={{ width:24, height:24, borderRadius:7, background:r.tint, border: tintOpen===r.id ? '2px solid var(--text)' : '1px solid rgba(0,0,0,.12)', cursor:'pointer', flexShrink:0, padding:0 }} />
               <input value={r.name} onChange={e=>updateRoutine(r.id,{ name:e.target.value })} aria-label="Routine name"
                 style={{ flex:1, minWidth:0, fontSize:15, fontWeight:700, color:'var(--text)', border:'none', background:'transparent', fontFamily:'DM Sans,sans-serif', outline:'none', padding:'2px 0' }} />
               <span style={{ fontSize:11, color:'var(--muted)', flexShrink:0 }}>{items.length} task{items.length===1?'':'s'}</span>
               <button onClick={()=>setConfirmDel(confirmDel===r.id?null:r.id)} title="Delete routine"
                 style={{ background:'none', border:'none', cursor:'pointer', color:'#C08872', fontSize:14, padding:'0 4px', flexShrink:0 }}>✕</button>
             </div>
+            {tintOpen===r.id && (
+              <div style={{ marginBottom:9 }}>
+                <ColorSwatchRow value={r.tint} onChange={v=>updateRoutine(r.id,{ tint:v })} size={26} />
+              </div>
+            )}
             {confirmDel===r.id && (
               <div style={{ background:'#FFF5F5', border:'1px solid #FECACA', borderRadius:10, padding:11, marginBottom:9 }}>
                 <div style={{ fontSize:12, color:'#991B1B', marginBottom:8 }}>Delete “{r.name}”? Its {items.length} task{items.length===1?'':'s'} stay — they just lose this routine.</div>
@@ -324,14 +330,18 @@ function RoutinesView({ routines, tasks, categories, today, onEditTask, addRouti
       <div style={{ marginTop:8, paddingTop:16, borderTop:'1px solid var(--border)' }}>
         <div style={{ fontSize:10, color:'var(--muted)', letterSpacing:1, textTransform:'uppercase', marginBottom:8 }}>New routine group</div>
         <div style={{ display:'flex', gap:8, alignItems:'center' }}>
-          <label style={{ position:'relative', width:34, height:34, borderRadius:9, background:newTint, border:'1px solid rgba(0,0,0,.12)', cursor:'pointer', flexShrink:0 }} title="Film color">
-            <input type="color" value={newTint} onChange={e=>setNewTint(e.target.value)} style={{ position:'absolute', inset:0, opacity:0, cursor:'pointer' }} />
-          </label>
+          <button onClick={()=>setNewTintOpen(o=>!o)} title="Film color"
+            style={{ width:34, height:34, borderRadius:9, background:newTint, border: newTintOpen ? '2px solid var(--text)' : '1px solid rgba(0,0,0,.12)', cursor:'pointer', flexShrink:0, padding:0 }} />
           <input value={newName} onChange={e=>setNewName(e.target.value)} placeholder="e.g. Afternoon routine…"
             onKeyDown={e=>{ if(e.key==='Enter') addNew() }} style={{ ...rInp, flex:1, minWidth:0 }} />
           <button onClick={addNew} disabled={!newName.trim()}
             style={{ fontSize:12, padding:'10px 16px', borderRadius:10, border:'none', background:'var(--forest)', color:'var(--green-light)', cursor:newName.trim()?'pointer':'default', opacity:newName.trim()?1:.5, fontFamily:'DM Sans,sans-serif', fontWeight:600, flexShrink:0 }}>Add</button>
         </div>
+        {newTintOpen && (
+          <div style={{ marginTop:8 }}>
+            <ColorSwatchRow value={newTint} onChange={setNewTint} size={26} />
+          </div>
+        )}
       </div>
     </div>
   )

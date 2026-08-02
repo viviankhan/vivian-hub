@@ -7,8 +7,9 @@ import { useState } from 'react'
 import { IconPicker, Icon } from './IconPicker.jsx'
 import DateField from './DateField.jsx'
 import TimeField from './TimeField.jsx'
+import ColorSwatchRow from './ColorSwatchRow.jsx'
 
-const EVENT_COLORS = ['#7C9CBF','#059669','#7C3AED','#D97706','#C4728E','#3B82F6','#E07B2E','#52B788','#EF4444','#A855F7']
+const DEFAULT_EVENT_COLOR = '#7C9CBF'
 
 function fmtRange(s, e) {
   const sd = new Date(s + 'T12:00:00').toLocaleDateString('en-US', { month:'short', day:'numeric' })
@@ -33,7 +34,7 @@ function EventSection({ events, addEvent, deleteEvent }) {
   const [allDay, setAllDay] = useState(true)
   const [startTime, setStartTime] = useState('')
   const [endTime, setEndTime] = useState('')
-  const [color, setColor] = useState(EVENT_COLORS[0])
+  const [color, setColor] = useState(DEFAULT_EVENT_COLOR)
   const [icon, setIcon] = useState('')
   // Events used to delete on a single ✕ tap — no confirm, no undo — which is
   // the most likely way an event (like a retreat) vanished by accident. Now a
@@ -41,7 +42,7 @@ function EventSection({ events, addEvent, deleteEvent }) {
   const [confirmId, setConfirmId] = useState(null)
   const [justDeleted, setJustDeleted] = useState(null)
 
-  const reset = () => { setLabel(''); setStartDate(''); setEndDate(''); setAllDay(true); setStartTime(''); setEndTime(''); setColor(EVENT_COLORS[0]); setIcon(''); setOpen(false) }
+  const reset = () => { setLabel(''); setStartDate(''); setEndDate(''); setAllDay(true); setStartTime(''); setEndTime(''); setColor(DEFAULT_EVENT_COLOR); setIcon(''); setOpen(false) }
   const canSave = label.trim() && startDate && endDate && endDate >= startDate
 
   const submit = () => {
@@ -155,13 +156,8 @@ function EventSection({ events, addEvent, deleteEvent }) {
             </div>
           )}
           <div style={fieldLabel}>Color</div>
-          <div style={{ display:'flex', gap:5, flexWrap:'wrap', marginBottom:12 }}>
-            {EVENT_COLORS.map(c => (
-              <button key={c} onClick={() => setColor(c)}
-                style={{ width:24, height:24, borderRadius:6, background:c, cursor:'pointer', border: color===c ? '2px solid var(--text)' : '2px solid transparent' }} />
-            ))}
-            <input type="color" value={color} onChange={e => setColor(e.target.value)}
-              style={{ width:28, height:24, border:'none', borderRadius:6, cursor:'pointer', padding:0, background:'none' }} title="Custom color" />
+          <div style={{ marginBottom:12 }}>
+            <ColorSwatchRow value={color} onChange={setColor} size={26} />
           </div>
           <button onClick={submit} disabled={!canSave}
             style={{ width:'100%', background: canSave ? 'var(--forest)' : '#E5E7EB', color: canSave ? 'var(--green-light)' : '#9CA3AF', border:'none', borderRadius:10, padding:'10px', fontSize:13, fontWeight:600, cursor: canSave ? 'pointer' : 'default', fontFamily:'DM Sans,sans-serif' }}>
