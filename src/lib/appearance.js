@@ -170,19 +170,27 @@ export function applyTheme(id) {
   setAccentVars(getTheme(id))
 }
 
-// ── Seasons ──────────────────────────────────────────────────
-// A "season" is the full seasonal skin: it recolors the banner (the header
-// gradient) and the ambient backdrop, sets an ambient motion effect (petals /
-// sea shimmer / falling leaves / snow), and carries a default accent. The
-// accent can still be overridden by a preset or a Custom color independently —
-// the season keeps owning the banner + motion either way.
+// ── Looks (Bloom + seasons) ──────────────────────────────────
+// A "look" is the full skin: it recolors the banner (the header gradient) and
+// the ambient backdrop, sets an ambient motion effect, and carries a default
+// accent. The accent can still be overridden by a preset or a Custom color
+// independently — the look keeps owning the banner + motion either way.
+//
+// "Bloom" is the signature default (not a calendar season): soft iridescent
+// bubbles drifting up over the sea-breeze pastels. The four seasons follow it.
+export const BLOOM_LOOK = {
+  id:'bloom', label:'Bloom', accent:'#4A9EB5', effect:'bubbles',
+  banner:['#B8D8E8','#C8BFDF','#E8C4C8','#F0D4C0'],
+  wash:['rgba(184,216,232,.55)','rgba(200,191,223,.50)','rgba(232,196,200,.45)','rgba(240,212,192,.45)'],
+}
 export const SEASONS = [
   { id:'spring', label:'Spring', accent:'#7FAE6B', effect:'petals',
     banner:['#D8E9C6','#E7DCEF','#F5D6DF','#DDECD1'],
     wash:['rgba(198,224,176,.50)','rgba(224,206,236,.45)','rgba(244,208,216,.42)','rgba(214,232,198,.42)'] },
-  { id:'summer', label:'Summer', accent:'#4A9EB5', effect:'shimmer',   // the classic sea-breeze look
-    banner:['#B8D8E8','#C8BFDF','#E8C4C8','#F0D4C0'],
-    wash:['rgba(184,216,232,.55)','rgba(200,191,223,.50)','rgba(232,196,200,.45)','rgba(240,212,192,.45)'] },
+  // Summer — dappled sunlight through leaves over a light-green wash.
+  { id:'summer', label:'Summer', accent:'#5F9E6B', effect:'dapple',
+    banner:['#D9ECC6','#E6F1D2','#EEF5DC','#D2E7BC'],
+    wash:['rgba(196,224,158,.52)','rgba(224,240,196,.46)','rgba(255,244,196,.42)','rgba(178,214,146,.44)'] },
   { id:'fall', label:'Fall', accent:'#D2814B', effect:'leaves',
     banner:['#F1D9B4','#EFC291','#E7A06E','#DE9A62'],
     wash:['rgba(240,214,176,.50)','rgba(233,168,110,.44)','rgba(216,128,80,.38)','rgba(226,180,120,.42)'] },
@@ -190,6 +198,7 @@ export const SEASONS = [
     banner:['#D7E6F1','#E5EAF3','#EEF3F8','#CFE0EC'],
     wash:['rgba(200,222,240,.50)','rgba(220,228,240,.45)','rgba(180,205,228,.42)','rgba(210,224,238,.42)'] },
 ]
+const ALL_LOOKS = [BLOOM_LOOK, ...SEASONS]
 // Northern-hemisphere calendar season for a month index (0=Jan).
 export function seasonForMonth(m) {
   if (m >= 2 && m <= 4) return 'spring'
@@ -198,13 +207,14 @@ export function seasonForMonth(m) {
   return 'winter'
 }
 export function getSeasonPref() {
-  try { return localStorage.getItem('bloom_season') || 'auto' } catch { return 'auto' }
+  try { return localStorage.getItem('bloom_season') || 'bloom' } catch { return 'bloom' }
 }
 export function setSeasonPref(v) { try { localStorage.setItem('bloom_season', v) } catch {} }
-// The active season object: the manual pick, or the calendar season when 'auto'.
+// The active look: 'bloom' (signature) or a season; 'auto' → the calendar season.
 export function resolveSeason(pref = getSeasonPref()) {
+  if (pref === 'bloom') return BLOOM_LOOK
   const id = (pref && pref !== 'auto') ? pref : seasonForMonth(new Date().getMonth())
-  return SEASONS.find(s => s.id === id) || SEASONS[1]
+  return ALL_LOOKS.find(s => s.id === id) || BLOOM_LOOK
 }
 // Apply a season's banner + backdrop + motion flag. When `accentFromSeason` is
 // set, its accent also drives the accent-family vars (the "follow season" case).
