@@ -96,6 +96,20 @@ export function recurringActiveOn(task, dateStr) {
   return diff >= 0 && diff % interval === 0
 }
 
+// Does this template recur every single day? True for a daily rule (interval 1)
+// and for a weekly rule that has all seven weekdays selected — both land on
+// every date. Used to keep everyday habits out of the month calendar, where
+// they'd land on every cell and drown the things you actually plan around.
+export function recursDaily(task) {
+  if (!task) return false
+  const interval = Math.max(1, Number(task.interval) || 1)
+  if (interval !== 1) return false
+  const freq = task.freq || 'weekly'
+  if (freq === 'daily') return true
+  if (freq === 'weekly' && Array.isArray(task.days) && task.days.length === 7) return true
+  return false
+}
+
 // Normalize one recurring template into a concrete occurrence on a date. The
 // shape is a superset of what Today/Week/Calendar already read from their rows
 // (label, text, title, tag, cat, note, _time), plus flags so each view can
