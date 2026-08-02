@@ -145,9 +145,10 @@ export function tileBackground(theme) {
 }
 
 // ── Apply to the document ────────────────────────────────────
-export function applyTheme(id) {
-  if (typeof document === 'undefined') return
-  const t = getTheme(id)
+// Set only the accent-family CSS vars from a theme-like object (accent + its
+// derived deep/light/glimmer). Shared by the preset/custom accent path and the
+// "follow season" path, so both recolor the app identically.
+function setAccentVars(t) {
   const r = document.documentElement.style
   const map = {
     '--teal': t.accent, '--sea-deep': t.accent, '--green-mid': t.accent, '--sea': t.accent,
@@ -164,6 +165,71 @@ export function applyTheme(id) {
   const meta = document.querySelector('meta[name="theme-color"]')
   if (meta) meta.setAttribute('content', t.deep)
 }
+export function applyTheme(id) {
+  if (typeof document === 'undefined') return
+  setAccentVars(getTheme(id))
+}
+
+// ── Seasons ──────────────────────────────────────────────────
+// A "season" is the full seasonal skin: it recolors the banner (the header
+// gradient) and the ambient backdrop, sets an ambient motion effect (petals /
+// sea shimmer / falling leaves / snow), and carries a default accent. The
+// accent can still be overridden by a preset or a Custom color independently —
+// the season keeps owning the banner + motion either way.
+export const SEASONS = [
+  { id:'spring', label:'Spring', accent:'#7FAE6B', effect:'petals',
+    banner:['#D8E9C6','#E7DCEF','#F5D6DF','#DDECD1'],
+    wash:['rgba(198,224,176,.50)','rgba(224,206,236,.45)','rgba(244,208,216,.42)','rgba(214,232,198,.42)'] },
+  { id:'summer', label:'Summer', accent:'#4A9EB5', effect:'shimmer',   // the classic sea-breeze look
+    banner:['#B8D8E8','#C8BFDF','#E8C4C8','#F0D4C0'],
+    wash:['rgba(184,216,232,.55)','rgba(200,191,223,.50)','rgba(232,196,200,.45)','rgba(240,212,192,.45)'] },
+  { id:'fall', label:'Fall', accent:'#D2814B', effect:'leaves',
+    banner:['#F1D9B4','#EFC291','#E7A06E','#DE9A62'],
+    wash:['rgba(240,214,176,.50)','rgba(233,168,110,.44)','rgba(216,128,80,.38)','rgba(226,180,120,.42)'] },
+  { id:'winter', label:'Winter', accent:'#6E93B8', effect:'snow',
+    banner:['#D7E6F1','#E5EAF3','#EEF3F8','#CFE0EC'],
+    wash:['rgba(200,222,240,.50)','rgba(220,228,240,.45)','rgba(180,205,228,.42)','rgba(210,224,238,.42)'] },
+]
+// Northern-hemisphere calendar season for a month index (0=Jan).
+export function seasonForMonth(m) {
+  if (m >= 2 && m <= 4) return 'spring'
+  if (m >= 5 && m <= 7) return 'summer'
+  if (m >= 8 && m <= 10) return 'fall'
+  return 'winter'
+}
+export function getSeasonPref() {
+  try { return localStorage.getItem('bloom_season') || 'auto' } catch { return 'auto' }
+}
+export function setSeasonPref(v) { try { localStorage.setItem('bloom_season', v) } catch {} }
+// The active season object: the manual pick, or the calendar season when 'auto'.
+export function resolveSeason(pref = getSeasonPref()) {
+  const id = (pref && pref !== 'auto') ? pref : seasonForMonth(new Date().getMonth())
+  return SEASONS.find(s => s.id === id) || SEASONS[1]
+}
+// Apply a season's banner + backdrop + motion flag. When `accentFromSeason` is
+// set, its accent also drives the accent-family vars (the "follow season" case).
+export function applySeason(pref = getSeasonPref(), { accentFromSeason = false } = {}) {
+  if (typeof document === 'undefined') return null
+  const s = resolveSeason(pref)
+  const r = document.documentElement.style
+  const [b1, b2, b3, b4] = s.banner
+  r.setProperty('--bloom-header-start', b1)
+  r.setProperty('--bloom-header-mid', b2)
+  r.setProperty('--bloom-header-rose', b3)
+  r.setProperty('--bloom-header-peach', b4)
+  s.wash.forEach((w, i) => r.setProperty(`--bloom-wash-${i + 1}`, w))
+  document.documentElement.dataset.season = s.id
+  if (accentFromSeason) setAccentVars(deriveTheme(s.accent, s.label, 'season'))
+  return s
+}
+// One call that puts the whole look on the document: the season's banner +
+// motion, then the accent — from the season itself, or the chosen preset/custom.
+export function applyLook(seasonPref = getSeasonPref(), themePref = getThemePref()) {
+  const followSeason = themePref === 'season'
+  const s = applySeason(seasonPref, { accentFromSeason: followSeason })
+  if (!followSeason) applyTheme(themePref)
+  return s
+}
 
 export function applyFont(id) {
   if (typeof document === 'undefined') return
@@ -179,7 +245,9 @@ export function applyLayout(id) {
 
 // ── Persistence (device-local) ───────────────────────────────
 export function getThemePref() {
-  try { return localStorage.getItem('bloom_theme') || 'peach' } catch { return 'peach' }
+  // Default 'season' → the accent follows the active season until you pick a
+  // preset or a Custom color. (Existing installs keep whatever they saved.)
+  try { return localStorage.getItem('bloom_theme') || 'season' } catch { return 'season' }
 }
 export function setThemePref(v) {
   try { localStorage.setItem('bloom_theme', v) } catch {}
@@ -213,7 +281,7 @@ export function setSoundEnabled(on) {
 // Apply whatever's saved — call once as early as possible to avoid a flash of
 // the default look before React mounts.
 export function applySavedAppearance() {
-  applyTheme(getThemePref())
+  applyLook(getSeasonPref(), getThemePref())
   applyFont(getFontPref())
   applyLayout(getLayoutPref())
 }
