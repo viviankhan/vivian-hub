@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { Icon } from './IconPicker.jsx'
 import AddItemModal from './AddItemModal.jsx'
 import { setItemReminders } from '../lib/notifications.js'
-import { recurringOccurrencesForDate } from '../lib/occurrences.js'
+import { recurringOccurrencesForDate, recursDaily } from '../lib/occurrences.js'
 import { iconColorOn } from '../lib/glyphs.jsx'
 
 // Pastel shading for how busy a day is (number of events on it).
@@ -123,9 +123,12 @@ export default function Calendar({ commitments, vacations, events, log, categori
   const selectedEvents = selected ? allEvents.filter(e => e.date === selected) : []
 
   // Recurring instances landing on a date — the SAME computation Today and Week
-  // use, so the month view finally shows the recurring schedule too. Each is
-  // shaped like a calendar event (color/icon/label/done) for the grid + detail.
-  const recurringEventsOn = (dateStr) => recurringOccurrencesForDate(recurringTasks, dateStr, recurringExceptions).map(o => {
+  // use, so the month view shows the recurring schedule too. Everyday habits
+  // (daily, or weekly-on-all-7-days) are left off the month view on purpose:
+  // they'd land on every cell and bury the things you actually plan around.
+  // They still show on Today and Week, where daily items belong.
+  const calendarRecurring = (recurringTasks || []).filter(t => !recursDaily(t))
+  const recurringEventsOn = (dateStr) => recurringOccurrencesForDate(calendarRecurring, dateStr, recurringExceptions).map(o => {
     const cat = resolveCat(o.cat)
     return {
       id: o.id, date: dateStr, isRecurring: true,
