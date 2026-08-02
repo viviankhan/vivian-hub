@@ -41,6 +41,11 @@
   --bloom-header-mid:   #C8BFDF;
   --bloom-header-rose:  #E8C4C8;
   --bloom-header-peach: #F0D4C0;
+  /* Ambient backdrop wash — recolored per season (see applySeason). */
+  --bloom-wash-1: rgba(184,216,232,.55);
+  --bloom-wash-2: rgba(200,191,223,.50);
+  --bloom-wash-3: rgba(232,196,200,.45);
+  --bloom-wash-4: rgba(240,212,192,.45);
   --sea:        #7BBFD4;
   --sea-deep:   #4A9EB5;
   --peach:      #F0A898;
@@ -87,15 +92,35 @@ body {
   z-index: -1;
   pointer-events: none;
   background:
-    radial-gradient(40vmax 40vmax at 15% 10%, rgba(184,216,232,.55), transparent 60%),
-    radial-gradient(45vmax 45vmax at 85% 20%, rgba(200,191,223,.50), transparent 60%),
-    radial-gradient(50vmax 50vmax at 75% 85%, rgba(232,196,200,.45), transparent 62%),
-    radial-gradient(45vmax 45vmax at 20% 90%, rgba(240,212,192,.45), transparent 62%);
+    radial-gradient(40vmax 40vmax at 15% 10%, var(--bloom-wash-1), transparent 60%),
+    radial-gradient(45vmax 45vmax at 85% 20%, var(--bloom-wash-2), transparent 60%),
+    radial-gradient(50vmax 50vmax at 75% 85%, var(--bloom-wash-3), transparent 62%),
+    radial-gradient(45vmax 45vmax at 20% 90%, var(--bloom-wash-4), transparent 62%);
+  transition: background .6s ease;
+}
+
+/* ── SEASONAL AMBIENT MOTION ────────────────────────────────── */
+/* Drives SeasonalEffects.jsx particles. season-fall: petals/leaves/snow drift
+   down with a gentle sway + spin. season-rise: summer sparkles float up and
+   twinkle. The component itself renders nothing under prefers-reduced-motion. */
+@keyframes season-fall {
+  0%   { transform: translateY(-10vh) translateX(0)     rotate(0deg); }
+  50%  { transform: translateY(50vh)  translateX(20px)  rotate(180deg); }
+  100% { transform: translateY(112vh) translateX(-8px)  rotate(360deg); }
+}
+@keyframes season-rise {
+  0%   { transform: translateY(0)      scale(.6); opacity: 0; }
+  25%  { opacity: 1; }
+  75%  { opacity: 1; }
+  100% { transform: translateY(-120vh) scale(1);  opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  @keyframes season-fall { from {} to {} }
+  @keyframes season-rise { from {} to {} }
 }
 
 /* ── HEADER ────────────────────────────────────────────────── */
-/* Your original pastel gradient — now STATIC (no more self-animating
-   iridescent shift, no cursor-tracking sheen). */
+/* The banner gradient — recolored per season via the --bloom-header-* vars. */
 .header {
   position: sticky;
   top: 0;
@@ -104,7 +129,9 @@ body {
   box-shadow: 0 2px 24px rgba(120,160,200,.22);
   overflow: hidden;
   background: linear-gradient(120deg,
-    #B8D8E8 0%, #C8BFDF 22%, #E8C4C8 44%, #F0D4C0 62%, #CDE3EC 80%, #C8BFDF 100%);
+    var(--bloom-header-start) 0%, var(--bloom-header-mid) 22%, var(--bloom-header-rose) 44%,
+    var(--bloom-header-peach) 62%, var(--bloom-header-start) 82%, var(--bloom-header-mid) 100%);
+  transition: background .6s ease;
 }
 .header-top, .nav { position: relative; z-index: 1; }
 .header-top {

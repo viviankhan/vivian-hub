@@ -1,32 +1,38 @@
 // src/components/Customization.jsx
-// Look & feel — Font (System / OpenDyslexic) and "App Icon" (accent theme),
-// modeled on Structured's Customization screen. Font and theme are applied live
-// by the parent (App) and persisted per-device.
-import { THEMES, FONTS, LAYOUTS, tileBackground, deriveTheme } from '../lib/appearance.js'
+// Look & feel — Font, Season (the seasonal skin: banner + ambient motion +
+// accent), Accent color (follow the season, a preset, or a custom color),
+// Layout, Summary display, and in-app sound. All applied live by App and
+// persisted per-device.
+import { THEMES, FONTS, LAYOUTS, tileBackground, SEASONS, resolveSeason } from '../lib/appearance.js'
+import ColorSwatchRow from './ColorSwatchRow.jsx'
 
 const sectionLabel = { fontSize:13, fontWeight:700, color:'var(--muted)', letterSpacing:.2, margin:'6px 2px 10px' }
 const card = { background:'white', borderRadius:16, border:'1px solid var(--border)', padding:16, marginBottom:12 }
+const help = { fontSize:12.5, color:'var(--muted)', lineHeight:1.55, margin:'0 2px 22px' }
 
-// The check-mark that stands in for the app icon, tinted per theme.
-function IconTile({ theme, selected, onClick }) {
-  const bg = tileBackground(theme)
+const SEASON_HINT = { spring:'🌸', summer:'✨', fall:'🍂', winter:'❄️' }
+const gradOf = (s) => `linear-gradient(135deg, ${s.banner.join(', ')})`
+
+function CheckBadge() {
   return (
-    <button onClick={onClick} aria-label={theme.label}
-      style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:8, background:'none', border:'none', cursor:'pointer', padding:0, fontFamily:'DM Sans,sans-serif' }}>
-      <span style={{ position:'relative', width:66, height:66, borderRadius:17, background:bg,
-        boxShadow: selected ? '0 0 0 3px var(--teal)' : '0 2px 8px rgba(20,30,40,.16)',
-        display:'flex', alignItems:'center', justifyContent:'center' }}>
-        <svg viewBox="0 0 24 24" width="34" height="34" fill="none" stroke="#fff" strokeWidth="3.2" strokeLinecap="round" strokeLinejoin="round"
-          style={{ filter:'drop-shadow(0 1px 1px rgba(0,0,0,.25))' }}>
-          <polyline points="20 6 9 17 4 12" />
-        </svg>
-        {selected && (
-          <span style={{ position:'absolute', top:-6, right:-6, width:22, height:22, borderRadius:'50%', background:'var(--teal)', border:'2px solid white', display:'flex', alignItems:'center', justifyContent:'center' }}>
-            <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="#fff" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
-          </span>
-        )}
+    <span style={{ position:'absolute', top:-6, right:-6, width:22, height:22, borderRadius:'50%', background:'var(--teal)', border:'2px solid white', display:'flex', alignItems:'center', justifyContent:'center' }}>
+      <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="#fff" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+    </span>
+  )
+}
+
+// A season swatch — a banner-gradient tile with the season's ambient hint.
+function SeasonTile({ label, gradient, hint, sub, selected, onClick }) {
+  return (
+    <button onClick={onClick} aria-label={label}
+      style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:6, background:'none', border:'none', cursor:'pointer', padding:0, fontFamily:'DM Sans,sans-serif', flexShrink:0, width:70 }}>
+      <span style={{ position:'relative', width:66, height:66, borderRadius:17, background:gradient,
+        boxShadow: selected ? '0 0 0 3px var(--teal)' : '0 2px 8px rgba(20,30,40,.16)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:26 }}>
+        <span style={{ filter:'drop-shadow(0 1px 2px rgba(0,0,0,.28))' }}>{hint}</span>
+        {selected && <CheckBadge />}
       </span>
-      <span style={{ fontSize:13, fontWeight:600, color: selected ? 'var(--text)' : 'var(--muted)' }}>{theme.label}</span>
+      <span style={{ fontSize:13, fontWeight:600, color: selected ? 'var(--text)' : 'var(--muted)' }}>{label}</span>
+      {sub && <span style={{ fontSize:10, color:'var(--muted)', marginTop:-3 }}>{sub}</span>}
     </button>
   )
 }
@@ -58,38 +64,12 @@ function Switch({ on, onClick }) {
 
 const FlameGlyph = () => (<svg viewBox="0 0 24 24" width="19" height="19" fill="currentColor"><path d="M12 3c1 3 4.8 4.3 4.8 8.6A4.8 4.8 0 0 1 7.2 12c0-2 1-3.2 2-4.2.5 2 1.6 2 2 1 .5-1.2-1.2-3.2-1.2-5.8Z"/></svg>)
 
-// A single-color picker that derives the whole theme from one accent. The
-// swatch previews the derived deep/light so you see what one color populates.
-function CustomColorCard({ active, value, onChange }) {
-  const t = deriveTheme(value)
-  return (
-    <div style={{ ...card, display:'flex', alignItems:'center', gap:14 }}>
-      <label style={{ position:'relative', width:66, height:66, borderRadius:17, background:t.accent, cursor:'pointer', flexShrink:0,
-        boxShadow: active ? '0 0 0 3px var(--teal)' : '0 2px 8px rgba(20,30,40,.16)', display:'flex', alignItems:'center', justifyContent:'center' }}>
-        <input type="color" value={/^#[0-9a-fA-F]{6}$/.test(value) ? value : '#7BA7B0'} onChange={e => onChange(e.target.value)}
-          style={{ position:'absolute', inset:0, opacity:0, cursor:'pointer' }} />
-        <svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="#fff" strokeWidth="3.2" strokeLinecap="round" strokeLinejoin="round" style={{ filter:'drop-shadow(0 1px 1px rgba(0,0,0,.25))' }}>
-          <polyline points="20 6 9 17 4 12" />
-        </svg>
-      </label>
-      <div style={{ flex:1, minWidth:0 }}>
-        <div style={{ fontSize:14, fontWeight:700, color:'var(--text)', marginBottom:3 }}>Custom color</div>
-        <div style={{ fontSize:12, color:'var(--muted)', lineHeight:1.5, marginBottom:8 }}>Pick one color — Bloom derives every surface from it.</div>
-        {/* Preview of the three derived surfaces */}
-        <div style={{ display:'flex', gap:6, alignItems:'center' }}>
-          {[t.deep, t.accent, t.light].map((c,i) => <span key={i} style={{ width:24, height:16, borderRadius:5, background:c, border:'1px solid rgba(0,0,0,.08)' }} />)}
-          <span style={{ fontSize:11, color: active ? 'var(--teal)' : 'var(--muted)', fontWeight:600, marginLeft:4 }}>{active ? 'Active' : value?.toUpperCase()}</span>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-export default function Customization({ font, onFont, theme, onTheme, customColor, onCustomColor, layout, onLayout, soundOn, onSound, summary, onSummary }) {
+export default function Customization({ font, onFont, theme, onTheme, season, onSeason, customColor, onCustomColor, layout, onLayout, soundOn, onSound, summary, onSummary }) {
+  const autoSeason = resolveSeason('auto')
   return (
     <div>
       <div className="page-title" style={{ marginBottom:4 }}>Customization</div>
-      <div className="page-sub">Make Bloom yours — pick a reading font and an accent theme.</div>
+      <div className="page-sub">Make Bloom yours — a reading font, a season, and an accent.</div>
 
       {/* ── Font ──────────────────────────────────────────────── */}
       <div style={sectionLabel}>Font</div>
@@ -98,27 +78,57 @@ export default function Customization({ font, onFont, theme, onTheme, customColo
           <FontTile key={f.id} font={f} selected={font === f.id} onClick={() => onFont(f.id)} />
         ))}
       </div>
-      <div style={{ fontSize:12.5, color:'var(--muted)', lineHeight:1.55, margin:'0 2px 22px' }}>
+      <div style={help}>
         OpenDyslexic is designed against some common symptoms of dyslexia — weighted
         letter bottoms help keep characters from flipping. Applied across the whole
         app; some fine details may not switch.
       </div>
 
-      {/* ── App Icon / accent theme ───────────────────────────── */}
-      <div style={sectionLabel}>Theme</div>
+      {/* ── Season (the seasonal skin) ────────────────────────── */}
+      <div style={sectionLabel}>Season</div>
       <div style={card}>
-        <div style={{ display:'grid', gridTemplateColumns:'repeat(3, 1fr)', gap:'18px 8px', justifyItems:'center' }}>
-          {THEMES.map(t => (
-            <IconTile key={t.id} theme={t} selected={theme === t.id} onClick={() => onTheme(t.id)} />
+        <div style={{ display:'flex', gap:14, overflowX:'auto', paddingBottom:4, WebkitOverflowScrolling:'touch' }}>
+          <SeasonTile label="Auto" gradient={gradOf(autoSeason)} hint="🗓️" sub={autoSeason.label}
+            selected={season === 'auto'} onClick={() => onSeason('auto')} />
+          {SEASONS.map(s => (
+            <SeasonTile key={s.id} label={s.label} gradient={gradOf(s)} hint={SEASON_HINT[s.id]}
+              selected={season === s.id} onClick={() => onSeason(s.id)} />
           ))}
         </div>
       </div>
-      {/* One color that auto-populates the whole palette */}
-      {onCustomColor && <CustomColorCard active={theme === 'custom'} value={customColor} onChange={onCustomColor} />}
-      <div style={{ fontSize:12.5, color:'var(--muted)', lineHeight:1.55, margin:'0 2px 22px' }}>
-        Recolors Bloom’s accent throughout the app; it won’t change the color of
-        existing tasks. On the web the installed home-screen icon can’t be
-        swapped, so this changes the in-app theme.
+      <div style={help}>
+        Each season restyles the banner, adds a gentle ambient animation
+        (petals, sea shimmer, falling leaves, snow), and sets a matching accent.
+        <b> Auto</b> follows the calendar; pick one to lock it. Motion is skipped
+        automatically if your device prefers reduced motion.
+      </div>
+
+      {/* ── Accent color ──────────────────────────────────────── */}
+      <div style={sectionLabel}>Accent color</div>
+      <div style={card}>
+        <div style={{ display:'flex', gap:8, flexWrap:'wrap', alignItems:'center', marginBottom:14 }}>
+          <button onClick={() => onTheme('season')}
+            style={{ fontSize:12, padding:'7px 13px', borderRadius:18, cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:600,
+              border: theme === 'season' ? 'none' : '1px solid var(--border)',
+              background: theme === 'season' ? 'var(--teal)' : 'white', color: theme === 'season' ? 'white' : 'var(--muted)' }}>
+            {theme === 'season' ? '✓ ' : ''}Follow season
+          </button>
+          {THEMES.map(t => (
+            <button key={t.id} onClick={() => onTheme(t.id)} title={t.label} aria-label={t.label}
+              style={{ width:26, height:26, borderRadius:'50%', background:tileBackground(t), cursor:'pointer', padding:0,
+                border: theme === t.id ? '3px solid white' : '3px solid transparent',
+                boxShadow: theme === t.id ? '0 0 0 2px var(--teal)' : '0 0 0 1px rgba(0,0,0,.12)' }} />
+          ))}
+        </div>
+        {onCustomColor && <>
+          <div style={{ fontSize:10, color:'var(--muted)', letterSpacing:1, textTransform:'uppercase', marginBottom:4 }}>Or a custom color</div>
+          <ColorSwatchRow value={theme === 'custom' ? customColor : ''} onChange={onCustomColor} />
+        </>}
+      </div>
+      <div style={help}>
+        The accent recolors buttons, the nav, and highlights throughout the app —
+        it won’t change the color of existing tasks. <b>Follow season</b> lets it
+        shift with the season; a preset or custom color pins it.
       </div>
 
       {/* ── Layout ────────────────────────────────────────────── */}
@@ -135,7 +145,7 @@ export default function Customization({ font, onFont, theme, onTheme, customColo
           )
         })}
       </div>
-      <div style={{ fontSize:12.5, color:'var(--muted)', lineHeight:1.55, margin:'0 2px 22px' }}>
+      <div style={help}>
         <i>Simplified</i> and <i>Minimal</i> hide certain elements — routine cards,
         then the free-time gaps on the timeline — to make the day less distracting.
       </div>
@@ -156,7 +166,7 @@ export default function Customization({ font, onFont, theme, onTheme, customColo
           )
         })}
       </div>
-      <div style={{ fontSize:12.5, color:'var(--muted)', lineHeight:1.55, margin:'0 2px 22px' }}>
+      <div style={help}>
         The week strip on Today shows either colored category <i>dots</i> per day, or
         a <i>streak</i> flame on the days you fully completed.
       </div>

@@ -39,7 +39,9 @@ import Customization from './components/Customization.jsx'
 import { getFontPref, setFontPref, applyFont, getThemePref, setThemePref, applyTheme,
   getCustomColor, setCustomColor,
   getLayoutPref, setLayoutPref, applyLayout, getSoundEnabled, setSoundEnabled,
-  getSummaryPref, setSummaryPref } from './lib/appearance.js'
+  getSummaryPref, setSummaryPref,
+  getSeasonPref, setSeasonPref, applyLook, resolveSeason } from './lib/appearance.js'
+import SeasonalEffects from './components/SeasonalEffects.jsx'
 
 // Build id baked in at build time (see vite.config.js). Shown in Settings so
 // it's obvious on-device which version is actually running after a deploy.
@@ -68,7 +70,7 @@ const TABS = [
 ]
 
 // ── Settings Drawer ────────────────────────────────────────────
-function SettingsDrawer({ open, onClose, settingsTab, setSettingsTab, notes, updateNotes, categories, addCategory, updateCategory, deleteCategory, events, commitments, font, setFont, theme, setTheme, customColor, setCustom, layout, setLayout, soundOn, setSound, summary, setSummary }) {
+function SettingsDrawer({ open, onClose, settingsTab, setSettingsTab, notes, updateNotes, categories, addCategory, updateCategory, deleteCategory, events, commitments, font, setFont, theme, setTheme, season, setSeason, customColor, setCustom, layout, setLayout, soundOn, setSound, summary, setSummary }) {
   if (!open) return null
   const SECTIONS = [
     ['customize','Look','sun'],
@@ -90,7 +92,7 @@ function SettingsDrawer({ open, onClose, settingsTab, setSettingsTab, notes, upd
         {/* Scrollable content */}
         <div style={{ flex:1, minHeight:0, overflowY:'auto', WebkitOverflowScrolling:'touch' }}>
           <div style={{ padding:'20px 24px' }}>
-            {settingsTab==='customize'  && <Customization font={font} onFont={setFont} theme={theme} onTheme={setTheme} customColor={customColor} onCustomColor={setCustom} layout={layout} onLayout={setLayout} soundOn={soundOn} onSound={setSound} summary={summary} onSummary={setSummary} />}
+            {settingsTab==='customize'  && <Customization font={font} onFont={setFont} theme={theme} onTheme={setTheme} season={season} onSeason={setSeason} customColor={customColor} onCustomColor={setCustom} layout={layout} onLayout={setLayout} soundOn={soundOn} onSound={setSound} summary={summary} onSummary={setSummary} />}
 
             {settingsTab==='reminders'  && <NotificationsSettings events={events} commitments={commitments} />}
             {settingsTab==='categories' && <CategoriesManager categories={categories} addCategory={addCategory} updateCategory={updateCategory} deleteCategory={deleteCategory} />}
@@ -208,15 +210,20 @@ export default function App() {
   // values before first paint; these setters keep the live app in step.
   const [font,   setFontState]   = useState(getFontPref)
   const [theme,  setThemeState]  = useState(getThemePref)
+  const [season, setSeasonState] = useState(getSeasonPref)
   const [layout, setLayoutState] = useState(getLayoutPref)
   const [soundOn,setSoundState]  = useState(getSoundEnabled)
   const [summary,setSummaryState]= useState(getSummaryPref)
   const setFont    = useCallback(v  => { setFontState(v);    setFontPref(v);    applyFont(v)   }, [])
-  const setTheme   = useCallback(v  => { setThemeState(v);   setThemePref(v);   applyTheme(v)  }, [])
+  // Accent: 'season' follows the active season; a preset id or 'custom' overrides.
+  // applyLook re-lays the season banner + the resolved accent in one go.
+  const setTheme   = useCallback(v  => { setThemeState(v);   setThemePref(v);   applyLook(getSeasonPref(), v) }, [])
+  // Season drives the banner + ambient motion (and the accent when following it).
+  const setSeason  = useCallback(v  => { setSeasonState(v);  setSeasonPref(v);  applyLook(v, getThemePref()) }, [])
   const [customColor, setCustomColorState] = useState(getCustomColor)
-  // Picking a custom color stores it, switches the theme to 'custom', and
-  // re-derives every surface from that one color.
-  const setCustom  = useCallback(hex => { setCustomColorState(hex); setCustomColor(hex); setThemeState('custom'); setThemePref('custom'); applyTheme('custom') }, [])
+  // Picking a custom color stores it, switches the accent to 'custom', and
+  // re-derives every surface from that one color (banner stays season-driven).
+  const setCustom  = useCallback(hex => { setCustomColorState(hex); setCustomColor(hex); setThemeState('custom'); setThemePref('custom'); applyLook(getSeasonPref(), 'custom') }, [])
   const setLayout  = useCallback(v  => { setLayoutState(v);  setLayoutPref(v);  applyLayout(v) }, [])
   const setSound   = useCallback(on => { setSoundState(on);  setSoundEnabled(on) }, [])
   const setSummary = useCallback(v  => { setSummaryState(v); setSummaryPref(v) }, [])
@@ -753,6 +760,7 @@ export default function App() {
   return (
     <div>
       <div className="shimmer-bg" aria-hidden="true" />
+      <SeasonalEffects effect={resolveSeason(season).effect} />
       <header className="header">
         <div className="header-top">
           <div className="header-left">
@@ -809,6 +817,7 @@ export default function App() {
         updateCategory={updateCategoryFn} deleteCategory={deleteCategoryFn}
         events={events} commitments={commitments}
         font={font} setFont={setFont} theme={theme} setTheme={setTheme}
+        season={season} setSeason={setSeason}
         customColor={customColor} setCustom={setCustom}
         layout={layout} setLayout={setLayout} soundOn={soundOn} setSound={setSound}
         summary={summary} setSummary={setSummary} />
