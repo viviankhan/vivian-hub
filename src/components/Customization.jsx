@@ -3,7 +3,9 @@
 // accent), Accent color (follow the season, a preset, or a custom color),
 // Layout, Summary display, and in-app sound. All applied live by App and
 // persisted per-device.
-import { THEMES, FONTS, LAYOUTS, tileBackground, SEASONS, BLOOM_LOOK, resolveSeason } from '../lib/appearance.js'
+import { useState, useRef } from 'react'
+import { THEMES, FONTS, LAYOUTS, tileBackground, SEASONS, BLOOM_LOOK, resolveSeason,
+  BACKGROUNDS, bgCss, fileToBackgroundDataUri } from '../lib/appearance.js'
 import ColorSwatchRow from './ColorSwatchRow.jsx'
 import { Icon } from './IconPicker.jsx'
 
@@ -68,8 +70,37 @@ function Switch({ on, onClick }) {
 
 const FlameGlyph = () => (<svg viewBox="0 0 24 24" width="19" height="19" fill="currentColor"><path d="M12 3c1 3 4.8 4.3 4.8 8.6A4.8 4.8 0 0 1 7.2 12c0-2 1-3.2 2-4.2.5 2 1.6 2 2 1 .5-1.2-1.2-3.2-1.2-5.8Z"/></svg>)
 
-export default function Customization({ font, onFont, theme, onTheme, season, onSeason, customColor, onCustomColor, layout, onLayout, soundOn, onSound, summary, onSummary }) {
+// A background-illustration swatch — previews the scene over a light card.
+function BgTile({ label, css, selected, empty, onClick }) {
+  return (
+    <button onClick={onClick} aria-label={label}
+      style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:6, background:'none', border:'none', cursor:'pointer', padding:0, fontFamily:'DM Sans,sans-serif', flexShrink:0, width:76 }}>
+      <span style={{ position:'relative', width:76, height:62, borderRadius:14, overflow:'hidden', background:'#E9F1F6',
+        boxShadow: selected ? '0 0 0 3px var(--teal)' : '0 1px 5px rgba(20,30,40,.14)', border:'1px solid rgba(0,0,0,.06)',
+        display:'flex', alignItems:'center', justifyContent:'center' }}>
+        {empty
+          ? <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="#AEB6C0" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="9"/><line x1="6" y1="18" x2="18" y2="6"/></svg>
+          : <span style={{ position:'absolute', inset:0, background: css }} />}
+        {selected && <CheckBadge />}
+      </span>
+      <span style={{ fontSize:12, fontWeight:600, color: selected ? 'var(--text)' : 'var(--muted)' }}>{label}</span>
+    </button>
+  )
+}
+
+export default function Customization({ font, onFont, theme, onTheme, season, onSeason, customColor, onCustomColor, background, onBackground, customBackground, onCustomBackground, layout, onLayout, soundOn, onSound, summary, onSummary }) {
   const autoSeason = resolveSeason('auto')
+  const bgFileRef = useRef(null)
+  const [bgErr, setBgErr] = useState('')
+  const builtinBgs = BACKGROUNDS.filter(b => b.id !== 'none' && b.id !== 'custom')
+  const onBgFile = async (e) => {
+    const f = e.target.files?.[0]; e.target.value = ''
+    if (!f) return
+    if (!f.type.startsWith('image/')) { setBgErr('Please choose an image file.'); return }
+    if (f.size > 12 * 1024 * 1024) { setBgErr('Image too large (max 12 MB).'); return }
+    try { const uri = await fileToBackgroundDataUri(f); onCustomBackground && onCustomBackground(uri); setBgErr('') }
+    catch { setBgErr('Could not read that image.') }
+  }
   return (
     <div>
       <div className="page-title" style={{ marginBottom:4 }}>Customization</div>
@@ -136,6 +167,36 @@ export default function Customization({ font, onFont, theme, onTheme, season, on
         The accent recolors buttons, the nav, and highlights throughout the app —
         it won’t change the color of existing tasks. <b>Follow season</b> lets it
         shift with the season; a preset or custom color pins it.
+      </div>
+
+      {/* ── Background illustration ───────────────────────────── */}
+      <div style={sectionLabel}>Background</div>
+      <div style={card}>
+        <div style={{ display:'flex', gap:12, overflowX:'auto', paddingBottom:4, WebkitOverflowScrolling:'touch' }}>
+          <BgTile label="None" empty selected={background === 'none' || !background} onClick={() => onBackground('none')} />
+          {builtinBgs.map(b => (
+            <BgTile key={b.id} label={b.label} css={bgCss(b.id)} selected={background === b.id} onClick={() => onBackground(b.id)} />
+          ))}
+          {customBackground && (
+            <BgTile label="Yours" css={bgCss('custom')} selected={background === 'custom'} onClick={() => onBackground('custom')} />
+          )}
+        </div>
+        <div style={{ display:'flex', gap:8, marginTop:12, alignItems:'center' }}>
+          <button onClick={() => bgFileRef.current?.click()}
+            style={{ fontSize:12, padding:'9px 14px', borderRadius:10, border:'1px solid var(--border)', background:'white', color:'var(--text)', cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:600, display:'inline-flex', alignItems:'center', gap:7 }}>
+            <Icon value="glyph:camera" size={15} color="var(--muted)" />{customBackground ? 'Replace your image' : 'Upload your own'}
+          </button>
+          {customBackground && (
+            <button onClick={() => { onCustomBackground && onCustomBackground(''); onBackground('none') }}
+              style={{ fontSize:12, padding:'9px 12px', borderRadius:10, border:'1px solid var(--border)', background:'white', color:'var(--muted)', cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:600 }}>Remove</button>
+          )}
+          <input ref={bgFileRef} type="file" accept="image/*" hidden onChange={onBgFile} />
+        </div>
+        {bgErr && <div style={{ fontSize:11, color:'#EF4444', marginTop:8 }}>{bgErr}</div>}
+      </div>
+      <div style={help}>
+        A soft scene behind your day, or upload your own photo. Uploaded images
+        get a light veil so text stays readable, and are stored on this device.
       </div>
 
       {/* ── Layout ────────────────────────────────────────────── */}
