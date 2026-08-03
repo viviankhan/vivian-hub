@@ -137,6 +137,8 @@ export function recurringOccurrence(task, dateStr) {
     // before this runs), so a recurring task keeps the glyph + color you chose.
     icon: task.icon || null,
     color: task.color || null,
+    // A repeating time block (container) — draws a labeled film band, not a task.
+    block: !!task.block,
     _time: time,
     _dur: task.durationMins || null,
   }
