@@ -391,7 +391,7 @@ function RoutineCollapseRow({ routine, count, expanded, onToggle }) {
   )
 }
 
-function TimelineBlock({ task, categories, status, now, prevColor, nextColor, routineTint, filmTop = true, filmBottom = true, isDone, elapsed, dateKey, onToggle, onManage, onShiftToNow, onOpen, onFocus, onToggleSub }) {
+function TimelineBlock({ task, categories, status, now, prevColor, nextColor, routineTint, filmTop = true, filmBottom = true, bandLabel = null, onBandLabel = null, isDone, elapsed, dateKey, onToggle, onManage, onShiftToNow, onOpen, onFocus, onToggleSub }) {
   const [subOpen, setSubOpen] = useState(false)
   const catFound = (categories || []).find(x => x.id === task.tag)
   const catColor = catFound?.color || TAG_COLORS[task.tag] || '#9CA3AF'
@@ -443,6 +443,14 @@ function TimelineBlock({ task, categories, status, now, prevColor, nextColor, ro
       {routineTint && (
         <div style={{ position:'absolute', top:filmTop?6:0, bottom:filmBottom?6:0, left:44, right:0, background:routineTint, opacity:.5,
           borderTopLeftRadius:filmTop?16:0, borderTopRightRadius:filmTop?16:0, borderBottomLeftRadius:filmBottom?16:0, borderBottomRightRadius:filmBottom?16:0, zIndex:-1 }} />
+      )}
+      {/* Time-block (container) label, shown once at the top of its band. Tap to
+          edit/delete the block. */}
+      {routineTint && bandLabel && (
+        <button type="button" onClick={onBandLabel || undefined} title={onBandLabel ? 'Edit time block' : undefined}
+          style={{ position:'absolute', top:11, left:52, zIndex:1, fontSize:9, fontWeight:800, letterSpacing:.9, textTransform:'uppercase',
+            color:'#39434F', background:'rgba(255,255,255,.72)', padding:'2px 8px', borderRadius:9, border:'none', fontFamily:'DM Sans,sans-serif',
+            cursor: onBandLabel ? 'pointer' : 'default', pointerEvents: onBandLabel ? 'auto' : 'none' }}>{bandLabel}</button>
       )}
       {/* Time gutter */}
       <div style={{ width:52, flexShrink:0, paddingTop:16, textAlign:'right', paddingRight:10 }}>
@@ -586,7 +594,7 @@ function WeekStrip({ viewDate, setViewDate, commitments, categories, doneCount, 
   // Streak mode: a day "lights up" when it has scheduled items and every one is
   // done (commitments + recurring instances, matching the timeline).
   const dayAllDone = (key) => {
-    const cs = (commitments || []).filter(c => c.date === key)
+    const cs = (commitments || []).filter(c => c.date === key && !c.block)
     const rs = recurringOccurrencesForDate(recurringTasks, key, recurringExceptions)
     const items = [
       ...cs.map(c => !!(todos?.[c.id] || c.done)),
@@ -608,7 +616,7 @@ function WeekStrip({ viewDate, setViewDate, commitments, categories, doneCount, 
           const key = ymd(d)
           const sel = key === viewDate
           const isTod = key === today
-          const dots = (commitments || []).filter(c => c.date === key).slice(0, 5).map(colorFor)
+          const dots = (commitments || []).filter(c => c.date === key && !c.block).slice(0, 5).map(colorFor)
           return (
             <button key={key} onClick={() => setViewDate(key)}
               style={{ flex:1, minWidth:0, border:'none', background:'none', cursor:'pointer', padding:'2px 0', display:'flex', flexDirection:'column', alignItems:'center', gap:5 }}>
@@ -737,6 +745,24 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
   // rather than vanishing.
   const todayCommitments = (commitments||[]).filter(c=>c.date===dateKey)
 
+  // Time blocks (containers) — labeled windows that draw a soft film behind the
+  // day. They aren't tasks; tasks whose start time lands inside one get its
+  // film + label (see bandOf). Excluded from the task list below.
+  const blocks = todayCommitments
+    .filter(c => c.block && c.time && c.durationMins)
+    .map(c => ({ id:c.id, label:(c.text||'').trim(), color: c.color || '#8AA0B8',
+      start: hhmmToMins(c.time), end: hhmmToMins(c.time) + c.durationMins }))
+  // The "band" behind a task row: a containing time block wins, else its routine
+  // group. Returns { id, tint, label } or null.
+  const bandOf = (t) => {
+    if (t && t._mins != null) {
+      const b = blocks.find(b => t._mins >= b.start && t._mins < b.end)
+      if (b) return { id:'blk-'+b.id, tint:b.color, label:b.label }
+    }
+    if (t && t.routine) { const r = (routines||[]).find(x=>x.id===t.routine); if (r) return { id:'rt-'+r.id, tint:r.tint, label:null } }
+    return null
+  }
+
   const isDoneCheck = (id, isCommitment) => isCommitment
     ? !!(todos[id]||weekState[id])
     : !!(todos[dateKey+'_'+id]||weekState[dateKey+'_'+id])
@@ -775,7 +801,7 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
   const taskMins = (t) => (t._time != null ? hhmmToMins(t._time) : parseTimeMins(t.label))
 
   const rawTasks = [
-    ...todayCommitments.map(c=>({
+    ...todayCommitments.filter(c=>!c.block).map(c=>({
       id:c.id, label:c.time?`${fmt12(c.time)} — ${c.text}`:c.text,
       title:c.text,
       note:[c.person&&`With: ${c.person}`,c.prepMin&&`Leave ${c.prepMin} min early`].filter(Boolean).join(' · '),
@@ -985,6 +1011,11 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
     }
     setManaging(task)
   }
+  // Open a time block (container) for editing/deleting from its band label.
+  const openContainer = (id) => {
+    const c = (commitments || []).find(x => x.id === id)
+    if (c) setEditing(c)
+  }
   // Unschedule → strip the date/time so it drops off the timeline and returns
   // to Commitments as an unscheduled item (keeps everything else).
   const handleUnschedule = (task) => {
@@ -1115,13 +1146,13 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
             const prev = tasksWithStatus[i-1]
             const next = tasksWithStatus[i+1]
             const colorOf = t => t && (t.color || (categories||[]).find(x=>x.id===t.tag)?.color || TAG_COLORS[t.tag] || null)
-            const tintOf = t => t && t.routine ? (routines.find(r=>r.id===t.routine)?.tint || null) : null
-            const myTint = tintOf(task)
-            // Consecutive tasks in the SAME routine read as one band: their films
-            // touch (no top/bottom inset on the shared edge) and, when a gap sits
-            // between them, that gap is tinted too so the wash is continuous.
-            const prevSameRoutine = !!(myTint && prev && prev.routine === task.routine)
-            const nextSameRoutine = !!(myTint && next && next.routine === task.routine)
+            // A task's "band" is its containing time block (label + film), else
+            // its routine group. Consecutive tasks in the SAME band read as one
+            // continuous wash; the band label shows once at its top.
+            const myBand = bandOf(task), prevBand = bandOf(prev), nextBand = bandOf(next)
+            const myTint = myBand?.tint || null
+            const prevSameRoutine = !!(myBand && prevBand && prevBand.id === myBand.id)
+            const nextSameRoutine = !!(myBand && nextBand && nextBand.id === myBand.id)
             let gap = null, gapColor = null, gapNextColor = null, gapTint = null
             if (prev && prev._mins!==null && task._mins!==null && task._status!=='past') {
               const prevEnd = (prev._time && prev._dur) ? (hhmmToMins(prev._time)+prev._dur) : prev._mins
@@ -1142,6 +1173,8 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
                 <TimelineBlock
                   task={task} categories={categories} status={task._status} now={now}
                   routineTint={myTint} filmTop={!prevSameRoutine} filmBottom={!nextSameRoutine}
+                  bandLabel={!prevSameRoutine ? (myBand?.label || null) : null}
+                  onBandLabel={myBand?.id?.startsWith('blk-') ? () => openContainer(myBand.id.slice(4)) : null}
                   prevColor={colorOf(prev)} nextColor={colorOf(next)}
                   isDone={task._status==='past'}
                   elapsed={isToday && task._mins!==null && task._mins<=now}

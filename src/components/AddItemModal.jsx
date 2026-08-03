@@ -84,6 +84,7 @@ const ClockIcon = () => (<svg viewBox="0 0 24 24" width="16" height="16" fill="n
 const TagIcon   = () => (<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20.5 13.3 12.7 21a2 2 0 0 1-2.8 0l-6.9-6.9a2 2 0 0 1-.6-1.4V4.5a2 2 0 0 1 2-2h7.2a2 2 0 0 1 1.4.6l7 7a2 2 0 0 1 0 2.6Z"/><circle cx="7.6" cy="7.6" r="1.3"/></svg>)
 const BellIcon  = () => (<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9a6 6 0 0 1 12 0c0 5.5 2.3 6.8 2.3 6.8H3.7S6 14.5 6 9Z"/><path d="M10 20a2 2 0 0 0 4 0"/></svg>)
 const PinIcon   = () => (<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 21s6-5.6 6-10.2A6 6 0 0 0 6 10.8C6 15.4 12 21 12 21Z"/><circle cx="12" cy="10.8" r="2.2"/></svg>)
+const BlockIcon = () => (<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="5" width="18" height="14" rx="2.5"/><path d="M3 9.5h18"/></svg>)
 
 // A tappable grouped-list row: [icon] main text … [hint] [chevron], with an
 // optional expanded body underneath.
@@ -224,6 +225,12 @@ export default function AddItemModal({ existing = null, existingRecurring = null
   const [location, setLocation] = useState(existing?.location ?? null)
   const [locBusy, setLocBusy]   = useState(false)
   const [locErr, setLocErr]     = useState('')
+
+  // ── Time block (container) ───────────────────────────────────
+  // When on, this item isn't a task — it's a labeled window (e.g. "Work") that
+  // draws a soft film behind the day's timeline for its time span; tasks
+  // scheduled inside it stay normal. One-off (doesn't repeat).
+  const [block, setBlock] = useState(existing?.block ?? false)
   // Reminders: default (use global) unless the user customizes. When editing,
   // prefill from the item's saved override.
   const existingReminders = isEdit ? getItemReminders(existing.id) : null
@@ -386,7 +393,7 @@ export default function AddItemModal({ existing = null, existingRecurring = null
     // type) so it lands on the timeline; category, note, start/end date and the
     // repeat rule (freq/interval/day-of-month) come along too. Duration and
     // subtasks aren't part of the recurring schema.
-    if (repeatOn && onSaveRecurring) {
+    if (repeatOn && onSaveRecurring && !block) {
       const primaryCatId = effectiveCats[0] || null
       const startDate = date || localTodayStr()
       const recurringTask = {
@@ -437,6 +444,7 @@ export default function AddItemModal({ existing = null, existingRecurring = null
       // the task doesn't wipe an in-progress arrival.
       location: locHasCoords ? { name: (location.name || '').trim(), lat: location.lat, lng: location.lng, radius: location.radius || DEFAULT_RADIUS_M } : null,
       startedAt: existing?.startedAt ?? null,
+      block,
     }
     setItemSound(commitment.id, sound)
     // null → use global defaults; otherwise this item's own lead-minute list.
@@ -528,7 +536,7 @@ export default function AddItemModal({ existing = null, existingRecurring = null
               {timeProg
                 ? <div style={{ fontSize:12.5, color:headerSub, fontWeight:600, marginBottom:1 }}>{timeProg.remaining}m remaining</div>
                 : (time && <div style={{ fontSize:12.5, color:headerSub, fontWeight:600, marginBottom:1 }}>{fmt12(time)}{endTime && durationMins ? ` – ${fmt12(endTime)}` : ''}</div>)}
-              <input value={label} onChange={e => setLabel(e.target.value)} placeholder="What's happening?" autoFocus={!isEdit}
+              <input value={label} onChange={e => setLabel(e.target.value)} placeholder={block ? 'Name this block (e.g. Work)' : "What's happening?"} autoFocus={!isEdit}
                 onKeyDown={e => e.key === 'Enter' && canSave && submit()}
                 style={{ width:'100%', background:'transparent', border:'none', borderBottom:`1px solid ${headerHair}`, color:headerFg, fontSize:21, fontWeight:700, fontFamily:'DM Sans,sans-serif', outline:'none', padding:'3px 0' }} />
             </div>
@@ -544,6 +552,21 @@ export default function AddItemModal({ existing = null, existingRecurring = null
         <div style={{ padding:'16px 14px calc(20px + env(safe-area-inset-bottom))' }}>
           {/* ── Scheduling rows ───────────────────────────────── */}
           <div style={card}>
+            {/* Time block toggle — turns this into a labeled background container */}
+            {!!onSave && !isRecEdit && <>
+              <div style={{ display:'flex', alignItems:'center', gap:12, padding:'13px 15px' }}>
+                <IconCircle color={ROW_ACCENT}><BlockIcon /></IconCircle>
+                <div style={{ flex:1, minWidth:0 }}>
+                  <div style={{ fontSize:15, fontWeight:500, color:'var(--text)' }}>Time block</div>
+                  <div style={{ fontSize:11, color:'var(--muted)', marginTop:1, lineHeight:1.35 }}>A labeled band behind the day (e.g. Work). Tasks scheduled inside its time stay normal.</div>
+                </div>
+                <button type="button" onClick={() => setBlock(b => !b)} aria-pressed={block}
+                  style={{ width:46, height:27, borderRadius:14, border:'none', cursor:'pointer', padding:3, flexShrink:0, background: block ? 'var(--forest)' : '#CBD2DA', transition:'background .2s', display:'flex', justifyContent: block ? 'flex-end' : 'flex-start' }}>
+                  <span style={{ width:21, height:21, borderRadius:'50%', background:'white', boxShadow:'0 1px 3px rgba(0,0,0,.28)' }} />
+                </button>
+              </div>
+              <RowDivider />
+            </>}
             {/* Date */}
             <DetailRow icon={<CalIcon />} text={date ? prettyDate(date) : 'Add a date'} textMuted={!date}
               hint={relativeDay(date)} open={expanded==='date'}
@@ -631,7 +654,7 @@ export default function AddItemModal({ existing = null, existingRecurring = null
                   : 'Tap a preset or type a length. Add a start time to also set the end.'}
               </div>
             </DetailRow>
-            {canRepeat && <>
+            {canRepeat && !block && <>
               <RowDivider />
               {/* Repeat — turns this into a recurring task shown on every matching day */}
               <DetailRow icon={<RepeatIcon />} text={repeatRowSummary} textMuted={!repeatOn}
@@ -874,7 +897,7 @@ export default function AddItemModal({ existing = null, existingRecurring = null
           {/* ── Save ──────────────────────────────────────────── */}
           <button onClick={submit} disabled={!canSave}
             style={{ width:'100%', padding:'14px', borderRadius:14, border:'none', background: canSave ? headerColor : '#E1E1E6', color: canSave ? 'white' : '#9CA3AF', cursor: canSave ? 'pointer' : 'default', fontFamily:'DM Sans,sans-serif', fontWeight:700, fontSize:15, letterSpacing:.3 }}>
-            {(isEdit || isRecEdit) ? 'Save changes' : (repeatOn ? 'Add recurring task' : title)}
+            {(isEdit || isRecEdit) ? 'Save changes' : (block ? 'Add time block' : (repeatOn ? 'Add recurring task' : title))}
           </button>
         </div>
       </div>

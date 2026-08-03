@@ -373,11 +373,13 @@ export default function App() {
   // turned reminders on in Settings.
   useEffect(() => {
     if (loading) return
-    syncReminders(events, commitments, recurringReminderItems)
-    const onVis = () => { if (!document.hidden) syncReminders(events, commitments, recurringReminderItems) }
+    // Time blocks (containers) aren't tasks — don't remind about them.
+    const remindable = commitments.filter(c => !commitmentMeta[c.id]?.block)
+    syncReminders(events, remindable, recurringReminderItems)
+    const onVis = () => { if (!document.hidden) syncReminders(events, remindable, recurringReminderItems) }
     document.addEventListener('visibilitychange', onVis)
     return () => document.removeEventListener('visibilitychange', onVis)
-  }, [loading, events, commitments, recurringReminderItems])
+  }, [loading, events, commitments, commitmentMeta, recurringReminderItems])
 
   // ── Label prediction model ───────────────────────────────────
   // Learn which labels your tasks tend to carry, so the add sheet can predict a
@@ -591,13 +593,13 @@ export default function App() {
   // commitments table has a single `cat` column). Only stored when there's more
   // than one — a single label is fully covered by the `cat` column.
   const addCommitment = useCallback(async c => {
-    const { description, subtasks, cats, color, icon, location, startedAt, ...core } = c
+    const { description, subtasks, cats, color, icon, location, startedAt, block, ...core } = c
     try {
       const created = await dbAddCommitment(core)
       setCommitments_(prev => [created, ...prev])
       const hasCats = Array.isArray(cats) && cats.length > 1
-      const extra = { ...(hasCats ? { cats } : {}), ...(color ? { color } : {}), ...(icon ? { icon } : {}), ...(location ? { location } : {}), ...(startedAt ? { startedAt } : {}) }
-      if ((description && description.trim()) || (subtasks && subtasks.length) || hasCats || color || icon || location || startedAt) {
+      const extra = { ...(hasCats ? { cats } : {}), ...(color ? { color } : {}), ...(icon ? { icon } : {}), ...(location ? { location } : {}), ...(startedAt ? { startedAt } : {}), ...(block ? { block: true } : {}) }
+      if ((description && description.trim()) || (subtasks && subtasks.length) || hasCats || color || icon || location || startedAt || block) {
         setCommitmentMeta_(prev => {
           const next = { ...prev, [created.id]: { description: description || '', subtasks: subtasks || [], ...extra } }
           setCommitmentMeta(next).catch(reportSaveError)
@@ -607,13 +609,13 @@ export default function App() {
     } catch (e) { reportSaveError(e) }
   }, [])
   const updateCommitment = useCallback(async (id, changes) => {
-    const { description, subtasks, cats, color, icon, location, startedAt, ...core } = changes
+    const { description, subtasks, cats, color, icon, location, startedAt, block, ...core } = changes
     try {
       if (Object.keys(core).length) {
         const updated = await dbUpdateCommitment(id, core)
         setCommitments_(prev => prev.map(c => c.id===id ? updated : c))
       }
-      if (description !== undefined || subtasks !== undefined || cats !== undefined || color !== undefined || icon !== undefined || location !== undefined || startedAt !== undefined) {
+      if (description !== undefined || subtasks !== undefined || cats !== undefined || color !== undefined || icon !== undefined || location !== undefined || startedAt !== undefined || block !== undefined) {
         setCommitmentMeta_(prev => {
           const merged = { ...(prev[id] || {}) }
           if (description !== undefined) merged.description = description
@@ -637,6 +639,10 @@ export default function App() {
           if (startedAt !== undefined) {
             if (startedAt) merged.startedAt = startedAt
             else delete merged.startedAt
+          }
+          if (block !== undefined) {
+            if (block) merged.block = true
+            else delete merged.block
           }
           const next = { ...prev, [id]: merged }
           setCommitmentMeta(next).catch(reportSaveError)
@@ -763,6 +769,7 @@ export default function App() {
     icon: commitmentMeta[c.id]?.icon ?? null,
     location: commitmentMeta[c.id]?.location ?? null,
     startedAt: commitmentMeta[c.id]?.startedAt ?? null,
+    block: commitmentMeta[c.id]?.block ?? false,
   }))
 
   const sharedProps = {
