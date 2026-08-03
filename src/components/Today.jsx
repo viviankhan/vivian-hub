@@ -613,9 +613,15 @@ function TimelineBlock({ task, categories, status, now, prevColor, nextColor, ro
 // sits on the spine with the time to its right — no full-width line — matching
 // the in-task now-line. Uses the SAME column widths as TimelineBlock and GapRow
 // (52 gutter + 52 spine) so the dot lands exactly on the spine.
-function NowMarker({ now }) {
+function NowMarker({ now, bandTint = null }) {
+  // Inside a time block the marker must not break the band: it drops its
+  // vertical margin and carries the block's film full-bleed behind it, so the
+  // blue reads as one continuous wash with just a thin "now" line over it.
   return (
-    <div style={{ display:'flex', gap:0, alignItems:'center', margin:'4px 0' }}>
+    <div style={{ position:'relative', zIndex:0, display:'flex', gap:0, alignItems:'center', margin: bandTint?0:'4px 0' }}>
+      {bandTint && (
+        <div style={{ position:'absolute', top:0, bottom:0, left:44, right:0, background:bandTint, opacity:.5, zIndex:-1 }} />
+      )}
       <div style={{ width:52, flexShrink:0 }} />
       <div style={{ width:52, flexShrink:0, display:'flex', justifyContent:'center' }}>
         <div style={{ width:13, height:13, borderRadius:'50%', background:'white', border:'3px solid var(--teal)', boxShadow:'0 0 0 3px rgba(74,158,181,.16)' }} />
@@ -1304,7 +1310,7 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
             const joinTail = !!(inBlockId && isLastInBand  && blockTailIds.has(inBlockId))
             return [...before, (
               <div key={task.id}>
-                {i===nowInsertIdx&&<NowMarker now={now}/>}
+                {i===nowInsertIdx&&<NowMarker now={now} bandTint={(myBand && (joinHead || prevSameRoutine)) ? myTint : null}/>}
                 {gap && before.length===0 && <GapRow mins={gap} prevColor={gapColor} nextColor={gapNextColor} routineTint={gapTint} onAdd={()=>setAddingTask(true)}/>}
                 <TimelineBlock
                   task={task} categories={categories} status={task._status} now={now}
