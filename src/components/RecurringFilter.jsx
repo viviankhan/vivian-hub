@@ -76,7 +76,7 @@ export default function RecurringFilter({ routines = [], rows = [] }) {
         Repeating{subtracted ? ` · ${subtracted} off` : ''}
       </button>
       {open && (
-        <div style={{ position:'absolute', top:'112%', right:0, zIndex:70, background:'white', border:'1px solid var(--border)', borderRadius:12, boxShadow:'0 12px 34px rgba(30,45,60,.2)', padding:6, minWidth:214 }}>
+        <div style={{ position:'absolute', top:'112%', left:0, zIndex:70, background:'white', border:'1px solid var(--border)', borderRadius:12, boxShadow:'0 12px 34px rgba(30,45,60,.2)', padding:6, width:'min(232px, calc(100vw - 24px))' }}>
           <div style={{ fontSize:9.5, letterSpacing:1, textTransform:'uppercase', color:'var(--muted)', fontWeight:700, padding:'6px 10px 4px' }}>Show on this view</div>
           {groups.map(g => (
             <Row key={g.id} label={g.name} dot={g.tint} on={!hidden.has(g.id)} onClick={() => toggleGroup(g.id)} />
