@@ -149,7 +149,7 @@ function RoutineCard({ title, icon, items, prefix, open, setOpen, routineDone, t
 }
 
 // ── Manage modal with smart scheduling ────────────────────────
-function ManageModal({ task, dateKey, onClose, onDelete, onReschedule, onUnschedule, onDeleteSeries, scheduled }) {
+function ManageModal({ task, dateKey, onClose, onDelete, onReschedule, onUnschedule, onDeleteSeries, onDeleteFuture, scheduled }) {
   const [view,setView]     = useState('main')
   const [reason,setReason] = useState('')
   const isRec = !!task.isRecurring
@@ -187,19 +187,22 @@ function ManageModal({ task, dateKey, onClose, onDelete, onReschedule, onUnsched
             {task.isCommitment && onUnschedule && (
               <button onClick={()=>{onUnschedule(task);onClose()}} style={{padding:'10px',borderRadius:10,border:'1px solid var(--border)',background:'white',cursor:'pointer',textAlign:'left',fontSize:13,color:'var(--text)',fontFamily:'DM Sans,sans-serif'}}>🗓️ Unschedule · back to Commitments</button>
             )}
-            <button onClick={()=>setView('delete')} style={{padding:'10px',borderRadius:10,border:'1px solid #FECACA',background:'#FFF5F5',cursor:'pointer',textAlign:'left',fontSize:13,color:'#991B1B',fontFamily:'DM Sans,sans-serif'}}>{isRec ? '🗓️ Skip just this day' : '🗑️ Delete & log why'}</button>
+            <button onClick={()=>setView('delete')} style={{padding:'10px',borderRadius:10,border:'1px solid #FECACA',background:'#FFF5F5',cursor:'pointer',textAlign:'left',fontSize:13,color:'#991B1B',fontFamily:'DM Sans,sans-serif'}}>{isRec ? '🗓️ Delete just this day' : '🗑️ Delete & log why'}</button>
+            {isRec && onDeleteFuture && (
+              <button onClick={()=>{onDeleteFuture(task);onClose()}} style={{padding:'10px',borderRadius:10,border:'1px solid #FECACA',background:'#FFF5F5',cursor:'pointer',textAlign:'left',fontSize:13,color:'#991B1B',fontFamily:'DM Sans,sans-serif'}}>⏭️ Delete this &amp; all future</button>
+            )}
             {isRec && onDeleteSeries && (
-              <button onClick={()=>{onDeleteSeries(task);onClose()}} style={{padding:'10px',borderRadius:10,border:'1px solid #FECACA',background:'#FFF5F5',cursor:'pointer',textAlign:'left',fontSize:13,color:'#991B1B',fontFamily:'DM Sans,sans-serif'}}>🔁 Delete every occurrence</button>
+              <button onClick={()=>{onDeleteSeries(task);onClose()}} style={{padding:'10px',borderRadius:10,border:'1px solid #FECACA',background:'#FFF5F5',cursor:'pointer',textAlign:'left',fontSize:13,color:'#991B1B',fontFamily:'DM Sans,sans-serif'}}>🔁 Delete every occurrence (all time)</button>
             )}
           </div>
           <button onClick={onClose} style={{marginTop:10,width:'100%',padding:'8px',borderRadius:10,border:'1px solid var(--border)',background:'white',color:'var(--muted)',cursor:'pointer',fontSize:12,fontFamily:'DM Sans,sans-serif'}}>Cancel</button>
         </>}
         {view==='delete'&&<>
-          <div className="serif" style={{fontSize:17,fontWeight:600,color:'#991B1B',marginBottom:6}}>{isRec ? 'Skip this day' : 'Delete Task'}</div>
-          {isRec && <div style={{fontSize:12,color:'var(--muted)',marginBottom:10,lineHeight:1.5}}>Removes just this one occurrence — the recurring task keeps its other days. Use “Delete every occurrence” to remove the whole series.</div>}
+          <div className="serif" style={{fontSize:17,fontWeight:600,color:'#991B1B',marginBottom:6}}>{isRec ? 'Delete this day' : 'Delete Task'}</div>
+          {isRec && <div style={{fontSize:12,color:'var(--muted)',marginBottom:10,lineHeight:1.5}}>Removes just this one occurrence — the recurring task keeps its other days. Use “Delete this &amp; all future” or “Delete every occurrence” to remove more.</div>}
           <textarea value={reason} onChange={e=>setReason(e.target.value)} placeholder="Reason (optional)…" rows={3} style={{...s,marginBottom:12,resize:'none',lineHeight:1.5}}/>
           <div style={{display:'flex',gap:8}}>
-            <button onClick={()=>{onDelete(task,reason);onClose()}} style={{flex:1,padding:'10px',borderRadius:10,border:'none',background:'#EF4444',color:'white',cursor:'pointer',fontFamily:'DM Sans,sans-serif',fontWeight:600,fontSize:13}}>{isRec ? 'Skip this day' : 'Delete'}{reason?' & Log':''}</button>
+            <button onClick={()=>{onDelete(task,reason);onClose()}} style={{flex:1,padding:'10px',borderRadius:10,border:'none',background:'#EF4444',color:'white',cursor:'pointer',fontFamily:'DM Sans,sans-serif',fontWeight:600,fontSize:13}}>{isRec ? 'Delete this day' : 'Delete'}{reason?' & Log':''}</button>
             <button onClick={()=>setView('main')} style={{padding:'10px 14px',borderRadius:10,border:'1px solid var(--border)',background:'white',color:'var(--muted)',cursor:'pointer',fontSize:12,fontFamily:'DM Sans,sans-serif'}}>Back</button>
           </div>
         </>}
@@ -323,21 +326,29 @@ const PX_PER_MIN = 2.4
 // continuous band across its whole window even where no task fills it. `seg`
 // has { start, end, color, label, roundTop, roundBottom }. The label (only on
 // the block's top segment) is tappable to edit the block.
-function BlockBand({ seg, onOpen }) {
+function BlockBand({ seg, onOpen, onToggle }) {
   const dur = Math.max(0, seg.end - seg.start)
   const h = Math.min(180, Math.max(30, Math.round(dur * PX_PER_MIN)))
+  const done = !!seg.done
   return (
     <div style={{ position:'relative', minHeight:h }}>
-      <div style={{ position:'absolute', top: seg.roundTop?6:0, bottom: seg.roundBottom?6:0, left:44, right:0, background:seg.color, opacity:.5, zIndex:-1,
+      <div style={{ position:'absolute', top: seg.roundTop?6:0, bottom: seg.roundBottom?6:0, left:44, right:0, background:seg.color, opacity: done?.28:.5, zIndex:-1,
         borderTopLeftRadius:seg.roundTop?16:0, borderTopRightRadius:seg.roundTop?16:0, borderBottomLeftRadius:seg.roundBottom?16:0, borderBottomRightRadius:seg.roundBottom?16:0 }} />
       <div style={{ position:'relative', display:'flex' }}>
         <div style={{ width:52, flexShrink:0, paddingTop:10, textAlign:'right', paddingRight:10 }}>
           <span style={{ fontSize:11, color:'var(--muted)', fontWeight:500, whiteSpace:'nowrap' }}>{fmtTimeLabel(seg.start)}</span>
         </div>
         {seg.label && (
-          <div style={{ paddingTop:9, paddingLeft:8 }}>
+          <div style={{ paddingTop:9, paddingLeft:8, display:'flex', alignItems:'center', gap:6 }}>
+            {onToggle && (
+              <button type="button" onClick={onToggle} title={done?'Uncheck time block':'Check off time block'}
+                aria-label={done?'Uncheck time block':'Check off time block'}
+                style={{ width:18, height:18, flexShrink:0, borderRadius:6, border: done?'none':'1.6px solid #A7B2BF', background: done?'#5C8A5C':'rgba(255,255,255,.78)', cursor:'pointer', padding:0, display:'flex', alignItems:'center', justifyContent:'center' }}>
+                {done && <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5"/></svg>}
+              </button>
+            )}
             <button type="button" onClick={onOpen} title="Edit time block"
-              style={{ fontSize:9, fontWeight:800, letterSpacing:.9, textTransform:'uppercase', color:'#39434F', background:'rgba(255,255,255,.78)', padding:'2px 8px', borderRadius:9, border:'none', cursor:'pointer', fontFamily:'DM Sans,sans-serif' }}>{seg.label}</button>
+              style={{ fontSize:9, fontWeight:800, letterSpacing:.9, textTransform:'uppercase', color:'#39434F', background:'rgba(255,255,255,.78)', padding:'2px 8px', borderRadius:9, border:'none', cursor:'pointer', fontFamily:'DM Sans,sans-serif', textDecoration: done?'line-through':'none', opacity: done?.6:1 }}>{seg.label}</button>
           </div>
         )}
       </div>
@@ -417,7 +428,7 @@ function RoutineCollapseRow({ routine, count, expanded, onToggle }) {
   )
 }
 
-function TimelineBlock({ task, categories, status, now, prevColor, nextColor, routineTint, filmTop = true, filmBottom = true, bandLabel = null, onBandLabel = null, isDone, elapsed, dateKey, onToggle, onManage, onShiftToNow, onOpen, onFocus, onToggleSub }) {
+function TimelineBlock({ task, categories, status, now, prevColor, nextColor, routineTint, filmTop = true, filmBottom = true, bandLabel = null, onBandLabel = null, bandDone = false, onBandToggle = null, isDone, elapsed, dateKey, onToggle, onManage, onShiftToNow, onOpen, onFocus, onToggleSub }) {
   const [subOpen, setSubOpen] = useState(false)
   const catFound = (categories || []).find(x => x.id === task.tag)
   const catColor = catFound?.color || TAG_COLORS[task.tag] || '#9CA3AF'
@@ -473,10 +484,20 @@ function TimelineBlock({ task, categories, status, now, prevColor, nextColor, ro
       {/* Time-block (container) label, shown once at the top of its band. Tap to
           edit/delete the block. */}
       {routineTint && bandLabel && (
-        <button type="button" onClick={onBandLabel || undefined} title={onBandLabel ? 'Edit time block' : undefined}
-          style={{ position:'absolute', top:11, left:52, zIndex:1, fontSize:9, fontWeight:800, letterSpacing:.9, textTransform:'uppercase',
-            color:'#39434F', background:'rgba(255,255,255,.72)', padding:'2px 8px', borderRadius:9, border:'none', fontFamily:'DM Sans,sans-serif',
-            cursor: onBandLabel ? 'pointer' : 'default', pointerEvents: onBandLabel ? 'auto' : 'none' }}>{bandLabel}</button>
+        <div style={{ position:'absolute', top:11, left:52, zIndex:1, display:'flex', alignItems:'center', gap:6 }}>
+          {onBandToggle && (
+            <button type="button" onClick={onBandToggle} title={bandDone?'Uncheck time block':'Check off time block'}
+              aria-label={bandDone?'Uncheck time block':'Check off time block'}
+              style={{ width:18, height:18, flexShrink:0, borderRadius:6, border: bandDone?'none':'1.6px solid #A7B2BF', background: bandDone?'#5C8A5C':'rgba(255,255,255,.78)', cursor:'pointer', padding:0, display:'flex', alignItems:'center', justifyContent:'center' }}>
+              {bandDone && <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5"/></svg>}
+            </button>
+          )}
+          <button type="button" onClick={onBandLabel || undefined} title={onBandLabel ? 'Edit time block' : undefined}
+            style={{ fontSize:9, fontWeight:800, letterSpacing:.9, textTransform:'uppercase',
+              color:'#39434F', background:'rgba(255,255,255,.72)', padding:'2px 8px', borderRadius:9, border:'none', fontFamily:'DM Sans,sans-serif',
+              textDecoration: bandDone?'line-through':'none', opacity: bandDone?.6:1,
+              cursor: onBandLabel ? 'pointer' : 'default', pointerEvents: onBandLabel ? 'auto' : 'none' }}>{bandLabel}</button>
+        </div>
       )}
       {/* Time gutter */}
       <div style={{ width:52, flexShrink:0, paddingTop:16, textAlign:'right', paddingRight:10 }}>
@@ -777,12 +798,26 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
   // one-off commitments and repeating time blocks (e.g. Work every weekday).
   const blocks = [
     ...todayCommitments.filter(c => c.block && c.time && c.durationMins)
-      .map(c => ({ id:c.id, label:(c.text||'').trim(), color: c.color || '#8AA0B8',
+      .map(c => ({ id:c.id, label:(c.text||'').trim(), color: c.color || '#8AA0B8', isCommitment:true,
         start: hhmmToMins(c.time), end: hhmmToMins(c.time) + c.durationMins })),
     ...templateTodos.filter(o => o.block && o._time && o._dur)
-      .map(o => ({ id:o.id, label:(o.title||o.text||'').trim(), color: o.color || '#8AA0B8',
+      .map(o => ({ id:o.id, label:(o.title||o.text||'').trim(), color: o.color || '#8AA0B8', isCommitment:false,
         start: hhmmToMins(o._time), end: hhmmToMins(o._time) + o._dur })),
   ]
+  // A block can be checked off on its own — independent of the tasks inside it.
+  // Like a routine, it auto-completes once its window has fully passed today,
+  // unless an explicit check/uncheck record exists (which always wins).
+  const blockRecordKey = (b) => b.isCommitment ? String(b.id) : (dateKey+'_'+b.id)
+  const blockDone = (b) => {
+    const k = blockRecordKey(b)
+    if (k in (todos||{})) return !!(todos[k] || weekState[k])
+    if (isToday && b.end != null && now >= b.end) return true
+    return false
+  }
+  const toggleBlock = (b) => {
+    // Toggle ONLY the block's own completion record — never the inner tasks.
+    syncToggle(b.id, b.label, null, b.isCommitment ? null : dateKey, !blockDone(b))
+  }
   // The "band" behind a task row: a containing time block wins, else its routine
   // group. Returns { id, tint, label } or null.
   const bandOf = (t) => {
@@ -891,14 +926,14 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
       .filter(t => t._mins != null && t._mins >= b.start && t._mins < b.end)
       .sort((x,y) => x._mins - y._mins)
     if (!inside.length) {
-      blockSegments.push({ id:b.id+':full', bid:b.id, start:b.start, end:b.end, color:b.color, label:b.label, roundTop:true, roundBottom:true })
+      blockSegments.push({ id:b.id+':full', bid:b.id, start:b.start, end:b.end, color:b.color, label:b.label, done:blockDone(b), roundTop:true, roundBottom:true })
       blockHeadIds.add(b.id)
       continue
     }
     const firstMins = inside[0]._mins
     const lastEnd = Math.max(...inside.map(t => t._mins + (t._dur || 0)))
     if (b.start < firstMins) {
-      blockSegments.push({ id:b.id+':head', bid:b.id, start:b.start, end:firstMins, color:b.color, label:b.label, roundTop:true, roundBottom:false })
+      blockSegments.push({ id:b.id+':head', bid:b.id, start:b.start, end:firstMins, color:b.color, label:b.label, done:blockDone(b), roundTop:true, roundBottom:false })
       blockHeadIds.add(b.id)
     }
     if (lastEnd < b.end) {
@@ -1114,6 +1149,22 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
   const handleDeleteSeries = (task) => {
     if (task.isRecurring && deleteRecurringTask) deleteRecurringTask(task.id)
   }
+  // Delete this occurrence and every future one — cap the template's end date at
+  // the day before this occurrence, so today and everything after it drop off
+  // while past occurrences stay in the history. (endDate is inclusive.)
+  const handleDeleteFuture = (task) => {
+    if (!task.isRecurring || !updateRecurringTask) return
+    // updateRecurringTask rebuilds the whole DB row from what it's given, so we
+    // must pass the full template (not just the changed field) or the other
+    // columns get wiped. Spread the existing enriched template + new endDate.
+    const tmpl = (recurringTasks || []).find(t => t.id === (task.recurringId || task.id))
+    if (!tmpl) return
+    const x = new Date(dateKey + 'T12:00:00')
+    x.setDate(x.getDate() - 1)
+    const endDate = `${x.getFullYear()}-${String(x.getMonth()+1).padStart(2,'0')}-${String(x.getDate()).padStart(2,'0')}`
+    updateRecurringTask(tmpl.id, { ...tmpl, endDate })
+    if (appendLog) appendLog({ date:dateKey, dateLabel:todayLabel(), label:`Ended recurring: ${task.label||task.text} — this day onward`, tag:'deleted', ts:new Date().toISOString() })
+  }
   const handleReschedule = (task, date, time) => {
     if (date === dateKey) {
       // Same-day — never delete the task. Apply time override if a time was given.
@@ -1180,8 +1231,10 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
         // placed — rendered just before it (they sit in the block's empty gaps).
         const bandsBefore = (task) => {
           const tm = task._mins ?? Infinity
-          return blockSegments.filter(s => !emittedBlocks.has(s.id) && s.start <= tm)
-            .map(s => { emittedBlocks.add(s.id); return <BlockBand key={'seg-'+s.id} seg={s} onOpen={()=>openContainer(s.bid)} /> })
+          // Strict `<` so a tail segment starting exactly at a task's time (a
+          // task with no duration) renders AFTER that task, not before it.
+          return blockSegments.filter(s => !emittedBlocks.has(s.id) && s.start < tm)
+            .map(s => { emittedBlocks.add(s.id); const b = blocks.find(x=>x.id===s.bid); return <BlockBand key={'seg-'+s.id} seg={s} onOpen={()=>openContainer(s.bid)} onToggle={(s.label&&b)?()=>toggleBlock(b):null} /> })
         }
         return (
         <div style={{paddingBottom:8}}>
@@ -1244,6 +1297,7 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
             // in a block that has a head segment drops its rounded top (and its
             // label, which the segment shows); the last drops its rounded bottom.
             const inBlockId = myBand?.id?.startsWith('blk-') ? myBand.id.slice(4) : null
+            const inBlockBand = inBlockId ? blocks.find(b=>b.id===inBlockId) : null
             const isFirstInBand = !!myBand && !prevSameRoutine
             const isLastInBand  = !!myBand && !nextSameRoutine
             const joinHead = !!(inBlockId && isFirstInBand && blockHeadIds.has(inBlockId))
@@ -1257,6 +1311,8 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
                   routineTint={myTint} filmTop={!prevSameRoutine && !joinHead} filmBottom={!nextSameRoutine && !joinTail}
                   bandLabel={(isFirstInBand && !joinHead) ? (myBand?.label || null) : null}
                   onBandLabel={inBlockId ? () => openContainer(inBlockId) : null}
+                  bandDone={inBlockBand ? blockDone(inBlockBand) : false}
+                  onBandToggle={(inBlockId && isFirstInBand && !joinHead && inBlockBand) ? () => toggleBlock(inBlockBand) : null}
                   prevColor={colorOf(prev)} nextColor={colorOf(next)}
                   isDone={task._status==='past'}
                   elapsed={isToday && task._mins!==null && task._mins<=now}
@@ -1272,7 +1328,7 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
             )]
           })}
           {/* Block segments after the last task (or the whole day if task-less). */}
-          {blockSegments.filter(s=>!emittedBlocks.has(s.id)).map(s=>{ emittedBlocks.add(s.id); return <BlockBand key={'seg-'+s.id} seg={s} onOpen={()=>openContainer(s.bid)} /> })}
+          {blockSegments.filter(s=>!emittedBlocks.has(s.id)).map(s=>{ emittedBlocks.add(s.id); const b = blocks.find(x=>x.id===s.bid); return <BlockBand key={'seg-'+s.id} seg={s} onOpen={()=>openContainer(s.bid)} onToggle={(s.label&&b)?()=>toggleBlock(b):null} /> })}
           {isToday && !hasCurrent && nowInsertIdx===-1 && <NowMarker now={now}/>}
         </div>
         )
@@ -1318,7 +1374,7 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
         onSaveRecurring={t=>{ updateRecurringTask&&updateRecurringTask(t.id,t); setEditingRec(null) }}
         onDelete={t=>{ deleteRecurringTask&&deleteRecurringTask(t.id); setEditingRec(null) }}
         onClose={()=>setEditingRec(null)} title="Edit recurring task"/>}
-      {managing&&<ManageModal task={managing} dateKey={dateKey} onClose={()=>setManaging(null)} onDelete={handleDelete} onReschedule={handleReschedule} onUnschedule={handleUnschedule} onDeleteSeries={handleDeleteSeries} scheduled={scheduled}/>}
+      {managing&&<ManageModal task={managing} dateKey={dateKey} onClose={()=>setManaging(null)} onDelete={handleDelete} onReschedule={handleReschedule} onUnschedule={handleUnschedule} onDeleteSeries={handleDeleteSeries} onDeleteFuture={handleDeleteFuture} scheduled={scheduled}/>}
     </div>
   )
 }
