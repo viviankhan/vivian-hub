@@ -334,6 +334,11 @@ function spanHeight(mins) {
   return FULL_SCALE_MIN * PX_PER_MIN + (m - FULL_SCALE_MIN) * 0.55
 }
 
+// Time-block films cover large stretches of the day, so they sit much fainter
+// than a routine's small film — a soft tint you can read tasks over, not a
+// saturated slab. (Routine films stay at 0.5.)
+const BLOCK_FILM_OPACITY = 0.16
+
 // A "free time" gap between two timed tasks, with a quick Add Task. Its height
 // grows with the length of the gap, so the day reads at relative scale.
 // An empty stretch of a time block — its film, so the container reads as one
@@ -346,11 +351,14 @@ function BlockBand({ seg, onOpen, onToggle }) {
   const done = !!seg.done
   return (
     <div style={{ position:'relative', minHeight:h }}>
-      <div style={{ position:'absolute', top: seg.roundTop?6:0, bottom: seg.roundBottom?6:0, left:44, right:0, background:seg.color, opacity: done?.28:.5, zIndex:-1,
+      <div style={{ position:'absolute', top: seg.roundTop?6:0, bottom: seg.roundBottom?6:0, left:44, right:0, background:seg.color, opacity: done?BLOCK_FILM_OPACITY*0.6:BLOCK_FILM_OPACITY, zIndex:-1,
         borderTopLeftRadius:seg.roundTop?16:0, borderTopRightRadius:seg.roundTop?16:0, borderBottomLeftRadius:seg.roundBottom?16:0, borderBottomRightRadius:seg.roundBottom?16:0 }} />
       <div style={{ position:'relative', display:'flex' }}>
+        {/* Only the block's true top segment prints a gutter time — a tail
+            segment starts where a task ended, so its time would just echo that
+            task's own time right above it. */}
         <div style={{ width:52, flexShrink:0, paddingTop:10, textAlign:'right', paddingRight:10 }}>
-          <span style={{ fontSize:11, color:'var(--muted)', fontWeight:500, whiteSpace:'nowrap' }}>{fmtTimeLabel(seg.start)}</span>
+          {seg.roundTop && <span style={{ fontSize:11, color:'var(--muted)', fontWeight:500, whiteSpace:'nowrap' }}>{fmtTimeLabel(seg.start)}</span>}
         </div>
         {seg.label && (
           <div style={{ paddingTop:9, paddingLeft:8, display:'flex', alignItems:'center', gap:6 }}>
@@ -370,7 +378,7 @@ function BlockBand({ seg, onOpen, onToggle }) {
   )
 }
 
-function GapRow({ mins, prevColor, nextColor, routineTint, onAdd }) {
+function GapRow({ mins, prevColor, nextColor, routineTint, routineOpacity = 0.5, onAdd }) {
   // Proportional to real clock time, on the same scale as tasks and bands.
   const h = Math.max(18, Math.round(spanHeight(mins)))
   const top = prevColor || '#C9C9D3'
@@ -390,7 +398,7 @@ function GapRow({ mins, prevColor, nextColor, routineTint, onAdd }) {
       {/* Continue a routine's film through the gap between two same-routine
           tasks, square-edged so it butts flush against the pills above/below. */}
       {routineTint && (
-        <div style={{ position:'absolute', top:0, bottom:0, left:44, right:0, background:routineTint, opacity:.5, zIndex:-1 }} />
+        <div style={{ position:'absolute', top:0, bottom:0, left:44, right:0, background:routineTint, opacity:routineOpacity, zIndex:-1 }} />
       )}
       <div style={{ width:52, flexShrink:0 }} />
       <div style={{ width:52, flexShrink:0, display:'flex', justifyContent:'center' }}>
@@ -452,7 +460,7 @@ function RoutineCollapseRow({ routine, count, expanded, onToggle }) {
   )
 }
 
-function TimelineBlock({ task, categories, status, now, prevColor, nextColor, routineTint, filmTop = true, filmBottom = true, bandLabel = null, onBandLabel = null, bandDone = false, onBandToggle = null, isDone, elapsed, dateKey, onToggle, onManage, onShiftToNow, onOpen, onFocus, onToggleSub }) {
+function TimelineBlock({ task, categories, status, now, prevColor, nextColor, routineTint, tintOpacity = 0.5, filmTop = true, filmBottom = true, bandLabel = null, onBandLabel = null, bandDone = false, onBandToggle = null, isDone, elapsed, dateKey, onToggle, onManage, onShiftToNow, onOpen, onFocus, onToggleSub }) {
   const [subOpen, setSubOpen] = useState(false)
   const catFound = (categories || []).find(x => x.id === task.tag)
   const catColor = catFound?.color || TAG_COLORS[task.tag] || '#9CA3AF'
@@ -505,7 +513,7 @@ function TimelineBlock({ task, categories, status, now, prevColor, nextColor, ro
           neighbour shares the routine, the film runs to that edge (no inset +
           square corner) so consecutive tasks read as one continuous band. */}
       {routineTint && (
-        <div style={{ position:'absolute', top:filmTop?6:0, bottom:filmBottom?6:0, left:44, right:0, background:routineTint, opacity:.5,
+        <div style={{ position:'absolute', top:filmTop?6:0, bottom:filmBottom?6:0, left:44, right:0, background:routineTint, opacity:tintOpacity,
           borderTopLeftRadius:filmTop?16:0, borderTopRightRadius:filmTop?16:0, borderBottomLeftRadius:filmBottom?16:0, borderBottomRightRadius:filmBottom?16:0, zIndex:-1 }} />
       )}
       {/* Time-block (container) label, shown once at the top of its band. Tap to
@@ -640,14 +648,14 @@ function TimelineBlock({ task, categories, status, now, prevColor, nextColor, ro
 // sits on the spine with the time to its right — no full-width line — matching
 // the in-task now-line. Uses the SAME column widths as TimelineBlock and GapRow
 // (52 gutter + 52 spine) so the dot lands exactly on the spine.
-function NowMarker({ now, bandTint = null }) {
+function NowMarker({ now, bandTint = null, bandOpacity = 0.5 }) {
   // Inside a time block the marker must not break the band: it drops its
   // vertical margin and carries the block's film full-bleed behind it, so the
   // blue reads as one continuous wash with just a thin "now" line over it.
   return (
     <div style={{ position:'relative', zIndex:0, display:'flex', gap:0, alignItems:'center', margin: bandTint?0:'4px 0' }}>
       {bandTint && (
-        <div style={{ position:'absolute', top:0, bottom:0, left:44, right:0, background:bandTint, opacity:.5, zIndex:-1 }} />
+        <div style={{ position:'absolute', top:0, bottom:0, left:44, right:0, background:bandTint, opacity:bandOpacity, zIndex:-1 }} />
       )}
       <div style={{ width:52, flexShrink:0 }} />
       <div style={{ width:52, flexShrink:0, display:'flex', justifyContent:'center' }}>
@@ -1337,11 +1345,12 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
             const joinTail = !!(inBlockId && isLastInBand  && blockTailIds.has(inBlockId))
             return [...before, (
               <div key={task.id}>
-                {i===nowInsertIdx&&<NowMarker now={now} bandTint={(myBand && (joinHead || prevSameRoutine)) ? myTint : null}/>}
-                {gap && before.length===0 && <GapRow mins={gap} prevColor={gapColor} nextColor={gapNextColor} routineTint={gapTint} onAdd={()=>setAddingTask(true)}/>}
+                {i===nowInsertIdx&&<NowMarker now={now} bandTint={(myBand && (joinHead || prevSameRoutine)) ? myTint : null} bandOpacity={inBlockId ? BLOCK_FILM_OPACITY : 0.5}/>}
+                {gap && before.length===0 && <GapRow mins={gap} prevColor={gapColor} nextColor={gapNextColor} routineTint={gapTint} routineOpacity={inBlockId ? BLOCK_FILM_OPACITY : 0.5} onAdd={()=>setAddingTask(true)}/>}
                 <TimelineBlock
                   task={task} categories={categories} status={task._status} now={now}
-                  routineTint={myTint} filmTop={!prevSameRoutine && !joinHead} filmBottom={!nextSameRoutine && !joinTail}
+                  routineTint={myTint} tintOpacity={inBlockId ? BLOCK_FILM_OPACITY : 0.5}
+                  filmTop={!prevSameRoutine && !joinHead} filmBottom={!nextSameRoutine && !joinTail}
                   bandLabel={(isFirstInBand && !joinHead) ? (myBand?.label || null) : null}
                   onBandLabel={inBlockId ? () => openContainer(inBlockId) : null}
                   bandDone={inBlockBand ? blockDone(inBlockBand) : false}
