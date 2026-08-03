@@ -168,6 +168,12 @@ export const setFcStudied      = v  => dbSet('fc_studied', v)
 export const getScheduledTasks = () => dbGet('scheduled_tasks').then(v => v ?? [])
 export const setScheduledTasks = v  => dbSet('scheduled_tasks', v)
 
+// UI preferences (theme, season, background, fonts, view filters, saved colors,
+// duration presets…) so a device's look & settings follow you across devices.
+// One synced kv_store blob; see src/lib/prefs.js for the localStorage bridge.
+export const getUiPrefs = () => dbGet('ui_prefs').then(v => (v && typeof v === 'object') ? v : null)
+export const setUiPrefs = v  => dbSet('ui_prefs', v)
+
 // Rich per-commitment content (description + sub-checkboxes), stored as one
 // map keyed by commitment id. Kept in kv_store (which every install already
 // has) rather than new columns on the commitments table, so it needs no

@@ -42,7 +42,9 @@ import { getFontPref, setFontPref, applyFont, getThemePref, setThemePref, applyT
   getSummaryPref, setSummaryPref,
   getSeasonPref, setSeasonPref, applyLook, resolveSeason,
   getBackgroundPref, setBackgroundPref, applyBackground,
-  getCustomBackground, setCustomBackground } from './lib/appearance.js'
+  getCustomBackground, setCustomBackground, applySavedAppearance } from './lib/appearance.js'
+import { hydratePrefs, pushPrefs } from './lib/prefs.js'
+import { RECURRING_FILTER_EVENT } from './lib/viewFilter.js'
 import SeasonalEffects from './components/SeasonalEffects.jsx'
 
 // Build id baked in at build time (see vite.config.js). Shown in Settings so
@@ -216,24 +218,54 @@ export default function App() {
   const [layout, setLayoutState] = useState(getLayoutPref)
   const [soundOn,setSoundState]  = useState(getSoundEnabled)
   const [summary,setSummaryState]= useState(getSummaryPref)
-  const setFont    = useCallback(v  => { setFontState(v);    setFontPref(v);    applyFont(v)   }, [])
+  // Each setter mirrors the choice to the synced prefs blob (pushPrefs), so the
+  // look & settings follow the user to their other devices.
+  const setFont    = useCallback(v  => { setFontState(v);    setFontPref(v);    applyFont(v);   pushPrefs() }, [])
   // Accent: 'season' follows the active season; a preset id or 'custom' overrides.
   // applyLook re-lays the season banner + the resolved accent in one go.
-  const setTheme   = useCallback(v  => { setThemeState(v);   setThemePref(v);   applyLook(getSeasonPref(), v) }, [])
+  const setTheme   = useCallback(v  => { setThemeState(v);   setThemePref(v);   applyLook(getSeasonPref(), v); pushPrefs() }, [])
   // Season drives the banner + ambient motion (and the accent when following it).
-  const setSeason  = useCallback(v  => { setSeasonState(v);  setSeasonPref(v);  applyLook(v, getThemePref()) }, [])
+  const setSeason  = useCallback(v  => { setSeasonState(v);  setSeasonPref(v);  applyLook(v, getThemePref()); pushPrefs() }, [])
   const [customColor, setCustomColorState] = useState(getCustomColor)
   // Picking a custom color stores it, switches the accent to 'custom', and
   // re-derives every surface from that one color (banner stays season-driven).
-  const setCustom  = useCallback(hex => { setCustomColorState(hex); setCustomColor(hex); setThemeState('custom'); setThemePref('custom'); applyLook(getSeasonPref(), 'custom') }, [])
+  const setCustom  = useCallback(hex => { setCustomColorState(hex); setCustomColor(hex); setThemeState('custom'); setThemePref('custom'); applyLook(getSeasonPref(), 'custom'); pushPrefs() }, [])
   // Optional decorative background illustration (built-in scene or an upload).
   const [background, setBackgroundState] = useState(getBackgroundPref)
   const [customBg, setCustomBgState] = useState(getCustomBackground)
-  const setBackground = useCallback(id => { setBackgroundState(id); setBackgroundPref(id); applyBackground(id) }, [])
-  const setCustomBg   = useCallback(uri => { setCustomBackground(uri); setCustomBgState(uri); setBackgroundState('custom'); setBackgroundPref('custom'); applyBackground('custom') }, [])
-  const setLayout  = useCallback(v  => { setLayoutState(v);  setLayoutPref(v);  applyLayout(v) }, [])
-  const setSound   = useCallback(on => { setSoundState(on);  setSoundEnabled(on) }, [])
-  const setSummary = useCallback(v  => { setSummaryState(v); setSummaryPref(v) }, [])
+  const setBackground = useCallback(id => { setBackgroundState(id); setBackgroundPref(id); applyBackground(id); pushPrefs() }, [])
+  const setCustomBg   = useCallback(uri => { setCustomBackground(uri); setCustomBgState(uri); setBackgroundState('custom'); setBackgroundPref('custom'); applyBackground('custom'); pushPrefs() }, [])
+  const setLayout  = useCallback(v  => { setLayoutState(v);  setLayoutPref(v);  applyLayout(v); pushPrefs() }, [])
+  const setSound   = useCallback(on => { setSoundState(on);  setSoundEnabled(on); pushPrefs() }, [])
+  const setSummary = useCallback(v  => { setSummaryState(v); setSummaryPref(v); pushPrefs() }, [])
+
+  // On load, pull the synced look & view prefs and apply them so this device
+  // matches the others. localStorage already gave an instant look pre-paint;
+  // this reconciles to the shared source of truth and re-syncs React state.
+  useEffect(() => {
+    let alive = true
+    hydratePrefs().then(changed => {
+      if (!alive || !changed) return
+      setFontState(getFontPref()); setThemeState(getThemePref()); setSeasonState(getSeasonPref())
+      setCustomColorState(getCustomColor()); setBackgroundState(getBackgroundPref()); setCustomBgState(getCustomBackground())
+      setLayoutState(getLayoutPref()); setSoundState(getSoundEnabled()); setSummaryState(getSummaryPref())
+      applySavedAppearance()   // re-apply theme/season/background/font/layout from the hydrated values
+      // Nudge components that read their own device-local stores to refresh.
+      try { window.dispatchEvent(new Event(RECURRING_FILTER_EVENT)) } catch {}
+      try { window.dispatchEvent(new Event('bloom-saved-colors')) } catch {}
+      try { window.dispatchEvent(new Event('bloom-duration-presets')) } catch {}
+    })
+    return () => { alive = false }
+  }, [])
+
+  // Saved colors, the repeating filter, and duration presets are changed inside
+  // components (which broadcast these events) — mirror those to the cloud too.
+  useEffect(() => {
+    const h = () => pushPrefs()
+    const evs = ['bloom-saved-colors', RECURRING_FILTER_EVENT, 'bloom-duration-presets']
+    evs.forEach(e => window.addEventListener(e, h))
+    return () => evs.forEach(e => window.removeEventListener(e, h))
+  }, [])
   const [searchOpen,   setSearchOpen]   = useState(false)
   const [navOpen,      setNavOpen]      = useState(false)  // mobile side-nav drawer
   // Set when a search suggestion is picked → Calendar navigates to this date.
