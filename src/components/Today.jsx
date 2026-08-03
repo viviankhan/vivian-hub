@@ -595,7 +595,7 @@ function WeekStrip({ viewDate, setViewDate, commitments, categories, doneCount, 
   // done (commitments + recurring instances, matching the timeline).
   const dayAllDone = (key) => {
     const cs = (commitments || []).filter(c => c.date === key && !c.block)
-    const rs = recurringOccurrencesForDate(recurringTasks, key, recurringExceptions)
+    const rs = recurringOccurrencesForDate(recurringTasks, key, recurringExceptions).filter(o=>!o.block)
     const items = [
       ...cs.map(c => !!(todos?.[c.id] || c.done)),
       ...rs.map(o => !!(todos?.[`${key}_${o.id}`])),
@@ -747,11 +747,16 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
 
   // Time blocks (containers) — labeled windows that draw a soft film behind the
   // day. They aren't tasks; tasks whose start time lands inside one get its
-  // film + label (see bandOf). Excluded from the task list below.
-  const blocks = todayCommitments
-    .filter(c => c.block && c.time && c.durationMins)
-    .map(c => ({ id:c.id, label:(c.text||'').trim(), color: c.color || '#8AA0B8',
-      start: hhmmToMins(c.time), end: hhmmToMins(c.time) + c.durationMins }))
+  // film + label (see bandOf). Excluded from the task list below. Come from both
+  // one-off commitments and repeating time blocks (e.g. Work every weekday).
+  const blocks = [
+    ...todayCommitments.filter(c => c.block && c.time && c.durationMins)
+      .map(c => ({ id:c.id, label:(c.text||'').trim(), color: c.color || '#8AA0B8',
+        start: hhmmToMins(c.time), end: hhmmToMins(c.time) + c.durationMins })),
+    ...templateTodos.filter(o => o.block && o._time && o._dur)
+      .map(o => ({ id:o.id, label:(o.title||o.text||'').trim(), color: o.color || '#8AA0B8',
+        start: hhmmToMins(o._time), end: hhmmToMins(o._time) + o._dur })),
+  ]
   // The "band" behind a task row: a containing time block wins, else its routine
   // group. Returns { id, tint, label } or null.
   const bandOf = (t) => {
@@ -812,7 +817,7 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
       subCount:Array.isArray(c.subtasks)?c.subtasks.length:0,
       subDone:Array.isArray(c.subtasks)?c.subtasks.filter(s=>s.done).length:0,
     })),
-    ...templateTodos,
+    ...templateTodos.filter(t=>!t.block),
     ...customTasks,
   ]
   const allTasks = applyOverrides(rawTasks)
@@ -1011,10 +1016,13 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
     }
     setManaging(task)
   }
-  // Open a time block (container) for editing/deleting from its band label.
+  // Open a time block (container) for editing/deleting from its band label —
+  // a one-off commitment block, or a repeating block's template.
   const openContainer = (id) => {
     const c = (commitments || []).find(x => x.id === id)
-    if (c) setEditing(c)
+    if (c) { setEditing(c); return }
+    const tmpl = (recurringTasks || []).find(t => t.id === id)
+    if (tmpl && updateRecurringTask) setEditingRec(tmpl)
   }
   // Unschedule → strip the date/time so it drops off the timeline and returns
   // to Commitments as an unscheduled item (keeps everything else).

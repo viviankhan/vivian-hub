@@ -229,8 +229,8 @@ export default function AddItemModal({ existing = null, existingRecurring = null
   // ── Time block (container) ───────────────────────────────────
   // When on, this item isn't a task — it's a labeled window (e.g. "Work") that
   // draws a soft film behind the day's timeline for its time span; tasks
-  // scheduled inside it stay normal. One-off (doesn't repeat).
-  const [block, setBlock] = useState(existing?.block ?? false)
+  // scheduled inside it stay normal. Can be one-off or repeat (e.g. weekdays).
+  const [block, setBlock] = useState(existing?.block ?? rec?.block ?? false)
   // Reminders: default (use global) unless the user customizes. When editing,
   // prefill from the item's saved override.
   const existingReminders = isEdit ? getItemReminders(existing.id) : null
@@ -393,7 +393,7 @@ export default function AddItemModal({ existing = null, existingRecurring = null
     // type) so it lands on the timeline; category, note, start/end date and the
     // repeat rule (freq/interval/day-of-month) come along too. Duration and
     // subtasks aren't part of the recurring schema.
-    if (repeatOn && onSaveRecurring && !block) {
+    if (repeatOn && onSaveRecurring) {
       const primaryCatId = effectiveCats[0] || null
       const startDate = date || localTodayStr()
       const recurringTask = {
@@ -411,6 +411,7 @@ export default function AddItemModal({ existing = null, existingRecurring = null
         routine: routine || null,
         icon: effectiveIcon || null,
         color: color || null,
+        block: block || false,
         startDate,
         endDate: repeatEnd || null,
       }
@@ -553,7 +554,7 @@ export default function AddItemModal({ existing = null, existingRecurring = null
           {/* ── Scheduling rows ───────────────────────────────── */}
           <div style={card}>
             {/* Time block toggle — turns this into a labeled background container */}
-            {!!onSave && !isRecEdit && <>
+            {(!!onSave || !!onSaveRecurring) && <>
               <div style={{ display:'flex', alignItems:'center', gap:12, padding:'13px 15px' }}>
                 <IconCircle color={ROW_ACCENT}><BlockIcon /></IconCircle>
                 <div style={{ flex:1, minWidth:0 }}>
@@ -654,7 +655,7 @@ export default function AddItemModal({ existing = null, existingRecurring = null
                   : 'Tap a preset or type a length. Add a start time to also set the end.'}
               </div>
             </DetailRow>
-            {canRepeat && !block && <>
+            {canRepeat && <>
               <RowDivider />
               {/* Repeat — turns this into a recurring task shown on every matching day */}
               <DetailRow icon={<RepeatIcon />} text={repeatRowSummary} textMuted={!repeatOn}

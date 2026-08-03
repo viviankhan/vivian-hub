@@ -359,6 +359,7 @@ export default function App() {
       const key = `${day.getFullYear()}-${String(day.getMonth()+1).padStart(2,'0')}-${String(day.getDate()).padStart(2,'0')}`
       for (const o of recurringOccurrencesForDate(enriched, key, recurringExceptions)) {
         if (!o._time) continue                          // only timed tasks remind
+        if (o.block) continue                           // time blocks aren't tasks
         if (completions[`${key}_${o.id}`]) continue     // already done that day
         out.push({ id: `rec:${o.id}@${key}`, leadId: o.id, date: key, time: o._time, text: o.title || o.text || 'Task' })
       }
@@ -441,8 +442,8 @@ export default function App() {
       // Repeat rule extras (freq/interval/monthDay/durationMins) + routine group
       // aren't table columns — stash them in the synced recurring_meta blob
       // keyed by row id.
-      const { freq, interval, monthDay, durationMins, routine, icon, color } = task
-      if ((freq && freq !== 'weekly') || (interval && interval > 1) || monthDay || durationMins || routine || icon || color) {
+      const { freq, interval, monthDay, durationMins, routine, icon, color, block } = task
+      if ((freq && freq !== 'weekly') || (interval && interval > 1) || monthDay || durationMins || routine || icon || color || block) {
         setRecurringMeta_(prev => {
           const next = { ...prev, [created.id]: {
             ...(freq ? { freq } : {}),
@@ -452,6 +453,7 @@ export default function App() {
             ...(routine ? { routine } : {}),
             ...(icon ? { icon } : {}),
             ...(color ? { color } : {}),
+            ...(block ? { block: true } : {}),
           } }
           setRecurringMeta(next).catch(reportSaveError)
           return next
@@ -467,7 +469,7 @@ export default function App() {
     // Keep the rule extras (freq/interval/monthDay/durationMins) + routine group
     // in sync with the edit — set them when present, clear them when it's back
     // to plain weekly with no duration and no routine.
-    const { freq, interval, monthDay, durationMins, routine, icon, color } = task
+    const { freq, interval, monthDay, durationMins, routine, icon, color, block } = task
     const extra = {
       ...(freq && freq !== 'weekly' ? { freq } : {}),
       ...(interval && interval > 1 ? { interval } : {}),
@@ -476,6 +478,7 @@ export default function App() {
       ...(routine ? { routine } : {}),
       ...(icon ? { icon } : {}),
       ...(color ? { color } : {}),
+      ...(block ? { block: true } : {}),
     }
     setRecurringMeta_(prev => {
       const has = id in prev

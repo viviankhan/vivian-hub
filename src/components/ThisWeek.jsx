@@ -188,7 +188,7 @@ export default function ThisWeek({ todos, weekState, syncToggle, commitments, ad
         // weekly-on-all-7-days) are left off the Week view — they belong on the
         // daily Today screen — matching how the month calendar treats them.
         const recurringForDay = recurringOccurrencesForDate(weekRecurring, day.date, recurringExceptions)
-          .filter(t => !deleted.includes(t.id))
+          .filter(t => !deleted.includes(t.id) && !t.block)
 
         // Carry-forward: yesterday's carry-flagged recurring items left undone.
         const prevDate = i > 0 ? weekPlan[i-1].date : null

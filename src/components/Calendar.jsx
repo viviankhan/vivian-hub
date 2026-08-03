@@ -136,7 +136,7 @@ export default function Calendar({ commitments, vacations, events, log, categori
   // user via the Repeating filter; everyday habits are hidden here by default so
   // they don't land on every cell.
   const calendarRecurring = visibleRecurring(recurringTasks, recFilter)
-  const recurringEventsOn = (dateStr) => recurringOccurrencesForDate(calendarRecurring, dateStr, recurringExceptions).map(o => {
+  const recurringEventsOn = (dateStr) => recurringOccurrencesForDate(calendarRecurring, dateStr, recurringExceptions).filter(o => !o.block).map(o => {
     const cat = resolveCat(o.cat)
     return {
       id: o.id, date: dateStr, isRecurring: true,
