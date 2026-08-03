@@ -73,14 +73,17 @@ export function getDurationPresets() {
   } catch {}
   return [...DEFAULT_DURATION_PRESETS]
 }
+function emitDurations() { try { window.dispatchEvent(new Event('bloom-duration-presets')) } catch {} }
 export function setDurationPresets(mins) {
   try {
     const clean = [...new Set((mins || []).filter(n => Number.isFinite(n) && n > 0))].sort((a, b) => a - b)
     localStorage.setItem(PRESETS_KEY, JSON.stringify(clean))
+    emitDurations()
     return clean
   } catch { return getDurationPresets() }
 }
 export function resetDurationPresets() {
   try { localStorage.removeItem(PRESETS_KEY) } catch {}
+  emitDurations()
   return [...DEFAULT_DURATION_PRESETS]
 }
