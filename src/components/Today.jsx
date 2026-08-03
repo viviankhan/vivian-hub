@@ -319,6 +319,29 @@ const PX_PER_MIN = 2.4
 
 // A "free time" gap between two timed tasks, with a quick Add Task. Its height
 // grows with the length of the gap, so the day reads at relative scale.
+// A standalone band for a time block that has no tasks inside it yet, so an
+// empty container (e.g. "WORK 9:00 AM – 5:00 PM") still shows on the timeline.
+function BlockBand({ block, onOpen }) {
+  const dur = Math.max(0, block.end - block.start)
+  const h = Math.min(150, Math.max(46, Math.round(dur * PX_PER_MIN)))
+  return (
+    <div style={{ display:'flex', gap:0, minHeight:h }}>
+      <div style={{ width:52, flexShrink:0, paddingTop:12, textAlign:'right', paddingRight:10 }}>
+        <span style={{ fontSize:11, color:'var(--muted)', fontWeight:500, whiteSpace:'nowrap' }}>{fmtTimeLabel(block.start)}</span>
+      </div>
+      <div style={{ width:52, flexShrink:0 }} />
+      <div style={{ flex:1, minWidth:0, padding:'4px 0 8px' }}>
+        <button type="button" onClick={onOpen} title="Edit time block"
+          style={{ width:'100%', minHeight:h-12, border:`1.5px dashed ${block.color}`, borderRadius:16, background:`${block.color}44`,
+            cursor:'pointer', display:'flex', alignItems:'flex-start', gap:8, padding:'10px 12px', fontFamily:'DM Sans,sans-serif', textAlign:'left' }}>
+          <span style={{ fontSize:9, fontWeight:800, letterSpacing:.9, textTransform:'uppercase', color:'#39434F', background:'rgba(255,255,255,.78)', padding:'2px 8px', borderRadius:9 }}>{block.label || 'Block'}</span>
+          <span style={{ fontSize:11, color:'#48535F', fontWeight:600, marginTop:1 }}>{rangeLabel(block.start, block.end)}</span>
+        </button>
+      </div>
+    </div>
+  )
+}
+
 function GapRow({ mins, prevColor, nextColor, routineTint, onAdd }) {
   const h = Math.min(150, Math.max(34, Math.round(mins * PX_PER_MIN)))
   const dur = <b style={{ color:'var(--teal)' }}>{fmtMins(mins).trim()}</b>
@@ -851,6 +874,12 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
     .map(t=>({...t,_mins:taskMins(t),_status:getStatus({...t,_mins:taskMins(t)})}))
     .sort((a,b)=>(a._mins??99999)-(b._mins??99999))
 
+  // Time blocks with no task inside them — rendered as their own labeled band so
+  // an empty container ("Work 9–5") is still visible before you fill it.
+  const emptyBlocks = blocks
+    .filter(b => !tasksWithStatus.some(t => t._mins != null && t._mins >= b.start && t._mins < b.end))
+    .sort((a,b) => a.start - b.start)
+
   const doneCount = tasksWithStatus.filter(t=>t._status==='past').length
   // When a task is in progress, the "now" indicator is drawn inside that task's
   // pill (see TimelineBlock), so we don't also drop a separate marker in the gap
@@ -1106,7 +1135,7 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
       )}
 
       {/* Timeline */}
-      {tasksWithStatus.length===0 ? (
+      {tasksWithStatus.length===0 && emptyBlocks.length===0 ? (
         <div style={{textAlign:'center',padding:'40px 20px',color:'var(--muted)',fontSize:13}}>
           No schedule yet.{' '}
           <button onClick={()=>setAddingTask(true)} style={{color:'var(--teal)',background:'none',border:'none',cursor:'pointer',fontSize:13,fontFamily:'DM Sans,sans-serif',textDecoration:'underline'}}>Add a task</button>
@@ -1118,9 +1147,18 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
         const doneRoutineCounts = {}
         tasksWithStatus.forEach(t => { if (t.routine && routineIds.has(t.routine) && t._status==='past') doneRoutineCounts[t.routine] = (doneRoutineCounts[t.routine]||0)+1 })
         const emittedCollapse = {}  // one summary/header per routine, per render
+        const emittedBlocks = new Set()   // empty time-block bands already placed
+        // Empty blocks starting at/before this task's time, not yet placed —
+        // rendered just before it (they contain no tasks, so they sit in a gap).
+        const bandsBefore = (task) => {
+          const tm = task._mins ?? Infinity
+          return emptyBlocks.filter(b => !emittedBlocks.has(b.id) && b.start <= tm)
+            .map(b => { emittedBlocks.add(b.id); return <BlockBand key={'eb-'+b.id} block={b} onOpen={()=>openContainer(b.id)} /> })
+        }
         return (
         <div style={{paddingBottom:8}}>
           {tasksWithStatus.map((task,i)=>{
+            const before = bandsBefore(task)   // any empty time-block bands due before this row
             // Finished routine tasks collapse into a single summary row unless
             // their routine has been expanded. The first one emits the row (or
             // the expanded header); the rest are hidden while collapsed.
@@ -1134,9 +1172,9 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
                    <RoutineCollapseRow key={'rc-'+task.routine} routine={r} count={doneRoutineCounts[task.routine]} expanded={isExp}
                      onToggle={()=>setExpandedRoutines(p=>({...p,[task.routine]:!p[task.routine]}))} />)
                 : null
-              if (!isExp) return header   // collapsed: just the summary (once), nothing else
+              if (!isExp) return [...before, header]   // collapsed: summary (once), nothing else
               // expanded: header (once) then the task block below
-              return (
+              return [...before, (
                 <div key={task.id}>
                   {header}
                   <TimelineBlock
@@ -1148,7 +1186,7 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
                     onShiftToNow={()=>handleShiftToNow(task)} onFocus={()=>setFocusTask(task)}
                     onToggleSub={(sid)=>toggleSubtask(task, sid)} />
                 </div>
-              )
+              )]
             }
             // Free-time gap between the previous task's end and this one's start.
             const prev = tasksWithStatus[i-1]
@@ -1174,7 +1212,7 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
             // Gap film only when both sides share the routine (so the band is
             // truly continuous, not bleeding into an unrelated next task).
             if (prevSameRoutine) gapTint = myTint
-            return (
+            return [...before, (
               <div key={task.id}>
                 {i===nowInsertIdx&&<NowMarker now={now}/>}
                 {gap&&<GapRow mins={gap} prevColor={gapColor} nextColor={gapNextColor} routineTint={gapTint} onAdd={()=>setAddingTask(true)}/>}
@@ -1195,8 +1233,10 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
                   onToggleSub={(sid)=>toggleSubtask(task, sid)}
                 />
               </div>
-            )
+            )]
           })}
+          {/* Any empty blocks after the last task (or the whole day if empty). */}
+          {emptyBlocks.filter(b=>!emittedBlocks.has(b.id)).map(b=>{ emittedBlocks.add(b.id); return <BlockBand key={'eb-'+b.id} block={b} onOpen={()=>openContainer(b.id)} /> })}
           {isToday && !hasCurrent && nowInsertIdx===-1 && <NowMarker now={now}/>}
         </div>
         )
