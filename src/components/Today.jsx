@@ -315,10 +315,24 @@ function hhmmToMins(t) {
   return h * 60 + m
 }
 
-// Vertical pixels per minute — shared by task blocks and gaps so the whole
-// day reads at one consistent scale (a 2-hour task is twice a 1-hour task).
-// Steep enough that a 30-min task is visibly shorter than a 1-hour one.
+// Vertical pixels per minute — shared by task blocks, gaps and time-block
+// bands so the whole day reads at one consistent scale (a 2-hour task is
+// twice a 1-hour task). Steep enough that a 30-min task is visibly shorter
+// than a 1-hour one.
 const PX_PER_MIN = 2.4
+
+// Height in px for a span of `mins`, on one shared scale so tasks, gaps and
+// block bands are all proportional to real clock time. Fully proportional for
+// the first two hours; beyond that a long empty stretch keeps growing but at a
+// gentler rate, so a 9-hour evening of free time still reads as "a lot" without
+// pushing everything else off the screen. Used everywhere a duration becomes a
+// height, so the day reads at relative scale.
+const FULL_SCALE_MIN = 120
+function spanHeight(mins) {
+  const m = Math.max(0, mins || 0)
+  if (m <= FULL_SCALE_MIN) return m * PX_PER_MIN
+  return FULL_SCALE_MIN * PX_PER_MIN + (m - FULL_SCALE_MIN) * 0.55
+}
 
 // A "free time" gap between two timed tasks, with a quick Add Task. Its height
 // grows with the length of the gap, so the day reads at relative scale.
@@ -328,7 +342,7 @@ const PX_PER_MIN = 2.4
 // the block's top segment) is tappable to edit the block.
 function BlockBand({ seg, onOpen, onToggle }) {
   const dur = Math.max(0, seg.end - seg.start)
-  const h = Math.min(180, Math.max(30, Math.round(dur * PX_PER_MIN)))
+  const h = Math.max(30, Math.round(spanHeight(dur)))
   const done = !!seg.done
   return (
     <div style={{ position:'relative', minHeight:h }}>
@@ -357,13 +371,8 @@ function BlockBand({ seg, onOpen, onToggle }) {
 }
 
 function GapRow({ mins, prevColor, nextColor, routineTint, onAdd }) {
-  const h = Math.min(150, Math.max(34, Math.round(mins * PX_PER_MIN)))
-  const dur = <b style={{ color:'var(--teal)' }}>{fmtMins(mins).trim()}</b>
-  // Structured-style copy: a long empty stretch reads as opportunity, a
-  // shorter one as breathing room before the next thing.
-  const body = mins >= 120
-    ? <>Long stretch — {dur} of potential!</>
-    : <>Plan or chill for {dur} before action.</>
+  // Proportional to real clock time, on the same scale as tasks and bands.
+  const h = Math.max(18, Math.round(spanHeight(mins)))
   const top = prevColor || '#C9C9D3'
   const bot = nextColor || top
   // The connector reads as a bridge between the two tasks: its dashes blend
@@ -371,8 +380,13 @@ function GapRow({ mins, prevColor, nextColor, routineTint, onAdd }) {
   // at the bottom. A vertical color gradient paints the ink; a repeating mask
   // cuts it into dashes (‑webkit‑ prefix for iOS Safari / the PWA).
   const dashMask = 'repeating-linear-gradient(black 0 5px, transparent 5px 11px)'
+  const durLabel = fmtMins(mins).trim()
+  // Short gaps stay minimal — just the dashed connector at its true height with
+  // the duration, so a 15-min gap doesn't balloon into a big card. Only longer
+  // stretches (≥ 45 min) earn the "free time, add something?" prompt.
+  const compact = mins < 45
   return (
-    <div className="today-gap" style={{ position:'relative', zIndex:0, display:'flex', gap:0 }}>
+    <div className="today-gap" style={{ position:'relative', zIndex:0, display:'flex', gap:0, alignItems: compact?'center':'flex-start' }}>
       {/* Continue a routine's film through the gap between two same-routine
           tasks, square-edged so it butts flush against the pills above/below. */}
       {routineTint && (
@@ -382,16 +396,26 @@ function GapRow({ mins, prevColor, nextColor, routineTint, onAdd }) {
       <div style={{ width:52, flexShrink:0, display:'flex', justifyContent:'center' }}>
         <div style={{ width:3, minHeight:h, borderRadius:3, background:`linear-gradient(to bottom, ${top}, ${bot})`, WebkitMask:dashMask, mask:dashMask }} />
       </div>
-      <div style={{ flex:1, minWidth:0, paddingLeft:8, paddingTop:4 }}>
-        <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:9 }}>
-          <span style={{ display:'flex', flexShrink:0 }}><Icon value="glyph:clock" size={16} color="#9AA6B2" /></span>
-          <span style={{ fontSize:13, color:'var(--muted)' }}>{body}</span>
+      {compact ? (
+        <div style={{ flex:1, minWidth:0, paddingLeft:10, display:'flex', alignItems:'center' }}>
+          <span style={{ fontSize:12, color:'var(--muted)', whiteSpace:'nowrap' }}>{durLabel} free</span>
         </div>
-        <button onClick={onAdd}
-          style={{ display:'inline-flex', alignItems:'center', gap:5, fontSize:12, padding:'6px 14px', borderRadius:18, border:'none', background:'#E7F3F6', color:'var(--teal)', fontWeight:600, cursor:'pointer', fontFamily:'DM Sans,sans-serif' }}>
-          <span style={{ fontSize:14, lineHeight:1 }}>＋</span> Add Task
-        </button>
-      </div>
+      ) : (
+        <div style={{ flex:1, minWidth:0, paddingLeft:8, paddingTop:4 }}>
+          <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:9 }}>
+            <span style={{ display:'flex', flexShrink:0 }}><Icon value="glyph:clock" size={16} color="#9AA6B2" /></span>
+            <span style={{ fontSize:13, color:'var(--muted)' }}>
+              {mins >= 120
+                ? <>Long stretch — <b style={{ color:'var(--teal)' }}>{durLabel}</b> of potential!</>
+                : <>Plan or chill for <b style={{ color:'var(--teal)' }}>{durLabel}</b> before action.</>}
+            </span>
+          </div>
+          <button onClick={onAdd}
+            style={{ display:'inline-flex', alignItems:'center', gap:5, fontSize:12, padding:'6px 14px', borderRadius:18, border:'none', background:'#E7F3F6', color:'var(--teal)', fontWeight:600, cursor:'pointer', fontFamily:'DM Sans,sans-serif' }}>
+            <span style={{ fontSize:14, lineHeight:1 }}>＋</span> Add Task
+          </button>
+        </div>
+      )}
     </div>
   )
 }
@@ -459,9 +483,12 @@ function TimelineBlock({ task, categories, status, now, prevColor, nextColor, ro
   // tasks (clamped to a legible minimum), a tall pill for long ones
   // (Structured-style). The icon sits centered. Tasks with no duration render
   // as the minimum circle.
-  const durH  = task._dur ? task._dur * PX_PER_MIN : 0
-  const pillH = task._dur ? Math.min(300, Math.max(52, Math.round(durH))) : 52
-  const blockMinH = task._dur ? Math.min(340, Math.max(84, Math.round(durH + 28))) : undefined
+  // Same proportional scale as gaps and time-block bands. A legible minimum
+  // (52px) keeps a very short task's icon + title readable; above that the pill
+  // grows with real duration so an hour visibly outweighs ten minutes.
+  const durH  = task._dur ? spanHeight(task._dur) : 0
+  const pillH = task._dur ? Math.max(52, Math.round(durH)) : 52
+  const blockMinH = task._dur ? Math.max(84, Math.round(durH + 28)) : undefined
 
   // How far "now" sits into this task's pill (0–1), for the current task's
   // now-line + time label. Null unless this task is the one in progress.
@@ -1290,7 +1317,7 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
             if (prev && prev._mins!==null && task._mins!==null && task._status!=='past') {
               const prevEnd = (prev._time && prev._dur) ? (hhmmToMins(prev._time)+prev._dur) : prev._mins
               const g = task._mins - prevEnd
-              if (g >= 20) {
+              if (g >= 10) {
                 gap = g
                 gapColor = colorOf(prev) || '#C9C9D3'
                 gapNextColor = colorOf(task) || gapColor
