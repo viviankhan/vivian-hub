@@ -127,7 +127,7 @@ export default function ThisWeek({ todos, weekState, syncToggle, commitments, ad
 
   const commitsByDate = {}
   ;(commitments||[]).forEach(c => {
-    if (!c.date) return
+    if (!c.date || c.block) return   // time blocks show only on the Today timeline
     if (!commitsByDate[c.date]) commitsByDate[c.date] = []
     commitsByDate[c.date].push(c)
   })

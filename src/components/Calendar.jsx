@@ -114,7 +114,7 @@ export default function Calendar({ commitments, vacations, events, log, categori
   // calendar matches the tag you picked on the Commitments tab (no longer a
   // single generic "commitment" style).
   const allEvents = (commitments || [])
-    .filter(c => c.date)
+    .filter(c => c.date && !c.block)   // time blocks are a Today-timeline concept
     .map(c => {
       const cat = resolveCat(c.cat)
       const end = endTimeFrom(c.time, c.durationMins)
