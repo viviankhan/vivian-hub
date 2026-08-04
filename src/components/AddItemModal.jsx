@@ -932,27 +932,12 @@ export default function AddItemModal({ existing = null, existingRecurring = null
               style={{ width:'100%', minHeight:0, fontSize:14, padding:'8px 0 2px', border:'none', background:'transparent', resize:'vertical', lineHeight:1.5, fontFamily:'DM Sans,sans-serif', outline:'none', color:'var(--text)' }} />
           </div>
 
-          {/* ── Apply to (occurrence vs series) ────────────────── */}
-          {canEditOccurrence && (
-            <div style={{ marginBottom:10 }}>
-              <div style={{ fontSize:10, color:'var(--muted)', letterSpacing:1, textTransform:'uppercase', marginBottom:6 }}>Apply changes to</div>
-              <div style={{ display:'flex', gap:4, padding:4, borderRadius:12, background:'#EAE7EE' }}>
-                {[['occurrence','Just this event'],['series','Whole series']].map(([v,lab]) => (
-                  <button key={v} type="button" onClick={() => setEditScope(v)}
-                    style={{ flex:1, padding:'8px 6px', borderRadius:9, border:'none', cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontSize:12.5, fontWeight:700,
-                      background: editScope===v ? 'white' : 'transparent', color: editScope===v ? 'var(--text)' : 'var(--muted)',
-                      boxShadow: editScope===v ? '0 1px 3px rgba(0,0,0,.12)' : 'none' }}>{lab}</button>
-                ))}
-              </div>
-            </div>
-          )}
-
           {/* ── Save ──────────────────────────────────────────── */}
           {/* For a single occurrence of a series, saving asks whether to apply
               the change to just this event or the whole series. */}
           <button onClick={() => canEditOccurrence ? setScopePrompt(true) : submit()} disabled={!canSave}
             style={{ width:'100%', padding:'14px', borderRadius:14, border:'none', background: canSave ? headerColor : '#E1E1E6', color: canSave ? 'white' : '#9CA3AF', cursor: canSave ? 'pointer' : 'default', fontFamily:'DM Sans,sans-serif', fontWeight:700, fontSize:15, letterSpacing:.3 }}>
-            {canEditOccurrence ? (editScope==='occurrence' ? 'Save this event' : 'Save whole series') : ((isEdit || isRecEdit) ? 'Save changes' : (block ? 'Add time block' : (repeatOn ? 'Add recurring task' : title)))}
+            {(isEdit || isRecEdit) ? 'Save changes' : (block ? 'Add time block' : (repeatOn ? 'Add recurring task' : title))}
           </button>
         </div>
       </div>
