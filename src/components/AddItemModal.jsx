@@ -15,7 +15,7 @@ import { Icon } from './IconPicker.jsx'
 import ColorIconPicker from './ColorIconPicker.jsx'
 import ColorSwatchRow, { TASK_COLORS } from './ColorSwatchRow.jsx'
 import { suggestGlyph, iconColorOn } from '../lib/glyphs.jsx'
-import { LEAD_OPTIONS, getItemReminders, getItemSound, setItemSound, defaultLeadsLabel, leadLabel } from '../lib/notifications.js'
+import { LEAD_OPTIONS, getItemReminders, getItemSound, setItemSound, defaultLeadsLabel, leadLabel, getDefaultLeads } from '../lib/notifications.js'
 import { SOUNDS, playSound } from '../lib/sounds.js'
 import { getDurationPresets, setDurationPresets, resetDurationPresets, parseDuration, durationLabel } from '../lib/durations.js'
 import { predictLabel } from '../lib/predictLabel.js'
@@ -856,10 +856,17 @@ export default function AddItemModal({ existing = null, existingRecurring = null
                 </button>
                 {LEAD_OPTIONS.map(opt => {
                   const on = !useDefault && reminders.includes(opt.mins)
+                  // While on "Default", outline the chips that the default
+                  // actually uses, so you can see what Default means at a glance.
+                  const isDef = useDefault && getDefaultLeads().includes(opt.mins)
                   return (
                     <button key={opt.mins} onClick={() => toggleLead(opt.mins)}
-                      style={{ fontSize:11, padding:'5px 12px', borderRadius:20, cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:600, border: on ? 'none' : '1px solid var(--border)', background: on ? 'var(--forest)' : 'white', color: on ? 'var(--green-light)' : 'var(--muted)' }}>
-                      {on ? '✓ ' : ''}{opt.label}
+                      style={{ fontSize:11, padding:'5px 12px', borderRadius:20, cursor:'pointer', fontFamily:'DM Sans,sans-serif',
+                        fontWeight: (on || isDef) ? 700 : 600,
+                        border: on ? 'none' : isDef ? '1.5px solid var(--forest)' : '1px solid var(--border)',
+                        background: on ? 'var(--forest)' : isDef ? 'rgba(56,110,90,.12)' : 'white',
+                        color: on ? 'var(--green-light)' : isDef ? 'var(--forest)' : 'var(--muted)' }}>
+                      {on ? '✓ ' : isDef ? '★ ' : ''}{opt.label}
                     </button>
                   )
                 })}
