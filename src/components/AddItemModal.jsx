@@ -174,7 +174,6 @@ export default function AddItemModal({ existing = null, existingRecurring = null
   const canEditOccurrence = isRecEdit && !!occurrenceDate && !!onSaveOccurrence
   const canScopedDelete = isRecEdit && !!occurrenceDate && (!!onDeleteOccurrence || !!onDeleteFuture)
   const [scopePrompt, setScopePrompt] = useState(false)   // save-time "this event / all events" chooser
-  const [deletePrompt, setDeletePrompt] = useState(false)  // delete-time scope chooser
   const recSplit = rec ? splitTimePrefix(rec.label ?? rec.text ?? '') : { time:null, title:'' }
   const [label, setLabel]         = useState(existing?.text ?? (rec ? recSplit.title : presetText) ?? '')
   const [date, setDate]           = useState(existing?.date ?? rec?.startDate ?? presetDate ?? '')
@@ -545,8 +544,13 @@ export default function AddItemModal({ existing = null, existingRecurring = null
                   {onDuplicate && <MenuRow icon={<DupIcon />} label="Duplicate" onClick={() => runMenu(onDuplicate)} />}
                   {onMoveToInbox && <MenuRow icon={<InboxIcon2 />} label="Move to Inbox" onClick={() => runMenu(onMoveToInbox)} />}
                   {(onDelete || canScopedDelete) && <div style={{ height:1, background:'#EEEAF1', margin:'4px 0' }} />}
-                  {(onDelete || canScopedDelete) && <MenuRow icon={<TrashIcon2 />} label="Delete" danger
-                    onClick={() => { setMenuOpen(false); canScopedDelete ? setDeletePrompt(true) : runMenu(onDelete) }} />}
+                  {/* For a recurring event the delete scope is chosen right here in
+                      the menu — no intermediate popup. */}
+                  {canScopedDelete ? <>
+                    {onDeleteOccurrence && <MenuRow icon={<TrashIcon2 />} label="Delete this event" danger onClick={() => { setMenuOpen(false); onClose(); onDeleteOccurrence(occurrenceDate) }} />}
+                    {onDeleteFuture && <MenuRow icon={<TrashIcon2 />} label="Delete this & all future" danger onClick={() => { setMenuOpen(false); onClose(); onDeleteFuture(occurrenceDate) }} />}
+                    {onDelete && <MenuRow icon={<TrashIcon2 />} label="Delete all events" danger onClick={() => { setMenuOpen(false); onClose(); onDelete(existing || rec) }} />}
+                  </> : (onDelete && <MenuRow icon={<TrashIcon2 />} label="Delete" danger onClick={() => runMenu(onDelete)} />)}
                 </div>
               </>
             )}
@@ -956,28 +960,6 @@ export default function AddItemModal({ existing = null, existingRecurring = null
               <button type="button" onClick={() => { setScopePrompt(false); submit('series') }}
                 style={{ padding:'12px', borderRadius:12, border:'1px solid var(--border)', background:'white', color:'var(--text)', cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:700, fontSize:14 }}>Apply to all events</button>
               <button type="button" onClick={() => setScopePrompt(false)}
-                style={{ padding:'9px', borderRadius:12, border:'none', background:'none', color:'var(--muted)', cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontSize:13 }}>Cancel</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Scoped delete for a single occurrence of a recurring series. */}
-      {deletePrompt && (
-        <div onClick={() => setDeletePrompt(false)}
-          style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.5)', zIndex:700, display:'flex', alignItems:'center', justifyContent:'center', padding:20 }}>
-          <div onClick={e => e.stopPropagation()}
-            style={{ background:'white', borderRadius:18, padding:20, maxWidth:330, width:'100%', boxShadow:'0 24px 64px rgba(0,0,0,.3)' }}>
-            <div className="serif" style={{ fontSize:17, fontWeight:600, color:'#991B1B', marginBottom:6 }}>Delete which?</div>
-            <div style={{ fontSize:13, color:'var(--muted)', marginBottom:16, lineHeight:1.5 }}>This is a repeating event. Delete only this day, or more?</div>
-            <div style={{ display:'flex', flexDirection:'column', gap:9 }}>
-              {onDeleteOccurrence && <button type="button" onClick={() => { setDeletePrompt(false); onClose(); onDeleteOccurrence(occurrenceDate) }}
-                style={{ padding:'12px', borderRadius:12, border:'1px solid #FECACA', background:'#FFF5F5', color:'#991B1B', cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:700, fontSize:14 }}>Just this event</button>}
-              {onDeleteFuture && <button type="button" onClick={() => { setDeletePrompt(false); onClose(); onDeleteFuture(occurrenceDate) }}
-                style={{ padding:'12px', borderRadius:12, border:'1px solid #FECACA', background:'#FFF5F5', color:'#991B1B', cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:700, fontSize:14 }}>This &amp; all future</button>}
-              {onDelete && <button type="button" onClick={() => { setDeletePrompt(false); onClose(); onDelete(existing || rec) }}
-                style={{ padding:'12px', borderRadius:12, border:'none', background:'#EF4444', color:'white', cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:700, fontSize:14 }}>All events (whole series)</button>}
-              <button type="button" onClick={() => setDeletePrompt(false)}
                 style={{ padding:'9px', borderRadius:12, border:'none', background:'none', color:'var(--muted)', cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontSize:13 }}>Cancel</button>
             </div>
           </div>

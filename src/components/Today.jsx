@@ -411,7 +411,12 @@ function BlockBand({ seg, onEdit, onAdd, onCollapse }) {
         {seg.label && (
           <div style={{ paddingTop:9, paddingLeft:11, flex:1, minWidth:0, display:'flex', alignItems:'center', gap:8 }}>
             <BandIcon icon={seg.icon} color={seg.color} onEdit={onEdit} />
-            <span style={{ fontSize:10, fontWeight:800, letterSpacing:.9, textTransform:'uppercase', color:'#39434F', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{label}</span>
+            <span style={{ fontSize:10, fontWeight:800, letterSpacing:.9, textTransform:'uppercase', color:'#39434F', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis', flexShrink:0 }}>{label}</span>
+            {/* The block's full window, so you can read its end time without
+                collapsing it. */}
+            {seg.blockStart!=null && seg.blockEnd!=null && (
+              <span style={{ fontSize:11, color:'var(--muted)', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis', minWidth:0 }}>{rangeLabel(seg.blockStart, seg.blockEnd)}</span>
+            )}
             {onCollapse && <span style={{ marginLeft:'auto', flexShrink:0 }}><BandChevron collapsed={false} onClick={onCollapse} /></span>}
           </div>
         )}
@@ -1026,14 +1031,14 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
       continue
     }
     if (!inside.length) {
-      blockSegments.push({ id:b.id+':full', bid:b.id, start:b.start, end:b.end, color:b.color, label:b.label, icon:b.icon, roundTop:true, roundBottom:true })
+      blockSegments.push({ id:b.id+':full', bid:b.id, start:b.start, end:b.end, color:b.color, label:b.label, icon:b.icon, blockStart:b.start, blockEnd:b.end, roundTop:true, roundBottom:true })
       blockHeadIds.add(b.id)
       continue
     }
     const firstMins = inside[0]._mins
     const lastEnd = Math.max(...inside.map(t => t._mins + (t._dur || 0)))
     if (b.start < firstMins) {
-      blockSegments.push({ id:b.id+':head', bid:b.id, start:b.start, end:firstMins, color:b.color, label:b.label, icon:b.icon, roundTop:true, roundBottom:false })
+      blockSegments.push({ id:b.id+':head', bid:b.id, start:b.start, end:firstMins, color:b.color, label:b.label, icon:b.icon, blockStart:b.start, blockEnd:b.end, roundTop:true, roundBottom:false })
       blockHeadIds.add(b.id)
     }
     if (lastEnd < b.end) {
