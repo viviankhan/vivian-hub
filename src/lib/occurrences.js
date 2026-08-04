@@ -139,6 +139,9 @@ export function recurringOccurrence(task, dateStr) {
     color: task.color || null,
     // A repeating time block (container) — draws a labeled film band, not a task.
     block: !!task.block,
+    // An arrival location carried from the template, so a repeating task can
+    // auto-start on arrival just like a one-off.
+    location: task.location || null,
     _time: time,
     _dur: task.durationMins || null,
   }

@@ -183,9 +183,9 @@ body {
   pointer-events: none;
   background: linear-gradient(115deg,
     transparent 30%,
-    rgba(255,214,228,.35) 47%,
-    rgba(255,235,243,.85) 50%,
-    rgba(255,214,228,.35) 53%,
+    rgba(var(--shimmer-rgb, 255,214,228),.35) 47%,
+    rgba(255,255,255,.85) 50%,
+    rgba(var(--shimmer-rgb, 255,214,228),.35) 53%,
     transparent 70%);
   background-size: 250% 100%;
   background-position: 150% 0;
@@ -245,11 +245,11 @@ body {
   pointer-events: none;
   background: linear-gradient(115deg,
     transparent 30%,
-    rgba(255,192,214,.18) 42%,
-    rgba(255,214,228,.30) 47%,
-    rgba(255,235,243,.70) 50%,
-    rgba(255,214,228,.30) 53%,
-    rgba(255,192,214,.18) 58%,
+    rgba(var(--shimmer-rgb, 255,214,228),.18) 42%,
+    rgba(var(--shimmer-rgb, 255,214,228),.30) 47%,
+    rgba(255,255,255,.70) 50%,
+    rgba(var(--shimmer-rgb, 255,214,228),.30) 53%,
+    rgba(var(--shimmer-rgb, 255,214,228),.18) 58%,
     transparent 70%);
   background-size: 250% 100%;
   background-position: 150% 0;

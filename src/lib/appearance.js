@@ -179,25 +179,25 @@ export function applyTheme(id) {
 // "Bloom" is the signature default (not a calendar season): soft iridescent
 // bubbles drifting up over the sea-breeze pastels. The four seasons follow it.
 export const BLOOM_LOOK = {
-  id:'bloom', label:'Bloom', accent:'#4A9EB5', effect:'bubbles',
+  id:'bloom', label:'Bloom', accent:'#4A9EB5', effect:'bubbles', shimmer:'255,214,228',
   banner:['#B8D8E8','#C8BFDF','#E8C4C8','#F0D4C0'],
   wash:['rgba(184,216,232,.55)','rgba(200,191,223,.50)','rgba(232,196,200,.45)','rgba(240,212,192,.45)'],
 }
 export const SEASONS = [
-  { id:'spring', label:'Spring', accent:'#7FAE6B', effect:'petals',
+  { id:'spring', label:'Spring', accent:'#7FAE6B', effect:'petals', shimmer:'206,232,190',
     banner:['#D8E9C6','#E7DCEF','#F5D6DF','#DDECD1'],
     wash:['rgba(198,224,176,.50)','rgba(224,206,236,.45)','rgba(244,208,216,.42)','rgba(214,232,198,.42)'] },
   // Summer — green leaves drifting through a sunny meadow-to-sky banner (green,
   // gold, warm sand, sky-teal — multi-hued so it pops like Bloom's).
-  { id:'summer', label:'Summer', accent:'#5F9E6B', effect:'greenleaves',
+  { id:'summer', label:'Summer', accent:'#5F9E6B', effect:'greenleaves', shimmer:'238,226,150',
     banner:['#C2E4A2','#E9E79E','#F3D29A','#A9D9DD'],
     wash:['rgba(190,224,150,.50)','rgba(232,228,150,.45)','rgba(246,214,150,.42)','rgba(168,214,220,.44)'] },
   // Fall — gold, amber, rust, and a berry pop for depth.
-  { id:'fall', label:'Fall', accent:'#D2814B', effect:'leaves',
+  { id:'fall', label:'Fall', accent:'#D2814B', effect:'leaves', shimmer:'242,190,138',
     banner:['#F2D89E','#EBAB6E','#DE8257','#C77A8E'],
     wash:['rgba(240,214,158,.50)','rgba(233,168,110,.45)','rgba(216,120,80,.40)','rgba(196,122,142,.42)'] },
   // Winter — ice blue, periwinkle, frost pink, mint: a multi-hued frost.
-  { id:'winter', label:'Winter', accent:'#6E93B8', effect:'snow',
+  { id:'winter', label:'Winter', accent:'#6E93B8', effect:'snow', shimmer:'214,230,246',
     banner:['#D2E4F0','#DCD9F1','#EFDCEC','#CDEBE6'],
     wash:['rgba(200,222,240,.50)','rgba(214,210,240,.45)','rgba(238,214,232,.42)','rgba(200,232,224,.44)'] },
 ]
@@ -231,6 +231,8 @@ export function applySeason(pref = getSeasonPref(), { accentFromSeason = false }
   r.setProperty('--bloom-header-rose', b3)
   r.setProperty('--bloom-header-peach', b4)
   s.wash.forEach((w, i) => r.setProperty(`--bloom-wash-${i + 1}`, w))
+  // The hover "shimmer" sheen tint follows the season too (was always pink).
+  r.setProperty('--shimmer-rgb', s.shimmer || '255,214,228')
   document.documentElement.dataset.season = s.id
   if (accentFromSeason) setAccentVars(deriveTheme(s.accent, s.label, 'season'))
   return s

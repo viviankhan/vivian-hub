@@ -218,6 +218,12 @@ export default function App() {
   const [layout, setLayoutState] = useState(getLayoutPref)
   const [soundOn,setSoundState]  = useState(getSoundEnabled)
   const [summary,setSummaryState]= useState(getSummaryPref)
+  // Arrival-started recurring occurrences (device-local): occKey → timestamp.
+  // A recurring task with a location auto-starts on arrival like a one-off, but
+  // per-day, so it needs its own started map keyed by occurrence.
+  const [occStarted, setOccStarted] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('bloom_occ_started') || '{}') } catch { return {} }
+  })
   // Each setter mirrors the choice to the synced prefs blob (pushPrefs), so the
   // look & settings follow the user to their other devices.
   const setFont    = useCallback(v  => { setFontState(v);    setFontPref(v);    applyFont(v);   pushPrefs() }, [])
@@ -397,14 +403,35 @@ export default function App() {
   // the time it was set for — and nudge you that it started.
   useEffect(() => {
     if (loading || !geolocationSupported()) return
-    // Current set of not-done, located, not-yet-started commitments. Read fresh
-    // on each position update via the getter so it tracks live state.
-    const getLocatedTasks = () => commitments
-      .filter(c => !c.done && commitmentMeta[c.id]?.location && !commitmentMeta[c.id]?.startedAt)
-      .map(c => ({ id: c.id, name: c.text, location: commitmentMeta[c.id].location }))
+    const dd = new Date()
+    const today = `${dd.getFullYear()}-${String(dd.getMonth()+1).padStart(2,'0')}-${String(dd.getDate()).padStart(2,'0')}`
+    // Current set of not-done, located, not-yet-started items — commitments AND
+    // today's recurring occurrences that carry a location. Read fresh on each
+    // position update via the getter so it tracks live state. Recurring ones use
+    // an "occ:" id so arrival marks the per-day occurrence, not the commitment.
+    const getLocatedTasks = () => {
+      const commits = commitments
+        .filter(c => !c.done && commitmentMeta[c.id]?.location && !commitmentMeta[c.id]?.startedAt)
+        .map(c => ({ id: c.id, name: c.text, location: commitmentMeta[c.id].location }))
+      const recs = recurringOccurrencesForDate(recurringTasksEnriched, today, recurringExceptions)
+        .filter(o => o.location && !completions[`${today}_${o.id}`] && !occStarted[occKey(o.id, today)])
+        .map(o => ({ id: 'occ:' + occKey(o.id, today), name: o.title || o.text || 'Task', location: o.location }))
+      return [...commits, ...recs]
+    }
     if (!getLocatedTasks().length) return
 
     const stop = watchArrivals(getLocatedTasks, (task) => {
+      if (typeof task.id === 'string' && task.id.startsWith('occ:')) {
+        const key = task.id.slice(4)
+        setOccStarted(prev => {
+          if (prev[key]) return prev
+          const next = { ...prev, [key]: Date.now() }
+          try { localStorage.setItem('bloom_occ_started', JSON.stringify(next)) } catch {}
+          return next
+        })
+        notifyArrival(task.name)
+        return
+      }
       setCommitmentMeta_(prev => {
         if (prev[task.id]?.startedAt) return prev            // already started
         const merged = { ...(prev[task.id] || {}), startedAt: Date.now() }
@@ -415,7 +442,7 @@ export default function App() {
       notifyArrival(task.name)
     })
     return stop
-  }, [loading, commitments, commitmentMeta])
+  }, [loading, commitments, commitmentMeta, recurringTasksEnriched, recurringExceptions, completions, occStarted])
 
   // ── Persist helpers ──────────────────────────────────────────
   // Cloud write failures are surfaced instead of swallowed — otherwise a delete
@@ -442,8 +469,8 @@ export default function App() {
       // Repeat rule extras (freq/interval/monthDay/durationMins) + routine group
       // aren't table columns — stash them in the synced recurring_meta blob
       // keyed by row id.
-      const { freq, interval, monthDay, durationMins, routine, icon, color, block } = task
-      if ((freq && freq !== 'weekly') || (interval && interval > 1) || monthDay || durationMins || routine || icon || color || block) {
+      const { freq, interval, monthDay, durationMins, routine, icon, color, block, location } = task
+      if ((freq && freq !== 'weekly') || (interval && interval > 1) || monthDay || durationMins || routine || icon || color || block || location) {
         setRecurringMeta_(prev => {
           const next = { ...prev, [created.id]: {
             ...(freq ? { freq } : {}),
@@ -454,6 +481,7 @@ export default function App() {
             ...(icon ? { icon } : {}),
             ...(color ? { color } : {}),
             ...(block ? { block: true } : {}),
+            ...(location ? { location } : {}),
           } }
           setRecurringMeta(next).catch(reportSaveError)
           return next
@@ -469,7 +497,7 @@ export default function App() {
     // Keep the rule extras (freq/interval/monthDay/durationMins) + routine group
     // in sync with the edit — set them when present, clear them when it's back
     // to plain weekly with no duration and no routine.
-    const { freq, interval, monthDay, durationMins, routine, icon, color, block } = task
+    const { freq, interval, monthDay, durationMins, routine, icon, color, block, location } = task
     const extra = {
       ...(freq && freq !== 'weekly' ? { freq } : {}),
       ...(interval && interval > 1 ? { interval } : {}),
@@ -479,6 +507,7 @@ export default function App() {
       ...(icon ? { icon } : {}),
       ...(color ? { color } : {}),
       ...(block ? { block: true } : {}),
+      ...(location ? { location } : {}),
     }
     setRecurringMeta_(prev => {
       const has = id in prev
@@ -843,6 +872,7 @@ export default function App() {
     // map, and the operations Today/Week/Calendar share so all three stay in sync.
     recurringTasks: recurringTasksEnriched,
     recurringExceptions,
+    occStarted,
     addRecurringTask: addRecurringTaskFn,
     updateRecurringTask: updateRecurringTaskFn,
     deleteRecurringTask: deleteRecurringTaskFn,
