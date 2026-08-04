@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { recurringOccurrencesForDate, taskProgress } from '../lib/occurrences.js'
+import { recurringOccurrencesForDate, taskProgress, occKey } from '../lib/occurrences.js'
 import { findSlots } from '../lib/scheduler.js'
 import { getRoutines } from '../lib/storage.js'
 import { normalizeRoutineItems, sortByTime, to12 } from './Routines.jsx'
@@ -794,7 +794,7 @@ function WeekStrip({ viewDate, setViewDate, commitments, categories, doneCount, 
 }
 
 // ── Main ───────────────────────────────────────────────────────
-export default function Today({ todos, weekState, syncToggle, commitments, addCommitment, updateCommitment, deleteCommitment, appendLog, scheduled, categories, recurringTasks, recurringExceptions, skipRecurringOccurrence, deleteRecurringTask, addRecurringTask, updateRecurringTask, routines = [], summary, labelModel = null }) {
+export default function Today({ todos, weekState, syncToggle, commitments, addCommitment, updateCommitment, deleteCommitment, appendLog, scheduled, categories, recurringTasks, recurringExceptions, occStarted = {}, skipRecurringOccurrence, deleteRecurringTask, addRecurringTask, updateRecurringTask, routines = [], summary, labelModel = null }) {
   const [now,         setNow]         = useState(nowMins())
   // The day the timeline is showing. Defaults to today; the week strip up top
   // navigates to any day. "Now" logic (the progress marker, current/overdue,
@@ -887,6 +887,9 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
   // deletions (`deleted`) are still honored alongside the new synced skips.
   const templateTodos = recurringOccurrencesForDate(recurringTasks, dateKey, recurringExceptions)
     .filter(t=>!deleted.includes(t.id))
+    // Merge in an arrival-started timestamp (set when you reach the task's
+    // location), so a located recurring task shows live progress like a one-off.
+    .map(t => { const s = occStarted[occKey(t.id, dateKey)]; return s ? { ...t, startedAt: s } : t })
   // Keep done ones too — a finished task stays on the timeline, crossed off,
   // rather than vanishing.
   const todayCommitments = (commitments||[]).filter(c=>c.date===dateKey)

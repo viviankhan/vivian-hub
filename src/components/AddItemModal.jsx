@@ -230,7 +230,7 @@ export default function AddItemModal({ existing = null, existingRecurring = null
   // ── Location ─────────────────────────────────────────────────
   // An optional place. When the device arrives within its radius, the task's
   // progress auto-starts regardless of the time it's set for (see App wiring).
-  const [location, setLocation] = useState(existing?.location ?? null)
+  const [location, setLocation] = useState(existing?.location ?? rec?.location ?? null)
   const [locBusy, setLocBusy]   = useState(false)
   const [locErr, setLocErr]     = useState('')
   // Type-to-search a place (geocoded), so a location can be set without being there.
@@ -462,6 +462,7 @@ export default function AddItemModal({ existing = null, existingRecurring = null
         icon: effectiveIcon || null,
         color: color || null,
         block: block || false,
+        location: locHasCoords ? { name: (location.name || '').trim(), lat: location.lat, lng: location.lng, radius: location.radius || DEFAULT_RADIUS_M } : null,
         startDate,
         endDate: repeatEnd || null,
       }
@@ -893,7 +894,7 @@ export default function AddItemModal({ existing = null, existingRecurring = null
             </DetailRow>
             {/* Location — a place that auto-starts this task when you arrive.
                 Offered for one-off commitments (not recurring templates). */}
-            {!!onSave && !repeatOn && geolocationSupported() && <>
+            {(!!onSave || !!onSaveRecurring) && geolocationSupported() && <>
               <RowDivider />
               <DetailRow icon={<PinIcon />}
                 text={locHasCoords ? (location.name?.trim() || 'Location set') : 'Add a location'} textMuted={!locHasCoords}
