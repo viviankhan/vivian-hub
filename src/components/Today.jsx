@@ -1561,6 +1561,18 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
           setEditingRec(null); setEditingRecDate(null)
         }}
         onSaveRecurring={t=>{ updateRecurringTask&&updateRecurringTask(t.id,t); setEditingRec(null); setEditingRecDate(null) }}
+        onDeleteOccurrence={date=>{ skipRecurringOccurrence&&skipRecurringOccurrence(editingRec.id, date); setEditingRec(null); setEditingRecDate(null) }}
+        onDeleteFuture={date=>{
+          // End the series the day before this occurrence — today onward drops
+          // off, past days stay in history. (endDate is inclusive.)
+          const tmpl=(recurringTasks||[]).find(t=>t.id===editingRec.id)
+          if (tmpl && updateRecurringTask) {
+            const x=new Date(date+'T12:00:00'); x.setDate(x.getDate()-1)
+            const endDate=`${x.getFullYear()}-${String(x.getMonth()+1).padStart(2,'0')}-${String(x.getDate()).padStart(2,'0')}`
+            updateRecurringTask(tmpl.id, { ...tmpl, endDate })
+          }
+          setEditingRec(null); setEditingRecDate(null)
+        }}
         onDelete={t=>{ deleteRecurringTask&&deleteRecurringTask(t.id); setEditingRec(null); setEditingRecDate(null) }}
         onClose={()=>{ setEditingRec(null); setEditingRecDate(null) }} title="Edit recurring task"/>}
       {managing&&<ManageModal task={managing} dateKey={dateKey} onClose={()=>setManaging(null)} onDelete={handleDelete} onReschedule={handleReschedule} onUnschedule={handleUnschedule} onDeleteSeries={handleDeleteSeries} onDeleteFuture={handleDeleteFuture} scheduled={scheduled}/>}

@@ -159,7 +159,7 @@ const InboxIcon2 = () => (<svg viewBox="0 0 24 24" width="18" height="18" fill="
 const TrashIcon2 = () => (<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4.5 7h15M9 7V5.2A1.2 1.2 0 0 1 10.2 4h3.6A1.2 1.2 0 0 1 15 5.2V7M6.5 7l1 12.5h9L17.5 7"/></svg>)
 const TargetIcon = () => (<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4.5"/><circle cx="12" cy="12" r="1" fill="currentColor" stroke="none"/></svg>)
 
-export default function AddItemModal({ existing = null, existingRecurring = null, occurrenceDate = null, onSaveOccurrence = null, presetDate = null, presetText = '', presetTime = '', presetCat = '', lockDate = false, defaultRepeat = false, categories = [], routines = [], labelModel = null, onSave, onSaveRecurring = null, onDelete = null, onDuplicate = null, onMoveToInbox = null, onClose, title = 'Add to calendar' }) {
+export default function AddItemModal({ existing = null, existingRecurring = null, occurrenceDate = null, onSaveOccurrence = null, onDeleteOccurrence = null, onDeleteFuture = null, presetDate = null, presetText = '', presetTime = '', presetCat = '', lockDate = false, defaultRepeat = false, categories = [], routines = [], labelModel = null, onSave, onSaveRecurring = null, onDelete = null, onDuplicate = null, onMoveToInbox = null, onClose, title = 'Add to calendar' }) {
   const cats = (categories && categories.length) ? categories : DEFAULT_CATEGORIES
   const isEdit = !!existing
   // Editing an existing recurring task: it comes in the Recurring-tab row shape
@@ -172,7 +172,9 @@ export default function AddItemModal({ existing = null, existingRecurring = null
   // handler for detaching it. Default to this-event so a one-off tweak never
   // silently rewrites every day.
   const canEditOccurrence = isRecEdit && !!occurrenceDate && !!onSaveOccurrence
-  const [editScope, setEditScope] = useState('occurrence')  // 'occurrence' | 'series'
+  const canScopedDelete = isRecEdit && !!occurrenceDate && (!!onDeleteOccurrence || !!onDeleteFuture)
+  const [scopePrompt, setScopePrompt] = useState(false)   // save-time "this event / all events" chooser
+  const [deletePrompt, setDeletePrompt] = useState(false)  // delete-time scope chooser
   const recSplit = rec ? splitTimePrefix(rec.label ?? rec.text ?? '') : { time:null, title:'' }
   const [label, setLabel]         = useState(existing?.text ?? (rec ? recSplit.title : presetText) ?? '')
   const [date, setDate]           = useState(existing?.date ?? rec?.startDate ?? presetDate ?? '')
@@ -393,12 +395,12 @@ export default function AddItemModal({ existing = null, existingRecurring = null
   }
   const chooseDefault = () => { setUseDefault(true); setReminders([]) }
 
-  const submit = () => {
+  const submit = (scope) => {
     if (!canSave) return
     // Editing just THIS occurrence of a series → detach it: the parent hides the
     // series on this date and drops in a one-off commitment with the edits. The
     // other days of the series are untouched.
-    if (canEditOccurrence && editScope === 'occurrence') {
+    if (canEditOccurrence && scope === 'occurrence') {
       const primaryCatId = effectiveCats[0] || null
       const occ = {
         id: 'occ-' + rec.id + '-' + occurrenceDate,
@@ -411,7 +413,6 @@ export default function AddItemModal({ existing = null, existingRecurring = null
         color: color || null,
         icon: effectiveIcon || null,
         description: description.trim() || '',
-        note: description.trim() || '',
         subtasks,
         done: false,
         block: block || false,
@@ -543,8 +544,9 @@ export default function AddItemModal({ existing = null, existingRecurring = null
                 <div style={{ position:'absolute', top:42, right:0, zIndex:6, background:'white', borderRadius:14, boxShadow:'0 12px 40px rgba(20,30,45,.28)', overflow:'hidden', minWidth:196, paddingTop:4, paddingBottom:4 }}>
                   {onDuplicate && <MenuRow icon={<DupIcon />} label="Duplicate" onClick={() => runMenu(onDuplicate)} />}
                   {onMoveToInbox && <MenuRow icon={<InboxIcon2 />} label="Move to Inbox" onClick={() => runMenu(onMoveToInbox)} />}
-                  {onDelete && <div style={{ height:1, background:'#EEEAF1', margin:'4px 0' }} />}
-                  {onDelete && <MenuRow icon={<TrashIcon2 />} label="Delete" danger onClick={() => runMenu(onDelete)} />}
+                  {(onDelete || canScopedDelete) && <div style={{ height:1, background:'#EEEAF1', margin:'4px 0' }} />}
+                  {(onDelete || canScopedDelete) && <MenuRow icon={<TrashIcon2 />} label="Delete" danger
+                    onClick={() => { setMenuOpen(false); canScopedDelete ? setDeletePrompt(true) : runMenu(onDelete) }} />}
                 </div>
               </>
             )}
@@ -946,12 +948,56 @@ export default function AddItemModal({ existing = null, existingRecurring = null
           )}
 
           {/* ── Save ──────────────────────────────────────────── */}
-          <button onClick={submit} disabled={!canSave}
+          {/* For a single occurrence of a series, saving asks whether to apply
+              the change to just this event or the whole series. */}
+          <button onClick={() => canEditOccurrence ? setScopePrompt(true) : submit()} disabled={!canSave}
             style={{ width:'100%', padding:'14px', borderRadius:14, border:'none', background: canSave ? headerColor : '#E1E1E6', color: canSave ? 'white' : '#9CA3AF', cursor: canSave ? 'pointer' : 'default', fontFamily:'DM Sans,sans-serif', fontWeight:700, fontSize:15, letterSpacing:.3 }}>
             {canEditOccurrence ? (editScope==='occurrence' ? 'Save this event' : 'Save whole series') : ((isEdit || isRecEdit) ? 'Save changes' : (block ? 'Add time block' : (repeatOn ? 'Add recurring task' : title)))}
           </button>
         </div>
       </div>
+
+      {/* Save-time chooser for a single occurrence of a recurring series. */}
+      {scopePrompt && (
+        <div onClick={() => setScopePrompt(false)}
+          style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.5)', zIndex:700, display:'flex', alignItems:'center', justifyContent:'center', padding:20 }}>
+          <div onClick={e => e.stopPropagation()}
+            style={{ background:'white', borderRadius:18, padding:20, maxWidth:330, width:'100%', boxShadow:'0 24px 64px rgba(0,0,0,.3)' }}>
+            <div className="serif" style={{ fontSize:17, fontWeight:600, color:'var(--text)', marginBottom:6 }}>Save changes to…</div>
+            <div style={{ fontSize:13, color:'var(--muted)', marginBottom:16, lineHeight:1.5 }}>This is a repeating event. Update only this one, or every occurrence?</div>
+            <div style={{ display:'flex', flexDirection:'column', gap:9 }}>
+              <button type="button" onClick={() => { setScopePrompt(false); submit('occurrence') }}
+                style={{ padding:'12px', borderRadius:12, border:'none', background: headerColor, color:'white', cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:700, fontSize:14 }}>Just this event</button>
+              <button type="button" onClick={() => { setScopePrompt(false); submit('series') }}
+                style={{ padding:'12px', borderRadius:12, border:'1px solid var(--border)', background:'white', color:'var(--text)', cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:700, fontSize:14 }}>Apply to all events</button>
+              <button type="button" onClick={() => setScopePrompt(false)}
+                style={{ padding:'9px', borderRadius:12, border:'none', background:'none', color:'var(--muted)', cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontSize:13 }}>Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Scoped delete for a single occurrence of a recurring series. */}
+      {deletePrompt && (
+        <div onClick={() => setDeletePrompt(false)}
+          style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.5)', zIndex:700, display:'flex', alignItems:'center', justifyContent:'center', padding:20 }}>
+          <div onClick={e => e.stopPropagation()}
+            style={{ background:'white', borderRadius:18, padding:20, maxWidth:330, width:'100%', boxShadow:'0 24px 64px rgba(0,0,0,.3)' }}>
+            <div className="serif" style={{ fontSize:17, fontWeight:600, color:'#991B1B', marginBottom:6 }}>Delete which?</div>
+            <div style={{ fontSize:13, color:'var(--muted)', marginBottom:16, lineHeight:1.5 }}>This is a repeating event. Delete only this day, or more?</div>
+            <div style={{ display:'flex', flexDirection:'column', gap:9 }}>
+              {onDeleteOccurrence && <button type="button" onClick={() => { setDeletePrompt(false); onClose(); onDeleteOccurrence(occurrenceDate) }}
+                style={{ padding:'12px', borderRadius:12, border:'1px solid #FECACA', background:'#FFF5F5', color:'#991B1B', cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:700, fontSize:14 }}>Just this event</button>}
+              {onDeleteFuture && <button type="button" onClick={() => { setDeletePrompt(false); onClose(); onDeleteFuture(occurrenceDate) }}
+                style={{ padding:'12px', borderRadius:12, border:'1px solid #FECACA', background:'#FFF5F5', color:'#991B1B', cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:700, fontSize:14 }}>This &amp; all future</button>}
+              {onDelete && <button type="button" onClick={() => { setDeletePrompt(false); onClose(); onDelete(existing || rec) }}
+                style={{ padding:'12px', borderRadius:12, border:'none', background:'#EF4444', color:'white', cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:700, fontSize:14 }}>All events (whole series)</button>}
+              <button type="button" onClick={() => setDeletePrompt(false)}
+                style={{ padding:'9px', borderRadius:12, border:'none', background:'none', color:'var(--muted)', cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontSize:13 }}>Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showColorIcon && (
         <ColorIconPicker
