@@ -373,12 +373,14 @@ function BlockBand({ seg, onEdit, onAdd, onCollapse }) {
     return (
       <div style={{ position:'relative', minHeight:54, margin:'4px 0' }}>
         <div style={{ position:'absolute', top:0, bottom:0, left:44, right:0, background:seg.color, opacity:BLOCK_FILM_OPACITY, zIndex:-1, borderRadius:16 }} />
+        <div style={{ position:'absolute', top:0, bottom:0, left:76.5, width:3, borderRadius:3, background:seg.color, opacity:.55, zIndex:-1,
+          WebkitMask:'repeating-linear-gradient(black 0 5px, transparent 5px 11px)', mask:'repeating-linear-gradient(black 0 5px, transparent 5px 11px)' }} />
         <div style={{ position:'relative', display:'flex', alignItems:'center', minHeight:54 }}>
           <div style={{ width:52, flexShrink:0, textAlign:'right', paddingRight:10 }}>
             <span style={{ fontSize:11, color:'var(--muted)', fontWeight:500, whiteSpace:'nowrap' }}>{fmtTimeLabel(seg.start)}</span>
           </div>
           <div onClick={onCollapse} title="Expand time block"
-            style={{ flex:1, minWidth:0, paddingLeft:6, paddingRight:8, display:'flex', alignItems:'center', gap:9, cursor:'pointer', minHeight:54 }}>
+            style={{ flex:1, minWidth:0, paddingLeft:11, paddingRight:8, display:'flex', alignItems:'center', gap:9, cursor:'pointer', minHeight:54 }}>
             <BandIcon icon={seg.icon} color={seg.color} onEdit={onEdit} />
             <span style={{ fontSize:12, fontWeight:800, letterSpacing:.7, textTransform:'uppercase', color:'#39434F', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis', maxWidth:'42%' }}>{label}</span>
             <span style={{ fontSize:11, color:'var(--muted)', flexShrink:1, minWidth:0, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{rangeLabel(seg.start, seg.end)}{seg.count>0?` · ${seg.count} inside`:''}</span>
@@ -396,6 +398,10 @@ function BlockBand({ seg, onEdit, onAdd, onCollapse }) {
       style={{ position:'relative', minHeight:h, cursor:'pointer' }}>
       <div style={{ position:'absolute', top: seg.roundTop?6:0, bottom: seg.roundBottom?6:0, left:44, right:0, background:seg.color, opacity:BLOCK_FILM_OPACITY, zIndex:-1,
         borderTopLeftRadius:seg.roundTop?16:0, borderTopRightRadius:seg.roundTop?16:0, borderBottomLeftRadius:seg.roundBottom?16:0, borderBottomRightRadius:seg.roundBottom?16:0 }} />
+      {/* The timeline spine continues straight through the block (the icon sits
+          on it like a node), so the day reads as one unbroken line. */}
+      <div style={{ position:'absolute', top:0, bottom:0, left:76.5, width:3, borderRadius:3, background:seg.color, opacity:.55, zIndex:-1,
+        WebkitMask:'repeating-linear-gradient(black 0 5px, transparent 5px 11px)', mask:'repeating-linear-gradient(black 0 5px, transparent 5px 11px)' }} />
       <div style={{ position:'relative', display:'flex' }}>
         {/* Only the block's true top segment prints a gutter time — a tail
             segment starts where a task ended, so its time would just echo that
@@ -404,7 +410,7 @@ function BlockBand({ seg, onEdit, onAdd, onCollapse }) {
           {seg.roundTop && <span style={{ fontSize:11, color:'var(--muted)', fontWeight:500, whiteSpace:'nowrap' }}>{fmtTimeLabel(seg.start)}</span>}
         </div>
         {seg.label && (
-          <div style={{ paddingTop:9, paddingLeft:8, flex:1, minWidth:0, display:'flex', alignItems:'center', gap:8 }}>
+          <div style={{ paddingTop:9, paddingLeft:11, flex:1, minWidth:0, display:'flex', alignItems:'center', gap:8 }}>
             <BandIcon icon={seg.icon} color={seg.color} onEdit={onEdit} />
             <span style={{ fontSize:10, fontWeight:800, letterSpacing:.9, textTransform:'uppercase', color:'#39434F', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{label}</span>
             {onCollapse && <span style={{ marginLeft:'auto', flexShrink:0 }}><BandChevron collapsed={false} onClick={onCollapse} /></span>}
@@ -432,12 +438,12 @@ function GapRow({ mins, prevColor, nextColor, routineTint, routineOpacity = 0.5,
   // cuts it into dashes (‑webkit‑ prefix for iOS Safari / the PWA).
   const dashMask = 'repeating-linear-gradient(black 0 5px, transparent 5px 11px)'
   const durLabel = fmtMins(mins).trim()
-  // Short gaps stay minimal — just the dashed connector at its true height with
-  // the duration, so a 15-min gap doesn't balloon into a big card. Only longer
-  // stretches (≥ 45 min) earn the "free time, add something?" prompt.
-  const compact = mins < 45
+  // A short gap (≤ 10 min) reads as a rest — "take a X min break", minimal, no
+  // pressure to fill it. Anything longer offers to put the time to use with a
+  // "do something during this X break?" prompt + Add Task.
+  const isBreak = mins <= 10
   return (
-    <div className="today-gap" style={{ position:'relative', zIndex:0, display:'flex', gap:0, alignItems: compact?'center':'flex-start' }}>
+    <div className="today-gap" style={{ position:'relative', zIndex:0, display:'flex', gap:0, alignItems: isBreak?'center':'flex-start' }}>
       {/* Continue a routine's film through the gap between two same-routine
           tasks, square-edged so it butts flush against the pills above/below. */}
       {routineTint && (
@@ -447,19 +453,16 @@ function GapRow({ mins, prevColor, nextColor, routineTint, routineOpacity = 0.5,
       <div style={{ width:52, flexShrink:0, display:'flex', justifyContent:'center' }}>
         <div style={{ width:3, minHeight:h, borderRadius:3, background:`linear-gradient(to bottom, ${top}, ${bot})`, WebkitMask:dashMask, mask:dashMask }} />
       </div>
-      {compact ? (
-        <div style={{ flex:1, minWidth:0, paddingLeft:10, display:'flex', alignItems:'center' }}>
-          <span style={{ fontSize:12, color:'var(--muted)', whiteSpace:'nowrap' }}>{durLabel} free</span>
+      {isBreak ? (
+        <div style={{ flex:1, minWidth:0, paddingLeft:10, display:'flex', alignItems:'center', gap:7 }}>
+          <span style={{ display:'flex', flexShrink:0 }}><Icon value="glyph:clock" size={15} color="#9AA6B2" /></span>
+          <span style={{ fontSize:12.5, color:'var(--muted)', whiteSpace:'nowrap' }}>Take a <b style={{ color:'var(--teal)' }}>{durLabel}</b> break</span>
         </div>
       ) : (
         <div style={{ flex:1, minWidth:0, paddingLeft:8, paddingTop:4 }}>
           <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:9 }}>
             <span style={{ display:'flex', flexShrink:0 }}><Icon value="glyph:clock" size={16} color="#9AA6B2" /></span>
-            <span style={{ fontSize:13, color:'var(--muted)' }}>
-              {mins >= 120
-                ? <>Long stretch — <b style={{ color:'var(--teal)' }}>{durLabel}</b> of potential!</>
-                : <>Plan or chill for <b style={{ color:'var(--teal)' }}>{durLabel}</b> before action.</>}
-            </span>
+            <span style={{ fontSize:13, color:'var(--muted)' }}>Do something during this <b style={{ color:'var(--teal)' }}>{durLabel}</b> break?</span>
           </div>
           <button onClick={onAdd}
             style={{ display:'inline-flex', alignItems:'center', gap:5, fontSize:12, padding:'6px 14px', borderRadius:18, border:'none', background:'#E7F3F6', color:'var(--teal)', fontWeight:600, cursor:'pointer', fontFamily:'DM Sans,sans-serif' }}>
@@ -1417,7 +1420,7 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
             if (prev && prev._mins!==null && task._mins!==null && task._status!=='past') {
               const prevEnd = (prev._time && prev._dur) ? (hhmmToMins(prev._time)+prev._dur) : prev._mins
               const g = task._mins - prevEnd
-              if (g >= 10) {
+              if (g >= 5) {
                 gap = g
                 gapColor = colorOf(prev) || '#C9C9D3'
                 gapNextColor = colorOf(task) || gapColor
