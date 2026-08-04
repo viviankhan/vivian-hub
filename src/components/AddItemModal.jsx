@@ -159,7 +159,7 @@ const InboxIcon2 = () => (<svg viewBox="0 0 24 24" width="18" height="18" fill="
 const TrashIcon2 = () => (<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4.5 7h15M9 7V5.2A1.2 1.2 0 0 1 10.2 4h3.6A1.2 1.2 0 0 1 15 5.2V7M6.5 7l1 12.5h9L17.5 7"/></svg>)
 const TargetIcon = () => (<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4.5"/><circle cx="12" cy="12" r="1" fill="currentColor" stroke="none"/></svg>)
 
-export default function AddItemModal({ existing = null, existingRecurring = null, presetDate = null, presetText = '', presetTime = '', presetCat = '', lockDate = false, defaultRepeat = false, categories = [], routines = [], labelModel = null, onSave, onSaveRecurring = null, onDelete = null, onDuplicate = null, onMoveToInbox = null, onClose, title = 'Add to calendar' }) {
+export default function AddItemModal({ existing = null, existingRecurring = null, occurrenceDate = null, onSaveOccurrence = null, presetDate = null, presetText = '', presetTime = '', presetCat = '', lockDate = false, defaultRepeat = false, categories = [], routines = [], labelModel = null, onSave, onSaveRecurring = null, onDelete = null, onDuplicate = null, onMoveToInbox = null, onClose, title = 'Add to calendar' }) {
   const cats = (categories && categories.length) ? categories : DEFAULT_CATEGORIES
   const isEdit = !!existing
   // Editing an existing recurring task: it comes in the Recurring-tab row shape
@@ -167,6 +167,12 @@ export default function AddItemModal({ existing = null, existingRecurring = null
   // it into the same fields the sheet uses so one editor serves both.
   const rec = existingRecurring
   const isRecEdit = !!rec
+  // Editing one occurrence of a series: offer "just this event" vs "whole
+  // series". Only possible when the parent supplied the occurrence's date and a
+  // handler for detaching it. Default to this-event so a one-off tweak never
+  // silently rewrites every day.
+  const canEditOccurrence = isRecEdit && !!occurrenceDate && !!onSaveOccurrence
+  const [editScope, setEditScope] = useState('occurrence')  // 'occurrence' | 'series'
   const recSplit = rec ? splitTimePrefix(rec.label ?? rec.text ?? '') : { time:null, title:'' }
   const [label, setLabel]         = useState(existing?.text ?? (rec ? recSplit.title : presetText) ?? '')
   const [date, setDate]           = useState(existing?.date ?? rec?.startDate ?? presetDate ?? '')
@@ -389,6 +395,34 @@ export default function AddItemModal({ existing = null, existingRecurring = null
 
   const submit = () => {
     if (!canSave) return
+    // Editing just THIS occurrence of a series → detach it: the parent hides the
+    // series on this date and drops in a one-off commitment with the edits. The
+    // other days of the series are untouched.
+    if (canEditOccurrence && editScope === 'occurrence') {
+      const primaryCatId = effectiveCats[0] || null
+      const occ = {
+        id: 'occ-' + rec.id + '-' + occurrenceDate,
+        text: label.trim(),
+        date: occurrenceDate,
+        time: time || null,
+        durationMins: durationMins || null,
+        cat: primaryCatId,
+        cats: effectiveCats,
+        color: color || null,
+        icon: effectiveIcon || null,
+        description: description.trim() || '',
+        note: description.trim() || '',
+        subtasks,
+        done: false,
+        block: block || false,
+        location: locHasCoords ? { name: (location.name || '').trim(), lat: location.lat, lng: location.lng, radius: location.radius || DEFAULT_RADIUS_M } : null,
+        createdAt: new Date().toISOString(),
+      }
+      setItemSound(occ.id, sound)
+      onSaveOccurrence(occurrenceDate, occ, useDefault ? null : reminders)
+      onClose()
+      return
+    }
     // Repeating → create a recurring template (Recurring tab format) rather than
     // a single commitment. It carries its time in the label prefix ('today'
     // type) so it lands on the timeline; category, note, start/end date and the
@@ -896,10 +930,25 @@ export default function AddItemModal({ existing = null, existingRecurring = null
               style={{ width:'100%', minHeight:0, fontSize:14, padding:'8px 0 2px', border:'none', background:'transparent', resize:'vertical', lineHeight:1.5, fontFamily:'DM Sans,sans-serif', outline:'none', color:'var(--text)' }} />
           </div>
 
+          {/* ── Apply to (occurrence vs series) ────────────────── */}
+          {canEditOccurrence && (
+            <div style={{ marginBottom:10 }}>
+              <div style={{ fontSize:10, color:'var(--muted)', letterSpacing:1, textTransform:'uppercase', marginBottom:6 }}>Apply changes to</div>
+              <div style={{ display:'flex', gap:4, padding:4, borderRadius:12, background:'#EAE7EE' }}>
+                {[['occurrence','Just this event'],['series','Whole series']].map(([v,lab]) => (
+                  <button key={v} type="button" onClick={() => setEditScope(v)}
+                    style={{ flex:1, padding:'8px 6px', borderRadius:9, border:'none', cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontSize:12.5, fontWeight:700,
+                      background: editScope===v ? 'white' : 'transparent', color: editScope===v ? 'var(--text)' : 'var(--muted)',
+                      boxShadow: editScope===v ? '0 1px 3px rgba(0,0,0,.12)' : 'none' }}>{lab}</button>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* ── Save ──────────────────────────────────────────── */}
           <button onClick={submit} disabled={!canSave}
             style={{ width:'100%', padding:'14px', borderRadius:14, border:'none', background: canSave ? headerColor : '#E1E1E6', color: canSave ? 'white' : '#9CA3AF', cursor: canSave ? 'pointer' : 'default', fontFamily:'DM Sans,sans-serif', fontWeight:700, fontSize:15, letterSpacing:.3 }}>
-            {(isEdit || isRecEdit) ? 'Save changes' : (block ? 'Add time block' : (repeatOn ? 'Add recurring task' : title))}
+            {canEditOccurrence ? (editScope==='occurrence' ? 'Save this event' : 'Save whole series') : ((isEdit || isRecEdit) ? 'Save changes' : (block ? 'Add time block' : (repeatOn ? 'Add recurring task' : title)))}
           </button>
         </div>
       </div>
