@@ -159,7 +159,7 @@ const InboxIcon2 = () => (<svg viewBox="0 0 24 24" width="18" height="18" fill="
 const TrashIcon2 = () => (<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4.5 7h15M9 7V5.2A1.2 1.2 0 0 1 10.2 4h3.6A1.2 1.2 0 0 1 15 5.2V7M6.5 7l1 12.5h9L17.5 7"/></svg>)
 const TargetIcon = () => (<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4.5"/><circle cx="12" cy="12" r="1" fill="currentColor" stroke="none"/></svg>)
 
-export default function AddItemModal({ existing = null, existingRecurring = null, presetDate = null, presetText = '', lockDate = false, defaultRepeat = false, categories = [], routines = [], labelModel = null, onSave, onSaveRecurring = null, onDelete = null, onDuplicate = null, onMoveToInbox = null, onClose, title = 'Add to calendar' }) {
+export default function AddItemModal({ existing = null, existingRecurring = null, presetDate = null, presetText = '', presetTime = '', presetCat = '', lockDate = false, defaultRepeat = false, categories = [], routines = [], labelModel = null, onSave, onSaveRecurring = null, onDelete = null, onDuplicate = null, onMoveToInbox = null, onClose, title = 'Add to calendar' }) {
   const cats = (categories && categories.length) ? categories : DEFAULT_CATEGORIES
   const isEdit = !!existing
   // Editing an existing recurring task: it comes in the Recurring-tab row shape
@@ -170,7 +170,7 @@ export default function AddItemModal({ existing = null, existingRecurring = null
   const recSplit = rec ? splitTimePrefix(rec.label ?? rec.text ?? '') : { time:null, title:'' }
   const [label, setLabel]         = useState(existing?.text ?? (rec ? recSplit.title : presetText) ?? '')
   const [date, setDate]           = useState(existing?.date ?? rec?.startDate ?? presetDate ?? '')
-  const [time, setTime]           = useState(existing?.time ?? (rec ? (recSplit.time || '') : '') ?? '')  // start
+  const [time, setTime]           = useState(existing?.time ?? (rec ? (recSplit.time || '') : (presetTime || '')) ?? '')  // start
   const [endTime, setEndTime]     = useState(() => {
     if (existing?.time && existing?.durationMins) return addMinutes(existing.time, existing.durationMins)
     if (rec && recSplit.time && rec.durationMins) return addMinutes(recSplit.time, rec.durationMins)
@@ -183,12 +183,13 @@ export default function AddItemModal({ existing = null, existingRecurring = null
   // past tasks (see `predictedCat` below), never a blind default.
   const [selectedCats, setSelectedCats] = useState(() => {
     if (Array.isArray(existing?.cats) && existing.cats.length) return existing.cats
-    const explicit = existing?.cat || rec?.cat || rec?.tag
+    const explicit = existing?.cat || rec?.cat || rec?.tag || presetCat
     return explicit ? [explicit] : []
   })
   // Once you touch the labels yourself, stop auto-predicting from the title.
-  // (Editing something that already carries a label counts as chosen.)
-  const [catsTouched, setCatsTouched] = useState(!!(existing?.cat || rec?.cat || rec?.tag || (existing?.cats && existing.cats.length)))
+  // (Editing something that already carries a label counts as chosen. A block's
+  // preset category counts as chosen too.)
+  const [catsTouched, setCatsTouched] = useState(!!(existing?.cat || rec?.cat || rec?.tag || presetCat || (existing?.cats && existing.cats.length)))
   // A prediction from history — only offered for a still-untouched, unlabeled
   // task, and only when the model is confident. Otherwise null (stays unlabeled).
   const validCatIds = new Set(cats.map(c => c.id))

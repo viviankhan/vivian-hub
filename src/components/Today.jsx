@@ -341,49 +341,48 @@ const BLOCK_FILM_OPACITY = 0.16
 
 // A "free time" gap between two timed tasks, with a quick Add Task. Its height
 // grows with the length of the gap, so the day reads at relative scale.
-// An empty stretch of a time block — its film, so the container reads as one
-// continuous band across its whole window even where no task fills it. `seg`
-// has { start, end, color, label, roundTop, roundBottom }. The label (only on
-// the block's top segment) is tappable to edit the block.
-// A small chevron used to collapse/expand a time block. `dir` is 'up' (collapse)
-// or 'down' (expand).
-function BandChevron({ dir, onClick, title }) {
+
+// The little round icon that marks a time block. Tapping it edits the block.
+function BandIcon({ icon, color, onEdit }) {
   return (
-    <button type="button" onClick={onClick} title={title} aria-label={title}
-      style={{ width:20, height:20, flexShrink:0, borderRadius:6, border:'none', background:'rgba(255,255,255,.78)', cursor:'pointer', padding:0, display:'flex', alignItems:'center', justifyContent:'center' }}>
-      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#39434F" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"
-        style={{ transform: dir==='up'?'rotate(180deg)':'none' }}><path d="M6 9l6 6 6-6"/></svg>
+    <button type="button" onClick={e=>{ e.stopPropagation(); onEdit && onEdit() }} title="Edit time block" aria-label="Edit time block"
+      style={{ width:30, height:30, flexShrink:0, borderRadius:'50%', border:'none', background:'rgba(255,255,255,.72)', cursor:onEdit?'pointer':'default', padding:0, display:'flex', alignItems:'center', justifyContent:'center' }}>
+      <Icon value={icon || 'glyph:clock'} size={16} color={color} />
     </button>
   )
 }
-// A small square checkbox for a time block (checks the block off, not its tasks).
-function BandCheck({ done, onClick }) {
+// The collapse/expand chevron on the right edge of a block.
+function BandChevron({ collapsed, onClick }) {
+  const title = collapsed ? 'Expand time block' : 'Collapse time block'
   return (
-    <button type="button" onClick={onClick} title={done?'Uncheck time block':'Check off time block'} aria-label={done?'Uncheck time block':'Check off time block'}
-      style={{ width:18, height:18, flexShrink:0, borderRadius:6, border: done?'none':'1.6px solid #A7B2BF', background: done?'#5C8A5C':'rgba(255,255,255,.78)', cursor:'pointer', padding:0, display:'flex', alignItems:'center', justifyContent:'center' }}>
-      {done && <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5"/></svg>}
+    <button type="button" onClick={e=>{ e.stopPropagation(); onClick && onClick() }} title={title} aria-label={title}
+      style={{ width:30, height:30, flexShrink:0, borderRadius:'50%', border:'none', background:'rgba(255,255,255,.72)', cursor:'pointer', padding:0, display:'flex', alignItems:'center', justifyContent:'center' }}>
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#39434F" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"
+        style={{ transform: collapsed?'none':'rotate(180deg)' }}><path d="M6 9l6 6 6-6"/></svg>
     </button>
   )
 }
-function BlockBand({ seg, onOpen, onToggle, onCollapse }) {
-  const done = !!seg.done
+// A time block reads as a light "folder" for a slice of the day. Tapping the
+// body opens the add sheet (a task scheduled inside the block); the icon edits
+// the block; the chevron on the right collapses/expands it. No checkbox — the
+// tasks inside auto-complete on their own.
+function BlockBand({ seg, onEdit, onAdd, onCollapse }) {
+  const label = (seg.label || 'Block').toUpperCase()
   // Collapsed: one compact row standing in for the whole block + its tasks.
   if (seg.collapsed) {
     return (
       <div style={{ position:'relative', minHeight:54, margin:'4px 0' }}>
-        <div style={{ position:'absolute', top:0, bottom:0, left:44, right:0, background:seg.color, opacity: done?BLOCK_FILM_OPACITY*0.6:BLOCK_FILM_OPACITY, zIndex:-1, borderRadius:16 }} />
+        <div style={{ position:'absolute', top:0, bottom:0, left:44, right:0, background:seg.color, opacity:BLOCK_FILM_OPACITY, zIndex:-1, borderRadius:16 }} />
         <div style={{ position:'relative', display:'flex', alignItems:'center', minHeight:54 }}>
           <div style={{ width:52, flexShrink:0, textAlign:'right', paddingRight:10 }}>
             <span style={{ fontSize:11, color:'var(--muted)', fontWeight:500, whiteSpace:'nowrap' }}>{fmtTimeLabel(seg.start)}</span>
           </div>
-          <div style={{ flex:1, minWidth:0, paddingLeft:8, display:'flex', alignItems:'center', gap:8 }}>
-            {onToggle && <BandCheck done={done} onClick={onToggle} />}
-            <button type="button" onClick={onOpen} title="Edit time block"
-              style={{ fontSize:11, fontWeight:800, letterSpacing:.7, textTransform:'uppercase', color:'#39434F', background:'none', padding:0, border:'none', cursor:'pointer', fontFamily:'DM Sans,sans-serif', textDecoration: done?'line-through':'none', opacity: done?.6:1, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{seg.label || 'Block'}</button>
-            <span style={{ fontSize:11, color:'var(--muted)', flexShrink:0 }}>{rangeLabel(seg.start, seg.end)}{seg.count>0?` · ${seg.count} task${seg.count===1?'':'s'}`:''}</span>
-            <span style={{ marginLeft:'auto', flexShrink:0 }}>
-              <BandChevron dir="down" onClick={onCollapse} title="Expand time block" />
-            </span>
+          <div onClick={onCollapse} title="Expand time block"
+            style={{ flex:1, minWidth:0, paddingLeft:6, paddingRight:8, display:'flex', alignItems:'center', gap:9, cursor:'pointer', minHeight:54 }}>
+            <BandIcon icon={seg.icon} color={seg.color} onEdit={onEdit} />
+            <span style={{ fontSize:12, fontWeight:800, letterSpacing:.7, textTransform:'uppercase', color:'#39434F', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis', maxWidth:'42%' }}>{label}</span>
+            <span style={{ fontSize:11, color:'var(--muted)', flexShrink:1, minWidth:0, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{rangeLabel(seg.start, seg.end)}{seg.count>0?` · ${seg.count} inside`:''}</span>
+            <span style={{ marginLeft:'auto', flexShrink:0 }}><BandChevron collapsed onClick={onCollapse} /></span>
           </div>
         </div>
       </div>
@@ -391,26 +390,33 @@ function BlockBand({ seg, onOpen, onToggle, onCollapse }) {
   }
   const dur = Math.max(0, seg.end - seg.start)
   const h = Math.max(30, Math.round(spanHeight(dur)))
+  const tall = h >= 96
   return (
-    <div style={{ position:'relative', minHeight:h }}>
-      <div style={{ position:'absolute', top: seg.roundTop?6:0, bottom: seg.roundBottom?6:0, left:44, right:0, background:seg.color, opacity: done?BLOCK_FILM_OPACITY*0.6:BLOCK_FILM_OPACITY, zIndex:-1,
+    <div onClick={onAdd} title="Add a task in this block"
+      style={{ position:'relative', minHeight:h, cursor:'pointer' }}>
+      <div style={{ position:'absolute', top: seg.roundTop?6:0, bottom: seg.roundBottom?6:0, left:44, right:0, background:seg.color, opacity:BLOCK_FILM_OPACITY, zIndex:-1,
         borderTopLeftRadius:seg.roundTop?16:0, borderTopRightRadius:seg.roundTop?16:0, borderBottomLeftRadius:seg.roundBottom?16:0, borderBottomRightRadius:seg.roundBottom?16:0 }} />
       <div style={{ position:'relative', display:'flex' }}>
         {/* Only the block's true top segment prints a gutter time — a tail
             segment starts where a task ended, so its time would just echo that
             task's own time right above it. */}
-        <div style={{ width:52, flexShrink:0, paddingTop:10, textAlign:'right', paddingRight:10 }}>
+        <div style={{ width:52, flexShrink:0, paddingTop:14, textAlign:'right', paddingRight:10 }}>
           {seg.roundTop && <span style={{ fontSize:11, color:'var(--muted)', fontWeight:500, whiteSpace:'nowrap' }}>{fmtTimeLabel(seg.start)}</span>}
         </div>
         {seg.label && (
-          <div style={{ paddingTop:9, paddingLeft:8, display:'flex', alignItems:'center', gap:6 }}>
-            {onToggle && <BandCheck done={done} onClick={onToggle} />}
-            <button type="button" onClick={onOpen} title="Edit time block"
-              style={{ fontSize:9, fontWeight:800, letterSpacing:.9, textTransform:'uppercase', color:'#39434F', background:'rgba(255,255,255,.78)', padding:'2px 8px', borderRadius:9, border:'none', cursor:'pointer', fontFamily:'DM Sans,sans-serif', textDecoration: done?'line-through':'none', opacity: done?.6:1 }}>{seg.label}</button>
-            {onCollapse && <BandChevron dir="up" onClick={onCollapse} title="Collapse time block" />}
+          <div style={{ paddingTop:9, paddingLeft:8, flex:1, minWidth:0, display:'flex', alignItems:'center', gap:8 }}>
+            <BandIcon icon={seg.icon} color={seg.color} onEdit={onEdit} />
+            <span style={{ fontSize:10, fontWeight:800, letterSpacing:.9, textTransform:'uppercase', color:'#39434F', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{label}</span>
+            {onCollapse && <span style={{ marginLeft:'auto', flexShrink:0 }}><BandChevron collapsed={false} onClick={onCollapse} /></span>}
           </div>
         )}
       </div>
+      {/* Centered "add" hint so a big empty block invites tapping to fill it. */}
+      {tall && (
+        <div style={{ position:'absolute', left:52, right:12, top:'50%', transform:'translateY(-50%)', textAlign:'center', pointerEvents:'none' }}>
+          <span style={{ fontSize:11, color:'#7A8794', fontWeight:600, background:'rgba(255,255,255,.5)', padding:'3px 10px', borderRadius:12 }}>+ Add a task in {seg.label || 'this block'}</span>
+        </div>
+      )}
     </div>
   )
 }
@@ -497,7 +503,7 @@ function RoutineCollapseRow({ routine, count, expanded, onToggle }) {
   )
 }
 
-function TimelineBlock({ task, categories, status, now, prevColor, nextColor, routineTint, tintOpacity = 0.5, filmTop = true, filmBottom = true, bandLabel = null, onBandLabel = null, bandDone = false, onBandToggle = null, onBandCollapse = null, isDone, elapsed, dateKey, onToggle, onManage, onShiftToNow, onOpen, onFocus, onToggleSub }) {
+function TimelineBlock({ task, categories, status, now, prevColor, nextColor, routineTint, tintOpacity = 0.5, filmTop = true, filmBottom = true, bandLabel = null, bandIcon = null, onBandLabel = null, onBandCollapse = null, isDone, elapsed, dateKey, onToggle, onManage, onShiftToNow, onOpen, onFocus, onToggleSub }) {
   const [subOpen, setSubOpen] = useState(false)
   const catFound = (categories || []).find(x => x.id === task.tag)
   const catColor = catFound?.color || TAG_COLORS[task.tag] || '#9CA3AF'
@@ -553,23 +559,17 @@ function TimelineBlock({ task, categories, status, now, prevColor, nextColor, ro
         <div style={{ position:'absolute', top:filmTop?6:0, bottom:filmBottom?6:0, left:44, right:0, background:routineTint, opacity:tintOpacity,
           borderTopLeftRadius:filmTop?16:0, borderTopRightRadius:filmTop?16:0, borderBottomLeftRadius:filmBottom?16:0, borderBottomRightRadius:filmBottom?16:0, zIndex:-1 }} />
       )}
-      {/* Time-block (container) label, shown once at the top of its band. Tap to
-          edit/delete the block. */}
+      {/* Time-block (container) label, shown once at the top of its band: the
+          block's icon (tap to edit) + name, and a collapse chevron. No checkbox —
+          the tasks inside auto-complete on their own. */}
       {routineTint && bandLabel && (
-        <div style={{ position:'absolute', top:11, left:52, zIndex:1, display:'flex', alignItems:'center', gap:6 }}>
-          {onBandToggle && (
-            <button type="button" onClick={onBandToggle} title={bandDone?'Uncheck time block':'Check off time block'}
-              aria-label={bandDone?'Uncheck time block':'Check off time block'}
-              style={{ width:18, height:18, flexShrink:0, borderRadius:6, border: bandDone?'none':'1.6px solid #A7B2BF', background: bandDone?'#5C8A5C':'rgba(255,255,255,.78)', cursor:'pointer', padding:0, display:'flex', alignItems:'center', justifyContent:'center' }}>
-              {bandDone && <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5"/></svg>}
-            </button>
-          )}
+        <div style={{ position:'absolute', top:9, left:52, right:8, zIndex:1, display:'flex', alignItems:'center', gap:7 }}>
+          <BandIcon icon={bandIcon} color={routineTint} onEdit={onBandLabel} />
           <button type="button" onClick={onBandLabel || undefined} title={onBandLabel ? 'Edit time block' : undefined}
-            style={{ fontSize:9, fontWeight:800, letterSpacing:.9, textTransform:'uppercase',
-              color:'#39434F', background:'rgba(255,255,255,.72)', padding:'2px 8px', borderRadius:9, border:'none', fontFamily:'DM Sans,sans-serif',
-              textDecoration: bandDone?'line-through':'none', opacity: bandDone?.6:1,
-              cursor: onBandLabel ? 'pointer' : 'default', pointerEvents: onBandLabel ? 'auto' : 'none' }}>{bandLabel}</button>
-          {onBandCollapse && <BandChevron dir="up" onClick={onBandCollapse} title="Collapse time block" />}
+            style={{ fontSize:10, fontWeight:800, letterSpacing:.9, textTransform:'uppercase',
+              color:'#39434F', background:'none', padding:0, border:'none', fontFamily:'DM Sans,sans-serif',
+              cursor: onBandLabel ? 'pointer' : 'default', pointerEvents: onBandLabel ? 'auto' : 'none', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{(bandLabel||'').toUpperCase()}</button>
+          {onBandCollapse && <span style={{ marginLeft:'auto', flexShrink:0 }}><BandChevron collapsed={false} onClick={onBandCollapse} /></span>}
         </div>
       )}
       {/* Time gutter */}
@@ -799,6 +799,7 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
   const [shiftPlan,   setShiftPlan]   = useState(null)  // {pivot, rest, selected} — "start now" push chooser
   const [focusTask,   setFocusTask]   = useState(null)  // task shown in full-screen Focus mode
   const [addingTask,  setAddingTask]  = useState(false)
+  const [addPreset,   setAddPreset]   = useState(null)  // {time, cat} when adding inside a block
   const [morningOpen, setMorningOpen] = useState(false)
   const [nightOpen,   setNightOpen]   = useState(false)
   const [expandedRoutines, setExpandedRoutines] = useState({})  // routineId → show its done tasks individually
@@ -888,25 +889,20 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
   // one-off commitments and repeating time blocks (e.g. Work every weekday).
   const blocks = [
     ...todayCommitments.filter(c => c.block && c.time && c.durationMins)
-      .map(c => ({ id:c.id, label:(c.text||'').trim(), color: c.color || '#8AA0B8', isCommitment:true,
+      .map(c => ({ id:c.id, label:(c.text||'').trim(), color: c.color || '#8AA0B8', icon: c.icon || null, cat: c.cat || null, isCommitment:true,
         start: hhmmToMins(c.time), end: hhmmToMins(c.time) + c.durationMins })),
     ...templateTodos.filter(o => o.block && o._time && o._dur)
-      .map(o => ({ id:o.id, label:(o.title||o.text||'').trim(), color: o.color || '#8AA0B8', isCommitment:false,
+      .map(o => ({ id:o.id, label:(o.title||o.text||'').trim(), color: o.color || '#8AA0B8', icon: o.icon || null, cat: o.cat || o.tag || null, isCommitment:false,
         start: hhmmToMins(o._time), end: hhmmToMins(o._time) + o._dur })),
   ]
-  // A block can be checked off on its own — independent of the tasks inside it.
-  // Like a routine, it auto-completes once its window has fully passed today,
-  // unless an explicit check/uncheck record exists (which always wins).
-  const blockRecordKey = (b) => b.isCommitment ? String(b.id) : (dateKey+'_'+b.id)
-  const blockDone = (b) => {
-    const k = blockRecordKey(b)
-    if (k in (todos||{})) return !!(todos[k] || weekState[k])
-    if (isToday && b.end != null && now >= b.end) return true
-    return false
-  }
-  const toggleBlock = (b) => {
-    // Toggle ONLY the block's own completion record — never the inner tasks.
-    syncToggle(b.id, b.label, null, b.isCommitment ? null : dateKey, !blockDone(b))
+  // Add a task inside a block — a "folder" for a slice of the day. Opens the add
+  // sheet pre-scheduled at the tapped time (kept inside the block's window) and
+  // pre-labeled with the block's own category, so events land in the window;
+  // one dragged outside is just an ordinary task with that label.
+  const addInBlock = (b, atMins) => {
+    const t = Math.max(b.start, Math.min(b.end - 1, atMins ?? b.start))
+    setAddPreset({ time: minsToHHMM(t), cat: b.cat || '' })
+    setAddingTask(true)
   }
   // The "band" behind a task row: a containing time block wins, else its routine
   // group. Returns { id, tint, label } or null.
@@ -928,11 +924,14 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
   // explicit tap (check or uncheck) always wins over that default.
   const routineIds = new Set((routines||[]).map(r=>r.id))
   const hasCompletionRecord = (task) => task.isCommitment ? (task.id in (todos||{})) : ((dateKey+'_'+task.id) in (todos||{}))
+  const inAnyBlock = (task) => task._mins != null && blocks.some(b => task._mins >= b.start && task._mins < b.end)
   const effectiveDone = (task) => {
     if (hasCompletionRecord(task)) return isDoneCheck(task.id, task.isCommitment)
-    // No record: routine tasks default to done once their window has passed
-    // (only on the day being viewed as today).
-    if (task.routine && routineIds.has(task.routine) && isToday && task._mins!==null) {
+    // No record: routine tasks — and tasks that live inside a time block —
+    // auto-complete once their window has passed, just like a routine item.
+    // (Only on the day being viewed as today.)
+    const autoRoutine = task.routine && routineIds.has(task.routine)
+    if ((autoRoutine || inAnyBlock(task)) && isToday && task._mins!==null) {
       return now >= task._mins + (task._dur || 0)
     }
     return false
@@ -1020,18 +1019,18 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
     // inner tasks (which get filtered out of the render list below).
     if (collapsedBlocks[b.id]) {
       collapsedBlockIds.add(b.id)
-      blockSegments.push({ id:b.id+':collapsed', bid:b.id, collapsed:true, start:b.start, end:b.end, color:b.color, label:b.label, done:blockDone(b), count:inside.length, roundTop:true, roundBottom:true })
+      blockSegments.push({ id:b.id+':collapsed', bid:b.id, collapsed:true, start:b.start, end:b.end, color:b.color, label:b.label, icon:b.icon, count:inside.length, roundTop:true, roundBottom:true })
       continue
     }
     if (!inside.length) {
-      blockSegments.push({ id:b.id+':full', bid:b.id, start:b.start, end:b.end, color:b.color, label:b.label, done:blockDone(b), roundTop:true, roundBottom:true })
+      blockSegments.push({ id:b.id+':full', bid:b.id, start:b.start, end:b.end, color:b.color, label:b.label, icon:b.icon, roundTop:true, roundBottom:true })
       blockHeadIds.add(b.id)
       continue
     }
     const firstMins = inside[0]._mins
     const lastEnd = Math.max(...inside.map(t => t._mins + (t._dur || 0)))
     if (b.start < firstMins) {
-      blockSegments.push({ id:b.id+':head', bid:b.id, start:b.start, end:firstMins, color:b.color, label:b.label, done:blockDone(b), roundTop:true, roundBottom:false })
+      blockSegments.push({ id:b.id+':head', bid:b.id, start:b.start, end:firstMins, color:b.color, label:b.label, icon:b.icon, roundTop:true, roundBottom:false })
       blockHeadIds.add(b.id)
     }
     if (lastEnd < b.end) {
@@ -1332,14 +1331,43 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
         tasksWithStatus.forEach(t => { if (t.routine && routineIds.has(t.routine) && t._status==='past') doneRoutineCounts[t.routine] = (doneRoutineCounts[t.routine]||0)+1 })
         const emittedCollapse = {}  // one summary/header per routine, per render
         const emittedBlocks = new Set()   // block band segments already placed
-        // Block band segments starting at/before this task's time, not yet
-        // placed — rendered just before it (they sit in the block's empty gaps).
+        // The "now" line is emitted exactly once. When it falls inside a block's
+        // empty band we split the band and drop it in there (so "now" sits at its
+        // true time inside the block, not after it); otherwise it's placed
+        // between tasks (below).
+        const wantNow = isToday && !hasCurrent
+        const nowState = { done: false }
+        // Render one block segment, splitting it around "now" when the current
+        // time lands inside it so the now-line reads at the right height.
+        const renderSeg = (s) => {
+          const b = blocks.find(x=>x.id===s.bid)
+          const bb = (seg, controls) => <BlockBand key={'seg-'+seg.id} seg={seg}
+            onEdit={()=>openContainer(s.bid)}
+            onAdd={b ? ()=>addInBlock(b, seg.start) : undefined}
+            onCollapse={controls ? ()=>toggleBlockCollapsed(s.bid) : undefined} />
+          if (wantNow && !nowState.done && !s.collapsed && now > s.start && now < s.end) {
+            nowState.done = true
+            return [
+              bb({ ...s, id:s.id+':nt', end:now, roundBottom:false }, true),
+              <NowMarker key={'now-'+s.id} now={now} bandTint={s.color} bandOpacity={BLOCK_FILM_OPACITY} />,
+              bb({ ...s, id:s.id+':nb', start:now, roundTop:false, label:null }, false),
+            ]
+          }
+          return [ bb(s, true) ]
+        }
+        // Block band segments starting before this task's time, not yet placed —
+        // rendered just before it (they sit in the block's empty gaps). Strict
+        // `<` so a tail segment starting exactly at a task's time (a task with no
+        // duration) renders AFTER that task, not before it.
         const bandsBefore = (task) => {
           const tm = task._mins ?? Infinity
-          // Strict `<` so a tail segment starting exactly at a task's time (a
-          // task with no duration) renders AFTER that task, not before it.
-          return blockSegments.filter(s => !emittedBlocks.has(s.id) && s.start < tm)
-            .map(s => { emittedBlocks.add(s.id); const b = blocks.find(x=>x.id===s.bid); return <BlockBand key={'seg-'+s.id} seg={s} onOpen={()=>openContainer(s.bid)} onToggle={(s.label&&b)?()=>toggleBlock(b):null} onCollapse={()=>toggleBlockCollapsed(s.bid)} /> })
+          const out = []
+          for (const s of blockSegments) {
+            if (emittedBlocks.has(s.id) || s.start >= tm) continue
+            emittedBlocks.add(s.id)
+            out.push(...renderSeg(s))
+          }
+          return out
         }
         return (
         <div style={{paddingBottom:8}}>
@@ -1407,18 +1435,21 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
             const isLastInBand  = !!myBand && !nextSameRoutine
             const joinHead = !!(inBlockId && isFirstInBand && blockHeadIds.has(inBlockId))
             const joinTail = !!(inBlockId && isLastInBand  && blockTailIds.has(inBlockId))
+            // Only drop the between-tasks now-line if a band split didn't already
+            // place it (that happens when "now" falls inside a block's gap).
+            const emitNow = wantNow && !nowState.done && i===nowInsertIdx
+            if (emitNow) nowState.done = true
             return [...before, (
               <div key={task.id}>
-                {i===nowInsertIdx&&<NowMarker now={now} bandTint={(myBand && (joinHead || prevSameRoutine)) ? myTint : null} bandOpacity={inBlockId ? BLOCK_FILM_OPACITY : 0.5}/>}
+                {emitNow&&<NowMarker now={now} bandTint={(myBand && (joinHead || prevSameRoutine)) ? myTint : null} bandOpacity={inBlockId ? BLOCK_FILM_OPACITY : 0.5}/>}
                 {gap && before.length===0 && <GapRow mins={gap} prevColor={gapColor} nextColor={gapNextColor} routineTint={gapTint} routineOpacity={inBlockId ? BLOCK_FILM_OPACITY : 0.5} onAdd={()=>setAddingTask(true)}/>}
                 <TimelineBlock
                   task={task} categories={categories} status={task._status} now={now}
                   routineTint={myTint} tintOpacity={inBlockId ? BLOCK_FILM_OPACITY : 0.5}
                   filmTop={!prevSameRoutine && !joinHead} filmBottom={!nextSameRoutine && !joinTail}
                   bandLabel={(isFirstInBand && !joinHead) ? (myBand?.label || null) : null}
+                  bandIcon={inBlockBand?.icon || null}
                   onBandLabel={inBlockId ? () => openContainer(inBlockId) : null}
-                  bandDone={inBlockBand ? blockDone(inBlockBand) : false}
-                  onBandToggle={(inBlockId && isFirstInBand && !joinHead && inBlockBand) ? () => toggleBlock(inBlockBand) : null}
                   onBandCollapse={(inBlockId && isFirstInBand && !joinHead) ? () => toggleBlockCollapsed(inBlockId) : null}
                   prevColor={colorOf(prev)} nextColor={colorOf(next)}
                   isDone={task._status==='past'}
@@ -1435,8 +1466,8 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
             )]
           })}
           {/* Block segments after the last task (or the whole day if task-less). */}
-          {blockSegments.filter(s=>!emittedBlocks.has(s.id)).map(s=>{ emittedBlocks.add(s.id); const b = blocks.find(x=>x.id===s.bid); return <BlockBand key={'seg-'+s.id} seg={s} onOpen={()=>openContainer(s.bid)} onToggle={(s.label&&b)?()=>toggleBlock(b):null} onCollapse={()=>toggleBlockCollapsed(s.bid)} /> })}
-          {isToday && !hasCurrent && nowInsertIdx===-1 && <NowMarker now={now}/>}
+          {blockSegments.filter(s=>!emittedBlocks.has(s.id)).flatMap(s=>{ emittedBlocks.add(s.id); return renderSeg(s) })}
+          {wantNow && !nowState.done && <NowMarker now={now}/>}
         </div>
         )
         })()
@@ -1470,7 +1501,7 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
         onClose={()=>setFocusTask(null)} />}
       {shiftPlan&&<ShiftChooser plan={shiftPlan} onApply={(ids)=>{applyShift(shiftPlan.pivot, ids); setShiftPlan(null)}} onCancel={()=>setShiftPlan(null)}/>}
       {shiftResult&&<ShiftToast result={shiftResult} onClose={()=>setShiftResult(null)}/>}
-      {addingTask&&<AddItemModal presetDate={dateKey} categories={categories} routines={routines} labelModel={labelModel} onSave={handleAdd} onSaveRecurring={addRecurringTask} onClose={()=>setAddingTask(false)} title="Add to Today"/>}
+      {addingTask&&<AddItemModal presetDate={dateKey} presetTime={addPreset?.time||''} presetCat={addPreset?.cat||''} categories={categories} routines={routines} labelModel={labelModel} onSave={handleAdd} onSaveRecurring={addRecurringTask} onClose={()=>{ setAddingTask(false); setAddPreset(null) }} title="Add to Today"/>}
       {editing&&<AddItemModal existing={editing} categories={categories} routines={routines} onSave={handleSaveEdit}
         onSaveRecurring={addRecurringTask}
         onDelete={c=>deleteCommitment&&deleteCommitment(c.id)}
