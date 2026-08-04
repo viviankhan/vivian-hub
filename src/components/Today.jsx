@@ -1378,7 +1378,7 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
             onCollapse={controls ? ()=>toggleBlockCollapsed(s.bid) : undefined} />
           // Gap before this segment — only for a block's true top (roundTop),
           // since head→task→tail within one block are contiguous by construction.
-          const gapEl = seg.roundTop ? maybeGap(s.start, s.color, null) : null
+          const gapEl = s.roundTop ? maybeGap(s.start, s.color, null) : null
           const out = gapEl ? [gapEl] : []
           if (wantNow && !nowState.done && !s.collapsed && now > s.start && now < s.end) {
             nowState.done = true
