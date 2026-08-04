@@ -373,8 +373,7 @@ function BlockBand({ seg, onEdit, onAdd, onCollapse }) {
     return (
       <div style={{ position:'relative', minHeight:54, margin:'4px 0' }}>
         <div style={{ position:'absolute', top:0, bottom:0, left:44, right:0, background:seg.color, opacity:BLOCK_FILM_OPACITY, zIndex:-1, borderRadius:16 }} />
-        <div style={{ position:'absolute', top:0, bottom:0, left:76.5, width:3, borderRadius:3, background:seg.color, opacity:.55, zIndex:-1,
-          WebkitMask:'repeating-linear-gradient(black 0 5px, transparent 5px 11px)', mask:'repeating-linear-gradient(black 0 5px, transparent 5px 11px)' }} />
+        <div style={{ position:'absolute', top:0, bottom:0, left:76.5, width:3, borderRadius:3, background:seg.color, opacity:.5, zIndex:-1 }} />
         <div style={{ position:'relative', display:'flex', alignItems:'center', minHeight:54 }}>
           <div style={{ width:52, flexShrink:0, textAlign:'right', paddingRight:10 }}>
             <span style={{ fontSize:11, color:'var(--muted)', fontWeight:500, whiteSpace:'nowrap' }}>{fmtTimeLabel(seg.start)}</span>
@@ -398,10 +397,10 @@ function BlockBand({ seg, onEdit, onAdd, onCollapse }) {
       style={{ position:'relative', minHeight:h, cursor:'pointer' }}>
       <div style={{ position:'absolute', top: seg.roundTop?6:0, bottom: seg.roundBottom?6:0, left:44, right:0, background:seg.color, opacity:BLOCK_FILM_OPACITY, zIndex:-1,
         borderTopLeftRadius:seg.roundTop?16:0, borderTopRightRadius:seg.roundTop?16:0, borderBottomLeftRadius:seg.roundBottom?16:0, borderBottomRightRadius:seg.roundBottom?16:0 }} />
-      {/* The timeline spine continues straight through the block (the icon sits
-          on it like a node), so the day reads as one unbroken line. */}
-      <div style={{ position:'absolute', top:0, bottom:0, left:76.5, width:3, borderRadius:3, background:seg.color, opacity:.55, zIndex:-1,
-        WebkitMask:'repeating-linear-gradient(black 0 5px, transparent 5px 11px)', mask:'repeating-linear-gradient(black 0 5px, transparent 5px 11px)' }} />
+      {/* The timeline spine continues straight through the block as one solid
+          line (the icon sits on it like a node), so the day reads unbroken —
+          solid, not dashed, because a block is a real container, not empty gap. */}
+      <div style={{ position:'absolute', top:0, bottom:0, left:76.5, width:3, borderRadius:3, background:seg.color, opacity:.5, zIndex:-1 }} />
       <div style={{ position:'relative', display:'flex' }}>
         {/* Only the block's true top segment prints a gutter time — a tail
             segment starts where a task ended, so its time would just echo that
