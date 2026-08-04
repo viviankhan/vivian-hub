@@ -274,6 +274,24 @@ function RoutinesView({ routines, tasks, categories, today, onEditTask, addRouti
         Group recurring tasks into routines. A task's routine washes a soft color film behind it on the timeline — set it when you add or edit the task.
       </div>
 
+      {/* Add a routine group — kept at the top so it's the first thing you reach. */}
+      <div style={{ marginBottom:20, paddingBottom:16, borderBottom:'1px solid var(--border)' }}>
+        <div style={{ fontSize:10, color:'var(--muted)', letterSpacing:1, textTransform:'uppercase', marginBottom:8 }}>New routine group</div>
+        <div style={{ display:'flex', gap:8, alignItems:'center' }}>
+          <button onClick={()=>setNewTintOpen(o=>!o)} title="Film color"
+            style={{ width:34, height:34, borderRadius:9, background:newTint, border: newTintOpen ? '2px solid var(--text)' : '1px solid rgba(0,0,0,.12)', cursor:'pointer', flexShrink:0, padding:0 }} />
+          <input value={newName} onChange={e=>setNewName(e.target.value)} placeholder="e.g. Afternoon routine…"
+            onKeyDown={e=>{ if(e.key==='Enter') addNew() }} style={{ ...rInp, flex:1, minWidth:0 }} />
+          <button onClick={addNew} disabled={!newName.trim()}
+            style={{ fontSize:12, padding:'10px 16px', borderRadius:10, border:'none', background:'var(--forest)', color:'var(--green-light)', cursor:newName.trim()?'pointer':'default', opacity:newName.trim()?1:.5, fontFamily:'DM Sans,sans-serif', fontWeight:600, flexShrink:0 }}>Add</button>
+        </div>
+        {newTintOpen && (
+          <div style={{ marginTop:8 }}>
+            <ColorSwatchRow value={newTint} onChange={setNewTint} size={26} />
+          </div>
+        )}
+      </div>
+
       {routines.map(r => {
         const items = byRoutine(r.id)
         return (
@@ -326,23 +344,6 @@ function RoutinesView({ routines, tasks, categories, today, onEditTask, addRouti
         </div>
       )}
 
-      {/* Add a routine group */}
-      <div style={{ marginTop:8, paddingTop:16, borderTop:'1px solid var(--border)' }}>
-        <div style={{ fontSize:10, color:'var(--muted)', letterSpacing:1, textTransform:'uppercase', marginBottom:8 }}>New routine group</div>
-        <div style={{ display:'flex', gap:8, alignItems:'center' }}>
-          <button onClick={()=>setNewTintOpen(o=>!o)} title="Film color"
-            style={{ width:34, height:34, borderRadius:9, background:newTint, border: newTintOpen ? '2px solid var(--text)' : '1px solid rgba(0,0,0,.12)', cursor:'pointer', flexShrink:0, padding:0 }} />
-          <input value={newName} onChange={e=>setNewName(e.target.value)} placeholder="e.g. Afternoon routine…"
-            onKeyDown={e=>{ if(e.key==='Enter') addNew() }} style={{ ...rInp, flex:1, minWidth:0 }} />
-          <button onClick={addNew} disabled={!newName.trim()}
-            style={{ fontSize:12, padding:'10px 16px', borderRadius:10, border:'none', background:'var(--forest)', color:'var(--green-light)', cursor:newName.trim()?'pointer':'default', opacity:newName.trim()?1:.5, fontFamily:'DM Sans,sans-serif', fontWeight:600, flexShrink:0 }}>Add</button>
-        </div>
-        {newTintOpen && (
-          <div style={{ marginTop:8 }}>
-            <ColorSwatchRow value={newTint} onChange={setNewTint} size={26} />
-          </div>
-        )}
-      </div>
     </div>
   )
 }

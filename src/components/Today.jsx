@@ -345,10 +345,52 @@ const BLOCK_FILM_OPACITY = 0.16
 // continuous band across its whole window even where no task fills it. `seg`
 // has { start, end, color, label, roundTop, roundBottom }. The label (only on
 // the block's top segment) is tappable to edit the block.
-function BlockBand({ seg, onOpen, onToggle }) {
+// A small chevron used to collapse/expand a time block. `dir` is 'up' (collapse)
+// or 'down' (expand).
+function BandChevron({ dir, onClick, title }) {
+  return (
+    <button type="button" onClick={onClick} title={title} aria-label={title}
+      style={{ width:20, height:20, flexShrink:0, borderRadius:6, border:'none', background:'rgba(255,255,255,.78)', cursor:'pointer', padding:0, display:'flex', alignItems:'center', justifyContent:'center' }}>
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#39434F" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"
+        style={{ transform: dir==='up'?'rotate(180deg)':'none' }}><path d="M6 9l6 6 6-6"/></svg>
+    </button>
+  )
+}
+// A small square checkbox for a time block (checks the block off, not its tasks).
+function BandCheck({ done, onClick }) {
+  return (
+    <button type="button" onClick={onClick} title={done?'Uncheck time block':'Check off time block'} aria-label={done?'Uncheck time block':'Check off time block'}
+      style={{ width:18, height:18, flexShrink:0, borderRadius:6, border: done?'none':'1.6px solid #A7B2BF', background: done?'#5C8A5C':'rgba(255,255,255,.78)', cursor:'pointer', padding:0, display:'flex', alignItems:'center', justifyContent:'center' }}>
+      {done && <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5"/></svg>}
+    </button>
+  )
+}
+function BlockBand({ seg, onOpen, onToggle, onCollapse }) {
+  const done = !!seg.done
+  // Collapsed: one compact row standing in for the whole block + its tasks.
+  if (seg.collapsed) {
+    return (
+      <div style={{ position:'relative', minHeight:54, margin:'4px 0' }}>
+        <div style={{ position:'absolute', top:0, bottom:0, left:44, right:0, background:seg.color, opacity: done?BLOCK_FILM_OPACITY*0.6:BLOCK_FILM_OPACITY, zIndex:-1, borderRadius:16 }} />
+        <div style={{ position:'relative', display:'flex', alignItems:'center', minHeight:54 }}>
+          <div style={{ width:52, flexShrink:0, textAlign:'right', paddingRight:10 }}>
+            <span style={{ fontSize:11, color:'var(--muted)', fontWeight:500, whiteSpace:'nowrap' }}>{fmtTimeLabel(seg.start)}</span>
+          </div>
+          <div style={{ flex:1, minWidth:0, paddingLeft:8, display:'flex', alignItems:'center', gap:8 }}>
+            {onToggle && <BandCheck done={done} onClick={onToggle} />}
+            <button type="button" onClick={onOpen} title="Edit time block"
+              style={{ fontSize:11, fontWeight:800, letterSpacing:.7, textTransform:'uppercase', color:'#39434F', background:'none', padding:0, border:'none', cursor:'pointer', fontFamily:'DM Sans,sans-serif', textDecoration: done?'line-through':'none', opacity: done?.6:1, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{seg.label || 'Block'}</button>
+            <span style={{ fontSize:11, color:'var(--muted)', flexShrink:0 }}>{rangeLabel(seg.start, seg.end)}{seg.count>0?` · ${seg.count} task${seg.count===1?'':'s'}`:''}</span>
+            <span style={{ marginLeft:'auto', flexShrink:0 }}>
+              <BandChevron dir="down" onClick={onCollapse} title="Expand time block" />
+            </span>
+          </div>
+        </div>
+      </div>
+    )
+  }
   const dur = Math.max(0, seg.end - seg.start)
   const h = Math.max(30, Math.round(spanHeight(dur)))
-  const done = !!seg.done
   return (
     <div style={{ position:'relative', minHeight:h }}>
       <div style={{ position:'absolute', top: seg.roundTop?6:0, bottom: seg.roundBottom?6:0, left:44, right:0, background:seg.color, opacity: done?BLOCK_FILM_OPACITY*0.6:BLOCK_FILM_OPACITY, zIndex:-1,
@@ -362,15 +404,10 @@ function BlockBand({ seg, onOpen, onToggle }) {
         </div>
         {seg.label && (
           <div style={{ paddingTop:9, paddingLeft:8, display:'flex', alignItems:'center', gap:6 }}>
-            {onToggle && (
-              <button type="button" onClick={onToggle} title={done?'Uncheck time block':'Check off time block'}
-                aria-label={done?'Uncheck time block':'Check off time block'}
-                style={{ width:18, height:18, flexShrink:0, borderRadius:6, border: done?'none':'1.6px solid #A7B2BF', background: done?'#5C8A5C':'rgba(255,255,255,.78)', cursor:'pointer', padding:0, display:'flex', alignItems:'center', justifyContent:'center' }}>
-                {done && <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5"/></svg>}
-              </button>
-            )}
+            {onToggle && <BandCheck done={done} onClick={onToggle} />}
             <button type="button" onClick={onOpen} title="Edit time block"
               style={{ fontSize:9, fontWeight:800, letterSpacing:.9, textTransform:'uppercase', color:'#39434F', background:'rgba(255,255,255,.78)', padding:'2px 8px', borderRadius:9, border:'none', cursor:'pointer', fontFamily:'DM Sans,sans-serif', textDecoration: done?'line-through':'none', opacity: done?.6:1 }}>{seg.label}</button>
+            {onCollapse && <BandChevron dir="up" onClick={onCollapse} title="Collapse time block" />}
           </div>
         )}
       </div>
@@ -460,7 +497,7 @@ function RoutineCollapseRow({ routine, count, expanded, onToggle }) {
   )
 }
 
-function TimelineBlock({ task, categories, status, now, prevColor, nextColor, routineTint, tintOpacity = 0.5, filmTop = true, filmBottom = true, bandLabel = null, onBandLabel = null, bandDone = false, onBandToggle = null, isDone, elapsed, dateKey, onToggle, onManage, onShiftToNow, onOpen, onFocus, onToggleSub }) {
+function TimelineBlock({ task, categories, status, now, prevColor, nextColor, routineTint, tintOpacity = 0.5, filmTop = true, filmBottom = true, bandLabel = null, onBandLabel = null, bandDone = false, onBandToggle = null, onBandCollapse = null, isDone, elapsed, dateKey, onToggle, onManage, onShiftToNow, onOpen, onFocus, onToggleSub }) {
   const [subOpen, setSubOpen] = useState(false)
   const catFound = (categories || []).find(x => x.id === task.tag)
   const catColor = catFound?.color || TAG_COLORS[task.tag] || '#9CA3AF'
@@ -532,6 +569,7 @@ function TimelineBlock({ task, categories, status, now, prevColor, nextColor, ro
               color:'#39434F', background:'rgba(255,255,255,.72)', padding:'2px 8px', borderRadius:9, border:'none', fontFamily:'DM Sans,sans-serif',
               textDecoration: bandDone?'line-through':'none', opacity: bandDone?.6:1,
               cursor: onBandLabel ? 'pointer' : 'default', pointerEvents: onBandLabel ? 'auto' : 'none' }}>{bandLabel}</button>
+          {onBandCollapse && <BandChevron dir="up" onClick={onBandCollapse} title="Collapse time block" />}
         </div>
       )}
       {/* Time gutter */}
@@ -764,6 +802,17 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
   const [morningOpen, setMorningOpen] = useState(false)
   const [nightOpen,   setNightOpen]   = useState(false)
   const [expandedRoutines, setExpandedRoutines] = useState({})  // routineId → show its done tasks individually
+  // Time blocks the user has collapsed into a single compact row (keyed by
+  // block id, so a recurring block like Work stays collapsed across days).
+  const [collapsedBlocks, setCollapsedBlocks] = useState(()=>{
+    try { return JSON.parse(localStorage.getItem('vivian_collapsed_blocks')||'{}') } catch { return {} }
+  })
+  const toggleBlockCollapsed = (id) => setCollapsedBlocks(prev => {
+    const next = { ...prev, [id]: !prev[id] }
+    if (!next[id]) delete next[id]
+    try { localStorage.setItem('vivian_collapsed_blocks', JSON.stringify(next)) } catch {}
+    return next
+  })
   const [shiftResult, setShiftResult] = useState(null)
   const [customTasks, setCustomTasks] = useState(()=>{
     try { return JSON.parse(localStorage.getItem('vivian_custom_'+todayKey())||'[]') } catch { return [] }
@@ -962,10 +1011,18 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
   const blockSegments = []
   const blockHeadIds = new Set()
   const blockTailIds = new Set()
+  const collapsedBlockIds = new Set()   // blocks shown as one compact row
   for (const b of blocks) {
     const inside = tasksWithStatus
       .filter(t => t._mins != null && t._mins >= b.start && t._mins < b.end)
       .sort((x,y) => x._mins - y._mins)
+    // Collapsed → one compact summary row in place of the whole band + its
+    // inner tasks (which get filtered out of the render list below).
+    if (collapsedBlocks[b.id]) {
+      collapsedBlockIds.add(b.id)
+      blockSegments.push({ id:b.id+':collapsed', bid:b.id, collapsed:true, start:b.start, end:b.end, color:b.color, label:b.label, done:blockDone(b), count:inside.length, roundTop:true, roundBottom:true })
+      continue
+    }
     if (!inside.length) {
       blockSegments.push({ id:b.id+':full', bid:b.id, start:b.start, end:b.end, color:b.color, label:b.label, done:blockDone(b), roundTop:true, roundBottom:true })
       blockHeadIds.add(b.id)
@@ -984,13 +1041,20 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
   }
   blockSegments.sort((a,b) => a.start - b.start)
 
+  // The tasks actually rendered on the timeline — everything except those tucked
+  // inside a collapsed block (they're represented by the block's summary row).
+  const blockIdOf = (t) => (t && t._mins != null) ? (blocks.find(b => t._mins >= b.start && t._mins < b.end)?.id ?? null) : null
+  const renderTasks = collapsedBlockIds.size
+    ? tasksWithStatus.filter(t => !collapsedBlockIds.has(blockIdOf(t)))
+    : tasksWithStatus
+
   const doneCount = tasksWithStatus.filter(t=>t._status==='past').length
   // When a task is in progress, the "now" indicator is drawn inside that task's
   // pill (see TimelineBlock), so we don't also drop a separate marker in the gap
   // after it. Only when nothing is current does the between-tasks marker show,
   // just before the first task that hasn't started yet.
-  const hasCurrent = isToday && tasksWithStatus.some(t=>t._status==='current')
-  const nowInsertIdx = (isToday && !hasCurrent) ? tasksWithStatus.findIndex(t=>t._mins!==null&&t._mins>now) : -1
+  const hasCurrent = isToday && renderTasks.some(t=>t._status==='current')
+  const nowInsertIdx = (isToday && !hasCurrent) ? renderTasks.findIndex(t=>t._mins!==null&&t._mins>now) : -1
   // How far through today's schedule we are (0–1), for the header progress bar:
   // elapsed span from the first task's start to the last task's end.
   const dayStart = tasksWithStatus.find(t=>t._mins!==null)?._mins ?? null
@@ -1255,7 +1319,7 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
       )}
 
       {/* Timeline */}
-      {tasksWithStatus.length===0 && blockSegments.length===0 ? (
+      {renderTasks.length===0 && blockSegments.length===0 ? (
         <div style={{textAlign:'center',padding:'40px 20px',color:'var(--muted)',fontSize:13}}>
           No schedule yet.{' '}
           <button onClick={()=>setAddingTask(true)} style={{color:'var(--teal)',background:'none',border:'none',cursor:'pointer',fontSize:13,fontFamily:'DM Sans,sans-serif',textDecoration:'underline'}}>Add a task</button>
@@ -1275,11 +1339,11 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
           // Strict `<` so a tail segment starting exactly at a task's time (a
           // task with no duration) renders AFTER that task, not before it.
           return blockSegments.filter(s => !emittedBlocks.has(s.id) && s.start < tm)
-            .map(s => { emittedBlocks.add(s.id); const b = blocks.find(x=>x.id===s.bid); return <BlockBand key={'seg-'+s.id} seg={s} onOpen={()=>openContainer(s.bid)} onToggle={(s.label&&b)?()=>toggleBlock(b):null} /> })
+            .map(s => { emittedBlocks.add(s.id); const b = blocks.find(x=>x.id===s.bid); return <BlockBand key={'seg-'+s.id} seg={s} onOpen={()=>openContainer(s.bid)} onToggle={(s.label&&b)?()=>toggleBlock(b):null} onCollapse={()=>toggleBlockCollapsed(s.bid)} /> })
         }
         return (
         <div style={{paddingBottom:8}}>
-          {tasksWithStatus.map((task,i)=>{
+          {renderTasks.map((task,i)=>{
             const before = bandsBefore(task)   // any empty time-block bands due before this row
             // Finished routine tasks collapse into a single summary row unless
             // their routine has been expanded. The first one emits the row (or
@@ -1311,8 +1375,8 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
               )]
             }
             // Free-time gap between the previous task's end and this one's start.
-            const prev = tasksWithStatus[i-1]
-            const next = tasksWithStatus[i+1]
+            const prev = renderTasks[i-1]
+            const next = renderTasks[i+1]
             const colorOf = t => t && (t.color || (categories||[]).find(x=>x.id===t.tag)?.color || TAG_COLORS[t.tag] || null)
             // A task's "band" is its containing time block (label + film), else
             // its routine group. Consecutive tasks in the SAME band read as one
@@ -1355,6 +1419,7 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
                   onBandLabel={inBlockId ? () => openContainer(inBlockId) : null}
                   bandDone={inBlockBand ? blockDone(inBlockBand) : false}
                   onBandToggle={(inBlockId && isFirstInBand && !joinHead && inBlockBand) ? () => toggleBlock(inBlockBand) : null}
+                  onBandCollapse={(inBlockId && isFirstInBand && !joinHead) ? () => toggleBlockCollapsed(inBlockId) : null}
                   prevColor={colorOf(prev)} nextColor={colorOf(next)}
                   isDone={task._status==='past'}
                   elapsed={isToday && task._mins!==null && task._mins<=now}
@@ -1370,7 +1435,7 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
             )]
           })}
           {/* Block segments after the last task (or the whole day if task-less). */}
-          {blockSegments.filter(s=>!emittedBlocks.has(s.id)).map(s=>{ emittedBlocks.add(s.id); const b = blocks.find(x=>x.id===s.bid); return <BlockBand key={'seg-'+s.id} seg={s} onOpen={()=>openContainer(s.bid)} onToggle={(s.label&&b)?()=>toggleBlock(b):null} /> })}
+          {blockSegments.filter(s=>!emittedBlocks.has(s.id)).map(s=>{ emittedBlocks.add(s.id); const b = blocks.find(x=>x.id===s.bid); return <BlockBand key={'seg-'+s.id} seg={s} onOpen={()=>openContainer(s.bid)} onToggle={(s.label&&b)?()=>toggleBlock(b):null} onCollapse={()=>toggleBlockCollapsed(s.bid)} /> })}
           {isToday && !hasCurrent && nowInsertIdx===-1 && <NowMarker now={now}/>}
         </div>
         )
