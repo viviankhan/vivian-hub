@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import {
   isUsingSupabase,
   getCompletions, setCompletion,
@@ -520,6 +520,7 @@ export default function App() {
       setRecurringExceptions(next).catch(reportSaveError)
       return next
     })
+    pushUndo('removed a repeating task for the day', () => unskipRecurringOccurrence(recurringId, date))
     // Clear a stale completion for the hidden instance (storage key is date_id).
     const compKey = `${date}_${recurringId}`
     setCompletions_(prev => {
@@ -587,6 +588,40 @@ export default function App() {
     setScheduled_(prev => { const next = [...prev, task]; setScheduledTasks(next); return next })
   }, [])
 
+  // ── Undo (Ctrl/Cmd+Z) ────────────────────────────────────────
+  // A small stack of "how to reverse the last thing you did." Each mutating
+  // action below pushes an inverse; Ctrl+Z pops and runs the most recent one.
+  // `undoingRef` keeps an undo from itself being recorded as a new action.
+  const undoStackRef = useRef([])
+  const undoingRef = useRef(false)
+  const [undoToast, setUndoToast] = useState(null)
+  const pushUndo = useCallback((label, undo) => {
+    if (undoingRef.current) return
+    undoStackRef.current.push({ label, undo })
+    if (undoStackRef.current.length > 25) undoStackRef.current.shift()
+  }, [])
+  const runUndo = useCallback(() => {
+    const entry = undoStackRef.current.pop()
+    if (!entry) { setUndoToast('Nothing to undo'); setTimeout(() => setUndoToast(null), 1600); return }
+    undoingRef.current = true
+    try { entry.undo() } finally { setTimeout(() => { undoingRef.current = false }, 0) }
+    setUndoToast('Undid: ' + entry.label)
+    setTimeout(() => setUndoToast(null), 2400)
+  }, [])
+  useEffect(() => {
+    const onKey = (e) => {
+      const z = e.key === 'z' || e.key === 'Z'
+      if (!z || !(e.metaKey || e.ctrlKey) || e.shiftKey || e.altKey) return
+      // Don't hijack the browser's text-undo while typing.
+      const t = e.target
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return
+      e.preventDefault()
+      runUndo()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [runUndo])
+
   // ── Commitments CRUD — each is one atomic row operation now, never a
   // whole-array overwrite, so two edits in flight at once can't clobber
   // each other the way they used to. ──────────────────────────
@@ -600,6 +635,7 @@ export default function App() {
     try {
       const created = await dbAddCommitment(core)
       setCommitments_(prev => [created, ...prev])
+      pushUndo('added “' + (created.text || 'task') + '”', () => deleteCommitment(created.id))
       const hasCats = Array.isArray(cats) && cats.length > 1
       const extra = { ...(hasCats ? { cats } : {}), ...(color ? { color } : {}), ...(icon ? { icon } : {}), ...(location ? { location } : {}), ...(startedAt ? { startedAt } : {}), ...(block ? { block: true } : {}) }
       if ((description && description.trim()) || (subtasks && subtasks.length) || hasCats || color || icon || location || startedAt || block) {
@@ -668,14 +704,27 @@ export default function App() {
     } catch (e) { reportSaveError(e) }
   }, [])
   const deleteCommitment = useCallback(async id => {
-    setCommitments_(prev => prev.filter(c => c.id !== id))
+    // Snapshot what we're removing so Ctrl+Z can put it back exactly.
+    let snapC = null, snapMeta = null
+    setCommitments_(prev => { snapC = prev.find(c => c.id === id) || null; return prev.filter(c => c.id !== id) })
     setCompletions_(prev => { const n = {...prev}; delete n[id]; return n })
     setCommitmentMeta_(prev => {
+      snapMeta = prev[id] || null
       if (!(id in prev)) return prev
       const n = { ...prev }; delete n[id]
       setCommitmentMeta(n).catch(reportSaveError)
       return n
     })
+    if (snapC) {
+      const c = snapC, meta = snapMeta
+      pushUndo('deleted “' + (c.text || 'task') + '”', async () => {
+        try {
+          const created = await dbAddCommitment(c)   // c keeps its id → same row back
+          setCommitments_(prev => [created, ...prev.filter(x => x.id !== created.id)])
+          if (meta) setCommitmentMeta_(prev => { const n = { ...prev, [created.id]: meta }; setCommitmentMeta(n).catch(reportSaveError); return n })
+        } catch (e) { reportSaveError(e) }
+      })
+    }
     try { await Promise.all([dbDeleteCommitment(id), setCompletion(id, false)]) }
     catch (e) { reportSaveError(e) }
   }, [])
@@ -715,6 +764,8 @@ export default function App() {
     // auto-complete by time) pass the exact next value so the tap always flips
     // what's shown, not just the stored record.
     const nowDone = explicitNext === undefined ? !currentDone : !!explicitNext
+
+    pushUndo((nowDone ? 'checked off' : 'unchecked') + ' “' + (label || 'task') + '”', () => syncToggle(id, label, tag, date, !!currentDone))
 
     if (isCommitment) {
       setCommitments_(prev => prev.map(c => c.id===id ? {...c, done:nowDone} : c))
@@ -877,6 +928,16 @@ export default function App() {
         open={searchOpen} onClose={() => setSearchOpen(false)}
         commitments={commitments} events={events} log={log}
         onJump={date => { setTab('calendar'); setJumpTo({ date, nonce: Date.now() }) }} />
+
+      {/* Undo feedback (Ctrl/Cmd+Z) */}
+      {undoToast && (
+        <div style={{ position:'fixed', left:'50%', bottom:96, transform:'translateX(-50%)', zIndex:900,
+          background:'#2C3A34', color:'white', padding:'10px 18px', borderRadius:999, fontSize:13, fontWeight:600,
+          boxShadow:'0 8px 30px rgba(0,0,0,.28)', fontFamily:'DM Sans,sans-serif', maxWidth:'calc(100vw - 32px)',
+          whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis', pointerEvents:'none' }}>
+          ↩ {undoToast}
+        </div>
+      )}
 
       {/* Mobile side-nav drawer (phones only; CSS hides it on desktop) */}
       <MobileNav open={navOpen} onClose={() => setNavOpen(false)}

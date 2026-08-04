@@ -15,11 +15,11 @@ import { Icon } from './IconPicker.jsx'
 import ColorIconPicker from './ColorIconPicker.jsx'
 import ColorSwatchRow, { TASK_COLORS } from './ColorSwatchRow.jsx'
 import { suggestGlyph, iconColorOn } from '../lib/glyphs.jsx'
-import { LEAD_OPTIONS, getItemReminders, getItemSound, setItemSound } from '../lib/notifications.js'
+import { LEAD_OPTIONS, getItemReminders, getItemSound, setItemSound, defaultLeadsLabel, leadLabel } from '../lib/notifications.js'
 import { SOUNDS, playSound } from '../lib/sounds.js'
 import { getDurationPresets, setDurationPresets, resetDurationPresets, parseDuration, durationLabel } from '../lib/durations.js'
 import { predictLabel } from '../lib/predictLabel.js'
-import { geolocationSupported, getCurrentLocation, DEFAULT_RADIUS_M } from '../lib/geofence.js'
+import { geolocationSupported, getCurrentLocation, searchPlaces, DEFAULT_RADIUS_M } from '../lib/geofence.js'
 
 const DEFAULT_CATEGORIES = [{ id:'other', label:'Other', color:'#8899AA' }]
 
@@ -233,6 +233,21 @@ export default function AddItemModal({ existing = null, existingRecurring = null
   const [location, setLocation] = useState(existing?.location ?? null)
   const [locBusy, setLocBusy]   = useState(false)
   const [locErr, setLocErr]     = useState('')
+  // Type-to-search a place (geocoded), so a location can be set without being there.
+  const [locQuery, setLocQuery]   = useState('')
+  const [locResults, setLocResults] = useState([])
+  const [locSearching, setLocSearching] = useState(false)
+  useEffect(() => {
+    const q = locQuery.trim()
+    if (q.length < 3) { setLocResults([]); setLocSearching(false); return }
+    setLocSearching(true)
+    let cancelled = false
+    const t = setTimeout(async () => {
+      const results = await searchPlaces(q)
+      if (!cancelled) { setLocResults(results); setLocSearching(false) }
+    }, 450)
+    return () => { cancelled = true; clearTimeout(t) }
+  }, [locQuery])
 
   // ── Time block (container) ───────────────────────────────────
   // When on, this item isn't a task — it's a labeled window (e.g. "Work") that
@@ -505,7 +520,11 @@ export default function AddItemModal({ existing = null, existingRecurring = null
   const isCustomColor = !!color && !TASK_COLORS.includes(color)
   const labelNames = effectiveCats.map(id => (cats.find(c => c.id === id)?.label) || id)
   const card = { background:'white', borderRadius:16, boxShadow:'0 1px 4px rgba(60,72,88,.06)', marginBottom:16, overflow:'hidden' }
-  const baseRemind = useDefault ? 'Default' : (reminders.length ? `${reminders.length} alert${reminders.length>1?'s':''}` : 'No alerts')
+  // Spell out the actual lead times so the row tells you when you'll be
+  // reminded — "1 day & 1 hour before" — instead of an opaque "Default".
+  const baseRemind = useDefault
+    ? defaultLeadsLabel()
+    : (reminders.length ? reminders.slice().sort((a,b)=>b-a).map(leadLabel).join(', ') + ' before' : 'No alerts')
   const soundLabel = (SOUNDS.find(s => s.id === sound) || {}).label || 'Chime'
   const remindText = sound === 'none' ? baseRemind : `${baseRemind} · ${soundLabel}`
   // One-line summary for the collapsed Repeat row.
@@ -846,7 +865,7 @@ export default function AddItemModal({ existing = null, existingRecurring = null
                 })}
               </div>
               <div style={{ fontSize:10.5, color:'var(--muted)', marginTop:7 }}>
-                {useDefault ? 'Uses your default reminder times (Settings → Reminders).'
+                {useDefault ? `Default reminders: ${defaultLeadsLabel()} (change in Settings → Reminders).`
                   : reminders.length ? `This item only: ${reminders.map(m => LEAD_OPTIONS.find(o => o.mins===m)?.label || m+'m').join(', ')} before.`
                   : 'No reminders for this item.'}
               </div>
@@ -875,6 +894,22 @@ export default function AddItemModal({ existing = null, existingRecurring = null
                 <div style={{ fontSize:11.5, color:'var(--muted)', lineHeight:1.5, marginBottom:10 }}>
                   Tag where this happens. When you arrive, Bloom starts the task's progress automatically — no matter the time it's set for.
                 </div>
+                {/* Type-to-search a place — set a location without being there. */}
+                <input value={locQuery} onChange={e => setLocQuery(e.target.value)} placeholder="Search a place or address…"
+                  style={{ ...inp, fontSize:13, marginBottom: (locResults.length || locSearching) ? 6 : 10 }} />
+                {locSearching && <div style={{ fontSize:11, color:'var(--muted)', padding:'2px 2px 8px' }}>Searching…</div>}
+                {locResults.length > 0 && (
+                  <div style={{ border:'1px solid var(--border)', borderRadius:10, overflow:'hidden', marginBottom:10 }}>
+                    {locResults.map((p, i) => (
+                      <button key={i} type="button"
+                        onClick={() => { setLocation({ name: p.name, lat: p.lat, lng: p.lng, radius: location?.radius || DEFAULT_RADIUS_M }); setLocQuery(''); setLocResults([]); setLocErr('') }}
+                        style={{ display:'flex', alignItems:'center', gap:8, width:'100%', textAlign:'left', padding:'9px 11px', border:'none', borderTop: i ? '1px solid #F1EDF2' : 'none', background:'white', cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontSize:12.5, color:'var(--text)' }}>
+                        <PinIcon /><span style={{ flex:1, minWidth:0, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{p.name}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+                <div style={{ fontSize:10, color:'var(--muted)', textAlign:'center', margin:'0 0 8px' }}>or</div>
                 <button type="button" onClick={useCurrentLocation} disabled={locBusy}
                   style={{ width:'100%', padding:'10px', borderRadius:10, border: locHasCoords ? '1px solid var(--border)' : 'none', background: locHasCoords ? 'white' : 'var(--forest)', color: locHasCoords ? 'var(--text)' : 'var(--green-light)', fontWeight:600, fontSize:13, cursor: locBusy ? 'default' : 'pointer', fontFamily:'DM Sans,sans-serif', display:'flex', alignItems:'center', justifyContent:'center', gap:8 }}>
                   <PinIcon />{locBusy ? 'Getting location…' : (locHasCoords ? 'Update to my current location' : 'Use my current location')}
