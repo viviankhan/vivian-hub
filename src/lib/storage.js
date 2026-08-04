@@ -375,7 +375,10 @@ function commitmentFromDb(row) {
 const COMMITMENT_FIELD_MAP = { prepMin:'prep_min', durationMins:'duration_mins', createdAt:'created_at' }
 export function commitmentChangesToDb(changes) {
   const out = {}
-  for (const [k, v] of Object.entries(changes)) out[COMMITMENT_FIELD_MAP[k] || k] = v
+  for (const [k, v] of Object.entries(changes)) {
+    // `cat` is NOT NULL in the DB — an uncategorized task stores '' instead.
+    out[COMMITMENT_FIELD_MAP[k] || k] = (k === 'cat' && v == null) ? '' : v
+  }
   return out
 }
 export async function getCommitments() {
@@ -388,8 +391,11 @@ export async function getCommitments() {
 }
 export async function addCommitment(c) {
   if (USE_SUPABASE) {
+    // `cat` is NOT NULL in the DB, but a task can legitimately have no category
+    // (we don't force a label anymore). Store '' — the UI reads that as "no
+    // category" — so an uncategorized task still saves.
     const { data, error } = await supabase.from('commitments')
-      .insert(commitmentChangesToDb({ ...c, createdAt: c.createdAt || new Date().toISOString() })).select().single()
+      .insert(commitmentChangesToDb({ ...c, cat: c.cat || '', createdAt: c.createdAt || new Date().toISOString() })).select().single()
     if (error) throw new Error(`Failed to add commitment: ${error.message}`)
     return commitmentFromDb(data)
   }
