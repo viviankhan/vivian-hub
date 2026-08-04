@@ -41,11 +41,31 @@ export const LEAD_OPTIONS = [
 // What's on by default (preserves the original "a day + an hour before").
 const DEFAULT_LEADS = [24 * 60, 60]
 
+// The resolved default lead-minute list (the user's Settings choice, or the
+// built-in default). Exported so the add sheet can *show* what "Default" means
+// instead of the opaque word "Default".
+export function getDefaultLeads() {
+  const raw = getSettings().leads
+  return Array.isArray(raw) && raw.length ? raw : DEFAULT_LEADS
+}
+// A short human label for one lead time in minutes ("1 day", "45 min").
+export function leadLabel(mins) {
+  const opt = LEAD_OPTIONS.find(o => o.mins === mins)
+  if (opt) return opt.label
+  if (mins % (24 * 60) === 0) { const d = mins / (24 * 60); return `${d} day${d > 1 ? 's' : ''}` }
+  if (mins % 60 === 0) { const h = mins / 60; return `${h} hr` }
+  return `${mins} min`
+}
+// The default lead times as a single readable phrase, e.g. "1 day & 1 hour before".
+export function defaultLeadsLabel() {
+  const leads = getDefaultLeads()
+  if (!leads.length) return 'No alerts'
+  return leads.slice().sort((a, b) => b - a).map(leadLabel).join(' & ') + ' before'
+}
+
 // Resolve the saved lead-minute list into {mins, key} entries to schedule.
 function activeLeads() {
-  const raw = getSettings().leads
-  const mins = Array.isArray(raw) && raw.length ? raw : DEFAULT_LEADS
-  return mins.map(m => ({ mins: m, key: `m${m}` }))
+  return getDefaultLeads().map(m => ({ mins: m, key: `m${m}` }))
 }
 
 // ── Per-item reminder overrides ────────────────────────────────

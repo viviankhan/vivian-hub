@@ -28,6 +28,37 @@ export function getCurrentLocation(options = {}) {
   })
 }
 
+// Search for a place by name/address and return candidate matches with
+// coordinates, so a task can be given a location without physically going
+// there. Uses OpenStreetMap's free Nominatim geocoder (no API key). Returns
+// [{ name, lat, lng }]; empty on no match or network error.
+export async function searchPlaces(query) {
+  const q = (query || '').trim()
+  if (q.length < 3) return []
+  try {
+    const url = 'https://nominatim.openstreetmap.org/search?format=jsonv2&addressdetails=1&limit=6&q=' + encodeURIComponent(q)
+    const res = await fetch(url, { headers: { 'Accept': 'application/json' } })
+    if (!res.ok) return []
+    const data = await res.json()
+    return (Array.isArray(data) ? data : []).map(r => ({
+      name: shortPlaceName(r),
+      lat: parseFloat(r.lat),
+      lng: parseFloat(r.lon),
+    })).filter(p => Number.isFinite(p.lat) && Number.isFinite(p.lng))
+  } catch { return [] }
+}
+
+// A concise label for a geocoder result: the place's own name if it has one,
+// else the first line or two of its display name.
+function shortPlaceName(r) {
+  const a = r.address || {}
+  const primary = r.name || a.amenity || a.shop || a.building || a.road || (r.display_name || '').split(',')[0]
+  const locality = a.city || a.town || a.village || a.suburb || a.county || ''
+  const parts = [primary, locality].filter(Boolean)
+  const label = [...new Set(parts)].join(', ')
+  return label || (r.display_name || '').split(',').slice(0, 2).join(',').trim()
+}
+
 // Great-circle distance between two lat/lng points, in meters (haversine).
 export function distanceMeters(a, b) {
   if (!a || !b) return Infinity
