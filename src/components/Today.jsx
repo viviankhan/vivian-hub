@@ -1339,23 +1339,59 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
         // between tasks (below).
         const wantNow = isToday && !hasCurrent
         const nowState = { done: false }
+        // The time span of each collapsed routine, so the summary row advances
+        // the cursor over its whole window (and a gap can open before/after it).
+        const routineSpans = {}
+        renderTasks.forEach(t => {
+          if (t.routine && routineIds.has(t.routine) && t._mins != null) {
+            const e = (t._time && t._dur) ? hhmmToMins(t._time)+t._dur : t._mins
+            const s = routineSpans[t.routine] || { start: Infinity, end: -Infinity }
+            routineSpans[t.routine] = { start: Math.min(s.start, t._mins), end: Math.max(s.end, e) }
+          }
+        })
+        // A single moving "cursor" tracks where on the clock the last emitted row
+        // ended, so a gap opens for ANY unscheduled stretch — between two tasks,
+        // between a routine and a block, or after a block before the next thing —
+        // not just between adjacent tasks. `tint` keeps a gap inside a block on
+        // that block's film; boundary gaps between regions stay plain.
+        const cur = { end: null, color: null, band: null }
+        const maybeGap = (startMins, nextColor, tint) => {
+          if (cur.end == null || startMins == null) return null
+          const g = startMins - cur.end
+          if (g < 5) return null
+          return <GapRow key={'gap-'+cur.end+'-'+startMins} mins={g} prevColor={cur.color} nextColor={nextColor}
+            routineTint={tint || null} routineOpacity={tint ? BLOCK_FILM_OPACITY : 0.5} onAdd={()=>setAddingTask(true)} />
+        }
+        const advance = (endMins, color, band=null) => {
+          if (endMins != null && (cur.end == null || endMins >= cur.end)) { cur.end = endMins; cur.color = color || cur.color }
+          cur.band = band
+        }
         // Render one block segment, splitting it around "now" when the current
-        // time lands inside it so the now-line reads at the right height.
+        // time lands inside it so the now-line reads at the right height. A gap
+        // opens before the block if the day was idle up to its start.
         const renderSeg = (s) => {
           const b = blocks.find(x=>x.id===s.bid)
+          const bandId = 'blk-'+s.bid
           const bb = (seg, controls) => <BlockBand key={'seg-'+seg.id} seg={seg}
             onEdit={()=>openContainer(s.bid)}
             onAdd={b ? ()=>addInBlock(b, seg.start) : undefined}
             onCollapse={controls ? ()=>toggleBlockCollapsed(s.bid) : undefined} />
+          // Gap before this segment — only for a block's true top (roundTop),
+          // since head→task→tail within one block are contiguous by construction.
+          const gapEl = seg.roundTop ? maybeGap(s.start, s.color, null) : null
+          const out = gapEl ? [gapEl] : []
           if (wantNow && !nowState.done && !s.collapsed && now > s.start && now < s.end) {
             nowState.done = true
-            return [
+            out.push(
               bb({ ...s, id:s.id+':nt', end:now, roundBottom:false }, true),
               <NowMarker key={'now-'+s.id} now={now} bandTint={s.color} bandOpacity={BLOCK_FILM_OPACITY} />,
               bb({ ...s, id:s.id+':nb', start:now, roundTop:false, label:null }, false),
-            ]
+            )
+          } else {
+            out.push(bb(s, true))
           }
-          return [ bb(s, true) ]
+          advance(s.end, s.color, bandId)
+          return out
         }
         // Block band segments starting before this task's time, not yet placed —
         // rendered just before it (they sit in the block's empty gaps). Strict
@@ -1383,14 +1419,23 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
               const r = routines.find(x=>x.id===task.routine)
               const isExp = !!expandedRoutines[task.routine]
               const firstOfRoutine = !emittedCollapse[task.routine]
+              const span = routineSpans[task.routine]
+              // A gap opens before the routine if the day was idle up to it.
+              const rtGap = firstOfRoutine && span ? maybeGap(span.start, r?.tint || null, null) : null
               const header = firstOfRoutine
                 ? (emittedCollapse[task.routine] = true,
                    <RoutineCollapseRow key={'rc-'+task.routine} routine={r} count={doneRoutineCounts[task.routine]} expanded={isExp}
                      onToggle={()=>setExpandedRoutines(p=>({...p,[task.routine]:!p[task.routine]}))} />)
                 : null
-              if (!isExp) return [...before, header]   // collapsed: summary (once), nothing else
-              // expanded: header (once) then the task block below
-              return [...before, (
+              if (!isExp) {
+                // Collapsed: advance the cursor over the whole routine window once.
+                if (firstOfRoutine && span) advance(span.end, r?.tint || null, 'rt-'+task.routine)
+                return [...before, rtGap, header]
+              }
+              // Expanded: advance per task; only the first shows the leading gap.
+              const tEnd = (task._time && task._dur) ? hhmmToMins(task._time)+task._dur : task._mins
+              advance(tEnd, r?.tint || null, 'rt-'+task.routine)
+              return [...before, rtGap, (
                 <div key={task.id}>
                   {header}
                   <TimelineBlock
@@ -1415,19 +1460,6 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
             const myTint = myBand?.tint || null
             const prevSameRoutine = !!(myBand && prevBand && prevBand.id === myBand.id)
             const nextSameRoutine = !!(myBand && nextBand && nextBand.id === myBand.id)
-            let gap = null, gapColor = null, gapNextColor = null, gapTint = null
-            if (prev && prev._mins!==null && task._mins!==null && task._status!=='past') {
-              const prevEnd = (prev._time && prev._dur) ? (hhmmToMins(prev._time)+prev._dur) : prev._mins
-              const g = task._mins - prevEnd
-              if (g >= 5) {
-                gap = g
-                gapColor = colorOf(prev) || '#C9C9D3'
-                gapNextColor = colorOf(task) || gapColor
-              }
-            }
-            // Gap film only when both sides share the routine (so the band is
-            // truly continuous, not bleeding into an unrelated next task).
-            if (prevSameRoutine) gapTint = myTint
             // Join the task film to a block's head/tail segments: the first task
             // in a block that has a head segment drops its rounded top (and its
             // label, which the segment shows); the last drops its rounded bottom.
@@ -1437,6 +1469,13 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
             const isLastInBand  = !!myBand && !nextSameRoutine
             const joinHead = !!(inBlockId && isFirstInBand && blockHeadIds.has(inBlockId))
             const joinTail = !!(inBlockId && isLastInBand  && blockTailIds.has(inBlockId))
+            // Free time before this task, measured from wherever the day last
+            // ended (a task, a routine, or a block) — tinted with the block's
+            // film only when the gap sits inside that same block.
+            const sameBandAsCursor = !!(myBand && cur.band === myBand.id)
+            const gapEl = maybeGap(task._mins, colorOf(task), sameBandAsCursor ? myTint : null)
+            const tEnd = (task._time && task._dur) ? (hhmmToMins(task._time)+task._dur) : task._mins
+            advance(tEnd, colorOf(task), myBand?.id || null)
             // Only drop the between-tasks now-line if a band split didn't already
             // place it (that happens when "now" falls inside a block's gap).
             const emitNow = wantNow && !nowState.done && i===nowInsertIdx
@@ -1444,7 +1483,7 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
             return [...before, (
               <div key={task.id}>
                 {emitNow&&<NowMarker now={now} bandTint={(myBand && (joinHead || prevSameRoutine)) ? myTint : null} bandOpacity={inBlockId ? BLOCK_FILM_OPACITY : 0.5}/>}
-                {gap && before.length===0 && <GapRow mins={gap} prevColor={gapColor} nextColor={gapNextColor} routineTint={gapTint} routineOpacity={inBlockId ? BLOCK_FILM_OPACITY : 0.5} onAdd={()=>setAddingTask(true)}/>}
+                {gapEl}
                 <TimelineBlock
                   task={task} categories={categories} status={task._status} now={now}
                   routineTint={myTint} tintOpacity={inBlockId ? BLOCK_FILM_OPACITY : 0.5}
