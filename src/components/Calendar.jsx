@@ -44,6 +44,7 @@ export default function Calendar({ commitments, vacations, events, log, categori
   const [adding, setAdding] = useState(false)
   const [editing, setEditing] = useState(null)
   const [editingRec, setEditingRec] = useState(null)  // recurring template being edited
+  const [editingRecDate, setEditingRecDate] = useState(null)  // occurrence date for single-event edits
   // Which repeating groups / everyday habits show here (synced with the Week view).
   const [recFilter, setRecFilter] = useState(getRecurringFilter)
   useEffect(() => {
@@ -296,7 +297,7 @@ export default function Calendar({ commitments, vacations, events, log, categori
               </span>
               <div style={{ flex:1, fontSize:13, color:'var(--text)', textDecoration: e.done ? 'line-through' : 'none' }}>{e.label}</div>
               <span style={{ fontSize:9, letterSpacing:.5, textTransform:'uppercase', color:'var(--muted)', flexShrink:0 }}>Repeats</span>
-              <button onClick={() => { const t=(recurringTasks||[]).find(r=>r.id===e.id); if(t) setEditingRec(t) }} title="Edit"
+              <button onClick={() => { const t=(recurringTasks||[]).find(r=>r.id===e.id); if(t){ setEditingRecDate(selected); setEditingRec(t) } }} title="Edit"
                 style={{ background:'none', border:'none', cursor:'pointer', color:'#9CA3AF', fontSize:13, padding:'0 2px', flexShrink:0 }}>✎</button>
               <button onClick={() => skipRecurringOccurrence && skipRecurringOccurrence(e.id, selected)} title="Skip just this day"
                 style={{ background:'none', border:'none', cursor:'pointer', color:'#9CA3AF', fontSize:14, padding:'0 2px', flexShrink:0 }}>✕</button>
@@ -348,11 +349,28 @@ export default function Calendar({ commitments, vacations, events, log, categori
       {editingRec && (
         <AddItemModal
           existingRecurring={editingRec}
+          occurrenceDate={editingRecDate}
           categories={categories}
           routines={routines}
-          onSaveRecurring={t => { updateRecurringTask && updateRecurringTask(t.id, t); setEditingRec(null) }}
-          onDelete={t => { deleteRecurringTask && deleteRecurringTask(t.id); setEditingRec(null) }}
-          onClose={()=>setEditingRec(null)}
+          onSaveOccurrence={(date, occ) => {
+            // Detach this one day: hide the series that day + add a one-off.
+            skipRecurringOccurrence && skipRecurringOccurrence(editingRec.id, date)
+            addCommitment && addCommitment(occ)
+            setEditingRec(null); setEditingRecDate(null)
+          }}
+          onSaveRecurring={t => { updateRecurringTask && updateRecurringTask(t.id, t); setEditingRec(null); setEditingRecDate(null) }}
+          onDeleteOccurrence={date => { skipRecurringOccurrence && skipRecurringOccurrence(editingRec.id, date); setEditingRec(null); setEditingRecDate(null) }}
+          onDeleteFuture={date => {
+            const tmpl=(recurringTasks||[]).find(t=>t.id===editingRec.id)
+            if (tmpl && updateRecurringTask) {
+              const x=new Date(date+'T12:00:00'); x.setDate(x.getDate()-1)
+              const endDate=`${x.getFullYear()}-${String(x.getMonth()+1).padStart(2,'0')}-${String(x.getDate()).padStart(2,'0')}`
+              updateRecurringTask(tmpl.id, { ...tmpl, endDate })
+            }
+            setEditingRec(null); setEditingRecDate(null)
+          }}
+          onDelete={t => { deleteRecurringTask && deleteRecurringTask(t.id); setEditingRec(null); setEditingRecDate(null) }}
+          onClose={()=>{ setEditingRec(null); setEditingRecDate(null) }}
           title="Edit recurring task" />
       )}
     </div>
