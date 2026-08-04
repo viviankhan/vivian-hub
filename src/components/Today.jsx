@@ -798,6 +798,7 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
   const [managing,    setManaging]    = useState(null)
   const [editing,     setEditing]     = useState(null)  // full commitment being edited
   const [editingRec,  setEditingRec]  = useState(null)  // recurring template being edited
+  const [editingRecDate, setEditingRecDate] = useState(null)  // which occurrence's date (for single-event edits)
   const [shiftPlan,   setShiftPlan]   = useState(null)  // {pivot, rest, selected} — "start now" push chooser
   const [focusTask,   setFocusTask]   = useState(null)  // task shown in full-screen Focus mode
   const [addingTask,  setAddingTask]  = useState(false)
@@ -1205,12 +1206,12 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
       const c = (commitments || []).find(x => x.id === task.id)
       if (c) { setEditing(c); return }
     }
-    // Tapping a recurring occurrence opens the same full editor as a normal
-    // task — pre-filled from its template (edits the whole series). Per-day
-    // actions (skip / reschedule this occurrence) stay on the ⋯ menu.
+    // Tapping a recurring occurrence opens the full editor pre-filled from its
+    // template. The editor offers "just this event" vs "whole series" (the date
+    // tells it which occurrence). Per-day skip/reschedule stay on the ⋯ menu.
     if (task.isRecurring && updateRecurringTask) {
       const tmpl = (recurringTasks || []).find(t => t.id === (task.recurringId || task.id))
-      if (tmpl) { setEditingRec(tmpl); return }
+      if (tmpl) { setEditingRecDate(dateKey); setEditingRec(tmpl); return }
     }
     setManaging(task)
   }
@@ -1220,7 +1221,7 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
     const c = (commitments || []).find(x => x.id === id)
     if (c) { setEditing(c); return }
     const tmpl = (recurringTasks || []).find(t => t.id === id)
-    if (tmpl && updateRecurringTask) setEditingRec(tmpl)
+    if (tmpl && updateRecurringTask) { setEditingRecDate(dateKey); setEditingRec(tmpl) }
   }
   // Unschedule → strip the date/time so it drops off the timeline and returns
   // to Commitments as an unscheduled item (keeps everything else).
@@ -1550,9 +1551,18 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
         onMoveToInbox={c=>updateCommitment&&updateCommitment(c.id, { date:null, time:null, durationMins:null })}
         onClose={()=>setEditing(null)} title="Edit task"/>}
       {editingRec&&<AddItemModal existingRecurring={editingRec} categories={categories} routines={routines}
-        onSaveRecurring={t=>{ updateRecurringTask&&updateRecurringTask(t.id,t); setEditingRec(null) }}
-        onDelete={t=>{ deleteRecurringTask&&deleteRecurringTask(t.id); setEditingRec(null) }}
-        onClose={()=>setEditingRec(null)} title="Edit recurring task"/>}
+        occurrenceDate={editingRecDate}
+        onSaveOccurrence={(date, occ, reminderMins)=>{
+          // Detach this one day: hide the series on this date and add a one-off
+          // commitment carrying the edits. Other days stay as-is.
+          skipRecurringOccurrence && skipRecurringOccurrence(editingRec.id, date)
+          if (addCommitment) addCommitment(occ)
+          setItemReminders(occ.id, reminderMins)
+          setEditingRec(null); setEditingRecDate(null)
+        }}
+        onSaveRecurring={t=>{ updateRecurringTask&&updateRecurringTask(t.id,t); setEditingRec(null); setEditingRecDate(null) }}
+        onDelete={t=>{ deleteRecurringTask&&deleteRecurringTask(t.id); setEditingRec(null); setEditingRecDate(null) }}
+        onClose={()=>{ setEditingRec(null); setEditingRecDate(null) }} title="Edit recurring task"/>}
       {managing&&<ManageModal task={managing} dateKey={dateKey} onClose={()=>setManaging(null)} onDelete={handleDelete} onReschedule={handleReschedule} onUnschedule={handleUnschedule} onDeleteSeries={handleDeleteSeries} onDeleteFuture={handleDeleteFuture} scheduled={scheduled}/>}
     </div>
   )
