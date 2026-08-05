@@ -9,10 +9,24 @@
 // it works from any component without extra React wiring.
 // ─────────────────────────────────────────────────────────────
 
-const FLOWERS = ['🌸', '🌷', '🌺', '💮', '🌼']
+// What "blooms" when you finish a task depends on the active season, so the
+// reward matches the current look: blossoms in spring, leaves in summer/fall,
+// snow in winter, flowers for the signature Bloom.
+const SEASON_BURST = {
+  bloom:  ['🌸', '🌷', '🌺', '💮', '🌼'],
+  spring: ['🌸', '🌷', '🌻', '🌼', '💐'],
+  summer: ['🌿', '🍃', '🌱', '🌻', '☀️'],
+  fall:   ['🍁', '🍂', '🌰', '🍄', '🍁'],
+  winter: ['❄️', '⛄', '🌨️', '✨', '❄️'],
+}
+function burstSet() {
+  const s = (typeof document !== 'undefined' && document.documentElement.dataset.season) || 'bloom'
+  return SEASON_BURST[s] || SEASON_BURST.bloom
+}
 
 export function bloomBurst(anchorEl) {
   if (typeof document === 'undefined' || !anchorEl?.getBoundingClientRect) return
+  const FLOWERS = burstSet()
 
   const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
   const rect = anchorEl.getBoundingClientRect()
