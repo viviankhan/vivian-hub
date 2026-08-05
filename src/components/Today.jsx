@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo, useLayoutEffect } from 'react'
 import { recurringOccurrencesForDate, taskProgress, occKey } from '../lib/occurrences.js'
 import { findSlots } from '../lib/scheduler.js'
 import { getRoutines } from '../lib/storage.js'
@@ -726,11 +726,14 @@ function addDays(key, delta) {
   d.setDate(d.getDate() + delta)
   return ymd(d)
 }
+// How many days the scroll wheel reaches on either side of today. Wide enough
+// to feel endless while you flick, bounded so the strip stays light.
+const WHEEL_BACK = 120
+const WHEEL_FWD  = 120
 function WeekStrip({ viewDate, setViewDate, commitments, categories, doneCount, total, dayProgress, isToday, summary, todos, recurringTasks, recurringExceptions }) {
   const today = todayKey()
   const base = new Date(viewDate + 'T12:00:00')
-  const start = new Date(base); start.setDate(base.getDate() - base.getDay())  // back to Sunday
-  const days = Array.from({ length: 7 }, (_, i) => { const d = new Date(start); d.setDate(start.getDate() + i); return d })
+  const wheelRef = useRef(null)
   const colorFor = (c) => c.color || (categories || []).find(x => x.id === c.cat)?.color || TAG_COLORS[c.cat] || '#9CA3AF'
   // Streak mode: a day "lights up" when it has scheduled items and every one is
   // done (commitments + recurring instances, matching the timeline).
@@ -746,30 +749,79 @@ function WeekStrip({ viewDate, setViewDate, commitments, categories, doneCount, 
   const monthDay = base.toLocaleDateString('en-US', { month: 'long', day: 'numeric' })
   const year = base.getFullYear()
 
+  // The wheel's day keys — a stable window around today (recomputed only when
+  // the calendar day rolls over), so flicking through it never re-lays-out.
+  const days = useMemo(() => {
+    const arr = []
+    for (let i = -WHEEL_BACK; i <= WHEEL_FWD; i++) arr.push(addDays(today, i))
+    return arr
+  }, [today])
+  // Per-day markers (dots or streak flame), memoized so a 30s "now" re-render
+  // of the parent doesn't recompute recurring occurrences for every day.
+  const dayMeta = useMemo(() => {
+    const m = {}
+    for (const key of days) {
+      m[key] = summary === 'streak'
+        ? { streak: dayAllDone(key) }
+        : { dots: (commitments || []).filter(c => c.date === key && !c.block).slice(0, 5).map(colorFor) }
+    }
+    return m
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [days, summary, commitments, categories, todos, recurringTasks, recurringExceptions])
+
+  // Center a given day in the wheel by setting scrollLeft directly — no page
+  // scroll side effects, unlike scrollIntoView. Selection is never touched here;
+  // scrolling only moves the viewport, tapping is what selects.
+  const centerOn = (key, smooth) => {
+    const cont = wheelRef.current
+    if (!cont) return
+    const el = cont.querySelector(`[data-daykey="${key}"]`)
+    if (!el) return
+    const target = el.offsetLeft - (cont.clientWidth - el.clientWidth) / 2
+    cont.scrollTo({ left: Math.max(0, target), behavior: smooth ? 'smooth' : 'auto' })
+  }
+  // Start the wheel centered on today (once, on mount, before paint so the far
+  // end never flashes) — not on every re-render, so a flick that scrolls away
+  // is never yanked back.
+  useLayoutEffect(() => { centerOn(today, false) }, [])  // eslint-disable-line react-hooks/exhaustive-deps
+  const goToday = () => { setViewDate(today); centerOn(today, true) }
+
   return (
     <div style={{ marginBottom: 18 }}>
       <div style={{ display:'flex', alignItems:'baseline', gap:9, marginBottom:12 }}>
         <span className="serif" style={{ fontSize:29, fontWeight:700, color:'var(--text)', lineHeight:1 }}>{monthDay},</span>
         <span className="serif" style={{ fontSize:29, fontWeight:700, color:'var(--teal)', lineHeight:1 }}>{year}</span>
+        {!isToday && (
+          <button onClick={goToday}
+            style={{ marginLeft:'auto', alignSelf:'center', fontSize:11.5, fontWeight:700, color:'var(--teal)', background:'rgba(14,158,142,.12)',
+              border:'none', borderRadius:14, padding:'5px 12px', cursor:'pointer', fontFamily:'DM Sans,sans-serif', whiteSpace:'nowrap' }}>
+            Today
+          </button>
+        )}
       </div>
-      <div style={{ display:'flex', gap:2 }}>
-        {days.map(d => {
-          const key = ymd(d)
+      <div ref={wheelRef} className="day-wheel">
+        {days.map(key => {
+          const d = new Date(key + 'T12:00:00')
           const sel = key === viewDate
           const isTod = key === today
-          const dots = (commitments || []).filter(c => c.date === key && !c.block).slice(0, 5).map(colorFor)
+          const meta = dayMeta[key] || {}
+          // The 1st of a month labels itself with the month, so scrolling far
+          // stays oriented without a separate month header.
+          const topLabel = d.getDate() === 1
+            ? d.toLocaleDateString('en-US', { month:'short' })
+            : d.toLocaleDateString('en-US', { weekday:'short' })
           return (
-            <button key={key} onClick={() => setViewDate(key)}
-              style={{ flex:1, minWidth:0, border:'none', background:'none', cursor:'pointer', padding:'2px 0', display:'flex', flexDirection:'column', alignItems:'center', gap:5 }}>
-              <span style={{ fontSize:11, color:'var(--muted)', fontWeight:500 }}>{d.toLocaleDateString('en-US', { weekday:'short' })}</span>
+            <button key={key} data-daykey={key} onClick={() => setViewDate(key)} className="day-cell"
+              style={{ border:'none', background:'none', cursor:'pointer', padding:'2px 0', display:'flex', flexDirection:'column', alignItems:'center', gap:5 }}>
+              <span style={{ fontSize:11, color: d.getDate()===1 ? 'var(--teal)' : 'var(--muted)', fontWeight: d.getDate()===1 ? 700 : 500 }}>{topLabel}</span>
               <span style={{ width:34, height:34, borderRadius:'50%', display:'flex', alignItems:'center', justifyContent:'center', fontSize:15,
                 fontWeight: sel ? 700 : 600,
                 background: sel ? 'var(--teal)' : (isTod ? 'rgba(14,158,142,.14)' : 'transparent'),
                 color: sel ? 'white' : (isTod ? 'var(--teal)' : 'var(--text)') }}>{d.getDate()}</span>
               <span style={{ display:'flex', gap:2, height:15, alignItems:'center', justifyContent:'center' }}>
                 {summary === 'streak'
-                  ? (dayAllDone(key) ? <Icon value="glyph:flame" size={14} color="#E8863A" /> : null)
-                  : dots.map((c, i) => <span key={i} style={{ width:5, height:5, borderRadius:'50%', background:c }} />)}
+                  ? (meta.streak ? <Icon value="glyph:flame" size={14} color="#E8863A" /> : null)
+                  : (meta.dots || []).map((c, i) => <span key={i} style={{ width:5, height:5, borderRadius:'50%', background:c }} />)}
               </span>
             </button>
           )
@@ -1326,41 +1378,8 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
     if (appendLog) appendLog({ date:dateKey, dateLabel:todayLabel(), label:'Rescheduled: ' + task.label + ' → ' + date + (time ? ' @ ' + fmt12(time) : ''), tag:'rescheduled', ts:new Date().toISOString() })
   }
 
-  // ── Swipe between days ────────────────────────────────────────
-  // On mobile you can slide the timeline left/right to move a day at a time —
-  // left goes forward (tomorrow), right goes back (yesterday), matching the
-  // week strip. We only navigate on a mostly-horizontal, quick, far-enough
-  // flick, so vertical scrolling of the timeline is untouched. A day-nudge
-  // animation gives the swipe a bit of physical feedback.
-  const swipe = useRef({ x: 0, y: 0, t: 0, active: false })
-  const [slideDir, setSlideDir] = useState(0)  // -1 = came from left, 1 = from right, 0 = idle
-  const anyModalOpen = !!(managing || editing || editingRec || focusTask || addingTask || shiftPlan || shiftDayOpen)
-  const goDay = (delta) => {
-    setViewDate(d => addDays(d, delta))
-    setSlideDir(delta > 0 ? 1 : -1)
-    setTimeout(() => setSlideDir(0), 240)
-  }
-  const onTouchStart = (e) => {
-    if (anyModalOpen || e.touches.length !== 1) { swipe.current.active = false; return }
-    const t = e.touches[0]
-    swipe.current = { x: t.clientX, y: t.clientY, t: Date.now(), active: true }
-  }
-  const onTouchEnd = (e) => {
-    if (!swipe.current.active) return
-    swipe.current.active = false
-    const t = e.changedTouches[0]
-    const dx = t.clientX - swipe.current.x
-    const dy = t.clientY - swipe.current.y
-    const dt = Date.now() - swipe.current.t
-    // Mostly-horizontal, > 60px, faster than 600ms → a deliberate day swipe.
-    if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.6 && dt < 600) {
-      goDay(dx < 0 ? 1 : -1)
-    }
-  }
-
   return (
-    <div onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
-      <div key={viewDate} style={slideDir ? { animation:`todaySlide${slideDir>0?'Next':'Prev'} .24s ease` } : undefined}>
+    <div>
       {/* Structured-style header: big date + week strip + progress bar */}
       <WeekStrip
         viewDate={viewDate} setViewDate={setViewDate}
@@ -1582,7 +1601,6 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
           open={nightOpen} setOpen={setNightOpen}
           routineDone={routineDone} toggleRoutine={toggleRoutine} />
       )}
-      </div>
 
       {/* FAB — position lives in CSS (.today-fab) so it can lift above the
           mobile bottom bar; inline styles would otherwise override it. */}
