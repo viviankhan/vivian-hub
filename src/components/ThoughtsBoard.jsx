@@ -2,7 +2,7 @@
 // A sticky-note "thoughts" board. Jot a thought → it lands on the board as a
 // sticky note, randomly placed and stamped with the date + time. Search the
 // pool, sort by date, and schedule any note straight into your calendar.
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { getThoughts, setThoughts } from '../lib/storage.js'
 import { setItemReminders } from '../lib/notifications.js'
 import { bloomBurst } from '../lib/bloom.js'
@@ -57,10 +57,46 @@ export default function ThoughtsBoard({ addCommitment, categories }) {
   const [view, setView]   = useState('board')   // 'board' | 'list'
   const [sortDir, setSortDir] = useState('new')  // 'new' | 'old'
   const [scheduling, setScheduling] = useState(null)
+  const [dragId, setDragId] = useState(null)
 
   useEffect(() => { getThoughts().then(t => { setThoughtsState(t); setLoaded(true) }) }, [])
 
   const persist = (next) => { setThoughtsState(next); setThoughts(next).catch(() => {}) }
+
+  // ── Drag a sticky note around the board ──────────────────────
+  const boardRef = useRef(null)
+  const dragRef = useRef(null)
+  const onNotePointerDown = (e, t) => {
+    // Let the schedule/delete buttons work — only drag from the note body.
+    if (e.target.closest('button')) return
+    const board = boardRef.current
+    if (!board) return
+    e.preventDefault()
+    const rect = board.getBoundingClientRect()
+    dragRef.current = { id: t.id, startX: e.clientX, startY: e.clientY, origX: t.x, origY: t.y, rect, moved: false }
+    setDragId(t.id)
+    window.addEventListener('pointermove', onDragMove)
+    window.addEventListener('pointerup', onDragEnd)
+  }
+  const onDragMove = (e) => {
+    const d = dragRef.current
+    if (!d) return
+    const dxPct = ((e.clientX - d.startX) / d.rect.width) * 100
+    const dyPct = ((e.clientY - d.startY) / d.rect.height) * 100
+    const nx = Math.max(0, Math.min(92, d.origX + dxPct))
+    const ny = Math.max(0, Math.min(92, d.origY + dyPct))
+    d.moved = true
+    setThoughtsState(prev => prev.map(x => x.id === d.id ? { ...x, x: nx, y: ny } : x))
+  }
+  const onDragEnd = () => {
+    const d = dragRef.current
+    window.removeEventListener('pointermove', onDragMove)
+    window.removeEventListener('pointerup', onDragEnd)
+    dragRef.current = null
+    setDragId(null)
+    // Persist the new position (only if it actually moved).
+    if (d && d.moved) setThoughtsState(prev => { setThoughts(prev).catch(() => {}); return prev })
+  }
 
   const addThought = (e) => {
     if (e?.currentTarget) bloomBurst(e.currentTarget)
@@ -107,7 +143,7 @@ export default function ThoughtsBoard({ addCommitment, categories }) {
   return (
     <div>
       <div className="page-title">Thoughts</div>
-      <div className="page-sub">Jot a thought — it lands on the board with a timestamp. Search it, sort it, or schedule it into your calendar.</div>
+      <div className="page-sub">Jot a thought — it lands on the board with a timestamp. Drag notes to rearrange them, search, sort, or schedule one into your calendar.</div>
 
       {/* Add a thought */}
       <div style={{ display:'flex', gap:8, marginBottom:14, alignItems:'flex-start' }}>
@@ -149,21 +185,28 @@ export default function ThoughtsBoard({ addCommitment, categories }) {
         </div>
       ) : view === 'board' ? (
         // ── Scattered board ──
-        <div style={{
+        <div ref={boardRef} style={{
           position:'relative', minHeight:'64vh', borderRadius:16, overflow:'hidden',
           border:'1px solid #D8C7A8',
           background:'repeating-linear-gradient(45deg, #E9D8B8 0 2px, #E4D2AE 2px 4px), radial-gradient(circle at 50% 40%, #EAD9B9, #DFC9A2)',
           boxShadow:'inset 0 2px 18px rgba(120,95,50,.28)',
           padding:8,
         }}>
-          {sorted.map(t => (
-            <div key={t.id} style={{ position:'absolute', width:150,
-              left:`min(${t.x}%, calc(100% - 158px))`, top:`min(${t.y}%, calc(100% - 128px))` }}>
-              <div style={{ position:'relative' }}>
-                <Sticky t={t} onSchedule={setScheduling} onDelete={deleteThought} />
+          {sorted.map(t => {
+            const dragging = dragId === t.id
+            return (
+              <div key={t.id}
+                onPointerDown={e => onNotePointerDown(e, t)}
+                style={{ position:'absolute', width:150,
+                  left:`min(${t.x}%, calc(100% - 158px))`, top:`min(${t.y}%, calc(100% - 128px))`,
+                  touchAction:'none', cursor: dragging ? 'grabbing' : 'grab',
+                  zIndex: dragging ? 5 : 1, transition: dragging ? 'none' : 'box-shadow .15s' }}>
+                <div style={{ position:'relative', transform: dragging ? 'scale(1.05)' : 'none', transition:'transform .12s' }}>
+                  <Sticky t={t} onSchedule={setScheduling} onDelete={deleteThought} />
+                </div>
               </div>
-            </div>
-          ))}
+            )
+          })}
         </div>
       ) : (
         // ── Sorted list ──
