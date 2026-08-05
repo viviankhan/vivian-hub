@@ -64,8 +64,8 @@ export default function ColorIconPicker({ color, icon, onColor, onIcon, onClose 
             style={{ width:34, height:34, borderRadius:'50%', border:'none', background:'#F0EEF3', color:'var(--text)', fontSize:16, cursor:'pointer' }}>✕</button>
         </div>
 
-        {/* Color swatches — the shared picker: Bloom default, the standard
-            palette, your saved colors (✕ to delete), then the custom wheel. */}
+        {/* Color swatches — your own roster (✕ to delete any) plus the custom
+            wheel + "+" to add a new one. No built-in defaults. */}
         <div style={{ padding:'2px 18px 10px', flexShrink:0 }}>
           <ColorSwatchRow value={color} onChange={onColor} size={32} />
         </div>
