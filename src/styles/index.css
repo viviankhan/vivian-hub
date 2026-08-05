@@ -580,18 +580,20 @@ textarea { resize: vertical; min-height: 160px; line-height: 1.6; }
 }
 .mobile-nav-close:active { transform: scale(.92); }
 .mobile-nav-list { display: flex; flex-direction: column; gap: 4px; }
-.mobile-nav-item, .mobile-nav-settings {
-  position: relative;
+/* A row = a tappable main button (navigate) + a drag grip (customize the bar). */
+.mobile-nav-item { position: relative; display: flex; align-items: stretch; gap: 2px; border-radius: 16px; }
+.mobile-nav-item-main {
+  flex: 1; min-width: 0;
   display: flex; align-items: center; gap: 14px;
   padding: 13px 16px; border-radius: 16px; border: none;
-  background: transparent; cursor: pointer; text-align: left; width: 100%;
+  background: transparent; cursor: pointer; text-align: left;
   font-family: 'DM Sans', sans-serif; font-size: 15px; font-weight: 500; color: var(--text);
   transition: background .18s, transform .1s;
 }
-.mobile-nav-item:active, .mobile-nav-settings:active { transform: scale(.985); }
+.mobile-nav-item-main:active { transform: scale(.985); }
 .mobile-nav-icon { font-size: 20px; width: 26px; text-align: center; flex-shrink: 0; line-height: 1; display: inline-flex; align-items: center; justify-content: center; }
 .mobile-nav-label { flex: 1; }
-.mobile-nav-item.active {
+.mobile-nav-item.active .mobile-nav-item-main {
   background: linear-gradient(135deg, rgba(123,191,212,.26), rgba(200,191,223,.26));
   color: #143F52; font-weight: 700;
   box-shadow: 0 4px 14px rgba(120,150,190,.14);
@@ -600,8 +602,22 @@ textarea { resize: vertical; min-height: 160px; line-height: 1.6; }
   width: 7px; height: 7px; border-radius: 50%;
   background: linear-gradient(135deg, var(--sea), var(--peach)); flex-shrink: 0;
 }
-.mobile-nav-settings { margin-top: auto; color: var(--muted); font-size: 14px; }
-.mobile-nav-settings:hover { background: rgba(42,72,88,.05); }
+.mobile-nav-onbar { color: var(--teal); font-size: 9px; line-height: 1; flex-shrink: 0; }
+.mobile-nav-grip {
+  flex-shrink: 0; width: 42px; align-self: stretch;
+  display: flex; align-items: center; justify-content: center;
+  color: #AEB8C4; cursor: grab; touch-action: none; border-radius: 12px;
+  -webkit-user-select: none; user-select: none;
+}
+.mobile-nav-grip:active { cursor: grabbing; color: var(--teal); background: rgba(42,72,88,.06); }
+.mobile-nav-settings-row { margin-top: auto; }
+.mobile-nav-settings-row .mobile-nav-item-main { color: var(--muted); font-size: 14px; }
+.mobile-nav-tip {
+  margin: 10px 4px 6px; padding: 9px 12px;
+  font-size: 11px; line-height: 1.5; color: var(--muted);
+  background: rgba(42,72,88,.05); border-radius: 12px;
+}
+.mobile-nav-tip svg { width: 14px; height: 14px; color: #9AA6B2; }
 
 /* Fixed bottom tab bar. */
 .bottom-nav {
@@ -624,6 +640,37 @@ textarea { resize: vertical; min-height: 160px; line-height: 1.6; }
 .bottom-nav-btn.active {
   color: #143F52;
   background: linear-gradient(135deg, rgba(123,191,212,.18), rgba(200,191,223,.18));
+}
+/* While a bar customization drag is in flight the real bar is hidden and a
+   live preview (below) stands in for it, so the item doesn't appear twice. */
+.bottom-nav.dragging-src { opacity: 0; }
+
+/* ── Bottom-bar drag overlay ──────────────────────────────────── */
+.bar-drag-layer { position: fixed; inset: 0; z-index: 950; pointer-events: none; }
+/* The preview reuses the real bar's fixed-bottom layout; display:flex here so
+   it shows even though .bottom-nav is display:none outside the mobile query. */
+.bar-drag-preview { display: flex; opacity: 1; box-shadow: 0 -8px 30px rgba(120,150,190,.24); }
+.bar-drag-preview .bottom-nav-btn.drop-target {
+  color: #143F52; border-radius: 14px;
+  background: linear-gradient(135deg, rgba(123,191,212,.32), rgba(200,191,223,.32));
+  outline: 2px dashed var(--teal); outline-offset: -3px;
+}
+.bar-drag-ghost {
+  position: fixed; transform: translate(-50%, -62%);
+  display: flex; flex-direction: column; align-items: center; gap: 3px;
+  padding: 8px 15px; border-radius: 16px;
+  background: rgba(255,255,255,.98); color: #143F52;
+  box-shadow: 0 14px 34px rgba(40,72,88,.30);
+  font-family: 'DM Sans', sans-serif;
+}
+.bar-drag-ghost .bottom-nav-label { font-size: 11px; font-weight: 700; }
+.bar-drag-ghost.removing { background: #FDECEC; color: #DC2626; box-shadow: 0 14px 34px rgba(220,60,60,.30); }
+.bar-remove-hint {
+  position: fixed; left: 50%; bottom: calc(100px + env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  background: #DC2626; color: #fff; font-size: 12px; font-weight: 700;
+  padding: 7px 15px; border-radius: 999px; white-space: nowrap;
+  font-family: 'DM Sans', sans-serif; box-shadow: 0 6px 20px rgba(220,60,60,.32);
 }
 
 /* Today's floating "+" button — default (desktop) position. On mobile it's

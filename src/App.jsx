@@ -73,6 +73,38 @@ const TABS = [
   { id:'recurring',   label:'Recurring',   glyph:'repeat' },
 ]
 
+// ── Customizable bottom bar (mobile) ───────────────────────────
+// The phone bottom bar is a user-arranged list of destinations, dragged in
+// from the side menu and dragged off to remove. It holds any tab plus the
+// special 'settings' entry (opens the Settings drawer). Stored device-local,
+// like the last-open tab. Default: Calendar · Timeline · Thoughts.
+const BOTTOM_BAR_KEY = 'bloom_bottom_bar'
+const DEFAULT_BOTTOM_BAR = ['calendar', 'today', 'thoughts']
+const BAR_VALID = new Set([...TABS.map(t => t.id), 'settings'])
+// The bottom bar keeps its own shorter vocabulary for a couple of tabs, so it
+// reads the way it always has even though the side menu uses the full names.
+const BAR_LABELS = { today: 'Timeline', commitments: 'Inbox' }
+function barItemMeta(id) {
+  if (id === 'settings') return { id, label: 'Settings', glyph: null, settings: true }
+  const t = TABS.find(x => x.id === id)
+  const label = BAR_LABELS[id] || (t ? t.label : id)
+  return { id, label, glyph: t ? t.glyph : 'list' }
+}
+function loadBottomBar() {
+  try {
+    const v = JSON.parse(localStorage.getItem(BOTTOM_BAR_KEY) || 'null')
+    if (Array.isArray(v)) {
+      const seen = new Set()
+      const clean = v.filter(id => BAR_VALID.has(id) && !seen.has(id) && seen.add(id))
+      if (clean.length) return clean
+    }
+  } catch {}
+  return [...DEFAULT_BOTTOM_BAR]
+}
+function saveBottomBar(items) {
+  try { localStorage.setItem(BOTTOM_BAR_KEY, JSON.stringify(items)) } catch {}
+}
+
 // ── Settings Drawer ────────────────────────────────────────────
 function SettingsDrawer({ open, onClose, settingsTab, setSettingsTab, notes, updateNotes, categories, addCategory, updateCategory, deleteCategory, events, commitments, font, setFont, theme, setTheme, season, setSeason, customColor, setCustom, background, setBackground, customBg, setCustomBg, layout, setLayout, soundOn, setSound, summary, setSummary }) {
   if (!open) return null
@@ -150,17 +182,26 @@ function MenuIcon() {
 
 // ── Line icons for the Structured-style bottom bar ─────────────
 const svgProps = { viewBox:'0 0 24 24', width:23, height:23, fill:'none', stroke:'currentColor', strokeWidth:1.9, strokeLinecap:'round', strokeLinejoin:'round', 'aria-hidden':true }
-// Inbox = a tray (where unscheduled tasks land).
-function InboxIcon() {
-  return (<svg {...svgProps}><path d="M4 13.5 6 5.5a2 2 0 0 1 1.9-1.5h8.2A2 2 0 0 1 18 5.5l2 8"/><path d="M4 13.5h4a2 2 0 0 1 2 2 2 2 0 0 0 4 0 2 2 0 0 1 2-2h4"/><path d="M4 13.5V18a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4.5"/></svg>)
-}
-// Timeline = stacked rows with leading dots.
-function TimelineIcon() {
-  return (<svg {...svgProps}><circle cx="5" cy="7" r="1.6"/><circle cx="5" cy="17" r="1.6"/><line x1="10" y1="7" x2="20" y2="7"/><line x1="10" y1="17" x2="20" y2="17"/></svg>)
-}
 // Settings = gear.
 function GearIcon() {
   return (<svg {...svgProps}><circle cx="12" cy="12" r="3.2"/><path d="M12 2.5v2M12 19.5v2M4.2 4.2l1.4 1.4M18.4 18.4l1.4 1.4M2.5 12h2M19.5 12h2M4.2 19.8l1.4-1.4M18.4 5.6l1.4-1.4"/></svg>)
+}
+// The icon for a bottom-bar entry — the gear for Settings, otherwise the tab's
+// own glyph (same set the side menu uses).
+function BottomBarGlyph({ id, size = 22 }) {
+  if (id === 'settings') return <GearIcon />
+  return <Glyph id={barItemMeta(id).glyph} size={size} />
+}
+// A drag handle (six dots) shown on each side-menu row — press it and drag the
+// item down onto the bottom bar.
+function GripIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true">
+      <circle cx="9" cy="6" r="1.6"/><circle cx="15" cy="6" r="1.6"/>
+      <circle cx="9" cy="12" r="1.6"/><circle cx="15" cy="12" r="1.6"/>
+      <circle cx="9" cy="18" r="1.6"/><circle cx="15" cy="18" r="1.6"/>
+    </svg>
+  )
 }
 
 // ── Mobile side-nav drawer ─────────────────────────────────────
@@ -168,8 +209,9 @@ function GearIcon() {
 // icons; the active section is highlighted. Always rendered so it can animate;
 // the `.open` class drives the slide + scrim fade, and it's display:none on
 // desktop (where the horizontal tab bar is used instead).
-function MobileNav({ open, onClose, tab, setTab, onOpenSettings }) {
+function MobileNav({ open, onClose, tab, setTab, onOpenSettings, bind, barItems }) {
   const go = (id) => { setTab(id); onClose() }
+  const onBar = (id) => barItems.includes(id)
   return (
     <>
       <div className={`mobile-nav-scrim ${open ? 'open' : ''}`} onClick={onClose} aria-hidden="true" />
@@ -180,17 +222,32 @@ function MobileNav({ open, onClose, tab, setTab, onOpenSettings }) {
         </div>
         <nav className="mobile-nav-list">
           {TABS.map(t => (
-            <button key={t.id} className={`mobile-nav-item ${tab===t.id ? 'active' : ''}`} onClick={() => go(t.id)}>
-              <span className="mobile-nav-icon"><Glyph id={t.glyph} size={21} /></span>
-              <span className="mobile-nav-label">{t.label}</span>
-              {tab===t.id && <span className="mobile-nav-active-dot" aria-hidden="true" />}
-            </button>
+            <div key={t.id} className={`mobile-nav-item ${tab===t.id ? 'active' : ''}`}>
+              <button className="mobile-nav-item-main" onClick={() => go(t.id)}>
+                <span className="mobile-nav-icon"><Glyph id={t.glyph} size={21} /></span>
+                <span className="mobile-nav-label">{t.label}</span>
+                {onBar(t.id) && <span className="mobile-nav-onbar" title="On your bottom bar">●</span>}
+                {tab===t.id && <span className="mobile-nav-active-dot" aria-hidden="true" />}
+              </button>
+              <span className="mobile-nav-grip" title="Drag onto the bottom bar" aria-label={`Drag ${t.label} onto the bottom bar`} {...bind(t.id, 'menu', 'grip')}>
+                <GripIcon />
+              </span>
+            </div>
           ))}
         </nav>
-        <button className="mobile-nav-settings" onClick={() => { onClose(); onOpenSettings() }}>
-          <span className="mobile-nav-icon"><GearIcon /></span>
-          <span className="mobile-nav-label">Settings</span>
-        </button>
+        <div className="mobile-nav-tip">
+          Press &amp; drag the <span style={{ verticalAlign:'middle' }}><GripIcon /></span> handle onto your bottom bar to add it. Drag an item off the bar to remove it.
+        </div>
+        <div className="mobile-nav-item mobile-nav-settings-row">
+          <button className="mobile-nav-item-main" onClick={() => { onClose(); onOpenSettings() }}>
+            <span className="mobile-nav-icon"><GearIcon /></span>
+            <span className="mobile-nav-label">Settings</span>
+            {onBar('settings') && <span className="mobile-nav-onbar" title="On your bottom bar">●</span>}
+          </button>
+          <span className="mobile-nav-grip" title="Drag onto the bottom bar" aria-label="Drag Settings onto the bottom bar" {...bind('settings', 'menu', 'grip')}>
+            <GripIcon />
+          </span>
+        </div>
       </aside>
     </>
   )
@@ -244,6 +301,123 @@ export default function App() {
   const setLayout  = useCallback(v  => { setLayoutState(v);  setLayoutPref(v);  applyLayout(v); pushPrefs() }, [])
   const setSound   = useCallback(on => { setSoundState(on);  setSoundEnabled(on); pushPrefs() }, [])
   const setSummary = useCallback(v  => { setSummaryState(v); setSummaryPref(v); pushPrefs() }, [])
+
+  // ── Customizable mobile bottom bar ───────────────────────────
+  // `barItems` is the ordered list of destinations shown in the phone bottom
+  // bar. Items are dragged in from the side menu and dragged off to remove;
+  // stored device-local like the last-open tab.
+  const [barItems, setBarItems] = useState(loadBottomBar)
+  const persistBar = useCallback((next) => { setBarItems(next); saveBottomBar(next) }, [])
+  // Live drag state for render (the ghost + drop preview); a ref mirrors it so
+  // the commit on pointer-up reads the latest without a stale closure.
+  const [drag, setDrag] = useState(null)
+  const dragLive = useRef(null)     // mirror of `drag` for commit
+  const dragPending = useRef(null)  // the in-flight press (may not be a drag yet)
+  // How tall a slice of the bottom of the screen counts as "over the bar" when
+  // deciding a drop — generous so dropping is forgiving.
+  const BAR_DROP_H = 96
+  const computeZone = useCallback((x, y, baseLen) => {
+    const overBar = y >= (window.innerHeight - BAR_DROP_H)
+    if (!overBar) return { overBar: false, index: null }
+    const slots = baseLen + 1
+    const slotW = window.innerWidth / slots
+    const index = Math.max(0, Math.min(baseLen, Math.floor(x / slotW)))
+    return { overBar: true, index }
+  }, [])
+  const startDragNow = (id, source, x, y) => {
+    const d = { id, source, x, y, overBar: false, index: null, removing: false }
+    dragLive.current = d
+    setDrag(d)
+    try { document.body.style.userSelect = 'none' } catch {}
+    try { navigator.vibrate && navigator.vibrate(8) } catch {}
+  }
+  const commitDrag = (cancel = false) => {
+    const d = dragLive.current
+    dragLive.current = null
+    setDrag(null)
+    try { document.body.style.userSelect = '' } catch {}
+    if (!d || cancel) return
+    const base = barItems.filter(x => x !== d.id)
+    if (d.overBar) {
+      const idx = Math.max(0, Math.min(base.length, d.index ?? base.length))
+      persistBar([...base.slice(0, idx), d.id, ...base.slice(idx)])
+    } else if (d.source === 'bar' && base.length >= 1) {
+      persistBar(base)   // dragged off the bar → remove (keep at least one)
+    }
+    // A menu item dropped off the bar just cancels — nothing changes.
+  }
+  const beginPress = (e, id, source, mode) => {
+    if (e.button != null && e.button !== 0) return
+    const pid = e.pointerId, sx = e.clientX, sy = e.clientY, el = e.currentTarget
+    const p = { id, source, mode, startX: sx, startY: sy, active: false, timer: null, el, pointerId: pid }
+    // 'hold' items (the bar's own buttons) also tap-to-navigate, so a drag only
+    // begins after a short press. 'grip' handles drag as soon as the finger moves.
+    if (mode === 'hold') {
+      p.timer = setTimeout(() => {
+        const cur = dragPending.current
+        if (!cur || cur.pointerId !== pid) return
+        cur.active = true
+        try { el.setPointerCapture(pid) } catch {}
+        startDragNow(id, source, sx, sy)
+      }, 240)
+    }
+    dragPending.current = p
+  }
+  const movePress = (e) => {
+    const p = dragPending.current
+    if (!p || p.pointerId !== e.pointerId) return
+    if (!p.active) {
+      const moved = Math.abs(e.clientX - p.startX) > 7 || Math.abs(e.clientY - p.startY) > 7
+      if (p.mode === 'grip') {
+        if (!moved) return
+        p.active = true
+        try { p.el.setPointerCapture(p.pointerId) } catch {}
+        startDragNow(p.id, p.source, e.clientX, e.clientY)
+      } else {
+        if (moved) { clearTimeout(p.timer); dragPending.current = null }  // a scroll/tap, not a drag
+        return
+      }
+    }
+    e.preventDefault()
+    const base = barItems.filter(x => x !== p.id)
+    const zone = computeZone(e.clientX, e.clientY, base.length)
+    const removing = p.source === 'bar' && !zone.overBar
+    const d = { id: p.id, source: p.source, x: e.clientX, y: e.clientY, overBar: zone.overBar, index: zone.index, removing }
+    dragLive.current = d
+    setDrag(d)
+  }
+  const endPress = (e) => {
+    const p = dragPending.current
+    if (!p || p.pointerId !== e.pointerId) return
+    if (p.timer) clearTimeout(p.timer)
+    const wasActive = p.active
+    dragPending.current = null
+    if (!wasActive) {
+      if (p.mode === 'hold') onTapItem(p.id, p.source)  // a plain tap on a bar button
+      return
+    }
+    try { p.el.releasePointerCapture(p.pointerId) } catch {}
+    commitDrag()
+  }
+  const cancelPress = (e) => {
+    const p = dragPending.current
+    if (!p || (e && p.pointerId !== e.pointerId)) return
+    if (p.timer) clearTimeout(p.timer)
+    if (p.active) commitDrag(true)
+    dragPending.current = null
+  }
+  const onTapItem = (id, source) => {
+    if (id === 'settings') { if (source === 'menu') setNavOpen(false); setSettingsOpen(true); return }
+    setSettingsOpen(false); setTab(id)
+    if (source === 'menu') setNavOpen(false)
+  }
+  const bindDrag = useCallback((id, source, mode) => ({
+    onPointerDown: (e) => beginPress(e, id, source, mode),
+    onPointerMove: (e) => movePress(e),
+    onPointerUp:   (e) => endPress(e),
+    onPointerCancel: (e) => cancelPress(e),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }), [barItems])
 
   // On load, pull the synced look & view prefs and apply them so this device
   // matches the others. localStorage already gave an instant look pre-paint;
@@ -969,28 +1143,66 @@ export default function App() {
         </div>
       )}
 
-      {/* Mobile side-nav drawer (phones only; CSS hides it on desktop) */}
+      {/* Mobile side-nav drawer (phones only; CSS hides it on desktop). Its
+          rows are drag sources — grab a grip and drag onto the bottom bar. */}
       <MobileNav open={navOpen} onClose={() => setNavOpen(false)}
-        tab={tab} setTab={setTab} onOpenSettings={() => setSettingsOpen(true)} />
+        tab={tab} setTab={setTab} onOpenSettings={() => setSettingsOpen(true)}
+        bind={bindDrag} barItems={barItems} />
 
-      {/* Mobile bottom tab bar (phones only) — Structured-style:
-          Inbox (unscheduled commitments) · Timeline (today) · Settings.
-          Everything else (Week, Calendar, Thoughts, Events, Recurring) lives
-          in the hamburger side menu, top-left. */}
-      <nav className="bottom-nav">
-        <button className={`bottom-nav-btn ${tab==='commitments' && !settingsOpen ? 'active' : ''}`} onClick={() => { setSettingsOpen(false); setTab('commitments') }}>
-          <span className="bottom-nav-icon"><InboxIcon /></span>
-          <span className="bottom-nav-label">Inbox</span>
-        </button>
-        <button className={`bottom-nav-btn ${tab==='today' && !settingsOpen ? 'active' : ''}`} onClick={() => { setSettingsOpen(false); setTab('today') }}>
-          <span className="bottom-nav-icon"><TimelineIcon /></span>
-          <span className="bottom-nav-label">Timeline</span>
-        </button>
-        <button className={`bottom-nav-btn ${settingsOpen ? 'active' : ''}`} onClick={() => setSettingsOpen(true)}>
-          <span className="bottom-nav-icon"><GearIcon /></span>
-          <span className="bottom-nav-label">Settings</span>
-        </button>
+      {/* Mobile bottom tab bar (phones only) — a user-arranged set of
+          destinations. Drag rows in from the side menu; long-press one and drag
+          it off to remove. Everything not on the bar still lives in the side
+          menu (top-left) and Settings is always reachable there. */}
+      <nav className={`bottom-nav ${drag ? 'dragging-src' : ''}`}>
+        {barItems.map(id => {
+          const m = barItemMeta(id)
+          const active = id === 'settings' ? settingsOpen : (tab === id && !settingsOpen)
+          return (
+            <button key={id} className={`bottom-nav-btn ${active ? 'active' : ''}`}
+              style={{ touchAction: 'none' }} {...bindDrag(id, 'bar', 'hold')}>
+              <span className="bottom-nav-icon"><BottomBarGlyph id={id} /></span>
+              <span className="bottom-nav-label">{m.label}</span>
+            </button>
+          )
+        })}
       </nav>
+
+      {/* Drag overlay — the floating item under the finger + a live preview of
+          where it will land on the bar (or a "release to remove" cue). */}
+      {drag && (() => {
+        const base = barItems.filter(x => x !== drag.id)
+        let list, activeIndex
+        if (drag.overBar) {
+          const i = Math.max(0, Math.min(base.length, drag.index ?? base.length))
+          list = [...base.slice(0, i), drag.id, ...base.slice(i)]
+          activeIndex = i
+        } else {
+          list = base; activeIndex = -1
+        }
+        const meta = barItemMeta(drag.id)
+        return (
+          <div className="bar-drag-layer">
+            <nav className="bottom-nav bar-drag-preview">
+              {list.map((id, i) => {
+                const m = barItemMeta(id)
+                return (
+                  <div key={id} className={`bottom-nav-btn ${i === activeIndex ? 'drop-target' : ''}`}>
+                    <span className="bottom-nav-icon"><BottomBarGlyph id={id} /></span>
+                    <span className="bottom-nav-label">{m.label}</span>
+                  </div>
+                )
+              })}
+            </nav>
+            {drag.removing && (
+              <div className="bar-remove-hint">Release to remove {meta.label}</div>
+            )}
+            <div className={`bar-drag-ghost ${drag.removing ? 'removing' : ''}`} style={{ left: drag.x, top: drag.y }}>
+              <span className="bottom-nav-icon"><BottomBarGlyph id={drag.id} /></span>
+              <span className="bottom-nav-label">{drag.removing ? 'Remove' : meta.label}</span>
+            </div>
+          </div>
+        )
+      })()}
     </div>
   )
 }
