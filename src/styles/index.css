@@ -492,6 +492,12 @@ textarea { resize: vertical; min-height: 160px; line-height: 1.6; }
   animation: panel-in .22s cubic-bezier(.2,.8,.3,1);
 }
 @keyframes panel-in { from { transform: translateY(-12px) scale(.98); opacity: .6; } to { transform: none; opacity: 1; } }
+/* Add-sheet title placeholder — follows the themed header's foreground via the
+   inline --title-ph var, so it never falls back to a clashing browser default. */
+.add-title-input::placeholder { color: var(--title-ph, rgba(255,255,255,.7)); opacity: 1; }
+.add-title-input::-webkit-input-placeholder { color: var(--title-ph, rgba(255,255,255,.7)); opacity: 1; }
+/* Add-Alert scroll wheels — hide the scrollbar so they read as spinners. */
+.alert-wheel::-webkit-scrollbar { display: none; }
 /* Today day wheel — a smooth horizontal scroller of days. Flicking it browses
    days freely (momentum + gentle snap); it never changes the selected day,
    only tapping a day does. Scrollbar hidden for a clean strip. */
