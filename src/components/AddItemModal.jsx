@@ -15,7 +15,7 @@ import { Icon } from './IconPicker.jsx'
 import ColorIconPicker from './ColorIconPicker.jsx'
 import ColorSwatchRow, { TASK_COLORS } from './ColorSwatchRow.jsx'
 import { suggestGlyph, iconColorOn } from '../lib/glyphs.jsx'
-import { LEAD_OPTIONS, getItemReminders, getItemSound, setItemSound, defaultLeadsLabel, leadsPhrase, getDefaultLeads } from '../lib/notifications.js'
+import { LEAD_OPTIONS, getItemReminders, getItemSound, setItemSound, defaultLeadsLabel, leadsPhrase, getDefaultLeads, leadLabel } from '../lib/notifications.js'
 import { SOUNDS, playSound } from '../lib/sounds.js'
 import { getDurationPresets, setDurationPresets, resetDurationPresets, parseDuration, durationLabel } from '../lib/durations.js'
 import { predictLabel } from '../lib/predictLabel.js'
@@ -56,6 +56,13 @@ function prettyDur(mins) {
   if (mins < 60) return `${mins} min`
   return mins % 60 === 0 ? `${mins/60} h` : `${(mins/60).toFixed(1)} h`
 }
+// A full name for one alert, for the alerts list ("At start of task",
+// "At end of task", "15 min before start").
+function alertName(val) {
+  if (val === 'end') return 'At end of task'
+  if (val === 0) return 'At start of task'
+  return `${leadLabel(val)} before start`
+}
 
 // ── Grouped detail-sheet building blocks (Structured-style) ────────
 const ROW_ACCENT = '#3E9C86'  // calm green for the row icons
@@ -81,6 +88,10 @@ const ClockIcon = () => (<svg viewBox="0 0 24 24" width="16" height="16" fill="n
 const TagIcon   = () => (<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20.5 13.3 12.7 21a2 2 0 0 1-2.8 0l-6.9-6.9a2 2 0 0 1-.6-1.4V4.5a2 2 0 0 1 2-2h7.2a2 2 0 0 1 1.4.6l7 7a2 2 0 0 1 0 2.6Z"/><circle cx="7.6" cy="7.6" r="1.3"/></svg>)
 const BellIcon  = () => (<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9a6 6 0 0 1 12 0c0 5.5 2.3 6.8 2.3 6.8H3.7S6 14.5 6 9Z"/><path d="M10 20a2 2 0 0 0 4 0"/></svg>)
 const PinIcon   = () => (<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 21s6-5.6 6-10.2A6 6 0 0 0 6 10.8C6 15.4 12 21 12 21Z"/><circle cx="12" cy="10.8" r="2.2"/></svg>)
+const PersonIcon = () => (<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="8" r="3.6"/><path d="M5.5 20a6.5 6.5 0 0 1 13 0"/></svg>)
+const StartAlertIcon = () => (<svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor" stroke="none" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>)
+const EndAlertIcon   = () => (<svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor" stroke="none" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2.5"/></svg>)
+const LeadAlertIcon  = () => (<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2M9 3h6"/></svg>)
 const BlockIcon = () => (<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="5" width="18" height="14" rx="2.5"/><path d="M3 9.5h18"/></svg>)
 
 // A tappable grouped-list row: [icon] main text … [hint] [chevron], with an
@@ -215,6 +226,9 @@ export default function AddItemModal({ existing = null, existingRecurring = null
   const [description, setDescription] = useState(existing?.description ?? rec?.note ?? '')
   const [subtasks, setSubtasks]   = useState(() => Array.isArray(existing?.subtasks) ? existing.subtasks : [])
   const [newSub, setNewSub]       = useState('')
+  // Who this commitment is to — "I told Sam I'd…". A one-off commitment field
+  // (recurring templates don't carry a person). Shown under More options.
+  const [person, setPerson]       = useState(existing?.person ?? '')
 
   // ── Duration ─────────────────────────────────────────────────
   // A task's length can come from an end time, a tapped preset, or a typed
@@ -402,10 +416,16 @@ export default function AddItemModal({ existing = null, existingRecurring = null
   const clearLocation = () => { setLocation(null); setLocErr('') }
   const locHasCoords = !!(location && typeof location.lat === 'number' && typeof location.lng === 'number')
 
-  const toggleLead = (mins) => {
-    // Choosing a specific lead switches this item off the global defaults.
-    if (useDefault) { setUseDefault(false); setReminders([mins]); return }
-    setReminders(prev => prev.includes(mins) ? prev.filter(m => m !== mins) : [...prev, mins].sort((a,b)=>b-a))
+  const toggleLead = (val) => {
+    // Choosing a specific alert switches this item off the global defaults. The
+    // 'end' value is the end-of-task alert; numeric values are leads before the
+    // start. Numeric leads stay sorted (soonest last); 'end' always trails.
+    const norm = (arr) => {
+      const nums = arr.filter(x => x !== 'end').sort((a,b)=>b-a)
+      return arr.includes('end') ? [...nums, 'end'] : nums
+    }
+    if (useDefault) { setUseDefault(false); setReminders(norm([val])); return }
+    setReminders(prev => norm(prev.includes(val) ? prev.filter(m => m !== val) : [...prev, val]))
   }
   const chooseDefault = () => { setUseDefault(true); setReminders([]) }
 
@@ -486,6 +506,7 @@ export default function AddItemModal({ existing = null, existingRecurring = null
       date: date || null,
       time: time || null,
       durationMins: durationMins || null,
+      person: person.trim() || null,
       cat: effectiveCats[0] || null,
       cats: effectiveCats,
       color: color || null,
@@ -851,6 +872,26 @@ export default function AddItemModal({ existing = null, existingRecurring = null
             {/* Reminders */}
             <DetailRow icon={<BellIcon />} text="Remind me" hint={remindText}
               open={expanded==='remind'} onClick={() => toggleRow('remind')}>
+              {/* Alerts list — the ones set for this item, each removable, like
+                  the phone's Alerts sheet. Only shown when this item has its own
+                  alerts (i.e. not riding the global default). */}
+              {!useDefault && reminders.length > 0 && (
+                <div style={{ marginBottom:12 }}>
+                  {reminders.map(val => (
+                    <div key={String(val)} style={{ display:'flex', alignItems:'center', gap:11, padding:'9px 2px', borderBottom:'1px solid #F1EDF2' }}>
+                      <span style={{ display:'inline-flex', color: val==='end' ? '#C77A4A' : ROW_ACCENT }}>
+                        {val==='end' ? <EndAlertIcon /> : val===0 ? <StartAlertIcon /> : <LeadAlertIcon />}
+                      </span>
+                      <span style={{ flex:1, minWidth:0, fontSize:14, color:'var(--text)' }}>{alertName(val)}</span>
+                      <button onClick={() => toggleLead(val)} aria-label={`Remove ${alertName(val)}`}
+                        style={{ border:'none', background:'none', cursor:'pointer', color:'#B4BEC8', fontSize:17, lineHeight:1, padding:'0 4px' }}>✕</button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {/* Add an alert — Default (the global set), a lead before the start,
+                  at the start, or when the task ends. */}
+              <div style={{ fontSize:10, color:'var(--muted)', letterSpacing:1, textTransform:'uppercase', marginBottom:6 }}>Add an alert</div>
               <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
                 <button onClick={chooseDefault}
                   style={{ fontSize:11, padding:'5px 12px', borderRadius:20, cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:600, border: useDefault ? 'none' : '1px solid var(--border)', background: useDefault ? 'var(--forest)' : 'white', color: useDefault ? 'var(--green-light)' : 'var(--muted)' }}>
@@ -872,11 +913,23 @@ export default function AddItemModal({ existing = null, existingRecurring = null
                     </button>
                   )
                 })}
+                {/* End-of-task alert — fires when the task's window closes. */}
+                {(() => {
+                  const on = !useDefault && reminders.includes('end')
+                  return (
+                    <button onClick={() => toggleLead('end')}
+                      style={{ fontSize:11, padding:'5px 12px', borderRadius:20, cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight: on ? 700 : 600,
+                        border: on ? 'none' : '1px solid var(--border)', background: on ? 'var(--forest)' : 'white', color: on ? 'var(--green-light)' : 'var(--muted)' }}>
+                      {on ? '✓ ' : ''}When it ends
+                    </button>
+                  )
+                })()}
               </div>
               <div style={{ fontSize:10.5, color:'var(--muted)', marginTop:7 }}>
                 {useDefault ? `Default reminders: ${defaultLeadsLabel()} (change in Settings → Reminders).`
                   : reminders.length ? `This item only: ${leadsPhrase(reminders, ', ')}.`
                   : 'No reminders for this item.'}
+                {!useDefault && reminders.includes('end') && !durationMins && ' · Set a duration so the end alert has a time.'}
               </div>
               {/* Sound — tap to choose + preview */}
               <div style={{ fontSize:10, color:'var(--muted)', letterSpacing:1, textTransform:'uppercase', margin:'14px 0 6px' }}>Sound</div>
@@ -893,6 +946,20 @@ export default function AddItemModal({ existing = null, existingRecurring = null
               </div>
               <div style={{ fontSize:10.5, color:'var(--muted)', marginTop:6 }}>Plays in-app when a reminder fires. Your phone controls the system notification sound.</div>
             </DetailRow>
+            {/* Who you committed to — a one-off commitment field (not part of a
+                recurring template). "I told Sam I'd send it." */}
+            {!!onSave && !isRecEdit && <>
+              <RowDivider />
+              <DetailRow icon={<PersonIcon />}
+                text={person.trim() ? `With ${person.trim()}` : 'Who you committed to'} textMuted={!person.trim()}
+                open={expanded==='person'} onClick={() => toggleRow('person')}>
+                <div style={{ fontSize:11.5, color:'var(--muted)', lineHeight:1.5, marginBottom:8 }}>
+                  Optional — the person you made this commitment to. Shows on the card so you remember who's counting on it.
+                </div>
+                <input value={person} onChange={e => setPerson(e.target.value)} placeholder="e.g. Sam, Mom, my manager…"
+                  style={{ ...inp }} />
+              </DetailRow>
+            </>}
             {/* Location — a place that auto-starts this task when you arrive.
                 Offered for one-off commitments (not recurring templates). */}
             {(!!onSave || !!onSaveRecurring) && geolocationSupported() && <>

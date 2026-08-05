@@ -49,8 +49,10 @@ export function getDefaultLeads() {
   const raw = getSettings().leads
   return Array.isArray(raw) && raw.length ? raw : DEFAULT_LEADS
 }
-// A short human label for one lead time in minutes ("1 day", "45 min").
+// A short human label for one lead time in minutes ("1 day", "45 min"). The
+// special value 'end' means "when the task ends" rather than a lead before it.
 export function leadLabel(mins) {
+  if (mins === 'end') return 'when it ends'
   const opt = LEAD_OPTIONS.find(o => o.mins === mins)
   if (opt) return opt.label
   if (mins % (24 * 60) === 0) { const d = mins / (24 * 60); return `${d} day${d > 1 ? 's' : ''}` }
@@ -64,12 +66,14 @@ export function leadLabel(mins) {
 // "1 hour before & right when it starts".
 export function leadsPhrase(leads, joiner = ' & ') {
   if (!Array.isArray(leads) || !leads.length) return 'No alerts'
-  const sorted = leads.slice().sort((a, b) => b - a)
-  const before = sorted.filter(m => m > 0).map(leadLabel)
-  const atStart = sorted.some(m => m <= 0)
+  const nums = leads.filter(m => m !== 'end').sort((a, b) => b - a)
+  const before = nums.filter(m => m > 0).map(leadLabel)
+  const atStart = nums.some(m => m <= 0)
+  const atEnd = leads.includes('end')
   const parts = []
   if (before.length) parts.push(before.join(joiner) + ' before')
   if (atStart) parts.push('right when it starts')
+  if (atEnd) parts.push('when it ends')
   return parts.join(' & ')
 }
 // The default lead times as a single readable phrase, e.g. "1 day & 1 hour before".
@@ -128,9 +132,10 @@ export function setItemSound(id, sound) {
 }
 
 // Leads for a specific item: its override if set, otherwise the global list.
+// An 'end' entry becomes an end-of-task alert (fires at start + duration).
 function leadsForItem(id, globalLeads) {
   const override = getItemReminders(id)
-  if (override) return override.map(m => ({ mins: m, key: `m${m}` }))
+  if (override) return override.map(m => m === 'end' ? { end: true, key: 'end' } : { mins: m, key: `m${m}` })
   return globalLeads
 }
 
@@ -291,12 +296,26 @@ function buildReminders(events = [], commitments = [], recurring = []) {
   // `leadId` (when given) picks per-item reminder overrides while `id` stays
   // the unique fired-bookkeeping key — recurring occurrences share a template's
   // lead settings but need a per-date id so each day fires once.
-  const push = (item, startMs, name, body) => {
+  const push = (item, startMs, name, body, durMins) => {
     for (const lead of leadsForItem(item.leadId || item.id, globalLeads)) {
+      if (lead.end) {
+        // End-of-task alert — fires when the task's window closes. Needs a known
+        // duration; skip silently for items without one.
+        if (!durMins) continue
+        out.push({
+          id: `${item.id}:end`,
+          name, kind: 'end',
+          body: `${name} — time's up`,
+          at: startMs + durMins * 60 * 1000,
+          startMs, leadKey: 'end', url: BASE,
+        })
+        continue
+      }
       const at = startMs - lead.mins * 60 * 1000
       out.push({
         id: `${item.id}:${lead.key}`,
         name,          // heading is built at fire time from how far off the start is
+        kind: 'start',
         body,
         at,
         startMs,
@@ -313,7 +332,7 @@ function buildReminders(events = [], commitments = [], recurring = []) {
     const startMs = toEpoch(c.date, c.time)
     if (startMs == null) continue
     const timeLabel = c.time ? ` at ${fmt12(c.time)}` : ''
-    push(c, startMs, c.text || 'Commitment', `${dateLabel(c.date)}${timeLabel}`)
+    push(c, startMs, c.text || 'Commitment', `${dateLabel(c.date)}${timeLabel}`, c.durationMins)
   }
 
   // Events: multi-day. Remind before the start. All-day → 9:00 AM.
@@ -333,7 +352,7 @@ function buildReminders(events = [], commitments = [], recurring = []) {
     if (!r || !r.date || !r.time) continue
     const startMs = toEpoch(r.date, r.time)
     if (startMs == null) continue
-    push({ id: r.id, leadId: r.leadId }, startMs, r.text || 'Task', `${dateLabel(r.date)} at ${fmt12(r.time)}`)
+    push({ id: r.id, leadId: r.leadId }, startMs, r.text || 'Task', `${dateLabel(r.date)} at ${fmt12(r.time)}`, r.durationMins)
   }
 
   return out
@@ -370,8 +389,10 @@ export function syncReminders(events, commitments, recurring = []) {
   const liveTags = new Set()
 
   for (const r of reminders) {
-    // Don't bother reminding about something that has already started.
-    if (r.startMs <= now) {
+    // Don't bother reminding about something that has already started — but an
+    // end-of-task alert fires at the END, so it's judged by its own moment (r.at)
+    // below, not by whether the task has started.
+    if (r.kind !== 'end' && r.startMs <= now) {
       if (!fired[r.id]) { fired[r.id] = now; firedChanged = true }
       continue
     }
@@ -416,6 +437,7 @@ export function syncReminders(events, commitments, recurring = []) {
 // catch-up reminder that pops late — or one pre-scheduled with a trigger —
 // still reads accurately. `atMs` is when it fires (defaults to now).
 function headingFor(reminder, atMs = Date.now()) {
+  if (reminder.kind === 'end') return `⏹ Time's up: ${reminder.name}`
   if (!reminder.startMs) return reminder.name || '🌸 Bloom'
   const mins = Math.round((reminder.startMs - atMs) / 60000)
   let when

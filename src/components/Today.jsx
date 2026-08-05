@@ -995,12 +995,17 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
   // day. They aren't tasks; tasks whose start time lands inside one get its
   // film + label (see bandOf). Excluded from the task list below. Come from both
   // one-off commitments and repeating time blocks (e.g. Work every weekday).
+  // A block with no explicit color inherits its category's color (the "From
+  // label" choice in the editor), falling back to a neutral slate only when it
+  // has no category at all — so it renders as the color shown while editing it,
+  // not a fixed grey.
+  const catColorOf = (catId) => (categories || []).find(x => x.id === catId)?.color || TAG_COLORS[catId] || null
   const blocks = [
     ...todayCommitments.filter(c => c.block && c.time && c.durationMins)
-      .map(c => ({ id:c.id, label:(c.text||'').trim(), color: c.color || '#8AA0B8', icon: c.icon || null, cat: c.cat || null, isCommitment:true,
+      .map(c => ({ id:c.id, label:(c.text||'').trim(), color: c.color || catColorOf(c.cat) || '#8AA0B8', icon: c.icon || null, cat: c.cat || null, isCommitment:true,
         start: hhmmToMins(c.time), end: hhmmToMins(c.time) + c.durationMins })),
     ...templateTodos.filter(o => o.block && o._time && o._dur)
-      .map(o => ({ id:o.id, label:(o.title||o.text||'').trim(), color: o.color || '#8AA0B8', icon: o.icon || null, cat: o.cat || o.tag || null, isCommitment:false,
+      .map(o => ({ id:o.id, label:(o.title||o.text||'').trim(), color: o.color || catColorOf(o.cat || o.tag) || '#8AA0B8', icon: o.icon || null, cat: o.cat || o.tag || null, isCommitment:false,
         start: hhmmToMins(o._time), end: hhmmToMins(o._time) + o._dur })),
   ]
   // A block whose window has fully passed today reads as "done" — and folds up
