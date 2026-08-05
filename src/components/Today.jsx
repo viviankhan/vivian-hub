@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { recurringOccurrencesForDate, taskProgress, occKey } from '../lib/occurrences.js'
 import { findSlots } from '../lib/scheduler.js'
 import { getRoutines } from '../lib/storage.js'
@@ -720,6 +720,12 @@ function NowMarker({ now, bandTint = null, bandOpacity = 0.5 }) {
 function ymd(d) {
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
 }
+// Shift a YYYY-MM-DD key by `delta` days (noon anchor dodges DST edges).
+function addDays(key, delta) {
+  const d = new Date(key + 'T12:00:00')
+  d.setDate(d.getDate() + delta)
+  return ymd(d)
+}
 function WeekStrip({ viewDate, setViewDate, commitments, categories, doneCount, total, dayProgress, isToday, summary, todos, recurringTasks, recurringExceptions }) {
   const today = todayKey()
   const base = new Date(viewDate + 'T12:00:00')
@@ -1316,8 +1322,41 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
     if (appendLog) appendLog({ date:dateKey, dateLabel:todayLabel(), label:'Rescheduled: ' + task.label + ' → ' + date + (time ? ' @ ' + fmt12(time) : ''), tag:'rescheduled', ts:new Date().toISOString() })
   }
 
+  // ── Swipe between days ────────────────────────────────────────
+  // On mobile you can slide the timeline left/right to move a day at a time —
+  // left goes forward (tomorrow), right goes back (yesterday), matching the
+  // week strip. We only navigate on a mostly-horizontal, quick, far-enough
+  // flick, so vertical scrolling of the timeline is untouched. A day-nudge
+  // animation gives the swipe a bit of physical feedback.
+  const swipe = useRef({ x: 0, y: 0, t: 0, active: false })
+  const [slideDir, setSlideDir] = useState(0)  // -1 = came from left, 1 = from right, 0 = idle
+  const anyModalOpen = !!(managing || editing || editingRec || focusTask || addingTask || shiftPlan || shiftDayOpen)
+  const goDay = (delta) => {
+    setViewDate(d => addDays(d, delta))
+    setSlideDir(delta > 0 ? 1 : -1)
+    setTimeout(() => setSlideDir(0), 240)
+  }
+  const onTouchStart = (e) => {
+    if (anyModalOpen || e.touches.length !== 1) { swipe.current.active = false; return }
+    const t = e.touches[0]
+    swipe.current = { x: t.clientX, y: t.clientY, t: Date.now(), active: true }
+  }
+  const onTouchEnd = (e) => {
+    if (!swipe.current.active) return
+    swipe.current.active = false
+    const t = e.changedTouches[0]
+    const dx = t.clientX - swipe.current.x
+    const dy = t.clientY - swipe.current.y
+    const dt = Date.now() - swipe.current.t
+    // Mostly-horizontal, > 60px, faster than 600ms → a deliberate day swipe.
+    if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.6 && dt < 600) {
+      goDay(dx < 0 ? 1 : -1)
+    }
+  }
+
   return (
-    <div>
+    <div onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
+      <div key={viewDate} style={slideDir ? { animation:`todaySlide${slideDir>0?'Next':'Prev'} .24s ease` } : undefined}>
       {/* Structured-style header: big date + week strip + progress bar */}
       <WeekStrip
         viewDate={viewDate} setViewDate={setViewDate}
@@ -1539,6 +1578,7 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
           open={nightOpen} setOpen={setNightOpen}
           routineDone={routineDone} toggleRoutine={toggleRoutine} />
       )}
+      </div>
 
       {/* FAB — position lives in CSS (.today-fab) so it can lift above the
           mobile bottom bar; inline styles would otherwise override it. */}

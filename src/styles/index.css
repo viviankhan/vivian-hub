@@ -492,6 +492,9 @@ textarea { resize: vertical; min-height: 160px; line-height: 1.6; }
   animation: panel-in .22s cubic-bezier(.2,.8,.3,1);
 }
 @keyframes panel-in { from { transform: translateY(-12px) scale(.98); opacity: .6; } to { transform: none; opacity: 1; } }
+/* Today day-swipe: the new day slides in from the direction you flicked. */
+@keyframes todaySlideNext { from { transform: translateX(28px); opacity: .4; } to { transform: none; opacity: 1; } }
+@keyframes todaySlidePrev { from { transform: translateX(-28px); opacity: .4; } to { transform: none; opacity: 1; } }
 .search-bar { display: flex; align-items: center; gap: 10px; padding: 14px 16px; border-bottom: 1px solid #EDE7EF; }
 .search-bar svg { width: 20px; height: 20px; color: var(--sea-deep); flex-shrink: 0; }
 .search-bar input { border: none; background: none; font-size: 16px; padding: 4px 0; flex: 1; color: var(--text); }
