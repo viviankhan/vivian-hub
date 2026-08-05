@@ -15,7 +15,7 @@ import { Icon } from './IconPicker.jsx'
 import ColorIconPicker from './ColorIconPicker.jsx'
 import ColorSwatchRow, { TASK_COLORS } from './ColorSwatchRow.jsx'
 import { suggestGlyph, iconColorOn } from '../lib/glyphs.jsx'
-import { LEAD_OPTIONS, getItemReminders, getItemSound, setItemSound, defaultLeadsLabel, leadLabel, getDefaultLeads } from '../lib/notifications.js'
+import { LEAD_OPTIONS, getItemReminders, getItemSound, setItemSound, defaultLeadsLabel, leadsPhrase, getDefaultLeads } from '../lib/notifications.js'
 import { SOUNDS, playSound } from '../lib/sounds.js'
 import { getDurationPresets, setDurationPresets, resetDurationPresets, parseDuration, durationLabel } from '../lib/durations.js'
 import { predictLabel } from '../lib/predictLabel.js'
@@ -525,7 +525,7 @@ export default function AddItemModal({ existing = null, existingRecurring = null
   // reminded — "1 day & 1 hour before" — instead of an opaque "Default".
   const baseRemind = useDefault
     ? defaultLeadsLabel()
-    : (reminders.length ? reminders.slice().sort((a,b)=>b-a).map(leadLabel).join(', ') + ' before' : 'No alerts')
+    : (reminders.length ? leadsPhrase(reminders, ', ') : 'No alerts')
   const soundLabel = (SOUNDS.find(s => s.id === sound) || {}).label || 'Chime'
   const remindText = sound === 'none' ? baseRemind : `${baseRemind} · ${soundLabel}`
   // One-line summary for the collapsed Repeat row.
@@ -874,7 +874,7 @@ export default function AddItemModal({ existing = null, existingRecurring = null
               </div>
               <div style={{ fontSize:10.5, color:'var(--muted)', marginTop:7 }}>
                 {useDefault ? `Default reminders: ${defaultLeadsLabel()} (change in Settings → Reminders).`
-                  : reminders.length ? `This item only: ${reminders.map(m => LEAD_OPTIONS.find(o => o.mins===m)?.label || m+'m').join(', ')} before.`
+                  : reminders.length ? `This item only: ${leadsPhrase(reminders, ', ')}.`
                   : 'No reminders for this item.'}
               </div>
               {/* Sound — tap to choose + preview */}
