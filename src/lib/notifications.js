@@ -443,13 +443,14 @@ function headingFor(reminder, atMs = Date.now()) {
   const mins = Math.round((reminder.startMs - atMs) / 60000)
   // At (or past) the start — the start alert reads as the task starting now.
   if (mins <= 0) return `${reminder.name} starting now`
+  // Lead reminders read as "<task> in 15 min" / "<task> tomorrow".
   let when
-  if (mins < 60)          when = `In ${mins} min`
-  else if (mins < 120)    when = 'In 1 hour'
-  else if (mins < 24 * 60) when = `In ${Math.round(mins / 60)} hours`
-  else if (mins < 48 * 60) when = 'Tomorrow'
-  else                    when = `In ${Math.round(mins / 60 / 24)} days`
-  return `${when}: ${reminder.name}`
+  if (mins < 60)          when = `in ${mins} min`
+  else if (mins < 120)    when = 'in 1 hour'
+  else if (mins < 24 * 60) when = `in ${Math.round(mins / 60)} hours`
+  else if (mins < 48 * 60) when = 'tomorrow'
+  else                    when = `in ${Math.round(mins / 60 / 24)} days`
+  return `${reminder.name} ${when}`
 }
 
 // Called once when the user first turns reminders on: mark every reminder
