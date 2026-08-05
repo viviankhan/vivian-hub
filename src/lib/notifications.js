@@ -305,7 +305,7 @@ function buildReminders(events = [], commitments = [], recurring = []) {
         out.push({
           id: `${item.id}:end`,
           name, kind: 'end',
-          body: `${name} — time's up`,
+          body: 'Time to wrap up.',
           at: startMs + durMins * 60 * 1000,
           startMs, leadKey: 'end', url: BASE,
         })
@@ -437,12 +437,14 @@ export function syncReminders(events, commitments, recurring = []) {
 // catch-up reminder that pops late — or one pre-scheduled with a trigger —
 // still reads accurately. `atMs` is when it fires (defaults to now).
 function headingFor(reminder, atMs = Date.now()) {
-  if (reminder.kind === 'end') return `⏹ Time's up: ${reminder.name}`
+  // End-of-task alert reads as the task finishing right now.
+  if (reminder.kind === 'end') return `${reminder.name} finishing now`
   if (!reminder.startMs) return reminder.name || '🌸 Bloom'
   const mins = Math.round((reminder.startMs - atMs) / 60000)
+  // At (or past) the start — the start alert reads as the task starting now.
+  if (mins <= 0) return `${reminder.name} starting now`
   let when
-  if (mins <= 0)          when = 'Now'
-  else if (mins < 60)     when = `In ${mins} min`
+  if (mins < 60)          when = `In ${mins} min`
   else if (mins < 120)    when = 'In 1 hour'
   else if (mins < 24 * 60) when = `In ${Math.round(mins / 60)} hours`
   else if (mins < 48 * 60) when = 'Tomorrow'
