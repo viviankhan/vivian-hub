@@ -56,6 +56,13 @@ function fmtMins(m) {
   if (m<60) return `${m}m`
   return `${Math.floor(m/60)}h ${m%60>0?m%60+'m':''}`
 }
+// "a" vs "an" for a spoken duration — the leading number decides it (8, 11 and
+// 18 start with a vowel sound: "an 8m break", "an 18m break"). Durations here
+// top out well under 80, so those three cases cover it.
+function artForMins(m) {
+  const lead = m >= 60 ? Math.floor(m/60) : m
+  return (lead === 8 || lead === 11 || lead === 18) ? 'an' : 'a'
+}
 function fmtTimeLabel(mins) {
   const h=Math.floor(mins/60), m=mins%60
   return `${h%12||12}:${String(m).padStart(2,'0')} ${h>=12?'PM':'AM'}`
@@ -436,7 +443,13 @@ function BlockBand({ seg, onEdit, onAdd, onCollapse }) {
   )
 }
 
-function GapRow({ mins, prevColor, nextColor, routineTint, routineOpacity = 0.5, onAdd }) {
+// A break between two tasks, aware of where "now" sits in it:
+//  • future — hasn't started: offers the full break ("Take a X break" / "Do
+//    something during this X break?").
+//  • active — now is inside it: the time counts down to what's LEFT.
+//  • past   — now is beyond it (or a past day): it becomes "Took a/an X break",
+//    muted, no Add Task (the moment has gone by with nothing scheduled).
+function GapRow({ mins, phase = 'future', remaining = mins, prevColor, nextColor, routineTint, routineOpacity = 0.5, onAdd }) {
   // Proportional to real clock time, on the same scale as tasks and bands.
   const h = Math.max(18, Math.round(spanHeight(mins)))
   const top = prevColor || '#C9C9D3'
@@ -446,13 +459,20 @@ function GapRow({ mins, prevColor, nextColor, routineTint, routineOpacity = 0.5,
   // at the bottom. A vertical color gradient paints the ink; a repeating mask
   // cuts it into dashes (‑webkit‑ prefix for iOS Safari / the PWA).
   const dashMask = 'repeating-linear-gradient(black 0 5px, transparent 5px 11px)'
-  const durLabel = fmtMins(mins).trim()
+  const isPast   = phase === 'past'
+  const isActive = phase === 'active'
+  // While the break is running, the shown length is the time still LEFT (so it
+  // ticks down); otherwise it's the whole break.
+  const shownMins = isActive ? Math.max(1, remaining) : mins
+  const durLabel = fmtMins(shownMins).trim()
   // A short gap (≤ 10 min) reads as a rest — "take a X min break", minimal, no
   // pressure to fill it. Anything longer offers to put the time to use with a
-  // "do something during this X break?" prompt + Add Task.
+  // "do something during this X break?" prompt + Add Task. A past break shows
+  // as a single quiet line regardless of length.
   const isBreak = mins <= 10
+  const compact = isPast || isBreak
   return (
-    <div className="today-gap" style={{ position:'relative', zIndex:0, display:'flex', gap:0, alignItems: isBreak?'center':'flex-start' }}>
+    <div className="today-gap" style={{ position:'relative', zIndex:0, display:'flex', gap:0, alignItems: compact?'center':'flex-start', opacity: isPast?0.6:1 }}>
       {/* Continue a routine's film through the gap between two same-routine
           tasks, square-edged so it butts flush against the pills above/below. */}
       {routineTint && (
@@ -462,16 +482,29 @@ function GapRow({ mins, prevColor, nextColor, routineTint, routineOpacity = 0.5,
       <div style={{ width:52, flexShrink:0, display:'flex', justifyContent:'center' }}>
         <div style={{ width:3, minHeight:h, borderRadius:3, background:`linear-gradient(to bottom, ${top}, ${bot})`, WebkitMask:dashMask, mask:dashMask }} />
       </div>
-      {isBreak ? (
+      {isPast ? (
         <div style={{ flex:1, minWidth:0, paddingLeft:10, display:'flex', alignItems:'center', gap:7 }}>
           <span style={{ display:'flex', flexShrink:0 }}><Icon value="glyph:clock" size={15} color="#9AA6B2" /></span>
-          <span style={{ fontSize:12.5, color:'var(--muted)', whiteSpace:'nowrap' }}>Take a <b style={{ color:'var(--teal)' }}>{durLabel}</b> break</span>
+          <span style={{ fontSize:12.5, color:'var(--muted)', whiteSpace:'nowrap' }}>Took {artForMins(mins)} <b>{durLabel}</b> break</span>
+        </div>
+      ) : compact ? (
+        <div style={{ flex:1, minWidth:0, paddingLeft:10, display:'flex', alignItems:'center', gap:7 }}>
+          <span style={{ display:'flex', flexShrink:0 }}><Icon value="glyph:clock" size={15} color="#9AA6B2" /></span>
+          <span style={{ fontSize:12.5, color:'var(--muted)', whiteSpace:'nowrap' }}>
+            {isActive
+              ? <><b style={{ color:'var(--teal)' }}>{durLabel}</b> left in your break</>
+              : <>Take {artForMins(mins)} <b style={{ color:'var(--teal)' }}>{durLabel}</b> break</>}
+          </span>
         </div>
       ) : (
         <div style={{ flex:1, minWidth:0, paddingLeft:8, paddingTop:4 }}>
           <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:9 }}>
             <span style={{ display:'flex', flexShrink:0 }}><Icon value="glyph:clock" size={16} color="#9AA6B2" /></span>
-            <span style={{ fontSize:13, color:'var(--muted)' }}>Do something during this <b style={{ color:'var(--teal)' }}>{durLabel}</b> break?</span>
+            <span style={{ fontSize:13, color:'var(--muted)' }}>
+              {isActive
+                ? <><b style={{ color:'var(--teal)' }}>{durLabel}</b> left — do something?</>
+                : <>Do something during this <b style={{ color:'var(--teal)' }}>{durLabel}</b> break?</>}
+            </span>
           </div>
           <button onClick={onAdd}
             style={{ display:'inline-flex', alignItems:'center', gap:5, fontSize:12, padding:'6px 14px', borderRadius:18, border:'none', background:'#E7F3F6', color:'var(--teal)', fontWeight:600, cursor:'pointer', fontFamily:'DM Sans,sans-serif' }}>
@@ -1460,7 +1493,18 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
           // Capture this gap's real clock window so its "Add Task" can pre-fill a
           // task that fills the break (minus a transition on each side).
           const gapStart = cur.end, gapEnd = startMins
-          return <GapRow key={'gap-'+cur.end+'-'+startMins} mins={g} prevColor={cur.color} nextColor={nextColor}
+          // Where "now" sits in the break: it counts down while you're in it and
+          // becomes "took a break" once it's gone by. A wholly-past day reads as
+          // past; other days stay future (no live clock to count against).
+          let phase = 'future', remaining = g
+          if (isToday) {
+            if (now >= gapEnd) phase = 'past'
+            else if (now >= gapStart) { phase = 'active'; remaining = gapEnd - now }
+          } else if (isPastDay) {
+            phase = 'past'
+          }
+          return <GapRow key={'gap-'+cur.end+'-'+startMins} mins={g} phase={phase} remaining={remaining}
+            prevColor={cur.color} nextColor={nextColor}
             routineTint={tint || null} routineOpacity={tint ? BLOCK_FILM_OPACITY : 0.5} onAdd={()=>addInGap(gapStart, gapEnd)} />
         }
         const advance = (endMins, color, band=null) => {
