@@ -92,6 +92,7 @@ const PersonIcon = () => (<svg viewBox="0 0 24 24" width="16" height="16" fill="
 const StartAlertIcon = () => (<svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor" stroke="none" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>)
 const EndAlertIcon   = () => (<svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor" stroke="none" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2.5"/></svg>)
 const LeadAlertIcon  = () => (<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2M9 3h6"/></svg>)
+const MoreIcon = () => (<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="17" x2="20" y2="17"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="16" cy="17" r="2"/></svg>)
 const BlockIcon = () => (<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="5" width="18" height="14" rx="2.5"/><path d="M3 9.5h18"/></svg>)
 
 // A tappable grouped-list row: [icon] main text … [hint] [chevron], with an
@@ -229,6 +230,13 @@ export default function AddItemModal({ existing = null, existingRecurring = null
   // Who this commitment is to — "I told Sam I'd…". A one-off commitment field
   // (recurring templates don't carry a person). Shown under More options.
   const [person, setPerson]       = useState(existing?.person ?? '')
+  // The secondary settings (time block, alerts, person, location) collapse under
+  // a "More options" button so the sheet stays short. Auto-open when editing
+  // something that already uses one of them, so nothing set is hidden.
+  const [moreOpen, setMoreOpen]   = useState(() => {
+    const it = existing || rec
+    return !!(it && (it.block || it.person || it.location || getItemReminders(it.id)))
+  })
 
   // ── Duration ─────────────────────────────────────────────────
   // A task's length can come from an end time, a tapped preset, or a typed
@@ -636,21 +644,6 @@ export default function AddItemModal({ existing = null, existingRecurring = null
         <div style={{ padding:'16px 14px calc(20px + env(safe-area-inset-bottom))' }}>
           {/* ── Scheduling rows ───────────────────────────────── */}
           <div style={card}>
-            {/* Time block toggle — turns this into a labeled background container */}
-            {(!!onSave || !!onSaveRecurring) && <>
-              <div style={{ display:'flex', alignItems:'center', gap:12, padding:'13px 15px' }}>
-                <IconCircle color={ROW_ACCENT}><BlockIcon /></IconCircle>
-                <div style={{ flex:1, minWidth:0 }}>
-                  <div style={{ fontSize:15, fontWeight:500, color:'var(--text)' }}>Time block</div>
-                  <div style={{ fontSize:11, color:'var(--muted)', marginTop:1, lineHeight:1.35 }}>A labeled band behind the day (e.g. Work). Tasks scheduled inside its time stay normal.</div>
-                </div>
-                <button type="button" onClick={() => setBlock(b => !b)} aria-pressed={block}
-                  style={{ width:46, height:27, borderRadius:14, border:'none', cursor:'pointer', padding:3, flexShrink:0, background: block ? 'var(--forest)' : '#CBD2DA', transition:'background .2s', display:'flex', justifyContent: block ? 'flex-end' : 'flex-start' }}>
-                  <span style={{ width:21, height:21, borderRadius:'50%', background:'white', boxShadow:'0 1px 3px rgba(0,0,0,.28)' }} />
-                </button>
-              </div>
-              <RowDivider />
-            </>}
             {/* Date */}
             <DetailRow icon={<CalIcon />} text={date ? prettyDate(date) : 'Add a date'} textMuted={!date}
               hint={relativeDay(date)} open={expanded==='date'}
@@ -868,6 +861,35 @@ export default function AddItemModal({ existing = null, existingRecurring = null
                 {color ? 'Match label color' : '✓ Matching label color'}
               </button>
             </DetailRow>
+            {/* More options — the secondary settings (time block, alerts, who you
+                committed to, location) tuck under here so the sheet stays short
+                by default. */}
+            <RowDivider />
+            <div onClick={() => setMoreOpen(o => !o)}
+              style={{ display:'flex', alignItems:'center', gap:12, padding:'13px 15px', cursor:'pointer', userSelect:'none' }}>
+              <IconCircle color={ROW_ACCENT}><MoreIcon /></IconCircle>
+              <span style={{ flex:1, minWidth:0, fontSize:15, fontWeight:500, color:'var(--text)' }}>More options</span>
+              <span style={{ marginLeft:'auto', display:'inline-flex', alignItems:'center', gap:7, flexShrink:0 }}>
+                {!moreOpen && <span style={{ fontSize:12.5, color:'var(--muted)', whiteSpace:'nowrap' }}>Alerts, block, location…</span>}
+                <Chevron open={moreOpen} />
+              </span>
+            </div>
+            {moreOpen && <>
+              {/* Time block toggle — turns this into a labeled background container */}
+              {(!!onSave || !!onSaveRecurring) && <>
+                <RowDivider />
+                <div style={{ display:'flex', alignItems:'center', gap:12, padding:'13px 15px' }}>
+                  <IconCircle color={ROW_ACCENT}><BlockIcon /></IconCircle>
+                  <div style={{ flex:1, minWidth:0 }}>
+                    <div style={{ fontSize:15, fontWeight:500, color:'var(--text)' }}>Time block</div>
+                    <div style={{ fontSize:11, color:'var(--muted)', marginTop:1, lineHeight:1.35 }}>A labeled band behind the day (e.g. Work). Tasks scheduled inside its time stay normal.</div>
+                  </div>
+                  <button type="button" onClick={() => setBlock(b => !b)} aria-pressed={block}
+                    style={{ width:46, height:27, borderRadius:14, border:'none', cursor:'pointer', padding:3, flexShrink:0, background: block ? 'var(--forest)' : '#CBD2DA', transition:'background .2s', display:'flex', justifyContent: block ? 'flex-end' : 'flex-start' }}>
+                    <span style={{ width:21, height:21, borderRadius:'50%', background:'white', boxShadow:'0 1px 3px rgba(0,0,0,.28)' }} />
+                  </button>
+                </div>
+              </>}
             <RowDivider />
             {/* Reminders */}
             <DetailRow icon={<BellIcon />} text="Remind me" hint={remindText}
@@ -1016,6 +1038,7 @@ export default function AddItemModal({ existing = null, existingRecurring = null
                   </button>
                 </>}
               </DetailRow>
+            </>}
             </>}
           </div>
 
