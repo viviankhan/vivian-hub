@@ -370,9 +370,10 @@ function BlockBand({ seg, onEdit, onAdd, onCollapse }) {
   const label = (seg.label || 'Block').toUpperCase()
   // Collapsed: one compact row standing in for the whole block + its tasks.
   if (seg.collapsed) {
+    const done = !!seg.done
     return (
-      <div style={{ position:'relative', minHeight:54, margin:'4px 0' }}>
-        <div style={{ position:'absolute', top:0, bottom:0, left:44, right:0, background:seg.color, opacity:BLOCK_FILM_OPACITY, zIndex:-1, borderRadius:16 }} />
+      <div style={{ position:'relative', minHeight:54, margin:'4px 0', opacity: done?.7:1 }}>
+        <div style={{ position:'absolute', top:0, bottom:0, left:44, right:0, background:seg.color, opacity: done?BLOCK_FILM_OPACITY*0.6:BLOCK_FILM_OPACITY, zIndex:-1, borderRadius:16 }} />
         <div style={{ position:'absolute', top:0, bottom:0, left:76.5, width:3, borderRadius:3, background:seg.color, opacity:.5, zIndex:-1 }} />
         <div style={{ position:'relative', display:'flex', alignItems:'center', minHeight:54 }}>
           <div style={{ width:52, flexShrink:0, textAlign:'right', paddingRight:10 }}>
@@ -381,8 +382,9 @@ function BlockBand({ seg, onEdit, onAdd, onCollapse }) {
           <div onClick={onCollapse} title="Expand time block"
             style={{ flex:1, minWidth:0, paddingLeft:11, paddingRight:8, display:'flex', alignItems:'center', gap:9, cursor:'pointer', minHeight:54 }}>
             <BandIcon icon={seg.icon} color={seg.color} onEdit={onEdit} />
-            <span style={{ fontSize:12, fontWeight:800, letterSpacing:.7, textTransform:'uppercase', color:'#39434F', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis', maxWidth:'42%' }}>{label}</span>
-            <span style={{ fontSize:11, color:'var(--muted)', flexShrink:1, minWidth:0, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{rangeLabel(seg.start, seg.end)}{seg.count>0?` · ${seg.count} inside`:''}</span>
+            <span style={{ fontSize:12, fontWeight:800, letterSpacing:.7, textTransform:'uppercase', color:'#39434F', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis', maxWidth:'40%', textDecoration: done?'line-through':'none' }}>{label}</span>
+            {done && <span style={{ flexShrink:0, display:'inline-flex', color:'#5C8A5C' }}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5"/></svg></span>}
+            <span style={{ fontSize:11, color:'var(--muted)', flexShrink:1, minWidth:0, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{done?'done · ':''}{rangeLabel(seg.start, seg.end)}{seg.count>0?` · ${seg.count} inside`:''}</span>
             <span style={{ marginLeft:'auto', flexShrink:0 }}><BandChevron collapsed onClick={onCollapse} /></span>
           </div>
         </div>
@@ -811,14 +813,15 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
   const [morningOpen, setMorningOpen] = useState(false)
   const [nightOpen,   setNightOpen]   = useState(false)
   const [expandedRoutines, setExpandedRoutines] = useState({})  // routineId → show its done tasks individually
-  // Time blocks the user has collapsed into a single compact row (keyed by
-  // block id, so a recurring block like Work stays collapsed across days).
+  // Explicit collapse overrides for time blocks (keyed by block id). A stored
+  // true/false is the user's choice; NO entry means "auto" — a block folds up on
+  // its own once its window has passed (see isBlockCollapsed). Toggling always
+  // writes an explicit value so the manual choice sticks.
   const [collapsedBlocks, setCollapsedBlocks] = useState(()=>{
     try { return JSON.parse(localStorage.getItem('vivian_collapsed_blocks')||'{}') } catch { return {} }
   })
-  const toggleBlockCollapsed = (id) => setCollapsedBlocks(prev => {
-    const next = { ...prev, [id]: !prev[id] }
-    if (!next[id]) delete next[id]
+  const toggleBlockCollapsed = (id, effectiveCollapsed) => setCollapsedBlocks(prev => {
+    const next = { ...prev, [id]: !effectiveCollapsed }
     try { localStorage.setItem('vivian_collapsed_blocks', JSON.stringify(next)) } catch {}
     return next
   })
@@ -906,6 +909,11 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
       .map(o => ({ id:o.id, label:(o.title||o.text||'').trim(), color: o.color || '#8AA0B8', icon: o.icon || null, cat: o.cat || o.tag || null, isCommitment:false,
         start: hhmmToMins(o._time), end: hhmmToMins(o._time) + o._dur })),
   ]
+  // A block whose window has fully passed today reads as "done" — and folds up
+  // on its own (like a finished routine) unless the user has explicitly set it
+  // open/closed. An explicit toggle (in collapsedBlocks) always wins.
+  const blockPastWindow = (b) => isToday && b.end != null && now >= b.end
+  const isBlockCollapsed = (b) => (b.id in collapsedBlocks) ? !!collapsedBlocks[b.id] : blockPastWindow(b)
   // Add a task inside a block — a "folder" for a slice of the day. Opens the add
   // sheet pre-scheduled at the tapped time (kept inside the block's window) and
   // pre-labeled with the block's own category, so events land in the window;
@@ -1028,9 +1036,9 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
       .sort((x,y) => x._mins - y._mins)
     // Collapsed → one compact summary row in place of the whole band + its
     // inner tasks (which get filtered out of the render list below).
-    if (collapsedBlocks[b.id]) {
+    if (isBlockCollapsed(b)) {
       collapsedBlockIds.add(b.id)
-      blockSegments.push({ id:b.id+':collapsed', bid:b.id, collapsed:true, start:b.start, end:b.end, color:b.color, label:b.label, icon:b.icon, count:inside.length, roundTop:true, roundBottom:true })
+      blockSegments.push({ id:b.id+':collapsed', bid:b.id, collapsed:true, start:b.start, end:b.end, color:b.color, label:b.label, icon:b.icon, count:inside.length, done:blockPastWindow(b), roundTop:true, roundBottom:true })
       continue
     }
     if (!inside.length) {
@@ -1384,7 +1392,7 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
           const bb = (seg, controls) => <BlockBand key={'seg-'+seg.id} seg={seg}
             onEdit={()=>openContainer(s.bid)}
             onAdd={b ? ()=>addInBlock(b, seg.start) : undefined}
-            onCollapse={controls ? ()=>toggleBlockCollapsed(s.bid) : undefined} />
+            onCollapse={controls ? ()=>toggleBlockCollapsed(s.bid, !!seg.collapsed) : undefined} />
           // Gap before this segment — only for a block's true top (roundTop),
           // since head→task→tail within one block are contiguous by construction.
           const gapEl = s.roundTop ? maybeGap(s.start, s.color, null) : null
@@ -1500,7 +1508,7 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
                   bandLabel={(isFirstInBand && !joinHead) ? (myBand?.label || null) : null}
                   bandIcon={inBlockBand?.icon || null}
                   onBandLabel={inBlockId ? () => openContainer(inBlockId) : null}
-                  onBandCollapse={(inBlockId && isFirstInBand && !joinHead) ? () => toggleBlockCollapsed(inBlockId) : null}
+                  onBandCollapse={(inBlockId && isFirstInBand && !joinHead) ? () => toggleBlockCollapsed(inBlockId, false) : null}
                   prevColor={colorOf(prev)} nextColor={colorOf(next)}
                   isDone={task._status==='past'}
                   elapsed={isToday && task._mins!==null && task._mins<=now}
