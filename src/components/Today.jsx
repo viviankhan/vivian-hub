@@ -950,14 +950,18 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
   const routineIds = new Set((routines||[]).map(r=>r.id))
   const hasCompletionRecord = (task) => task.isCommitment ? (task.id in (todos||{})) : ((dateKey+'_'+task.id) in (todos||{}))
   const inAnyBlock = (task) => task._mins != null && blocks.some(b => task._mins >= b.start && task._mins < b.end)
+  const isPastDay = viewDate < todayKey()
   const effectiveDone = (task) => {
     if (hasCompletionRecord(task)) return isDoneCheck(task.id, task.isCommitment)
     // No record: routine tasks — and tasks that live inside a time block —
     // auto-complete once their window has passed, just like a routine item.
-    // (Only on the day being viewed as today.)
     const autoRoutine = task.routine && routineIds.has(task.routine)
-    if ((autoRoutine || inAnyBlock(task)) && isToday && task._mins!==null) {
-      return now >= task._mins + (task._dur || 0)
+    if ((autoRoutine || inAnyBlock(task)) && task._mins!==null) {
+      // Today: done once the task's own window has passed. A past day is wholly
+      // over, so every such task auto-completes (matching how it looked at the
+      // end of that day). A future day: nothing has happened yet.
+      if (isToday) return now >= task._mins + (task._dur || 0)
+      return isPastDay
     }
     return false
   }
