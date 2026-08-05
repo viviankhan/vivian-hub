@@ -159,7 +159,7 @@ const InboxIcon2 = () => (<svg viewBox="0 0 24 24" width="18" height="18" fill="
 const TrashIcon2 = () => (<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4.5 7h15M9 7V5.2A1.2 1.2 0 0 1 10.2 4h3.6A1.2 1.2 0 0 1 15 5.2V7M6.5 7l1 12.5h9L17.5 7"/></svg>)
 const TargetIcon = () => (<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4.5"/><circle cx="12" cy="12" r="1" fill="currentColor" stroke="none"/></svg>)
 
-export default function AddItemModal({ existing = null, existingRecurring = null, occurrenceDate = null, onSaveOccurrence = null, onDeleteOccurrence = null, onDeleteFuture = null, presetDate = null, presetText = '', presetTime = '', presetCat = '', lockDate = false, defaultRepeat = false, categories = [], routines = [], labelModel = null, onSave, onSaveRecurring = null, onDelete = null, onDuplicate = null, onMoveToInbox = null, onClose, title = 'Add to calendar' }) {
+export default function AddItemModal({ existing = null, existingRecurring = null, occurrenceDate = null, onSaveOccurrence = null, onDeleteOccurrence = null, onDeleteFuture = null, presetDate = null, presetText = '', presetTime = '', presetDur = null, presetCat = '', lockDate = false, defaultRepeat = false, categories = [], routines = [], labelModel = null, onSave, onSaveRecurring = null, onDelete = null, onDuplicate = null, onMoveToInbox = null, onClose, title = 'Add to calendar' }) {
   const cats = (categories && categories.length) ? categories : DEFAULT_CATEGORIES
   const isEdit = !!existing
   // Editing an existing recurring task: it comes in the Recurring-tab row shape
@@ -181,6 +181,9 @@ export default function AddItemModal({ existing = null, existingRecurring = null
   const [endTime, setEndTime]     = useState(() => {
     if (existing?.time && existing?.durationMins) return addMinutes(existing.time, existing.durationMins)
     if (rec && recSplit.time && rec.durationMins) return addMinutes(recSplit.time, rec.durationMins)
+    // A gap-fill preset arrives with a start time + a duration to occupy — derive
+    // the end so the sheet opens already sized to the break.
+    if (presetTime && presetDur) return addMinutes(presetTime, presetDur)
     return ''
   })
   // One or more category labels. The first stays the "primary" — it drives the
@@ -221,7 +224,7 @@ export default function AddItemModal({ existing = null, existingRecurring = null
   // duration. `manualDur` holds the length when there's no end time to derive
   // it from (e.g. a duration with no fixed start). The quick presets are
   // user-editable and stored per-device.
-  const [manualDur, setManualDur] = useState(existing?.durationMins ?? rec?.durationMins ?? null)
+  const [manualDur, setManualDur] = useState(existing?.durationMins ?? rec?.durationMins ?? presetDur ?? null)
   const [durText, setDurText]     = useState('')
   const [presets, setPresets]     = useState(() => getDurationPresets())
   const [editingPresets, setEditingPresets] = useState(false)

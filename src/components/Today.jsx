@@ -29,6 +29,9 @@ const TAG_COLORS = {
 const TAGS = ['class','lab','career','health','fitness','personal','urgent','sleep','polish']
 const INFLEXIBLE_TAGS = new Set(['class','meeting','deadline','urgent'])
 const END_OF_DAY_MINS = 22*60+30 // 10:30 PM
+// Breathing room left on each side of a task created by filling a free-time gap
+// — a cushion to transition out of the previous thing and into the next.
+const TRANSITION_MIN = 15
 
 function todayKey() {
   const d = new Date()
@@ -981,6 +984,22 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
     setAddPreset({ time: minsToHHMM(t), cat: b.cat || '' })
     setAddingTask(true)
   }
+  // Tapping a free-time gap's "Add Task" fills that break with a new task —
+  // pre-scheduled to occupy the window minus a TRANSITION_MIN cushion before it
+  // (after the previous task ends) and after it (before the next task starts),
+  // so the day always leaves breathing room to move between things. The Add
+  // sheet opens pre-timed and pre-sized; you just name it. When the gap is too
+  // short for two full cushions, they shrink evenly rather than overrun.
+  const addInGap = (gapStart, gapEnd) => {
+    const gap = gapEnd - gapStart
+    const MIN_TASK = 10
+    let buffer = TRANSITION_MIN
+    if (gap - 2 * buffer < MIN_TASK) buffer = Math.max(0, Math.floor((gap - MIN_TASK) / 2))
+    const start = gapStart + buffer
+    const dur = Math.max(MIN_TASK, gap - 2 * buffer)
+    setAddPreset({ time: minsToHHMM(start), dur })
+    setAddingTask(true)
+  }
   // The "band" behind a task row: a containing time block wins, else its routine
   // group. Returns { id, tint, label } or null.
   const bandOf = (t) => {
@@ -1438,8 +1457,11 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
           if (cur.end == null || startMins == null) return null
           const g = startMins - cur.end
           if (g < 5) return null
+          // Capture this gap's real clock window so its "Add Task" can pre-fill a
+          // task that fills the break (minus a transition on each side).
+          const gapStart = cur.end, gapEnd = startMins
           return <GapRow key={'gap-'+cur.end+'-'+startMins} mins={g} prevColor={cur.color} nextColor={nextColor}
-            routineTint={tint || null} routineOpacity={tint ? BLOCK_FILM_OPACITY : 0.5} onAdd={()=>setAddingTask(true)} />
+            routineTint={tint || null} routineOpacity={tint ? BLOCK_FILM_OPACITY : 0.5} onAdd={()=>addInGap(gapStart, gapEnd)} />
         }
         const advance = (endMins, color, band=null) => {
           if (endMins != null && (cur.end == null || endMins >= cur.end)) { cur.end = endMins; cur.color = color || cur.color }
@@ -1621,7 +1643,7 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
         onClose={()=>setFocusTask(null)} />}
       {shiftPlan&&<ShiftChooser plan={shiftPlan} onApply={(ids)=>{applyShift(shiftPlan.pivot, ids); setShiftPlan(null)}} onCancel={()=>setShiftPlan(null)}/>}
       {shiftResult&&<ShiftToast result={shiftResult} onClose={()=>setShiftResult(null)}/>}
-      {addingTask&&<AddItemModal presetDate={dateKey} presetTime={addPreset?.time||''} presetCat={addPreset?.cat||''} categories={categories} routines={routines} labelModel={labelModel} onSave={handleAdd} onSaveRecurring={addRecurringTask} onClose={()=>{ setAddingTask(false); setAddPreset(null) }} title="Add to Today"/>}
+      {addingTask&&<AddItemModal presetDate={dateKey} presetTime={addPreset?.time||''} presetDur={addPreset?.dur||null} presetCat={addPreset?.cat||''} categories={categories} routines={routines} labelModel={labelModel} onSave={handleAdd} onSaveRecurring={addRecurringTask} onClose={()=>{ setAddingTask(false); setAddPreset(null) }} title="Add to Today"/>}
       {editing&&<AddItemModal existing={editing} categories={categories} routines={routines} onSave={handleSaveEdit}
         onSaveRecurring={addRecurringTask}
         onDelete={c=>deleteCommitment&&deleteCommitment(c.id)}
