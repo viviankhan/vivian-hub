@@ -31,6 +31,7 @@ import { playSound } from './sounds.js'
 // The lead times a user can choose from, in minutes before an item starts.
 // Editable in Settings → Reminders; the chosen set is stored per-device.
 export const LEAD_OPTIONS = [
+  { mins: 0,        label: 'Starting now' },
   { mins: 5,        label: '5 min'  },
   { mins: 15,       label: '15 min' },
   { mins: 45,       label: '45 min' },
@@ -56,11 +57,24 @@ export function leadLabel(mins) {
   if (mins % 60 === 0) { const h = mins / 60; return `${h} hr` }
   return `${mins} min`
 }
+// Turn a set of lead-minute values into a natural phrase, keeping the
+// "before" timings together and folding in the "starting now" (0-minute)
+// lead as "right when it starts" so nothing reads as "Starting now before".
+// e.g. "1 day & 1 hour before", "right when it starts",
+// "1 hour before & right when it starts".
+export function leadsPhrase(leads, joiner = ' & ') {
+  if (!Array.isArray(leads) || !leads.length) return 'No alerts'
+  const sorted = leads.slice().sort((a, b) => b - a)
+  const before = sorted.filter(m => m > 0).map(leadLabel)
+  const atStart = sorted.some(m => m <= 0)
+  const parts = []
+  if (before.length) parts.push(before.join(joiner) + ' before')
+  if (atStart) parts.push('right when it starts')
+  return parts.join(' & ')
+}
 // The default lead times as a single readable phrase, e.g. "1 day & 1 hour before".
 export function defaultLeadsLabel() {
-  const leads = getDefaultLeads()
-  if (!leads.length) return 'No alerts'
-  return leads.slice().sort((a, b) => b - a).map(leadLabel).join(' & ') + ' before'
+  return leadsPhrase(getDefaultLeads())
 }
 
 // Resolve the saved lead-minute list into {mins, key} entries to schedule.
