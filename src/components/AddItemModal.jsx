@@ -20,12 +20,9 @@ import { SOUNDS, playSound } from '../lib/sounds.js'
 import { getDurationPresets, setDurationPresets, resetDurationPresets, parseDuration, durationLabel } from '../lib/durations.js'
 import { predictLabel } from '../lib/predictLabel.js'
 import { geolocationSupported, getCurrentLocation, searchPlaces, DEFAULT_RADIUS_M } from '../lib/geofence.js'
+import { activeAccent } from '../lib/appearance.js'
 
 const DEFAULT_CATEGORIES = [{ id:'other', label:'Other', color:'#8899AA' }]
-
-// A neutral slate used for the header when a task has no label yet (so an
-// unlabeled task doesn't borrow a real category's color and read as tagged).
-const UNLABELED_COLOR = '#6B7A8D'
 
 const inp = { width:'100%', fontSize:14, padding:'10px 12px', borderRadius:10, border:'1px solid var(--border)', fontFamily:'DM Sans,sans-serif', outline:'none', boxSizing:'border-box' }
 const fieldLabel = { fontSize:10, color:'var(--muted)', letterSpacing:1, textTransform:'uppercase', marginBottom:4 }
@@ -508,10 +505,11 @@ export default function AddItemModal({ existing = null, existingRecurring = null
   }
 
   // Primary label drives the header color + icon. With no label (and no
-  // prediction), fall back to a neutral slate rather than borrowing a real
-  // category's color — an unlabeled task shouldn't look tagged.
+  // prediction), fall back to the active theme's accent — the app's own default
+  // color — rather than a fixed slate, so the sheet matches the chosen theme
+  // instead of borrowing a real category's color.
   const primaryCat = cats.find(c => c.id === effectiveCats[0]) || null
-  const headerColor = color || primaryCat?.color || UNLABELED_COLOR
+  const headerColor = color || primaryCat?.color || activeAccent()
   // Foreground that stays readable on the header band — dark on light colors,
   // light on dark ones — with matching muted/hairline/button tints.
   const headerFg   = iconColorOn(headerColor)
