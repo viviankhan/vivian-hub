@@ -9,6 +9,12 @@ permissions:
   pages: write
   id-token: write
 
+# Only one Pages deploy at a time; a newer push cancels an older in-flight run
+# so a stuck GitHub Pages publish step can't block later deploys.
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
 jobs:
   deploy:
     environment:
