@@ -1433,6 +1433,29 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
     setFocusTask(null)
   }
 
+  // ── Add time from Focus mode ─────────────────────────────────
+  // Extend a running task (the "+5m" buttons that appear as it nears the end).
+  // `totalExtra` is the cumulative minutes added this session, so setting the
+  // duration to the task's original length + that total is race-free even on
+  // rapid taps. Only real commitments carry an editable duration.
+  const handleExtend = (task, totalExtra) => {
+    if (!task.isCommitment || !updateCommitment) return
+    const base = task._dur ?? 0
+    updateCommitment(task.id, { durationMins: Math.max(1, base + totalExtra) })
+  }
+
+  // ── End now from Focus mode ──────────────────────────────────
+  // Finish a task before its window is up: mark it done and, for a real
+  // commitment, trim its duration to the time actually spent so the timeline
+  // ends the block at "now" instead of its planned end.
+  const handleEndNow = (task, elapsedMins) => {
+    if (!effectiveDone(task)) syncToggle(task.id, task.label, task.tag, task.isCommitment ? null : dateKey, true)
+    if (task.isCommitment && updateCommitment && task._dur) {
+      updateCommitment(task.id, { durationMins: Math.max(1, Math.round(elapsedMins || 0)) })
+    }
+    setFocusTask(null)
+  }
+
   // New items are real commitments dated today, so they show on the Calendar
   // and Week and can carry their own reminder times. (Older local-only custom
   // tasks still render from customTasks for backward compatibility.)
@@ -1824,6 +1847,8 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
         durationMins={focusTask._dur}
         onDone={()=>{ if(!effectiveDone(focusTask)) syncToggle(focusTask.id, focusTask.label, focusTask.tag, focusTask.isCommitment?null:dateKey, true); setFocusTask(null) }}
         onPause={({elapsedMins, remainingMins})=>handlePauseSplit(focusTask, elapsedMins, remainingMins)}
+        onExtend={focusTask.isCommitment ? (mins)=>handleExtend(focusTask, mins) : null}
+        onEndNow={({elapsedMins})=>handleEndNow(focusTask, elapsedMins)}
         onClose={()=>setFocusTask(null)} />}
       {shiftPlan&&<ShiftChooser plan={shiftPlan} onApply={(ids)=>{applyShift(shiftPlan.pivot, ids); setShiftPlan(null)}} onCancel={()=>setShiftPlan(null)}/>}
       {shiftResult&&<ShiftToast result={shiftResult} onClose={()=>setShiftResult(null)}/>}
