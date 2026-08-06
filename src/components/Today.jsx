@@ -1320,6 +1320,42 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
     setShiftPlan({ pivot: pivotTask, rest, selected })
   }
 
+  // ── Pause & break apart ──────────────────────────────────────
+  // Pausing in Focus mode splits a task in two: the minutes already spent are
+  // banked (the task is marked done, and — for a real commitment — shrunk to
+  // just that finished span so the timeline reflects it), and the remainder is
+  // spun off as a new task that can be rescheduled and resumed independently.
+  const handlePauseSplit = (task, elapsedMins, remainingMins) => {
+    const doneMin = Math.max(1, Math.round(elapsedMins || 0))
+    const startMins = task._time != null ? hhmmToMins(task._time) : (task._mins ?? now)
+    // The leftover's length: the explicit remaining window, or (when the task
+    // had a duration) whatever's left after the finished span, or open-ended.
+    const remain = remainingMins != null
+      ? Math.max(1, Math.round(remainingMins))
+      : (task._dur ? Math.max(1, task._dur - doneMin) : null)
+    const leftoverStart = minsToHHMM(Math.min(END_OF_DAY_MINS, startMins + doneMin))
+    const baseTitle = task.title || stripTimePrefix(task.label)
+
+    // 1) Bank the finished portion.
+    if (!effectiveDone(task)) syncToggle(task.id, task.label, task.tag, task.isCommitment ? null : dateKey, true)
+    // 2) A real commitment can be trimmed to just the time actually spent.
+    if (task.isCommitment && updateCommitment && task._dur) updateCommitment(task.id, { durationMins: doneMin })
+    // 3) Spin the remainder off as a fresh task to resume later.
+    if (addCommitment) addCommitment({
+      id: 'resume-' + task.id + '-' + Date.now(),
+      text: baseTitle,
+      date: dateKey,
+      time: leftoverStart,
+      durationMins: remain,
+      cat: task.tag || null,
+      color: task.color || null,
+      icon: task.icon || null,
+      done: false,
+      createdAt: new Date().toISOString(),
+    })
+    setFocusTask(null)
+  }
+
   // New items are real commitments dated today, so they show on the Calendar
   // and Week and can carry their own reminder times. (Older local-only custom
   // tasks still render from customTasks for backward compatibility.)
@@ -1689,6 +1725,7 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
         time={focusTask._time}
         durationMins={focusTask._dur}
         onDone={()=>{ if(!effectiveDone(focusTask)) syncToggle(focusTask.id, focusTask.label, focusTask.tag, focusTask.isCommitment?null:dateKey, true); setFocusTask(null) }}
+        onPause={({elapsedMins, remainingMins})=>handlePauseSplit(focusTask, elapsedMins, remainingMins)}
         onClose={()=>setFocusTask(null)} />}
       {shiftPlan&&<ShiftChooser plan={shiftPlan} onApply={(ids)=>{applyShift(shiftPlan.pivot, ids); setShiftPlan(null)}} onCancel={()=>setShiftPlan(null)}/>}
       {shiftResult&&<ShiftToast result={shiftResult} onClose={()=>setShiftResult(null)}/>}
