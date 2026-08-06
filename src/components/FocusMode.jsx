@@ -67,10 +67,10 @@ export default function FocusMode({ title, icon, color = '#4A9EB5', time, durati
   const remainMin = hasWindow ? Math.round(remainingMs / 60000) : null
   const canPause = !!onPause && doneMin >= 1 && (!hasWindow || remainMin >= 1)
 
-  // As the window winds down (last 5 min or already over) — or, for an
-  // open-ended focus, once a minute's gone by — offer to add time or end now.
-  const nearEnd = hasWindow ? remainingMs <= 5 * 60000 : elapsed >= 60000
-  const endControls = nearEnd && !!onEndNow
+  // Adding time only makes sense while a timed window is winding down, so the
+  // "+5m" buttons appear in the last 5 minutes (or once it's already over).
+  // Ending early, by contrast, is useful at any point — it's a normal control.
+  const showAddTime = hasWindow && remainingMs <= 5 * 60000 && !!onExtend
   // Report the cumulative added minutes (not the delta) so persistence stays
   // correct regardless of how fast the buttons are tapped.
   const addTime = (m) => { const next = extraMins + m; setExtraMins(next); if (onExtend) onExtend(next) }
@@ -125,34 +125,34 @@ export default function FocusMode({ title, icon, color = '#4A9EB5', time, durati
         </div>
       )}
 
-      {/* Near the end (or over): add more time, or end it now. */}
-      {endControls && (
+      {/* Winding down: offer to add more time before the window closes. */}
+      {showAddTime && (
         <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:12, marginBottom:22 }}>
           <div style={{ fontSize:13.5, opacity:.9, textAlign:'center' }}>
-            {!hasWindow ? 'Wrap up whenever you’re ready.'
-              : done ? 'Time’s up — add more, or end it?'
-              : <>Almost done — <b>{remainMin || 1} min</b> left. Add time?</>}
+            {done ? 'Time’s up — need more?' : <>Almost done — <b>{remainMin || 1} min</b> left. Add time?</>}
           </div>
           <div style={{ display:'flex', gap:8, flexWrap:'wrap', justifyContent:'center' }}>
-            {onExtend && hasWindow && [5, 10, 15].map(m => (
+            {[5, 10, 15].map(m => (
               <button key={m} onClick={() => addTime(m)}
                 style={{ padding:'10px 16px', borderRadius:13, border:`1.5px solid ${btnBorder}`, background:btnBg, color:fg, fontWeight:700, fontSize:14, cursor:'pointer', fontFamily:'DM Sans,sans-serif' }}>
                 +{m}m
               </button>
             ))}
-            <button onClick={() => onEndNow({ elapsedMins: doneMin })}
-              style={{ padding:'10px 18px', borderRadius:13, border:'none', background:fg, color, fontWeight:700, fontSize:14, cursor:'pointer', fontFamily:'DM Sans,sans-serif' }}>
-              ✓ End now
-            </button>
           </div>
         </div>
       )}
 
-      <div style={{ display:'flex', gap:12 }}>
-        {onDone && !endControls && (
+      <div style={{ display:'flex', gap:12, flexWrap:'wrap', justifyContent:'center' }}>
+        {onDone && (
           <button onClick={onDone}
             style={{ padding:'14px 26px', borderRadius:16, border:'none', background:fg, color, fontWeight:700, fontSize:15, cursor:'pointer', fontFamily:'DM Sans,sans-serif' }}>
             ✓ Mark done
+          </button>
+        )}
+        {onEndNow && (
+          <button onClick={() => onEndNow({ elapsedMins: doneMin })}
+            style={{ padding:'14px 20px', borderRadius:16, border:`1.5px solid ${btnBorder}`, background:btnBg, color:fg, fontWeight:600, fontSize:15, cursor:'pointer', fontFamily:'DM Sans,sans-serif' }}>
+            ⏹ End now
           </button>
         )}
         {canPause && (
