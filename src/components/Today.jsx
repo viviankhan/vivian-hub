@@ -449,7 +449,7 @@ function BlockBand({ seg, onEdit, onAdd, onCollapse }) {
 //  • active — now is inside it: the time counts down to what's LEFT.
 //  • past   — now is beyond it (or a past day): it becomes "Took a/an X break",
 //    muted, no Add Task (the moment has gone by with nothing scheduled).
-function GapRow({ mins, phase = 'future', remaining = mins, prevColor, nextColor, routineTint, routineOpacity = 0.5, onAdd }) {
+function GapRow({ mins, phase = 'future', remaining = mins, prevColor, nextColor, routineTint, routineOpacity = 0.5, onAdd, onStartNow = null, startLabel = '' }) {
   // Proportional to real clock time, on the same scale as tasks and bands.
   const h = Math.max(18, Math.round(spanHeight(mins)))
   const top = prevColor || '#C9C9D3'
@@ -471,6 +471,17 @@ function GapRow({ mins, phase = 'future', remaining = mins, prevColor, nextColor
   // as a single quiet line regardless of length.
   const isBreak = mins <= 10
   const compact = isPast || isBreak
+  // While a break is actually running, offer to pull the upcoming task forward
+  // and start it now instead of waiting out the rest of the gap.
+  const showStart = isActive && !!onStartNow
+  const startBtn = (label) => (
+    <button onClick={onStartNow}
+      title={startLabel ? `Start “${startLabel}” now` : 'Start the next task now'}
+      style={{ display:'inline-flex', alignItems:'center', gap:5, minWidth:0, maxWidth:'100%', fontSize:12, padding:'6px 14px', borderRadius:18, border:'none', background:'var(--teal)', color:'var(--on-accent, #fff)', fontWeight:700, cursor:'pointer', fontFamily:'DM Sans,sans-serif' }}>
+      <span style={{ fontSize:11, lineHeight:1, flexShrink:0 }}>▶</span>
+      <span style={{ overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{label}</span>
+    </button>
+  )
   return (
     <div className="today-gap" style={{ position:'relative', zIndex:0, display:'flex', gap:0, alignItems: compact?'center':'flex-start', opacity: isPast?0.6:1 }}>
       {/* Continue a routine's film through the gap between two same-routine
@@ -488,13 +499,16 @@ function GapRow({ mins, phase = 'future', remaining = mins, prevColor, nextColor
           <span style={{ fontSize:12.5, color:'var(--muted)', whiteSpace:'nowrap' }}>Took {artForMins(mins)} <b>{durLabel}</b> break</span>
         </div>
       ) : compact ? (
-        <div style={{ flex:1, minWidth:0, paddingLeft:10, display:'flex', alignItems:'center', gap:7 }}>
-          <span style={{ display:'flex', flexShrink:0 }}><Icon value="glyph:clock" size={15} color="#9AA6B2" /></span>
-          <span style={{ fontSize:12.5, color:'var(--muted)', whiteSpace:'nowrap' }}>
-            {isActive
-              ? <><b style={{ color:'var(--teal)' }}>{durLabel}</b> left in your break</>
-              : <>Take {artForMins(mins)} <b style={{ color:'var(--teal)' }}>{durLabel}</b> break</>}
+        <div style={{ flex:1, minWidth:0, paddingLeft:10, display:'flex', alignItems:'center', gap:8, flexWrap:'wrap' }}>
+          <span style={{ display:'flex', alignItems:'center', gap:7 }}>
+            <span style={{ display:'flex', flexShrink:0 }}><Icon value="glyph:clock" size={15} color="#9AA6B2" /></span>
+            <span style={{ fontSize:12.5, color:'var(--muted)', whiteSpace:'nowrap' }}>
+              {isActive
+                ? <><b style={{ color:'var(--teal)' }}>{durLabel}</b> left in your break</>
+                : <>Take {artForMins(mins)} <b style={{ color:'var(--teal)' }}>{durLabel}</b> break</>}
+            </span>
           </span>
+          {showStart && startBtn('Start now')}
         </div>
       ) : (
         <div style={{ flex:1, minWidth:0, paddingLeft:8, paddingTop:4 }}>
@@ -502,14 +516,17 @@ function GapRow({ mins, phase = 'future', remaining = mins, prevColor, nextColor
             <span style={{ display:'flex', flexShrink:0 }}><Icon value="glyph:clock" size={16} color="#9AA6B2" /></span>
             <span style={{ fontSize:13, color:'var(--muted)' }}>
               {isActive
-                ? <><b style={{ color:'var(--teal)' }}>{durLabel}</b> left — do something?</>
+                ? <><b style={{ color:'var(--teal)' }}>{durLabel}</b> left — start early or fill it?</>
                 : <>Do something during this <b style={{ color:'var(--teal)' }}>{durLabel}</b> break?</>}
             </span>
           </div>
-          <button onClick={onAdd}
-            style={{ display:'inline-flex', alignItems:'center', gap:5, fontSize:12, padding:'6px 14px', borderRadius:18, border:'none', background:'#E7F3F6', color:'var(--teal)', fontWeight:600, cursor:'pointer', fontFamily:'DM Sans,sans-serif' }}>
-            <span style={{ fontSize:14, lineHeight:1 }}>＋</span> Add Task
-          </button>
+          <div style={{ display:'flex', flexWrap:'wrap', gap:8 }}>
+            {showStart && startBtn(startLabel ? `Start “${startLabel}” now` : 'Start now')}
+            <button onClick={onAdd}
+              style={{ display:'inline-flex', alignItems:'center', gap:5, fontSize:12, padding:'6px 14px', borderRadius:18, border:'none', background:'#E7F3F6', color:'var(--teal)', fontWeight:600, cursor:'pointer', fontFamily:'DM Sans,sans-serif' }}>
+              <span style={{ fontSize:14, lineHeight:1 }}>＋</span> Add Task
+            </button>
+          </div>
         </div>
       )}
     </div>
@@ -1527,7 +1544,7 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
         // not just between adjacent tasks. `tint` keeps a gap inside a block on
         // that block's film; boundary gaps between regions stay plain.
         const cur = { end: null, color: null, band: null }
-        const maybeGap = (startMins, nextColor, tint) => {
+        const maybeGap = (startMins, nextColor, tint, upcoming = null) => {
           if (cur.end == null || startMins == null) return null
           const g = startMins - cur.end
           if (g < 5) return null
@@ -1544,9 +1561,14 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
           } else if (isPastDay) {
             phase = 'past'
           }
+          // While the break is live, let the upcoming task be pulled forward and
+          // started now — but only a real, movable, still-open timed task.
+          const canStart = upcoming && upcoming._mins != null && !INFLEXIBLE_TAGS.has(upcoming.tag) && !effectiveDone(upcoming)
           return <GapRow key={'gap-'+cur.end+'-'+startMins} mins={g} phase={phase} remaining={remaining}
             prevColor={cur.color} nextColor={nextColor}
-            routineTint={tint || null} routineOpacity={tint ? BLOCK_FILM_OPACITY : 0.5} onAdd={()=>addInGap(gapStart, gapEnd)} />
+            routineTint={tint || null} routineOpacity={tint ? BLOCK_FILM_OPACITY : 0.5} onAdd={()=>addInGap(gapStart, gapEnd)}
+            onStartNow={canStart ? ()=>handleShiftToNow(upcoming) : null}
+            startLabel={upcoming ? (upcoming.title || stripTimePrefix(upcoming.label)) : ''} />
         }
         const advance = (endMins, color, band=null) => {
           if (endMins != null && (cur.end == null || endMins >= cur.end)) { cur.end = endMins; cur.color = color || cur.color }
@@ -1659,7 +1681,7 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
             // ended (a task, a routine, or a block) — tinted with the block's
             // film only when the gap sits inside that same block.
             const sameBandAsCursor = !!(myBand && cur.band === myBand.id)
-            const gapEl = maybeGap(task._mins, colorOf(task), sameBandAsCursor ? myTint : null)
+            const gapEl = maybeGap(task._mins, colorOf(task), sameBandAsCursor ? myTint : null, task)
             const tEnd = (task._time && task._dur) ? (hhmmToMins(task._time)+task._dur) : task._mins
             advance(tEnd, colorOf(task), myBand?.id || null)
             // Only drop the between-tasks now-line if a band split didn't already
