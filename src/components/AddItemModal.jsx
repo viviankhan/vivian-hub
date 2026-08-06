@@ -5,7 +5,7 @@
 // a start time and end time (with quick-duration buttons that fill the end
 // from the start), plus optional custom reminder lead times that override the
 // global defaults just for this item.
-import { useState, useEffect, useRef, useLayoutEffect } from 'react'
+import { useState, useEffect } from 'react'
 import DateField from './DateField.jsx'
 import TimeField from './TimeField.jsx'
 import MiniCalendar from './MiniCalendar.jsx'
@@ -15,7 +15,8 @@ import { Icon } from './IconPicker.jsx'
 import ColorIconPicker from './ColorIconPicker.jsx'
 import ColorSwatchRow, { TASK_COLORS } from './ColorSwatchRow.jsx'
 import { suggestGlyph, iconColorOn } from '../lib/glyphs.jsx'
-import { LEAD_OPTIONS, getItemReminders, getItemSound, setItemSound, defaultLeadsLabel, leadsPhrase, getDefaultLeads, leadLabel } from '../lib/notifications.js'
+import { LEAD_OPTIONS, getItemReminders, getItemSound, setItemSound, defaultLeadsLabel, leadsPhrase, getDefaultLeads } from '../lib/notifications.js'
+import { AlertPicker, alertName } from './AlertPicker.jsx'
 import { SOUNDS, playSound } from '../lib/sounds.js'
 import { getDurationPresets, setDurationPresets, resetDurationPresets, parseDuration, durationLabel } from '../lib/durations.js'
 import { predictLabel } from '../lib/predictLabel.js'
@@ -55,13 +56,6 @@ function prettyDur(mins) {
   if (!mins) return ''
   if (mins < 60) return `${mins} min`
   return mins % 60 === 0 ? `${mins/60} h` : `${(mins/60).toFixed(1)} h`
-}
-// A full name for one alert, for the alerts list ("At start of task",
-// "At end of task", "15 min before start").
-function alertName(val) {
-  if (val === 'end') return 'At end of task'
-  if (val === 0) return 'At start of task'
-  return `${leadLabel(val)} before start`
 }
 
 // ── Grouped detail-sheet building blocks (Structured-style) ────────
@@ -167,82 +161,6 @@ const DupIcon = () => (<svg viewBox="0 0 24 24" width="18" height="18" fill="non
 const InboxIcon2 = () => (<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 13h4l2 3h4l2-3h4"/><path d="M4 13 6 5.5A2 2 0 0 1 7.9 4h8.2A2 2 0 0 1 18 5.5L20 13v5a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2Z"/></svg>)
 const TrashIcon2 = () => (<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4.5 7h15M9 7V5.2A1.2 1.2 0 0 1 10.2 4h3.6A1.2 1.2 0 0 1 15 5.2V7M6.5 7l1 12.5h9L17.5 7"/></svg>)
 const TargetIcon = () => (<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4.5"/><circle cx="12" cy="12" r="1" fill="currentColor" stroke="none"/></svg>)
-
-// ── Scroll-wheel Add-Alert picker ──────────────────────────────
-// A phone-style spinner: scroll the hours + minutes columns (they snap to the
-// centered value), or tap a quick preset, then Add. Returns the total lead in
-// minutes before the start.
-const WHEEL_ROW = 40       // px per row
-const WHEEL_VISIBLE = 5    // rows shown; the center one is the selection
-function Wheel({ values, value, onChange, width = 64 }) {
-  const ref = useRef(null)
-  const pad = ((WHEEL_VISIBLE - 1) / 2) * WHEEL_ROW
-  // Land on the current value when mounted (the picker remounts the wheels via a
-  // key when a preset jumps them, so this also handles preset taps).
-  useLayoutEffect(() => {
-    const i = values.indexOf(value)
-    if (ref.current && i >= 0) ref.current.scrollTop = i * WHEEL_ROW
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-  const onScroll = () => {
-    const el = ref.current; if (!el) return
-    const i = Math.max(0, Math.min(values.length - 1, Math.round(el.scrollTop / WHEEL_ROW)))
-    if (values[i] !== value) onChange(values[i])
-  }
-  return (
-    <div style={{ position:'relative', width, height: WHEEL_VISIBLE * WHEEL_ROW, overflow:'hidden' }}>
-      <div style={{ position:'absolute', left:0, right:0, top: pad, height: WHEEL_ROW, background:'rgba(56,110,90,.10)', borderRadius:10, pointerEvents:'none' }} />
-      <div ref={ref} onScroll={onScroll} className="alert-wheel"
-        style={{ height:'100%', overflowY:'auto', scrollSnapType:'y mandatory', WebkitOverflowScrolling:'touch', scrollbarWidth:'none' }}>
-        <div style={{ height: pad }} />
-        {values.map((v) => {
-          const sel = v === value
-          return (
-            <div key={v} style={{ height: WHEEL_ROW, scrollSnapAlign:'center', display:'flex', alignItems:'center', justifyContent:'center',
-              fontSize: sel ? 21 : 16, fontWeight: sel ? 700 : 500, color: sel ? 'var(--text)' : 'var(--muted)', fontVariantNumeric:'tabular-nums' }}>{v}</div>
-          )
-        })}
-        <div style={{ height: pad }} />
-      </div>
-    </div>
-  )
-}
-function AlertPicker({ onClose, onAdd }) {
-  const [h, setH] = useState(0)
-  const [m, setM] = useState(5)
-  const [nonce, setNonce] = useState(0)   // bump to re-seat the wheels on a preset
-  const hours = Array.from({ length: 24 }, (_, i) => i)
-  const minutes = Array.from({ length: 60 }, (_, i) => i)
-  const total = h * 60 + m
-  const quick = (hh, mm) => { setH(hh); setM(mm); setNonce(n => n + 1) }
-  const summary = total === 0 ? 'at the start' : `${leadLabel(total)} before`
-  return (
-    <div onClick={onClose} style={{ position:'fixed', inset:0, background:'rgba(20,28,38,.5)', zIndex:660, display:'flex', alignItems:'flex-end', justifyContent:'center' }}>
-      <div onClick={e => e.stopPropagation()} style={{ background:'#F3F2F6', borderRadius:'22px 22px 0 0', width:'100%', maxWidth:480, boxShadow:'0 -10px 44px rgba(20,40,60,.28)', padding:'18px 18px calc(20px + env(safe-area-inset-bottom))' }}>
-        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:14 }}>
-          <div className="serif" style={{ fontSize:19, fontWeight:700, color:'var(--text)' }}>Add Alert</div>
-          <button onClick={onClose} aria-label="Close" style={{ width:34, height:34, borderRadius:'50%', border:'none', background:'#E6E4EA', color:'var(--muted)', fontSize:16, cursor:'pointer' }}>✕</button>
-        </div>
-        <div style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:4, background:'white', borderRadius:16, padding:'6px 12px', marginBottom:14 }}>
-          <Wheel key={'h'+nonce} values={hours} value={h} onChange={setH} width={54} />
-          <span style={{ fontSize:14, color:'var(--muted)', fontWeight:600, width:40 }}>hr</span>
-          <Wheel key={'m'+nonce} values={minutes} value={m} onChange={setM} width={54} />
-          <span style={{ fontSize:14, color:'var(--muted)', fontWeight:600, width:64 }}>min before</span>
-        </div>
-        <div style={{ display:'flex', gap:8, marginBottom:16 }}>
-          {[['1 min',0,1],['5 min',0,5],['30 min',0,30],['1 hr',1,0]].map(([label,hh,mm]) => (
-            <button key={label} onClick={() => quick(hh, mm)}
-              style={{ flex:1, padding:'11px 4px', borderRadius:14, border:'none', background:'#E9E7EE', color:'var(--text)', fontWeight:700, fontSize:13, cursor:'pointer', fontFamily:'DM Sans,sans-serif' }}>{label}</button>
-          ))}
-        </div>
-        <button onClick={() => { onAdd(total); onClose() }}
-          style={{ width:'100%', padding:'14px', borderRadius:16, border:'none', background:'var(--forest)', color:'var(--green-light)', fontWeight:700, fontSize:16, cursor:'pointer', fontFamily:'DM Sans,sans-serif' }}>
-          Add alert · {summary}
-        </button>
-      </div>
-    </div>
-  )
-}
 
 export default function AddItemModal({ existing = null, existingRecurring = null, occurrenceDate = null, onSaveOccurrence = null, onDeleteOccurrence = null, onDeleteFuture = null, presetDate = null, presetText = '', presetTime = '', presetDur = null, presetCat = '', lockDate = false, defaultRepeat = false, categories = [], routines = [], labelModel = null, onSave, onSaveRecurring = null, onDelete = null, onDuplicate = null, onMoveToInbox = null, onClose, title = 'Add to calendar' }) {
   const cats = (categories && categories.length) ? categories : DEFAULT_CATEGORIES

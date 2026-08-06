@@ -9,6 +9,13 @@ import {
   LEAD_OPTIONS, triggersSupported,
 } from '../lib/notifications.js'
 import { Icon } from './IconPicker.jsx'
+import { AlertPicker, alertName } from './AlertPicker.jsx'
+
+// Keep numeric leads sorted (soonest last); the 'end' alert always trails.
+function normLeads(arr) {
+  const nums = arr.filter(x => x !== 'end').sort((a, b) => b - a)
+  return arr.includes('end') ? [...nums, 'end'] : nums
+}
 
 const card = { background:'white', borderRadius:12, border:'1px solid var(--border)', padding:'16px 18px', marginBottom:14 }
 const btn = (active) => ({
@@ -34,17 +41,20 @@ export default function NotificationsSettings({ events, commitments }) {
   const [enabled, setEnabled] = useState(getSettings().enabled)
   const [leads, setLeads] = useState(() => getSettings().leads || [])
   const [busy, setBusy] = useState(false)
+  const [pickerOpen, setPickerOpen] = useState(false)
 
-  // Toggle a lead time on/off, persist it, and re-arm the reminder timers so
-  // the change takes effect immediately.
-  const toggleLead = (mins) => {
-    const next = leads.includes(mins)
-      ? leads.filter(m => m !== mins)
-      : [...leads, mins].sort((a, b) => b - a)
-    setLeads(next)
-    saveSettings({ leads: next })
+  // Persist a new default-alert set and re-arm the reminder timers so the
+  // change takes effect immediately.
+  const commitLeads = (next) => {
+    const n = normLeads(next)
+    setLeads(n)
+    saveSettings({ leads: n })
     syncReminders(events, commitments)
   }
+  // Toggle a default alert on/off (chips), add one (picker), or remove one (✕).
+  const toggleLead = (val) => commitLeads(leads.includes(val) ? leads.filter(m => m !== val) : [...leads, val])
+  const addLead    = (val) => { if (!leads.includes(val)) commitLeads([...leads, val]) }
+  const removeLead = (val) => commitLeads(leads.filter(m => m !== val))
   const standalone = isStandalone()
   const ios = isIOS()
   const background = supported && triggersSupported()
@@ -156,12 +166,31 @@ export default function NotificationsSettings({ events, commitments }) {
         )}
       </div>
 
-      {/* ── Default lead times ────────────────────────────── */}
+      {/* ── Default alerts ────────────────────────────────── */}
       <div style={card}>
-        <div style={{ fontSize:13.5, fontWeight:600, color:'var(--text)', marginBottom:3 }}>Remind me before</div>
+        <div style={{ fontSize:13.5, fontWeight:600, color:'var(--text)', marginBottom:3 }}>Default alerts</div>
         <div style={{ fontSize:11.5, color:'var(--muted)', marginBottom:12 }}>
-          Pick how far ahead you want a nudge. These apply to every commitment and event.
+          These apply to every commitment and event. Add when it starts, when it ends, or any lead before — and remove the ones you don't want. A single item can still override these in its own alerts.
         </div>
+
+        {/* The current default alerts — each removable. */}
+        {leads.length > 0 && (
+          <div style={{ marginBottom:12 }}>
+            {normLeads(leads).map(val => (
+              <div key={String(val)} style={{ display:'flex', alignItems:'center', gap:11, padding:'9px 2px', borderBottom:'1px solid #F1EDF2' }}>
+                <span style={{ display:'inline-flex', color: val==='end' ? '#C77A4A' : 'var(--teal)' }}>
+                  <Icon value={val==='end' ? 'glyph:flag' : 'glyph:clock'} size={16} />
+                </span>
+                <span style={{ flex:1, minWidth:0, fontSize:14, color:'var(--text)' }}>{alertName(val)}</span>
+                <button onClick={() => removeLead(val)} aria-label={`Remove ${alertName(val)}`}
+                  style={{ border:'none', background:'none', cursor:'pointer', color:'#B4BEC8', fontSize:17, lineHeight:1, padding:'0 4px' }}>✕</button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Add an alert — presets, start, end, or a custom lead. */}
+        <div style={{ fontSize:10, color:'var(--muted)', letterSpacing:1, textTransform:'uppercase', marginBottom:6 }}>Add an alert</div>
         <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
           {LEAD_OPTIONS.map(opt => {
             const on = leads.includes(opt.mins)
@@ -176,13 +205,29 @@ export default function NotificationsSettings({ events, commitments }) {
               </button>
             )
           })}
+          {(() => {
+            const on = leads.includes('end')
+            return (
+              <button onClick={() => toggleLead('end')}
+                style={{ fontSize:12, padding:'7px 14px', borderRadius:20, cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:600,
+                  border: on ? 'none' : '1px solid var(--border)', background: on ? 'var(--forest)' : 'white', color: on ? 'var(--green-light)' : 'var(--muted)',
+                  display:'inline-flex', alignItems:'center', gap:6 }}>
+                {on && <span style={{ fontSize:11 }}>✓</span>}When it ends
+              </button>
+            )
+          })()}
+          <button onClick={() => setPickerOpen(true)}
+            style={{ fontSize:12, padding:'7px 14px', borderRadius:20, cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:600, border:'1px dashed var(--teal)', background:'white', color:'var(--teal)' }}>
+            ＋ Custom…
+          </button>
         </div>
         {leads.length === 0 && (
           <div style={{ fontSize:11.5, color:'#B45309', background:'#FEF3C7', borderRadius:8, padding:'8px 10px', marginTop:12 }}>
-            No lead times selected — you won't get any reminders. Pick at least one.
+            No alerts selected — you won't get any reminders. Add at least one.
           </div>
         )}
       </div>
+      {pickerOpen && <AlertPicker onClose={() => setPickerOpen(false)} onAdd={(mins) => addLead(mins)} />}
 
       {/* ── What you'll get ───────────────────────────────── */}
       <div style={{ ...card, marginBottom:0 }}>

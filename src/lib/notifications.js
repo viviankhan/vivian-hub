@@ -81,9 +81,10 @@ export function defaultLeadsLabel() {
   return leadsPhrase(getDefaultLeads())
 }
 
-// Resolve the saved lead-minute list into {mins, key} entries to schedule.
+// Resolve the saved lead list into schedulable entries. An 'end' entry becomes
+// an end-of-task alert (fires at start + duration); the rest are leads before.
 function activeLeads() {
-  return getDefaultLeads().map(m => ({ mins: m, key: `m${m}` }))
+  return getDefaultLeads().map(m => m === 'end' ? { end: true, key: 'end' } : { mins: m, key: `m${m}` })
 }
 
 // ── Per-item reminder overrides ────────────────────────────────
