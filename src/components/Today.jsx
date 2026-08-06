@@ -565,7 +565,52 @@ function RoutineCollapseRow({ routine, count, expanded, onToggle }) {
   )
 }
 
-function TimelineBlock({ task, categories, status, now, prevColor, nextColor, routineTint, tintOpacity = 0.5, filmTop = true, filmBottom = true, bandLabel = null, bandIcon = null, onBandLabel = null, onBandCollapse = null, isDone, elapsed, dateKey, onToggle, onManage, onShiftToNow, onOpen, onFocus, onToggleSub }) {
+// Unscheduled ("anytime") tasks — a day but no set time. Rendered as a compact
+// standalone list rather than on the timeline spine, since they have no place
+// on the clock. Sits at the top of the day on mobile and beside it on desktop.
+function AnytimeCard({ tasks, categories, isDoneOf, onToggle, onOpen, onManage }) {
+  if (!tasks.length) return null
+  return (
+    <div style={{ background:'linear-gradient(180deg, rgba(255,255,255,.9), rgba(255,255,255,.72))', border:'1px solid var(--border)', borderRadius:14, padding:'12px 14px', marginBottom:16 }}>
+      <div style={{ display:'flex', alignItems:'center', gap:7, marginBottom:11 }}>
+        <Icon value="glyph:list" size={15} color="#9AA6B2" />
+        <span style={{ fontSize:10, fontWeight:800, letterSpacing:1.2, textTransform:'uppercase', color:'var(--muted)' }}>Anytime</span>
+        <span style={{ fontSize:11, color:'var(--muted)', marginLeft:'auto', fontWeight:600 }}>{tasks.length}</span>
+      </div>
+      <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
+        {tasks.map(task => {
+          const catFound = (categories || []).find(x => x.id === task.tag)
+          const color    = task.color || catFound?.color || TAG_COLORS[task.tag] || '#9CA3AF'
+          const catIcon  = catFound?.icon || ''
+          const title    = task.title || stripTimePrefix(task.label)
+          const shownIcon = task.icon || catIcon || suggestGlyph(title)
+          const isDone   = isDoneOf(task)
+          return (
+            <div key={task.id} onClick={()=>onOpen&&onOpen(task)}
+              style={{ display:'flex', alignItems:'center', gap:10, cursor:onOpen?'pointer':'default', opacity:isDone?.5:1, transition:'opacity .3s' }}>
+              <div style={{ width:34, height:34, borderRadius:'50%', flexShrink:0, background:color, display:'flex', alignItems:'center', justifyContent:'center' }}>
+                {shownIcon
+                  ? <Icon value={shownIcon} size={17} color={iconColorOn(color)} />
+                  : <span style={{ color:iconColorOn(color), fontWeight:700, fontSize:15 }}>{(title || '?').charAt(0).toUpperCase()}</span>}
+              </div>
+              <span style={{ flex:1, minWidth:0, fontSize:14, fontWeight:600, color:isDone?'var(--muted)':'var(--text)', textDecoration:isDone?'line-through':'none', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{title}</span>
+              {!isDone && onManage && (
+                <button onClick={e=>{ e.stopPropagation(); onManage(task) }}
+                  style={{ fontSize:14, padding:'0 2px', border:'none', background:'none', color:'#C0C6CE', cursor:'pointer', lineHeight:1, flexShrink:0 }}>···</button>
+              )}
+              <div onClick={e=>{ e.stopPropagation(); if(!isDone) bloomBurst(e.currentTarget); onToggle(task) }}
+                style={{ width:22, height:22, borderRadius:'50%', flexShrink:0, cursor:'pointer', border:`2px solid ${color}`, background:isDone?color:'transparent', display:'flex', alignItems:'center', justifyContent:'center' }}>
+                {isDone && <span style={{ color:iconColorOn(color), fontSize:12, fontWeight:700 }}>✓</span>}
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+function TimelineBlock({ task, categories, status, now, prevColor, nextColor, routineTint, tintOpacity = 0.5, filmTop = true, filmBottom = true, bandLabel = null, bandIcon = null, onBandLabel = null, onBandCollapse = null, isDone, elapsed, dateKey, offerStartNow = false, onToggle, onManage, onShiftToNow, onOpen, onFocus, onToggleSub }) {
   const [subOpen, setSubOpen] = useState(false)
   const catFound = (categories || []).find(x => x.id === task.tag)
   const catColor = catFound?.color || TAG_COLORS[task.tag] || '#9CA3AF'
@@ -719,7 +764,7 @@ function TimelineBlock({ task, categories, status, now, prevColor, nextColor, ro
               <TargetIcon /> Focus Now
             </button>
           )}
-          {(isCurrent||isOverdue) && !INFLEXIBLE_TAGS.has(task.tag) && timeMins!==null && (
+          {(isCurrent||isOverdue||offerStartNow) && !INFLEXIBLE_TAGS.has(task.tag) && timeMins!==null && (
             <button onClick={e=>{ e.stopPropagation(); onShiftToNow() }}
               style={{ marginTop:9, padding:'7px 12px', borderRadius:9, border:`1px solid ${color}`, background:`${color}12`, color, cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontSize:11, fontWeight:600 }}>
               ⏱ Start now · shift the rest
@@ -1201,6 +1246,14 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
   const renderTasks = collapsedBlockIds.size
     ? tasksWithStatus.filter(t => !collapsedBlockIds.has(blockIdOf(t)))
     : tasksWithStatus
+  // Unscheduled ("anytime") tasks — those with a day but no set time — are
+  // lifted out of the inline timeline into their own list: the top of the day
+  // on mobile, a sidebar beside it on desktop (see .today-split in index.css).
+  // The timeline itself renders only the timed tasks. Timed tasks always sort
+  // ahead of untimed ones, so a timed task's index is the same in either list.
+  const anytimeTasks = renderTasks.filter(t => t._mins === null)
+  const renderTimed  = renderTasks.filter(t => t._mins !== null)
+  const hasAnytime   = anytimeTasks.length > 0
 
   const doneCount = tasksWithStatus.filter(t=>t._status==='past').length
   // When a task is in progress, the "now" indicator is drawn inside that task's
@@ -1208,7 +1261,14 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
   // after it. Only when nothing is current does the between-tasks marker show,
   // just before the first task that hasn't started yet.
   const hasCurrent = isToday && renderTasks.some(t=>t._status==='current')
-  const nowInsertIdx = (isToday && !hasCurrent) ? renderTasks.findIndex(t=>t._mins!==null&&t._mins>now) : -1
+  const nowInsertIdx = (isToday && !hasCurrent) ? renderTimed.findIndex(t=>t._mins!==null&&t._mins>now) : -1
+  // When nothing is in progress, you're on a break — so the very next task that
+  // hasn't started yet gets a "Start now" button, letting you pull it forward
+  // however small the gap before it is (a rendered break card only appears for
+  // 5-min-plus gaps, so short lulls would otherwise have no way to start early).
+  const nextUpcomingId = (isToday && !hasCurrent)
+    ? (renderTasks.find(t => t._mins!==null && t._mins>now && t._status==='upcoming' && !INFLEXIBLE_TAGS.has(t.tag) && !effectiveDone(t))?.id ?? null)
+    : null
   // How far through today's schedule we are (0–1), for the header progress bar:
   // elapsed span from the first task's start to the last task's end.
   const dayStart = tasksWithStatus.find(t=>t._mins!==null)?._mins ?? null
@@ -1499,6 +1559,17 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
         summary={summary} todos={todos}
         recurringTasks={recurringTasks} recurringExceptions={recurringExceptions} />
 
+      <div className={hasAnytime ? 'today-split' : undefined}>
+      {/* Unscheduled tasks — top of the day on mobile, sidebar on desktop. */}
+      {hasAnytime && (
+        <div className="today-split-aside">
+          <AnytimeCard tasks={anytimeTasks} categories={categories}
+            isDoneOf={effectiveDone}
+            onToggle={(t)=>syncToggle(t.id,t.label,t.tag,t.isCommitment?null:dateKey, !effectiveDone(t))}
+            onOpen={openTask} onManage={setManaging} />
+        </div>
+      )}
+      <div className={hasAnytime ? 'today-split-main' : undefined}>
       {/* Morning routine */}
       {morningEnabled && (
         <RoutineCard
@@ -1509,12 +1580,14 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
       )}
 
       {/* Timeline */}
-      {renderTasks.length===0 && blockSegments.length===0 ? (
+      {renderTimed.length===0 && blockSegments.length===0 ? (
+        hasAnytime ? null : (
         <div style={{textAlign:'center',padding:'40px 20px',color:'var(--muted)',fontSize:13}}>
           No schedule yet.{' '}
           <button onClick={()=>setAddingTask(true)} style={{color:'var(--teal)',background:'none',border:'none',cursor:'pointer',fontSize:13,fontFamily:'DM Sans,sans-serif',textDecoration:'underline'}}>Add a task</button>
           {' '}or set up recurring tasks in the Recurring tab.
         </div>
+        )
       ) : (
         (() => {
         // How many finished tasks each routine has, for the collapse summary.
@@ -1617,7 +1690,7 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
         }
         return (
         <div style={{paddingBottom:8}}>
-          {renderTasks.map((task,i)=>{
+          {renderTimed.map((task,i)=>{
             const before = bandsBefore(task)   // any empty time-block bands due before this row
             // Finished routine tasks collapse into a single summary row unless
             // their routine has been expanded. The first one emits the row (or
@@ -1658,8 +1731,8 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
               )]
             }
             // Free-time gap between the previous task's end and this one's start.
-            const prev = renderTasks[i-1]
-            const next = renderTasks[i+1]
+            const prev = renderTimed[i-1]
+            const next = renderTimed[i+1]
             const colorOf = t => t && (t.color || (categories||[]).find(x=>x.id===t.tag)?.color || TAG_COLORS[t.tag] || null)
             // A task's "band" is its containing time block (label + film), else
             // its routine group. Consecutive tasks in the SAME band read as one
@@ -1704,6 +1777,7 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
                   isDone={task._status==='past'}
                   elapsed={isToday && task._mins!==null && task._mins<=now}
                   dateKey={dateKey}
+                  offerStartNow={task.id===nextUpcomingId}
                   onToggle={()=>syncToggle(task.id,task.label,task.tag,task.isCommitment?null:dateKey, !effectiveDone(task))}
                   onManage={()=>setManaging(task)}
                   onOpen={()=>openTask(task)}
@@ -1730,6 +1804,8 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
           open={nightOpen} setOpen={setNightOpen}
           routineDone={routineDone} toggleRoutine={toggleRoutine} />
       )}
+      </div>{/* /today-split-main */}
+      </div>{/* /today-split */}
 
       {/* FAB — position lives in CSS (.today-fab) so it can lift above the
           mobile bottom bar; inline styles would otherwise override it. */}

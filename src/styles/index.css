@@ -206,6 +206,23 @@ body {
   padding-bottom: max(48px, env(safe-area-inset-bottom));
 }
 
+/* ── TODAY: unscheduled ("anytime") tasks ───────────────────────
+   Mobile (default): the anytime list stacks at the very top of the day
+   (it comes first in the DOM). Desktop: it moves to a sticky sidebar to
+   the right of the timeline via grid areas, so DOM order can stay
+   mobile-first while the visual layout flips. */
+@media (min-width: 768px) {
+  .today-split {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 248px;
+    grid-template-areas: "main aside";
+    gap: 22px;
+    align-items: start;
+  }
+  .today-split-main  { grid-area: main; min-width: 0; }
+  .today-split-aside { grid-area: aside; position: sticky; top: 16px; }
+}
+
 /* ── SHARED ─────────────────────────────────────────────────── */
 .section-label { font-size: 10px; letter-spacing: 3px; text-transform: uppercase; color: var(--muted); margin-bottom: 16px; }
 .divider { height: 1px; background: linear-gradient(90deg,transparent,var(--border),transparent); margin: 24px 0; }
