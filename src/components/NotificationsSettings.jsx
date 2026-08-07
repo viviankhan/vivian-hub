@@ -8,6 +8,10 @@ import {
   sendTestNotification, syncReminders, primeBaseline,
   LEAD_OPTIONS, triggersSupported,
 } from '../lib/notifications.js'
+import {
+  geolocationSupported, geolocationPermission, getCurrentLocation,
+  getGeoStatus, onGeoStatus,
+} from '../lib/geofence.js'
 import { Icon } from './IconPicker.jsx'
 import { AlertPicker, alertName } from './AlertPicker.jsx'
 
@@ -35,7 +39,7 @@ function isIOS() {
     (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
 }
 
-export default function NotificationsSettings({ events, commitments }) {
+export default function NotificationsSettings({ events, commitments, recurring = [], locatedCount = 0 }) {
   const supported = notificationsSupported()
   const [perm, setPerm] = useState(supported ? permissionState() : 'unsupported')
   const [enabled, setEnabled] = useState(getSettings().enabled)
@@ -44,12 +48,13 @@ export default function NotificationsSettings({ events, commitments }) {
   const [pickerOpen, setPickerOpen] = useState(false)
 
   // Persist a new default-alert set and re-arm the reminder timers so the
-  // change takes effect immediately.
+  // change takes effect immediately. Recurring items are passed through so a
+  // leads-only change here doesn't momentarily drop their scheduled reminders.
   const commitLeads = (next) => {
     const n = normLeads(next)
     setLeads(n)
     saveSettings({ leads: n })
-    syncReminders(events, commitments)
+    syncReminders(events, commitments, recurring)
   }
   // Toggle a default alert on/off (chips), add one (picker), or remove one (✕).
   const toggleLead = (val) => commitLeads(leads.includes(val) ? leads.filter(m => m !== val) : [...leads, val])
@@ -65,6 +70,34 @@ export default function NotificationsSettings({ events, commitments }) {
     return () => document.removeEventListener('visibilitychange', onVis)
   }, [])
 
+  // ── Location arrivals ────────────────────────────────────────
+  const geoOk = geolocationSupported()
+  const [geoPerm, setGeoPerm] = useState('unknown')  // granted | denied | prompt | unknown
+  const [geoStatus, setGeoStatus] = useState(() => getGeoStatus())
+  const [geoBusy, setGeoBusy] = useState(false)
+  useEffect(() => {
+    if (!geoOk) return
+    let live = true
+    geolocationPermission().then(p => { if (live) setGeoPerm(p) })
+    const off = onGeoStatus(setGeoStatus)   // live 'watching' / 'live' / 'error'
+    return () => { live = false; off() }
+  }, [geoOk])
+  // Ask for location once, and confirm we can actually get a fix — this is the
+  // "make geotracking work" button: it triggers the OS permission prompt and
+  // reports success/failure instead of failing silently in the background.
+  const testLocation = async () => {
+    setGeoBusy(true)
+    try {
+      await getCurrentLocation()
+      setGeoPerm('granted')
+    } catch (e) {
+      setGeoPerm(e && e.code === 1 ? 'denied' : 'prompt')
+    } finally {
+      setGeoBusy(false)
+      geolocationPermission().then(setGeoPerm).catch(() => {})
+    }
+  }
+
   const enable = async () => {
     setBusy(true)
     try {
@@ -75,8 +108,8 @@ export default function NotificationsSettings({ events, commitments }) {
       if (p === 'granted') {
         saveSettings({ enabled: true })
         setEnabled(true)
-        primeBaseline(events, commitments) // don't replay past-due items on first enable
-        syncReminders(events, commitments)
+        primeBaseline(events, commitments, recurring) // don't replay past-due items on first enable
+        syncReminders(events, commitments, recurring)
         sendTestNotification()
       }
     } finally {
@@ -87,7 +120,7 @@ export default function NotificationsSettings({ events, commitments }) {
   const disable = () => {
     saveSettings({ enabled: false })
     setEnabled(false)
-    syncReminders(events, commitments) // clears any pending timers
+    syncReminders(events, commitments, recurring) // clears any pending timers
   }
 
   const on = enabled && perm === 'granted'
@@ -228,6 +261,65 @@ export default function NotificationsSettings({ events, commitments }) {
         )}
       </div>
       {pickerOpen && <AlertPicker onClose={() => setPickerOpen(false)} onAdd={(mins) => addLead(mins)} />}
+
+      {/* ── Location arrivals ─────────────────────────────── */}
+      <div style={card}>
+        <div style={{ display:'inline-flex', alignItems:'center', gap:7, fontSize:13.5, fontWeight:600, color:'var(--text)', marginBottom:3 }}>
+          <Icon value="glyph:pin" size={16} color="var(--teal)" />Location arrivals
+        </div>
+        <div style={{ fontSize:11.5, color:'var(--muted)', marginBottom:12 }}>
+          Give a task a place (in its Add sheet) and Bloom starts it automatically when you arrive — while the app is open. Turn location on here so it can.
+        </div>
+
+        {!geoOk && (
+          <div style={{ fontSize:11.5, color:'var(--muted)' }}>
+            This device doesn't support location.
+          </div>
+        )}
+
+        {geoOk && (
+          <>
+            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:12 }}>
+              <div style={{ fontSize:12.5, color:'var(--text)' }}>
+                {geoPerm === 'granted' ? 'Location is on for Bloom.'
+                  : geoPerm === 'denied' ? 'Location is blocked in your device/browser settings.'
+                  : 'Location isn\'t on yet.'}
+              </div>
+              <button onClick={testLocation} disabled={geoBusy}
+                style={{ ...btn(geoPerm !== 'granted'), background: geoPerm === 'granted' ? 'white' : 'var(--forest)', color: geoPerm === 'granted' ? 'var(--teal)' : 'var(--green-light)', border: geoPerm === 'granted' ? '1px solid var(--teal)' : 'none' }}>
+                {geoBusy ? 'Checking…' : geoPerm === 'granted' ? 'Test location' : 'Turn on'}
+              </button>
+            </div>
+
+            {geoPerm === 'denied' && (
+              <div style={{ fontSize:11.5, color:'#B45309', background:'#FEF3C7', borderRadius:8, padding:'8px 10px', marginTop:10 }}>
+                Allow location for Bloom in your browser/device settings, then tap “Turn on” again. On iPhone this must be the installed Home-Screen app, with Settings → Bloom → Location set to “While Using”.
+              </div>
+            )}
+
+            {/* Live tracking status once a watch is running. */}
+            {geoPerm !== 'denied' && geoStatus.state === 'live' && (
+              <div style={{ fontSize:11.5, color:'#2F6B4F', background:'#F1FBF5', border:'1px solid #CDE9D8', borderRadius:8, padding:'8px 10px', marginTop:10 }}>
+                ✓ Tracking your arrival{geoStatus.accuracy ? ` (accurate to ~${Math.round(geoStatus.accuracy)} m)` : ''}.
+              </div>
+            )}
+            {geoPerm !== 'denied' && geoStatus.state === 'error' && geoStatus.message && (
+              <div style={{ fontSize:11.5, color:'#B45309', background:'#FEF3C7', borderRadius:8, padding:'8px 10px', marginTop:10 }}>
+                {geoStatus.message}
+              </div>
+            )}
+
+            <div style={{ fontSize:11, color:'var(--muted)', marginTop:10 }}>
+              {locatedCount > 0
+                ? `${locatedCount} task${locatedCount > 1 ? 's have' : ' has'} a place set — Bloom is watching for ${locatedCount > 1 ? 'them' : 'it'} while it's open.`
+                : 'No tasks have a place yet. Add one from a task’s “Location” option to use this.'}
+            </div>
+            <div style={{ fontSize:11, color:'var(--muted)', marginTop:6, lineHeight:1.6 }}>
+              Arrivals are detected only while Bloom is open (a web app can’t track location in the background), so it starts a located task the moment you open Bloom after getting there.
+            </div>
+          </>
+        )}
+      </div>
 
       {/* ── What you'll get ───────────────────────────────── */}
       <div style={{ ...card, marginBottom:0 }}>

@@ -106,7 +106,7 @@ function saveBottomBar(items) {
 }
 
 // ── Settings Drawer ────────────────────────────────────────────
-function SettingsDrawer({ open, onClose, settingsTab, setSettingsTab, notes, updateNotes, categories, addCategory, updateCategory, deleteCategory, events, commitments, font, setFont, theme, setTheme, season, setSeason, customColor, setCustom, background, setBackground, customBg, setCustomBg, layout, setLayout, soundOn, setSound, summary, setSummary }) {
+function SettingsDrawer({ open, onClose, settingsTab, setSettingsTab, notes, updateNotes, categories, addCategory, updateCategory, deleteCategory, events, commitments, recurring, locatedCount, font, setFont, theme, setTheme, season, setSeason, customColor, setCustom, background, setBackground, customBg, setCustomBg, layout, setLayout, soundOn, setSound, summary, setSummary }) {
   if (!open) return null
   const SECTIONS = [
     ['customize','Look','sun'],
@@ -130,7 +130,7 @@ function SettingsDrawer({ open, onClose, settingsTab, setSettingsTab, notes, upd
           <div style={{ padding:'20px 24px' }}>
             {settingsTab==='customize'  && <Customization font={font} onFont={setFont} theme={theme} onTheme={setTheme} season={season} onSeason={setSeason} customColor={customColor} onCustomColor={setCustom} background={background} onBackground={setBackground} customBackground={customBg} onCustomBackground={setCustomBg} layout={layout} onLayout={setLayout} soundOn={soundOn} onSound={setSound} summary={summary} onSummary={setSummary} />}
 
-            {settingsTab==='reminders'  && <NotificationsSettings events={events} commitments={commitments} />}
+            {settingsTab==='reminders'  && <NotificationsSettings events={events} commitments={commitments} recurring={recurring} locatedCount={locatedCount} />}
             {settingsTab==='categories' && <CategoriesManager categories={categories} addCategory={addCategory} updateCategory={updateCategory} deleteCategory={deleteCategory} />}
             {settingsTab==='notes'      && <Notes notes={notes} updateNotes={updateNotes} />}
             {settingsTab==='edits'      && <Edits />}
@@ -547,6 +547,13 @@ export default function App() {
     return out
   }, [recurringTaskRows, recurringMeta, recurringExceptions, completions])
 
+  // How many open tasks carry a place — shown in Settings so the user can see
+  // whether location arrivals have anything to act on.
+  const locatedTaskCount = useMemo(
+    () => commitments.filter(c => !c.done && commitmentMeta[c.id]?.location).length,
+    [commitments, commitmentMeta],
+  )
+
   // ── Reminders ────────────────────────────────────────────────
   // Recompute reminders whenever the data that drives them changes, and again
   // each time the app is brought back to the foreground (so it "catches up" on
@@ -556,10 +563,26 @@ export default function App() {
     if (loading) return
     // Time blocks (containers) aren't tasks — don't remind about them.
     const remindable = commitments.filter(c => !commitmentMeta[c.id]?.block)
-    syncReminders(events, remindable, recurringReminderItems)
-    const onVis = () => { if (!document.hidden) syncReminders(events, remindable, recurringReminderItems) }
+    const resync = () => syncReminders(events, remindable, recurringReminderItems)
+    resync()
+    // Re-sync on any signal that the app came back to life, plus a steady
+    // heartbeat. A single long setTimeout drifts badly when the device sleeps,
+    // so instead of trusting one timer per reminder we recompute every minute
+    // while open: syncReminders is idempotent (the "fired" map guarantees each
+    // reminder fires once), so this only ever *catches up* a due reminder that a
+    // drifted/suspended timer would otherwise miss — the main way reminders got
+    // dropped on an open tab.
+    const onVis = () => { if (!document.hidden) resync() }
     document.addEventListener('visibilitychange', onVis)
-    return () => document.removeEventListener('visibilitychange', onVis)
+    window.addEventListener('focus', resync)
+    window.addEventListener('online', resync)
+    const beat = setInterval(() => { if (!document.hidden) resync() }, 60 * 1000)
+    return () => {
+      document.removeEventListener('visibilitychange', onVis)
+      window.removeEventListener('focus', resync)
+      window.removeEventListener('online', resync)
+      clearInterval(beat)
+    }
   }, [loading, events, commitments, commitmentMeta, recurringReminderItems])
 
   // ── Label prediction model ───────────────────────────────────
@@ -614,7 +637,7 @@ export default function App() {
         return next
       })
       notifyArrival(task.name)
-    })
+    }, { onError: (err) => console.warn('[Bloom] location arrival watch:', err && (err.message || err.code)) })
     return stop
   }, [loading, commitments, commitmentMeta, recurringTasksEnriched, recurringExceptions, completions, occStarted])
 
@@ -1121,6 +1144,7 @@ export default function App() {
         categories={categories} addCategory={addCategoryFn}
         updateCategory={updateCategoryFn} deleteCategory={deleteCategoryFn}
         events={events} commitments={commitments}
+        recurring={recurringReminderItems} locatedCount={locatedTaskCount}
         font={font} setFont={setFont} theme={theme} setTheme={setTheme}
         season={season} setSeason={setSeason}
         customColor={customColor} setCustom={setCustom}

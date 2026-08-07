@@ -16,6 +16,35 @@ export function geolocationSupported() {
   return typeof navigator !== 'undefined' && 'geolocation' in navigator
 }
 
+// ── Live tracking status ───────────────────────────────────────
+// A tiny observable so the UI (Settings → Reminders) can show whether arrival
+// tracking is actually running, and surface a permission/GPS error instead of
+// failing silently. `state` is one of: 'idle' | 'watching' | 'live' | 'error'.
+let lastGeoStatus = { state: 'idle' }
+const geoStatusListeners = new Set()
+export function getGeoStatus() { return lastGeoStatus }
+export function onGeoStatus(fn) {
+  geoStatusListeners.add(fn)
+  return () => geoStatusListeners.delete(fn)
+}
+function emitGeoStatus(next) {
+  lastGeoStatus = { ...next, at: Date.now() }
+  for (const fn of geoStatusListeners) { try { fn(lastGeoStatus) } catch {} }
+}
+
+// Current geolocation permission, where the Permissions API exposes it
+// ('granted' | 'denied' | 'prompt'), else 'unknown'. Lets Settings tell the
+// user whether location is blocked without having to trigger a prompt.
+export async function geolocationPermission() {
+  try {
+    if (typeof navigator !== 'undefined' && navigator.permissions?.query) {
+      const s = await navigator.permissions.query({ name: 'geolocation' })
+      return s.state
+    }
+  } catch {}
+  return 'unknown'
+}
+
 // Grab the current position once (used by the add sheet's "Use my location").
 export function getCurrentLocation(options = {}) {
   return new Promise((resolve, reject) => {
@@ -79,13 +108,27 @@ export const DEFAULT_RADIUS_M = 150
 // the device is within that task's radius. `getTasks()` returns the current
 // list of { id, location:{lat,lng,radius} } to watch — it's called on each
 // position update so the set can change as tasks are added/completed.
+//
+// `options.onError(err)` receives geolocation failures (permission denied, no
+// fix) that were previously swallowed — so the UI can tell the user why arrival
+// auto-start isn't working. Remaining options pass through to watchPosition.
 // Returns a stop() function.
 export function watchArrivals(getTasks, onArrive, options = {}) {
-  if (!geolocationSupported()) return () => {}
+  const { onError, ...geoOpts } = options
+  if (!geolocationSupported()) {
+    const err = new Error('Location not supported on this device.')
+    emitGeoStatus({ state: 'error', message: err.message })
+    try { onError?.(err) } catch {}
+    return () => {}
+  }
   const arrived = new Set()   // task ids we've already fired for this session
   let watchId = null
 
+  emitGeoStatus({ state: 'watching' })
+
   const handle = (pos) => {
+    // First (and every) successful fix: tracking is genuinely live.
+    emitGeoStatus({ state: 'live', accuracy: pos.coords.accuracy })
     const here = { lat: pos.coords.latitude, lng: pos.coords.longitude }
     // A generous slack so a jittery GPS fix near the edge still counts.
     const slack = Math.min(pos.coords.accuracy || 0, 100)
@@ -102,12 +145,24 @@ export function watchArrivals(getTasks, onArrive, options = {}) {
     }
   }
 
-  watchId = navigator.geolocation.watchPosition(handle, () => {}, {
-    enableHighAccuracy: true, timeout: 20000, maximumAge: 30000, ...options,
+  const fail = (err) => {
+    // code 1 = permission denied, 2 = position unavailable, 3 = timeout.
+    const message = err?.code === 1
+      ? 'Location permission is off — allow it so tasks can start when you arrive.'
+      : err?.code === 3
+        ? "Couldn't get a location fix (timed out). Retrying."
+        : "Couldn't read your location right now. Retrying."
+    emitGeoStatus({ state: 'error', code: err?.code, message })
+    try { onError?.(err) } catch {}
+  }
+
+  watchId = navigator.geolocation.watchPosition(handle, fail, {
+    enableHighAccuracy: true, timeout: 20000, maximumAge: 30000, ...geoOpts,
   })
 
   return () => {
     if (watchId != null) navigator.geolocation.clearWatch(watchId)
     watchId = null
+    emitGeoStatus({ state: 'idle' })
   }
 }
