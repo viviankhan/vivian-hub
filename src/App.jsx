@@ -32,6 +32,7 @@ import ThoughtsBoard from './components/ThoughtsBoard.jsx'
 import NotificationsSettings from './components/NotificationsSettings.jsx'
 import SearchOverlay, { SearchIcon } from './components/SearchOverlay.jsx'
 import { registerServiceWorker, syncReminders, notifyArrival } from './lib/notifications.js'
+import { ensureBackgroundPush, syncScheduledPushes } from './lib/push.js'
 import { buildLabelModel, historyFromData } from './lib/predictLabel.js'
 import { geolocationSupported, watchArrivals } from './lib/geofence.js'
 import { Glyph } from './lib/glyphs.jsx'
@@ -512,7 +513,12 @@ export default function App() {
   // ── Reminders / PWA ──────────────────────────────────────────
   // Register the service worker once (enables installability + lets reminders
   // show even when the tab is backgrounded).
-  useEffect(() => { console.log('[Bloom] build', BUILD_ID); registerServiceWorker() }, [])
+  useEffect(() => {
+    console.log('[Bloom] build', BUILD_ID)
+    // Register the SW, then (if background push was turned on) make sure this
+    // device's stored push subscription is still current.
+    registerServiceWorker().then(() => ensureBackgroundPush())
+  }, [])
 
   // ── Derived schedule ─────────────────────────────────────────
   // recurring_tasks is a real table (one row per task). Today, Week and
@@ -565,6 +571,11 @@ export default function App() {
     const remindable = commitments.filter(c => !commitmentMeta[c.id]?.block)
     const resync = () => syncReminders(events, remindable, recurringReminderItems)
     resync()
+    // Also hand the upcoming reminders to the cloud queue so they can be pushed
+    // when Bloom is closed (no-op unless background push is turned on). Only on
+    // data changes — not the 60s heartbeat below — since the schedule only
+    // changes when the underlying items do.
+    syncScheduledPushes(events, remindable, recurringReminderItems)
     // Re-sync on any signal that the app came back to life, plus a steady
     // heartbeat. A single long setTimeout drifts badly when the device sleeps,
     // so instead of trusting one timer per reminder we recompute every minute

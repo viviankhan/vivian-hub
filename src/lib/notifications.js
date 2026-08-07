@@ -359,6 +359,26 @@ function buildReminders(events = [], commitments = [], recurring = []) {
   return out
 }
 
+// ── Concrete future reminders, for background push ─────────────
+// Same reminders `syncReminders` would fire, but shaped for server-side
+// delivery: only the still-future ones, each with a fixed title/body computed
+// now (the OS shows exactly this text later). src/lib/push.js queues these into
+// Supabase so the send-reminders Edge Function can deliver them even when Bloom
+// is closed. Independent of the local 'fired' bookkeeping — the server tracks
+// its own 'sent' flag per device.
+export function buildScheduledPushes(events, commitments, recurring = []) {
+  const now = Date.now()
+  return buildReminders(events, commitments, recurring)
+    .filter(r => r.at > now)
+    .map(r => ({
+      tag: r.id,
+      at: new Date(r.at).toISOString(),
+      title: headingFor(r, r.at),
+      body: r.body || '',
+      url: r.url || BASE,
+    }))
+}
+
 // ── The main entry point ────────────────────────────────────────
 // Call on app load and whenever events/commitments change. Fires anything
 // due now (catch-up) and sets live timers for anything due soon.

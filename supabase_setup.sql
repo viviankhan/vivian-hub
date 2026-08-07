@@ -134,3 +134,41 @@ alter table categories add column if not exists icon text;
 alter table categories enable row level security;
 drop policy if exists "Allow all" on categories;
 create policy "Allow all" on categories for all using (true) with check (true);
+
+-- ── Background push: subscriptions + scheduled reminders ──────────
+-- These power reminders that arrive even when Bloom is fully closed. The app
+-- (which owns all the reminder-timing logic) writes the concrete reminders it
+-- wants delivered into `scheduled_pushes`; a scheduled Edge Function
+-- (supabase/functions/send-reminders) delivers the ones whose time has come via
+-- Web Push. Both are per-device: one browser/phone = one row in
+-- push_subscriptions, keyed by a random device_id the app stores locally.
+
+-- One Web Push subscription per device. `subscription` is the browser's
+-- PushSubscription JSON (endpoint + keys); the Edge Function sends to it.
+create table if not exists push_subscriptions (
+  device_id    text primary key,
+  subscription jsonb not null,
+  updated_at   timestamptz not null default now()
+);
+alter table push_subscriptions enable row level security;
+drop policy if exists "Allow all" on push_subscriptions;
+create policy "Allow all" on push_subscriptions for all using (true) with check (true);
+
+-- Concrete reminders queued for background delivery. One row per (device, tag);
+-- `at` is when it should fire, `sent` flips true once delivered. Deleting a
+-- device's subscription cascades to its queued pushes.
+create table if not exists scheduled_pushes (
+  device_id  text not null references push_subscriptions (device_id) on delete cascade,
+  tag        text not null,
+  at         timestamptz not null,
+  title      text not null,
+  body       text,
+  url        text,
+  sent       boolean not null default false,
+  created_at timestamptz not null default now(),
+  primary key (device_id, tag)
+);
+create index if not exists idx_scheduled_pushes_due on scheduled_pushes (at) where sent = false;
+alter table scheduled_pushes enable row level security;
+drop policy if exists "Allow all" on scheduled_pushes;
+create policy "Allow all" on scheduled_pushes for all using (true) with check (true);

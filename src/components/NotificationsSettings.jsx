@@ -12,6 +12,9 @@ import {
   geolocationSupported, geolocationPermission, getCurrentLocation,
   getGeoStatus, onGeoStatus,
 } from '../lib/geofence.js'
+import {
+  pushSupported, backgroundPushEnabled, enableBackgroundPush, disableBackgroundPush,
+} from '../lib/push.js'
 import { Icon } from './IconPicker.jsx'
 import { AlertPicker, alertName } from './AlertPicker.jsx'
 
@@ -46,6 +49,23 @@ export default function NotificationsSettings({ events, commitments, recurring =
   const [leads, setLeads] = useState(() => getSettings().leads || [])
   const [busy, setBusy] = useState(false)
   const [pickerOpen, setPickerOpen] = useState(false)
+
+  // Background push — reminders that arrive even when Bloom is fully closed.
+  const bgSupported = pushSupported()
+  const [bgOn, setBgOn] = useState(backgroundPushEnabled())
+  const [bgBusy, setBgBusy] = useState(false)
+  const [bgErr, setBgErr] = useState('')
+  const toggleBackground = async () => {
+    setBgErr(''); setBgBusy(true)
+    try {
+      if (bgOn) { await disableBackgroundPush(); setBgOn(false) }
+      else {
+        const ok = await enableBackgroundPush(events, commitments, recurring)
+        setBgOn(ok)
+        if (!ok) setBgErr("Couldn't turn on background delivery. Make sure notifications are allowed, then try again.")
+      }
+    } finally { setBgBusy(false) }
+  }
 
   // Persist a new default-alert set and re-arm the reminder timers so the
   // change takes effect immediately. Recurring items are passed through so a
@@ -199,6 +219,37 @@ export default function NotificationsSettings({ events, commitments, recurring =
         )}
       </div>
 
+      {/* ── Background delivery ───────────────────────────── */}
+      {on && bgSupported && (
+        <div style={card}>
+          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:12 }}>
+            <div>
+              <div style={{ display:'inline-flex', alignItems:'center', gap:7, fontSize:13.5, fontWeight:600, color:'var(--text)' }}>
+                <Icon value="glyph:bell" size={16} color="var(--teal)" />Even when Bloom is closed
+              </div>
+              <div style={{ fontSize:11.5, color:'var(--muted)', marginTop:3 }}>
+                {bgOn
+                  ? 'On — your reminders are delivered from the cloud, so they arrive even if you haven\'t opened Bloom in days.'
+                  : 'Deliver reminders from the cloud so they arrive even when Bloom hasn\'t been open. Recommended.'}
+              </div>
+            </div>
+            <button onClick={toggleBackground} disabled={bgBusy} style={btn(!bgOn)}>
+              {bgBusy ? '…' : bgOn ? 'Turn off' : 'Turn on'}
+            </button>
+          </div>
+          {bgErr && (
+            <div style={{ fontSize:11.5, color:'#B45309', background:'#FEF3C7', borderRadius:8, padding:'8px 10px', marginTop:10 }}>
+              {bgErr}
+            </div>
+          )}
+          {bgOn && (
+            <div style={{ fontSize:11, color:'var(--muted)', marginTop:10, lineHeight:1.6 }}>
+              This device is registered for background reminders. Turn it on separately on each phone or computer where you want them.
+            </div>
+          )}
+        </div>
+      )}
+
       {/* ── Default alerts ────────────────────────────────── */}
       <div style={card}>
         <div style={{ fontSize:13.5, fontWeight:600, color:'var(--text)', marginBottom:3 }}>Default alerts</div>
@@ -329,7 +380,7 @@ export default function NotificationsSettings({ events, commitments, recurring =
           <li>Timed items remind relative to their <b>start time</b>.</li>
           <li>Untimed items are anchored to <b>9:00 AM</b> on their day.</li>
         </ul>
-        {background ? (
+        {(background || (bgOn && bgSupported)) ? (
           <div style={{ fontSize:11.5, color:'#2F6B4F', background:'#F1FBF5', border:'1px solid #CDE9D8', borderRadius:8, padding:'9px 11px', marginTop:12, lineHeight:1.6 }}>
             ✓ This device can deliver reminders <b>in the background</b> — they'll arrive at the right time even if you haven't opened Bloom recently.
           </div>

@@ -65,6 +65,29 @@ self.addEventListener('message', event => {
   }
 })
 
+// A real push arrived from the send-reminders Edge Function — show it. This is
+// what lets a reminder appear when Bloom has been fully closed (no open tab,
+// no live timer). Payload is the JSON the function sent.
+self.addEventListener('push', event => {
+  let p = {}
+  try { p = event.data ? event.data.json() : {} }
+  catch { p = { title: '🌸 Bloom', body: event.data ? event.data.text() : '' } }
+  const title = p.title || '🌸 Bloom'
+  event.waitUntil(self.registration.showNotification(title, {
+    body: p.body || '',
+    tag: p.tag,                       // collapse duplicates with the same tag
+    data: { url: p.url || BASE },
+    icon: BASE + 'icon-192.png',
+    badge: BASE + 'icon-192.png',
+    requireInteraction: false,
+  }))
+})
+
+// If the browser rotates our push subscription, drop the stale flag; the page
+// re-subscribes and re-stores the new one via ensureBackgroundPush() on its
+// next open. (Re-subscribing here would need the VAPID key in the worker.)
+self.addEventListener('pushsubscriptionchange', () => {})
+
 // Tapping a reminder focuses an open Bloom tab, or opens a fresh one.
 self.addEventListener('notificationclick', event => {
   event.notification.close()
