@@ -43,6 +43,7 @@ Deno.serve(async () => {
   if (error) return json({ error: error.message }, 500)
 
   let sent = 0, gone = 0, failed = 0
+  const errors: unknown[] = []
   for (const row of due ?? []) {
     // deno-lint-ignore no-explicit-any
     const sub = (row as any).push_subscriptions?.subscription
@@ -60,12 +61,22 @@ Deno.serve(async () => {
       // its queued pushes) so we stop trying. Anything else is likely transient
       // — leave the row unsent and it retries on the next run.
       // deno-lint-ignore no-explicit-any
-      const code = (e as any)?.statusCode
+      const err = e as any
+      const code = err?.statusCode
       if (code === 404 || code === 410) {
         await supabase.from('push_subscriptions').delete().eq('device_id', row.device_id)
         gone++
       } else {
         failed++
+        console.error('[send-reminders] push failed:', code, err?.body, err?.message)
+        if (errors.length < 3) {
+          errors.push({
+            statusCode: code ?? null,
+            message: err?.message ?? String(e),
+            body: err?.body ?? null,
+            endpoint: typeof sub?.endpoint === 'string' ? sub.endpoint.slice(0, 50) : null,
+          })
+        }
       }
     }
   }
@@ -74,5 +85,5 @@ Deno.serve(async () => {
   const dayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
   await supabase.from('scheduled_pushes').delete().lt('at', dayAgo)
 
-  return json({ ok: true, considered: (due ?? []).length, sent, gone, failed })
+  return json({ ok: true, considered: (due ?? []).length, sent, gone, failed, errors })
 })
