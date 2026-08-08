@@ -16,11 +16,23 @@ import webpush from 'npm:web-push@3.6.7'
 import { createClient } from 'npm:@supabase/supabase-js@2'
 
 // SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are injected into every Edge
-// Function automatically; the three VAPID_* values you add as secrets.
+// Function automatically.
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 const SERVICE_ROLE = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-const VAPID_PUBLIC = Deno.env.get('VAPID_PUBLIC_KEY')!
-const VAPID_PRIVATE = Deno.env.get('VAPID_PRIVATE_KEY')!
+
+// Strip anything a copy/paste can smuggle into a key — whitespace, a trailing
+// "=", or standard-base64 "+"/"/" — so setVapidDetails can't be crashed by a
+// formatting artifact. VAPID keys must be URL-safe base64 with no padding.
+const normKey = (k?: string | null) =>
+  (k || '').trim().replace(/\s+/g, '').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+
+// The VAPID *public* key is not secret and must exactly match the one baked
+// into the app, so it lives here directly — no hand-entered secret to get
+// mistyped. (An env override is honored if ever set to a valid value.)
+const VAPID_PUBLIC = normKey(Deno.env.get('VAPID_PUBLIC_KEY')) ||
+  'BOzhhdVPYiXuL08Y1WB6y09vKPfoL5PymZNL9ijlMKzVZJgyG4hmpCYFxcnnIS71mO9sInzMs3LBKad6YaBbwgc'
+// The *private* key stays a secret (never in this public repo); scrub it too.
+const VAPID_PRIVATE = normKey(Deno.env.get('VAPID_PRIVATE_KEY'))
 const VAPID_SUBJECT = Deno.env.get('VAPID_SUBJECT') || 'mailto:reminders@bloom.app'
 
 webpush.setVapidDetails(VAPID_SUBJECT, VAPID_PUBLIC, VAPID_PRIVATE)
