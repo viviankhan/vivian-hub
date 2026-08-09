@@ -196,6 +196,7 @@ export const EXTRA_GLYPHS = {
   plus:        { el: P("M12 5v14M5 12h14") },
   minus:       { el: P("M5 12h14") },
   arrowright:  { el: P("M5 12h14M14 6l6 6-6 6") },
+  play:        { el: P("M8 5.5v13l11-6.5Z"), solid:true },
   refresh:     { el: P("M20 12a8 8 0 1 1-2.3-5.6M20 4v3.5h-3.5") },
   download:    { el: P("M12 4v11M7 11l5 5 5-5M5 20h14") },
   upload:      { el: P("M12 20V9M7 13l5-5 5 5M5 4h14") },

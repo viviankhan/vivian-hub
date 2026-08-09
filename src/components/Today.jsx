@@ -478,7 +478,7 @@ function GapRow({ mins, phase = 'future', remaining = mins, prevColor, nextColor
     <button onClick={onStartNow}
       title={startLabel ? `Start “${startLabel}” now` : 'Start the next task now'}
       style={{ display:'inline-flex', alignItems:'center', gap:5, minWidth:0, maxWidth:'100%', fontSize:12, padding:'6px 14px', borderRadius:18, border:'none', background:'var(--teal)', color:'var(--on-accent, #fff)', fontWeight:700, cursor:'pointer', fontFamily:'DM Sans,sans-serif' }}>
-      <span style={{ fontSize:11, lineHeight:1, flexShrink:0 }}>▶</span>
+      <span style={{ display:'flex', flexShrink:0 }}><Icon value="glyph:play" size={12} color="var(--on-accent, #fff)" /></span>
       <span style={{ overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{label}</span>
     </button>
   )
@@ -936,11 +936,12 @@ function WeekStrip({ viewDate, setViewDate, commitments, categories, doneCount, 
           )}
         </div>
         <div style={{ position:'relative', height:10 }}>
-          {/* Track */}
-          <div style={{ position:'absolute', inset:0, borderRadius:999, background:'rgba(90,120,100,.12)', overflow:'hidden' }}>
-            {/* Completed-share fill — soft green gradient with a little glow. */}
+          {/* Track — a pale wash of the active theme accent. */}
+          <div style={{ position:'absolute', inset:0, borderRadius:999, background:'var(--green-light)', overflow:'hidden' }}>
+            {/* Completed-share fill — the theme accent's shimmer, so it follows
+                whatever theme color is set. */}
             <div style={{ height:'100%', width:`${total>0?(doneCount/total)*100:0}%`, borderRadius:999,
-              background:'linear-gradient(90deg, #46AE80, #77CE9F)', boxShadow:'0 1px 5px rgba(70,174,128,.45)', transition:'width .5s ease' }} />
+              background:'var(--glimmer, var(--teal))', boxShadow:'0 1px 5px rgba(0,0,0,.18)', transition:'width .5s ease' }} />
           </div>
           {/* "You are here" handle — a ringed dot riding along the day. */}
           {isToday && total>0 && (
