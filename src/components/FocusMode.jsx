@@ -26,7 +26,7 @@ function darken(hex, amt = 0.35) {
   return `rgb(${d(r)},${d(g)},${d(b)})`
 }
 
-export default function FocusMode({ title, icon, color = '#4A9EB5', time, durationMins, pauses = [], pausedAt = null, onDone, onPause, onResume, onExtend, onClose }) {
+export default function FocusMode({ title, icon, color = '#4A9EB5', time, durationMins, pauses = [], pausedAt = null, onDone, onPause, onResume, onExtend, onEndNow, onClose }) {
   const [now, setNow] = useState(Date.now())
   const [openedAt] = useState(Date.now())
   // Pausing is now a live state owned by the parent (persisted so the pill can
@@ -64,6 +64,7 @@ export default function FocusMode({ title, icon, color = '#4A9EB5', time, durati
   // Pausing is available whenever the task is still running; once paused, the
   // same control resumes it. (No "minimum progress" gate anymore — a pause just
   // leaves a gap in the pill, it no longer splits the task.)
+  const doneMin = Math.round(elapsed / 60000)
   const remainMin = hasWindow ? Math.round(remainingMs / 60000) : null
   const canPause = (!!onPause || !!onResume) && !done
 
@@ -147,6 +148,12 @@ export default function FocusMode({ title, icon, color = '#4A9EB5', time, durati
           <button onClick={onDone}
             style={{ padding:'14px 26px', borderRadius:16, border:'none', background:fg, color, fontWeight:700, fontSize:15, cursor:'pointer', fontFamily:'DM Sans,sans-serif' }}>
             ✓ Mark done
+          </button>
+        )}
+        {onEndNow && !done && (
+          <button onClick={() => onEndNow({ elapsedMins: doneMin })}
+            style={{ padding:'14px 20px', borderRadius:16, border:`1.5px solid ${btnBorder}`, background:btnBg, color:fg, fontWeight:600, fontSize:15, cursor:'pointer', fontFamily:'DM Sans,sans-serif' }}>
+            ⏹ End now
           </button>
         )}
         {canPause && (

@@ -1439,6 +1439,21 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
     persistFocusPauses({ ...focusPauses, [key]: { pauses: [...(cur.pauses || []), closed], pausedAt: null } })
   }
 
+  // ── End now from Focus mode ──────────────────────────────────
+  // Finish a task before its window is up: mark it done and, for a real
+  // commitment, trim its duration to the time actually spent so the timeline
+  // ends the block at "now" instead of its planned end. Any recorded pauses are
+  // cleared so the finished pill isn't left with a trailing gap.
+  const handleEndNow = (task, elapsedMins) => {
+    if (!effectiveDone(task)) syncToggle(task.id, task.label, task.tag, task.isCommitment ? null : dateKey, true)
+    if (task.isCommitment && updateCommitment && task._dur) {
+      updateCommitment(task.id, { durationMins: Math.max(1, Math.round(elapsedMins || 0)) })
+    }
+    const key = pauseKeyFor(task)
+    if (focusPauses[key]) { const n = { ...focusPauses }; delete n[key]; persistFocusPauses(n) }
+    setFocusTask(null)
+  }
+
   // ── Add time from Focus mode ─────────────────────────────────
   // Extend a running task (the "+5m" buttons that appear as it nears the end).
   // `totalExtra` is the cumulative minutes added this session, so setting the
@@ -1846,6 +1861,7 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
         onPause={()=>pauseFocus(focusTask)}
         onResume={()=>resumeFocus(focusTask)}
         onExtend={focusTask.isCommitment ? (mins)=>handleExtend(focusTask, mins) : null}
+        onEndNow={({elapsedMins})=>handleEndNow(focusTask, elapsedMins)}
         onClose={()=>setFocusTask(null)} />}
       {shiftPlan&&<ShiftChooser plan={shiftPlan} onApply={(ids)=>{applyShift(shiftPlan.pivot, ids); setShiftPlan(null)}} onCancel={()=>setShiftPlan(null)}/>}
       {shiftResult&&<ShiftToast result={shiftResult} onClose={()=>setShiftResult(null)}/>}

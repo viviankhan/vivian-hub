@@ -30,6 +30,7 @@ import RecurringTasksManager from './components/RecurringTasksManager.jsx'
 import CategoriesManager from './components/CategoriesManager.jsx'
 import EventsManager from './components/EventsManager.jsx'
 import ExternalCalendars from './components/ExternalCalendars.jsx'
+import Informatics from './components/Informatics.jsx'
 import { refreshCalendar, loadCachedCalendar, clearCachedCalendar, eventsToSpans } from './lib/calendars.js'
 import ThoughtsBoard from './components/ThoughtsBoard.jsx'
 import NotificationsSettings from './components/NotificationsSettings.jsx'
@@ -75,6 +76,7 @@ const TABS = [
   { id:'thoughts',    label:'Thoughts',    glyph:'bulb' },
   { id:'events',      label:'Events',      glyph:'ticket' },
   { id:'recurring',   label:'Recurring',   glyph:'repeat' },
+  { id:'informatics', label:'Insights',    glyph:'chart' },
 ]
 
 // ── Customizable bottom bar (mobile) ───────────────────────────
@@ -1235,6 +1237,7 @@ export default function App() {
           categories={categories}
           routines={routines} addRoutine={addRoutineFn} updateRoutine={updateRoutineFn} deleteRoutine={deleteRoutineFn}
           defaultWeekTasks={DEFAULT_RECURRING_TASKS} defaultDailyTodos={DEFAULT_DAILY_TODOS} />}
+        {tab==='informatics' && <Informatics commitments={commitmentsView} recurringTasks={recurringTasksEnriched} completions={completions} categories={categories} />}
       </main>
 
       <SettingsDrawer
