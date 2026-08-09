@@ -6,7 +6,6 @@
 import { useState, useEffect } from 'react'
 import { Icon } from './IconPicker.jsx'
 import { iconColorOn } from '../lib/glyphs.jsx'
-import { durationLabel } from '../lib/durations.js'
 
 function fmt12(t) {
   if (!t) return ''
@@ -27,13 +26,14 @@ function darken(hex, amt = 0.35) {
   return `rgb(${d(r)},${d(g)},${d(b)})`
 }
 
-export default function FocusMode({ title, icon, color = '#4A9EB5', time, durationMins, onDone, onPause, onExtend, onEndNow, onClose }) {
+export default function FocusMode({ title, icon, color = '#4A9EB5', time, durationMins, pauses = [], pausedAt = null, onDone, onPause, onResume, onExtend, onClose }) {
   const [now, setNow] = useState(Date.now())
   const [openedAt] = useState(Date.now())
-  // When set, the clock is frozen here — pausing stops the countdown so the
-  // split reflects exactly the moment you stepped away, not the seconds spent
-  // reading the confirmation.
-  const [pausedAt, setPausedAt] = useState(null)
+  // Pausing is now a live state owned by the parent (persisted so the pill can
+  // draw the unshaded gap): `pausedAt` is the moment the current break began, or
+  // null while running. When paused the clock freezes there so the ring and
+  // countdown hold, and the paused span shows on the timeline pill as a gap.
+  const paused = pausedAt != null
   // Minutes added to this task from inside Focus mode (the "+5m" buttons near
   // the end). Kept locally so the ring reacts instantly; onExtend persists it.
   const [extraMins, setExtraMins] = useState(0)
@@ -61,11 +61,11 @@ export default function FocusMode({ title, icon, color = '#4A9EB5', time, durati
   const frac = hasWindow ? Math.max(0, Math.min(1, elapsed / total)) : 0
   const done = hasWindow && clock >= endTs
 
-  // Minutes to break off: what you've finished vs. what's left to resume. Only
-  // offer a pause once there's at least a minute's worth of progress to keep.
-  const doneMin = Math.round(elapsed / 60000)
+  // Pausing is available whenever the task is still running; once paused, the
+  // same control resumes it. (No "minimum progress" gate anymore — a pause just
+  // leaves a gap in the pill, it no longer splits the task.)
   const remainMin = hasWindow ? Math.round(remainingMs / 60000) : null
-  const canPause = !!onPause && doneMin >= 1 && (!hasWindow || remainMin >= 1)
+  const canPause = (!!onPause || !!onResume) && !done
 
   // Adding time only makes sense while a timed window is winding down, so the
   // "+5m" buttons appear in the last 5 minutes (or once it's already over).
@@ -110,8 +110,8 @@ export default function FocusMode({ title, icon, color = '#4A9EB5', time, durati
             <div style={{ fontSize:34, fontWeight:700 }}>Time’s up</div>
           ) : (
             <>
-              <div style={{ fontSize:56, fontWeight:700, fontVariantNumeric:'tabular-nums', lineHeight:1 }}>{mm}:{two(ss)}</div>
-              <div style={{ fontSize:14, opacity:.85, marginTop:6 }}>{hasWindow ? 'remaining' : 'focusing'}</div>
+              <div style={{ fontSize:56, fontWeight:700, fontVariantNumeric:'tabular-nums', lineHeight:1, opacity: paused ? .55 : 1 }}>{mm}:{two(ss)}</div>
+              <div style={{ fontSize:14, opacity:.85, marginTop:6 }}>{paused ? '❚❚ paused' : (hasWindow ? 'remaining' : 'focusing')}</div>
             </>
           )}
         </div>
@@ -149,17 +149,16 @@ export default function FocusMode({ title, icon, color = '#4A9EB5', time, durati
             ✓ Mark done
           </button>
         )}
-        {onEndNow && (
-          <button onClick={() => onEndNow({ elapsedMins: doneMin })}
-            style={{ padding:'14px 20px', borderRadius:16, border:`1.5px solid ${btnBorder}`, background:btnBg, color:fg, fontWeight:600, fontSize:15, cursor:'pointer', fontFamily:'DM Sans,sans-serif' }}>
-            ⏹ End now
-          </button>
-        )}
         {canPause && (
-          <button onClick={() => setPausedAt(Date.now())}
-            style={{ padding:'14px 22px', borderRadius:16, border:`1.5px solid ${btnBorder}`, background:btnBg, color:fg, fontWeight:600, fontSize:15, cursor:'pointer', fontFamily:'DM Sans,sans-serif' }}>
-            ❚❚ Pause
-          </button>
+          paused
+            ? <button onClick={() => onResume && onResume()}
+                style={{ padding:'14px 24px', borderRadius:16, border:'none', background:fg, color, fontWeight:700, fontSize:15, cursor:'pointer', fontFamily:'DM Sans,sans-serif' }}>
+                ▶ Resume
+              </button>
+            : <button onClick={() => onPause && onPause()}
+                style={{ padding:'14px 22px', borderRadius:16, border:`1.5px solid ${btnBorder}`, background:btnBg, color:fg, fontWeight:600, fontSize:15, cursor:'pointer', fontFamily:'DM Sans,sans-serif' }}>
+                ❚❚ Pause
+              </button>
         )}
         <button onClick={onClose}
           style={{ padding:'14px 24px', borderRadius:16, border:`1.5px solid ${btnBorder}`, background:'transparent', color:fg, fontWeight:600, fontSize:15, cursor:'pointer', fontFamily:'DM Sans,sans-serif' }}>
@@ -167,32 +166,6 @@ export default function FocusMode({ title, icon, color = '#4A9EB5', time, durati
         </button>
       </div>
 
-      {/* Pause = break apart: freeze the clock and offer to bank the finished
-          portion and spin the rest off as a new task to resume later. */}
-      {pausedAt != null && (
-        <div style={{ position:'absolute', inset:0, background:'rgba(0,0,0,.5)', display:'flex', alignItems:'center', justifyContent:'center', padding:24 }}>
-          <div style={{ background:'white', color:'var(--text, #1c2b30)', borderRadius:20, padding:'22px 22px 18px', maxWidth:340, width:'100%', boxShadow:'0 24px 64px rgba(0,0,0,.35)', fontFamily:'DM Sans,sans-serif' }}>
-            <div className="serif" style={{ fontSize:19, fontWeight:600, marginBottom:8 }}>Pause &amp; resume later?</div>
-            <div style={{ fontSize:13.5, lineHeight:1.55, color:'var(--muted, #5b6b70)', marginBottom:18 }}>
-              You’ve done <strong style={{ color }}>{durationLabel(doneMin)}</strong>. It’ll be marked done, and{' '}
-              {remainMin != null
-                ? <><strong style={{ color }}>{durationLabel(remainMin)}</strong> will be saved as a new task</>
-                : <>a new task will be saved</>}{' '}
-              you can reschedule and pick up whenever you’re ready.
-            </div>
-            <div style={{ display:'flex', flexDirection:'column', gap:9 }}>
-              <button onClick={() => onPause({ elapsedMins: doneMin, remainingMins: remainMin })}
-                style={{ padding:'13px', borderRadius:13, border:'none', background:color, color:fg, fontWeight:700, fontSize:14.5, cursor:'pointer', fontFamily:'DM Sans,sans-serif' }}>
-                Pause &amp; save for later
-              </button>
-              <button onClick={() => setPausedAt(null)}
-                style={{ padding:'12px', borderRadius:13, border:'1px solid var(--border, #d9e0e2)', background:'white', color:'var(--text, #1c2b30)', fontWeight:600, fontSize:14, cursor:'pointer', fontFamily:'DM Sans,sans-serif' }}>
-                Keep going
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   )
 }

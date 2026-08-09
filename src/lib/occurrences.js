@@ -197,6 +197,76 @@ export function taskProgress({ date, time, durationMins, subDone = 0, subCount =
   return { show, frac, remaining: timeP ? timeP.remaining : null }
 }
 
+// How far along a task is, rendered as one or more shaded bands on its pill —
+// the pause-aware version of taskProgress. Focus mode records the wall-clock
+// spans a task was paused (`pauses` = [{from,to}] epochs; `pausedAt` = an open
+// pause). Those spans stay *unshaded*: the pill shades the time you were
+// actually working and leaves gaps where you'd stepped away, so by the end the
+// pill reads as a record of worked-vs-paused time. With no pauses this collapses
+// to a single band from the top — identical to the old single-fill progress.
+//
+// The axis is the task's own window: [start, start+duration] (from a startedAt
+// timestamp if it has one, else today's scheduled time). Returns
+// { show, segments:[{top,height}], frac, remaining, paused } with fractions in
+// 0–1 measured down from the top.
+export function taskSegments({ date, time, durationMins, subDone = 0, subCount = 0, startedAt = null, pauses = [], pausedAt = null }) {
+  const subFrac = subCount > 0 ? Math.max(0, Math.min(1, subDone / subCount)) : null
+
+  // Resolve the window [A, B] in epoch ms, or null if there's no timed window.
+  let A = null, B = null
+  if (startedAt && durationMins) {
+    A = startedAt; B = startedAt + durationMins * 60000
+  } else if (date && time && durationMins) {
+    const d = new Date()
+    const today = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
+    if (date === today) {
+      const [h, m] = String(time).split(':').map(Number)
+      const s = new Date(); s.setHours(h, m, 0, 0)
+      A = s.getTime(); B = A + durationMins * 60000
+    }
+  }
+
+  // No timed window → fall back to a single subtask-driven band (or nothing).
+  if (A == null) {
+    if (subFrac && subFrac > 0) return { show: true, segments: [{ top: 0, height: subFrac }], frac: subFrac, remaining: null, paused: !!pausedAt }
+    return { show: false, segments: [], frac: 0, remaining: null, paused: !!pausedAt }
+  }
+
+  const total = B - A
+  const nowMs = Date.now()
+  const paused = pausedAt != null
+  // Shade up to now — or up to the moment you paused, so an open pause reads as
+  // a gap from there to the live now-line.
+  const workedEnd = Math.min(B, paused ? pausedAt : nowMs)
+  const remaining = nowMs < B ? Math.round((B - nowMs) / 60000) : 0
+
+  if (workedEnd <= A) {
+    // Not started yet on the clock — show subtasks progress if any.
+    if (subFrac && subFrac > 0) return { show: true, segments: [{ top: 0, height: subFrac }], frac: subFrac, remaining, paused }
+    return { show: false, segments: [], frac: 0, remaining, paused }
+  }
+
+  // Worked intervals = [A, workedEnd] with each pause span cut out.
+  let intervals = [[A, workedEnd]]
+  for (const p of (pauses || [])) {
+    const pf = Math.max(A, Math.min(B, p.from)), pt = Math.max(A, Math.min(B, p.to))
+    if (pt <= pf) continue
+    const next = []
+    for (const [a, b] of intervals) {
+      if (pt <= a || pf >= b) { next.push([a, b]); continue }   // no overlap
+      if (pf > a) next.push([a, pf])                            // keep the part before the pause
+      if (pt < b) next.push([pt, b])                            // keep the part after the pause
+    }
+    intervals = next
+  }
+
+  const segments = intervals
+    .map(([a, b]) => ({ top: (a - A) / total, height: (b - a) / total }))
+    .filter(s => s.height > 0.002)
+  const frac = Math.max(0, Math.min(1, (workedEnd - A) / total))
+  return { show: segments.length > 0 || (subFrac && subFrac > 0), segments, frac, remaining, paused }
+}
+
 // Convenience: does this date have any scheduled item at all (used by Calendar
 // for its busyness shading and day dots)?
 export function recurringCountForDate(rows, dateStr, exceptions = {}) {

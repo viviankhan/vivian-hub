@@ -3,6 +3,11 @@
 // Icons (@iconify-json/mdi) into src/lib/iconset.js — the app's task icon set.
 // Each SPEC item is [id, 'candidate mdi names…', 'search keywords']; the first
 // candidate that exists in MDI wins. Run: node scripts/build-iconset.mjs
+//
+// An item can also supply a hand-drawn body instead of an MDI name, for shapes
+// MDI doesn't have (e.g. RNA, a lab coat): pass { body: '<path …/>' } in place
+// of the candidate string. Draw it on the 24×24 grid; fill/stroke with
+// "currentColor" so it inherits the icon color like the MDI bodies do.
 import fs from 'node:fs'
 import { createRequire } from 'node:module'
 const require = createRequire(import.meta.url)
@@ -57,6 +62,24 @@ const SPEC = [
     ['pushpin','pin','pin note board remind important'],
     ['newspaper','newspaper newspaper-variant','news read article press media'],
     ['settings','cog cog-outline','settings gear preferences options configure setup'],
+  ]],
+  ['Science & Lab', [
+    ['dna','dna','dna genetics gene helix biology double strand chromosome'],
+    ['rna',{ body:'<g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3c-3.5 3 3.5 6 0 9s3.5 6 0 9"/><path d="m11.1 4.4 3.4 1.1M8.7 7l3.6-.7M11.4 9.5l3.3 1.2M8.6 12.4l3.5-.9M11.2 14.8l3.4 1.1M8.7 17.4l3.6-.7"/></g>' },'rna genetics gene strand biology transcription helix'],
+    ['microscope','microscope','microscope lab science biology magnify slide research microbiology'],
+    ['testtube','test-tube','test tube sample lab experiment chemistry science tube vial'],
+    ['flaskRound','flask-round-bottom flask','flask round bottom lab chemistry experiment science reaction'],
+    ['beaker','beaker beaker-outline','beaker lab chemistry measure science liquid solution'],
+    ['pipette',{ body:'<g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3h5M11.5 3v3.5"/><path d="M10 6.5h3l-.4 11.2a1.1 1.1 0 0 1-2.2 0z" fill="currentColor" stroke="none"/><path d="M10 6.5h3l-.4 11.2a1.1 1.1 0 0 1-2.2 0z"/><path d="M11.5 18.5v2.5"/></g>' },'pipette dropper lab sample liquid measure titrate micropipette'],
+    ['cell',{ body:'<path fill="currentColor" fill-rule="evenodd" d="M12 2.75A9.25 9.25 0 1 0 21.25 12 9.25 9.25 0 0 0 12 2.75Zm0 2A7.25 7.25 0 1 1 4.75 12 7.25 7.25 0 0 1 12 4.75Z"/><circle cx="12.6" cy="12.8" r="2.8" fill="currentColor"/><circle cx="8" cy="9.2" r="1.1" fill="currentColor"/><circle cx="16" cy="16" r="1.25" fill="currentColor"/>' },'cell cells biology nucleus membrane microbiology organelle'],
+    ['microbe','bacteria virus','microbe germ bacteria cell pathogen biology bug'],
+    ['virus','virus virus-outline','virus germ pathogen infection covid biology'],
+    ['atom','atom atom-variant','atom physics science nucleus electron molecule chemistry'],
+    ['molecule','molecule molecule-co2','molecule chemistry compound bond structure science'],
+    ['labcoat',{ body:'<path fill="currentColor" fill-rule="evenodd" d="M8.2 3 10.6 3 12 5 13.4 3 15.8 3C17 3 18 4 18 5.2V20c0 .6-.5 1-1 1H7c-.5 0-1-.4-1-1V5.2C6 4 7 3 8.2 3ZM11.6 5.8h.8V21h-.8ZM8 12h2v2.2H8Zm6 0h2v2.2h-2Z"/>' },'lab coat white coat scientist doctor uniform research jacket'],
+    ['goggles','safety-goggles','goggles safety glasses eye protection lab round chemistry'],
+    ['roundglasses','glasses','round glasses spectacles eyewear specs read vision'],
+    ['radioactive','radioactive','radioactive radiation nuclear hazard science warning'],
   ]],
   ['Health', [
     ['cross','medical-bag hospital-box','doctor clinic hospital appointment health checkup nurse medical'],
@@ -262,6 +285,12 @@ const missing = []
 for (const [group, items] of SPEC) {
   const outItems = []
   for (const [id, cands, k] of items) {
+    // Hand-drawn body (for shapes MDI lacks) — used as-is, no MDI lookup.
+    if (cands && typeof cands === 'object' && cands.body) {
+      ICONS[id] = { body: cands.body, k, group }
+      outItems.push([id, k])
+      continue
+    }
     const name = cands.split(/\s+/).find(n => mdi.icons[n])
     if (!name) { missing.push(`${id} (tried: ${cands})`); continue }
     ICONS[id] = { body: mdi.icons[name].body, k, group }

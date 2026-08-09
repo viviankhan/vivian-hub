@@ -9,6 +9,7 @@ import {
   getCommitments, addCommitment as dbAddCommitment, updateCommitment as dbUpdateCommitment, deleteCommitment as dbDeleteCommitment,
   getVacations, addVacation as dbAddVacation, deleteVacation as dbDeleteVacation,
   getEvents, addEvent as dbAddEvent, deleteEvent as dbDeleteEvent,
+  getExternalCalendars, setExternalCalendars,
   getRecurringTasks, addRecurringTask, updateRecurringTask, deleteRecurringTask, clearRecurringTasks,
   getRecurringExceptions, setRecurringExceptions,
   getRecurringMeta, setRecurringMeta,
@@ -28,6 +29,8 @@ import Edits       from './components/Edits.jsx'
 import RecurringTasksManager from './components/RecurringTasksManager.jsx'
 import CategoriesManager from './components/CategoriesManager.jsx'
 import EventsManager from './components/EventsManager.jsx'
+import ExternalCalendars from './components/ExternalCalendars.jsx'
+import { refreshCalendar, loadCachedCalendar, clearCachedCalendar, eventsToSpans } from './lib/calendars.js'
 import ThoughtsBoard from './components/ThoughtsBoard.jsx'
 import NotificationsSettings from './components/NotificationsSettings.jsx'
 import SearchOverlay, { SearchIcon } from './components/SearchOverlay.jsx'
@@ -107,11 +110,12 @@ function saveBottomBar(items) {
 }
 
 // ── Settings Drawer ────────────────────────────────────────────
-function SettingsDrawer({ open, onClose, settingsTab, setSettingsTab, notes, updateNotes, categories, addCategory, updateCategory, deleteCategory, events, commitments, recurring, locatedCount, font, setFont, theme, setTheme, season, setSeason, customColor, setCustom, background, setBackground, customBg, setCustomBg, layout, setLayout, soundOn, setSound, summary, setSummary }) {
+function SettingsDrawer({ open, onClose, settingsTab, setSettingsTab, notes, updateNotes, categories, addCategory, updateCategory, deleteCategory, events, commitments, recurring, locatedCount, externalCalendars, calendarStatuses, addCalendar, toggleCalendar, removeCalendar, refreshOneCalendar, font, setFont, theme, setTheme, season, setSeason, customColor, setCustom, background, setBackground, customBg, setCustomBg, layout, setLayout, soundOn, setSound, summary, setSummary }) {
   if (!open) return null
   const SECTIONS = [
     ['customize','Look','sun'],
     ['reminders','Reminders','bell'],
+    ['calendars','Calendars','calendar'],
     ['categories','Categories','grid'],
     ['notes','Notes','book'],
     ['edits','Edits','sparkle'],
@@ -132,6 +136,7 @@ function SettingsDrawer({ open, onClose, settingsTab, setSettingsTab, notes, upd
             {settingsTab==='customize'  && <Customization font={font} onFont={setFont} theme={theme} onTheme={setTheme} season={season} onSeason={setSeason} customColor={customColor} onCustomColor={setCustom} background={background} onBackground={setBackground} customBackground={customBg} onCustomBackground={setCustomBg} layout={layout} onLayout={setLayout} soundOn={soundOn} onSound={setSound} summary={summary} onSummary={setSummary} />}
 
             {settingsTab==='reminders'  && <NotificationsSettings events={events} commitments={commitments} recurring={recurring} locatedCount={locatedCount} />}
+            {settingsTab==='calendars'  && <ExternalCalendars calendars={externalCalendars} statuses={calendarStatuses} onAdd={addCalendar} onToggle={toggleCalendar} onRemove={removeCalendar} onRefresh={refreshOneCalendar} />}
             {settingsTab==='categories' && <CategoriesManager categories={categories} addCategory={addCategory} updateCategory={updateCategory} deleteCategory={deleteCategory} />}
             {settingsTab==='notes'      && <Notes notes={notes} updateNotes={updateNotes} />}
             {settingsTab==='edits'      && <Edits />}
@@ -470,6 +475,11 @@ export default function App() {
   const [recurringMeta,    setRecurringMeta_]   = useState({})
   const [vacations,        setVacations_]       = useState([])
   const [events,           setEvents_]          = useState([])
+  // Subscribed (external, read-only) calendars — config + their fetched spans +
+  // per-calendar sync status. See src/lib/calendars.js.
+  const [extCalendars,     setExtCalendars_]    = useState([])
+  const [extSpans,         setExtSpans_]        = useState({})   // id → span[]
+  const [calStatuses,      setCalStatuses_]     = useState({})   // id → { state, error, count, fetchedAt }
   const [categories,       setCategories_]      = useState([])
   const [routines,         setRoutines_]         = useState(DEFAULT_ROUTINES)
   const [loading,          setLoading]          = useState(true)
@@ -509,6 +519,81 @@ export default function App() {
     }
     load()
   }, [])
+
+  // ── Subscribed (external) calendars ──────────────────────────
+  // Sync one subscription: fetch + parse its .ics, map the events to read-only
+  // spans, and record the outcome. On failure we keep whatever was last cached
+  // so the calendar doesn't blink empty on a flaky connection.
+  const syncCalendar = useCallback(async (sub) => {
+    setCalStatuses_(prev => ({ ...prev, [sub.id]: { ...(prev[sub.id] || {}), state: 'syncing' } }))
+    try {
+      const { events: parsed, fetchedAt } = await refreshCalendar(sub)
+      const spans = eventsToSpans(sub, parsed)
+      setExtSpans_(prev => ({ ...prev, [sub.id]: spans }))
+      setCalStatuses_(prev => ({ ...prev, [sub.id]: { state: 'ok', count: parsed.length, fetchedAt } }))
+    } catch (e) {
+      setCalStatuses_(prev => ({ ...prev, [sub.id]: { ...(prev[sub.id] || {}), state: 'error', error: e?.message || 'Sync failed' } }))
+    }
+  }, [])
+
+  // On load: read the synced subscription list, show any cached events instantly,
+  // then refresh the enabled ones in the background.
+  useEffect(() => {
+    let alive = true
+    getExternalCalendars().then(list => {
+      if (!alive) return
+      const subs = Array.isArray(list) ? list : []
+      setExtCalendars_(subs)
+      const cachedSpans = {}, cachedStatus = {}
+      for (const sub of subs) {
+        const cached = loadCachedCalendar(sub.id)
+        if (cached) {
+          cachedSpans[sub.id] = eventsToSpans(sub, cached.events)
+          cachedStatus[sub.id] = { state: 'ok', count: cached.events.length, fetchedAt: cached.fetchedAt }
+        }
+      }
+      setExtSpans_(cachedSpans)
+      setCalStatuses_(cachedStatus)
+      // Refresh the enabled feeds against the network (best-effort).
+      subs.filter(s => s.enabled !== false).forEach(s => syncCalendar(s))
+    })
+    return () => { alive = false }
+  }, [syncCalendar])
+
+  // Each subscription-list change is mirrored to the synced kv blob so a
+  // calendar you add on one device shows up on the others. A cloud-save failure
+  // here is non-fatal — local state already updated — so it's just logged.
+  const addCalendar = useCallback((cal) => {
+    const sub = { id: 'cal-' + Date.now().toString(36), name: cal.name, url: cal.url, color: cal.color, enabled: true, createdAt: new Date().toISOString() }
+    setExtCalendars_(prev => { const next = [...prev, sub]; setExternalCalendars(next).catch(e => console.warn("[Bloom] calendar config save failed:", e)); return next })
+    syncCalendar(sub)
+  }, [syncCalendar])
+  const toggleCalendar = useCallback((id) => {
+    setExtCalendars_(prev => {
+      const next = prev.map(c => c.id === id ? { ...c, enabled: !(c.enabled !== false) } : c)
+      setExternalCalendars(next).catch(e => console.warn("[Bloom] calendar config save failed:", e))
+      // Turning one back on with no cached events yet → fetch it.
+      const sub = next.find(c => c.id === id)
+      if (sub && sub.enabled && !extSpans[id]) syncCalendar(sub)
+      return next
+    })
+  }, [extSpans, syncCalendar])
+  const removeCalendar = useCallback((id) => {
+    clearCachedCalendar(id)
+    setExtSpans_(prev => { const n = { ...prev }; delete n[id]; return n })
+    setCalStatuses_(prev => { const n = { ...prev }; delete n[id]; return n })
+    setExtCalendars_(prev => { const next = prev.filter(c => c.id !== id); setExternalCalendars(next).catch(e => console.warn("[Bloom] calendar config save failed:", e)); return next })
+  }, [])
+  const refreshOneCalendar = useCallback((id) => {
+    const sub = extCalendars.find(c => c.id === id)
+    if (sub) syncCalendar(sub)
+  }, [extCalendars, syncCalendar])
+
+  // Enabled calendars' events, as spans, merged into what the Calendar renders.
+  const externalSpans = useMemo(
+    () => extCalendars.filter(c => c.enabled !== false).flatMap(c => extSpans[c.id] || []),
+    [extCalendars, extSpans],
+  )
 
   // ── Reminders / PWA ──────────────────────────────────────────
   // Register the service worker once (enables installability + lets reminders
@@ -1072,7 +1157,11 @@ export default function App() {
     scheduled, addScheduledTask,
     commitments: commitmentsView, addCommitment, updateCommitment, deleteCommitment,
     vacations, addVacation, deleteVacation,
-    events, addEvent, deleteEvent,
+    // The Calendar sees the user's own events plus the read-only spans from any
+    // enabled subscribed calendars (Mom's family calendar, etc.). Editing/adding
+    // still only ever touches the user's own `events` (EventsManager gets those
+    // raw), and reminders never fire for the external ones.
+    events: [...events, ...externalSpans], addEvent, deleteEvent,
     categories,
     // History-based label prediction for the add sheet (no blind defaults).
     labelModel,
@@ -1156,6 +1245,9 @@ export default function App() {
         updateCategory={updateCategoryFn} deleteCategory={deleteCategoryFn}
         events={events} commitments={commitments}
         recurring={recurringReminderItems} locatedCount={locatedTaskCount}
+        externalCalendars={extCalendars} calendarStatuses={calStatuses}
+        addCalendar={addCalendar} toggleCalendar={toggleCalendar}
+        removeCalendar={removeCalendar} refreshOneCalendar={refreshOneCalendar}
         font={font} setFont={setFont} theme={theme} setTheme={setTheme}
         season={season} setSeason={setSeason}
         customColor={customColor} setCustom={setCustom}

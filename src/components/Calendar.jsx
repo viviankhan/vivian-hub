@@ -252,12 +252,16 @@ export default function Calendar({ commitments, vacations, events, log, categori
           {selectedSpans.map((ev, i) => (
             <div key={'sp'+i} style={{ display:'flex', gap:10, alignItems:'center', padding:'9px 12px', borderRadius:8, marginBottom:6, background:`${ev.color}18`, borderLeft:`4px solid ${ev.color}`, border:`1px solid ${ev.color}44` }}>
               {ev.icon && <Icon value={ev.icon} size={14} />}
-              <div style={{ flex:1 }}>
+              <div style={{ flex:1, minWidth:0 }}>
                 <div style={{ fontSize:13, color:'var(--text)', fontWeight:600 }}>{ev.label}</div>
                 <div style={{ fontSize:10, color:ev.color, fontWeight:600, letterSpacing:.5 }}>
-                  Event · {ev.allDay || !ev.startTime ? 'all day' : `${fmt12(ev.startTime)}${ev.endTime ? '–'+fmt12(ev.endTime) : ''}`}
+                  {(ev.external ? (ev.calendarName || 'Subscribed calendar') : 'Event')} · {ev.allDay || !ev.startTime ? 'all day' : `${fmt12(ev.startTime)}${ev.endTime ? '–'+fmt12(ev.endTime) : ''}`}
+                  {ev.location ? ` · ${ev.location}` : ''}
                 </div>
               </div>
+              {ev.external && (
+                <span title="From a subscribed calendar — read-only" style={{ fontSize:8.5, letterSpacing:.6, textTransform:'uppercase', color:ev.color, border:`1px solid ${ev.color}66`, borderRadius:20, padding:'2px 7px', fontWeight:700, flexShrink:0 }}>Synced</span>
+              )}
             </div>
           ))}
           {selectedEvents.map((e, i) => (

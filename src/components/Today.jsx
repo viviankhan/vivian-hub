@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo, useLayoutEffect } from 'react'
-import { recurringOccurrencesForDate, taskProgress, occKey } from '../lib/occurrences.js'
+import { recurringOccurrencesForDate, taskSegments, occKey } from '../lib/occurrences.js'
 import { findSlots } from '../lib/scheduler.js'
 import { getRoutines } from '../lib/storage.js'
 import { normalizeRoutineItems, sortByTime, to12 } from './Routines.jsx'
@@ -610,7 +610,7 @@ function AnytimeCard({ tasks, categories, isDoneOf, onToggle, onOpen, onManage }
   )
 }
 
-function TimelineBlock({ task, categories, status, now, prevColor, nextColor, routineTint, tintOpacity = 0.5, filmTop = true, filmBottom = true, bandLabel = null, bandIcon = null, onBandLabel = null, onBandCollapse = null, isDone, elapsed, dateKey, offerStartNow = false, onToggle, onManage, onShiftToNow, onOpen, onFocus, onToggleSub }) {
+function TimelineBlock({ task, categories, status, now, prevColor, nextColor, routineTint, tintOpacity = 0.5, filmTop = true, filmBottom = true, bandLabel = null, bandIcon = null, onBandLabel = null, onBandCollapse = null, isDone, elapsed, dateKey, pauseData = null, offerStartNow = false, onToggle, onManage, onShiftToNow, onOpen, onFocus, onToggleSub }) {
   const [subOpen, setSubOpen] = useState(false)
   const catFound = (categories || []).find(x => x.id === task.tag)
   const catColor = catFound?.color || TAG_COLORS[task.tag] || '#9CA3AF'
@@ -692,17 +692,19 @@ function TimelineBlock({ task, categories, status, now, prevColor, nextColor, ro
         <div style={{ width:3, height:14, borderRadius:3, background: prevColor ? `linear-gradient(to bottom, ${prevColor}, ${color})` : color }} />
         <div style={{ position:'relative', overflow:'hidden', width:52, height:pillH, borderRadius:26, flexShrink:0, background:color, display:'flex', alignItems:'center', justifyContent:'center',
           boxShadow:isCurrent?`0 0 0 4px ${color}33`:'none' }}>
-          {/* Progress shade — a lighter fill rises from the bottom by how far
-              along the task is: elapsed time while it's happening, and/or the
-              share of its subtasks that are checked off. */}
+          {/* Progress shade — lighter fill(s) marking how far along the task is:
+              elapsed time while it's happening (and/or the share of subtasks
+              checked off). When the task has been paused in Focus mode, the time
+              it was paused stays UNSHADED, so the pill ends up as bands of
+              worked time separated by gaps for each break. */}
           {(() => {
-            const p = isDone ? null : taskProgress({ date: dateKey, time: task._time, durationMins: task._dur, subDone: task.subDone, subCount: task.subCount, startedAt: task.startedAt })
+            const seg = isDone ? null : taskSegments({ date: dateKey, time: task._time, durationMins: task._dur, subDone: task.subDone, subCount: task.subCount, startedAt: task.startedAt, pauses: pauseData?.pauses, pausedAt: pauseData?.pausedAt })
             const shade = iconColorOn(color) === '#FFFFFF' ? 'rgba(255,255,255,.34)' : 'rgba(0,0,0,.16)'
             // Fill from the top so the elapsed portion (and its lower edge)
             // tracks downward as the day advances — matching the now-line.
-            return p && p.show ? (
-              <div style={{ position:'absolute', left:0, right:0, top:0, height:`${p.frac * 100}%`, background:shade, transition:'height .5s ease' }} />
-            ) : null
+            return seg && seg.show ? seg.segments.map((s, i) => (
+              <div key={i} style={{ position:'absolute', left:0, right:0, top:`${s.top * 100}%`, height:`${s.height * 100}%`, background:shade, transition:'top .5s ease, height .5s ease' }} />
+            )) : null
           })()}
           <span style={{ position:'relative', display:'flex' }}>
             {shownIcon
@@ -964,6 +966,26 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
   const [editingRecDate, setEditingRecDate] = useState(null)  // which occurrence's date (for single-event edits)
   const [shiftPlan,   setShiftPlan]   = useState(null)  // {pivot, rest, selected} — "start now" push chooser
   const [focusTask,   setFocusTask]   = useState(null)  // task shown in full-screen Focus mode
+  // Focus pauses — the wall-clock spans a task was paused in Focus mode, keyed
+  // by "<date>:<taskId>". They drive the unshaded gaps in the pill (a task's
+  // pill shades the time worked and leaves gaps where it was paused, instead of
+  // the old behaviour of splitting the remainder off as a rescheduled task).
+  // Device-local: a focus session lives on one device, so no cloud sync needed.
+  const [focusPauses, setFocusPauses] = useState(() => {
+    try {
+      const all = JSON.parse(localStorage.getItem('bloom_focus_pauses') || '{}')
+      // Drop entries from earlier days so the store can't grow without bound.
+      const today = todayKey()
+      const kept = {}
+      for (const [k, v] of Object.entries(all)) { if (k.slice(0, 10) === today) kept[k] = v }
+      return kept
+    } catch { return {} }
+  })
+  const persistFocusPauses = (next) => {
+    setFocusPauses(next)
+    try { localStorage.setItem('bloom_focus_pauses', JSON.stringify(next)) } catch {}
+  }
+  const pauseKeyFor = (task) => `${dateKey}:${task.id}`
   const [addingTask,  setAddingTask]  = useState(false)
   const [addPreset,   setAddPreset]   = useState(null)  // {time, cat} when adding inside a block
   const [morningOpen, setMorningOpen] = useState(false)
@@ -1397,40 +1419,24 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
     setShiftPlan({ pivot: pivotTask, rest, selected })
   }
 
-  // ── Pause & break apart ──────────────────────────────────────
-  // Pausing in Focus mode splits a task in two: the minutes already spent are
-  // banked (the task is marked done, and — for a real commitment — shrunk to
-  // just that finished span so the timeline reflects it), and the remainder is
-  // spun off as a new task that can be rescheduled and resumed independently.
-  const handlePauseSplit = (task, elapsedMins, remainingMins) => {
-    const doneMin = Math.max(1, Math.round(elapsedMins || 0))
-    const startMins = task._time != null ? hhmmToMins(task._time) : (task._mins ?? now)
-    // The leftover's length: the explicit remaining window, or (when the task
-    // had a duration) whatever's left after the finished span, or open-ended.
-    const remain = remainingMins != null
-      ? Math.max(1, Math.round(remainingMins))
-      : (task._dur ? Math.max(1, task._dur - doneMin) : null)
-    const leftoverStart = minsToHHMM(Math.min(END_OF_DAY_MINS, startMins + doneMin))
-    const baseTitle = task.title || stripTimePrefix(task.label)
-
-    // 1) Bank the finished portion.
-    if (!effectiveDone(task)) syncToggle(task.id, task.label, task.tag, task.isCommitment ? null : dateKey, true)
-    // 2) A real commitment can be trimmed to just the time actually spent.
-    if (task.isCommitment && updateCommitment && task._dur) updateCommitment(task.id, { durationMins: doneMin })
-    // 3) Spin the remainder off as a fresh task to resume later.
-    if (addCommitment) addCommitment({
-      id: 'resume-' + task.id + '-' + Date.now(),
-      text: baseTitle,
-      date: dateKey,
-      time: leftoverStart,
-      durationMins: remain,
-      cat: task.tag || null,
-      color: task.color || null,
-      icon: task.icon || null,
-      done: false,
-      createdAt: new Date().toISOString(),
-    })
-    setFocusTask(null)
+  // ── Pause & resume (Focus mode) ──────────────────────────────
+  // Pausing no longer splits the task or reschedules a remainder — the task
+  // keeps its place on the timeline. We just record the wall-clock span it was
+  // paused; the pill leaves that span unshaded and resumes shading when you pick
+  // the task back up (see taskSegments + the pill render). Pauses are keyed by
+  // the day + task id and stored device-local.
+  const pauseFocus = (task) => {
+    const key = pauseKeyFor(task)
+    const cur = focusPauses[key] || { pauses: [], pausedAt: null }
+    if (cur.pausedAt) return                       // already paused
+    persistFocusPauses({ ...focusPauses, [key]: { pauses: cur.pauses || [], pausedAt: Date.now() } })
+  }
+  const resumeFocus = (task) => {
+    const key = pauseKeyFor(task)
+    const cur = focusPauses[key]
+    if (!cur || !cur.pausedAt) return              // not paused
+    const closed = { from: cur.pausedAt, to: Date.now() }
+    persistFocusPauses({ ...focusPauses, [key]: { pauses: [...(cur.pauses || []), closed], pausedAt: null } })
   }
 
   // ── Add time from Focus mode ─────────────────────────────────
@@ -1442,18 +1448,6 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
     if (!task.isCommitment || !updateCommitment) return
     const base = task._dur ?? 0
     updateCommitment(task.id, { durationMins: Math.max(1, base + totalExtra) })
-  }
-
-  // ── End now from Focus mode ──────────────────────────────────
-  // Finish a task before its window is up: mark it done and, for a real
-  // commitment, trim its duration to the time actually spent so the timeline
-  // ends the block at "now" instead of its planned end.
-  const handleEndNow = (task, elapsedMins) => {
-    if (!effectiveDone(task)) syncToggle(task.id, task.label, task.tag, task.isCommitment ? null : dateKey, true)
-    if (task.isCommitment && updateCommitment && task._dur) {
-      updateCommitment(task.id, { durationMins: Math.max(1, Math.round(elapsedMins || 0)) })
-    }
-    setFocusTask(null)
   }
 
   // New items are real commitments dated today, so they show on the Calendar
@@ -1800,6 +1794,7 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
                   isDone={task._status==='past'}
                   elapsed={isToday && task._mins!==null && task._mins<=now}
                   dateKey={dateKey}
+                  pauseData={focusPauses[`${dateKey}:${task.id}`] || null}
                   offerStartNow={task.id===nextUpcomingId}
                   onToggle={()=>syncToggle(task.id,task.label,task.tag,task.isCommitment?null:dateKey, !effectiveDone(task))}
                   onManage={()=>setManaging(task)}
@@ -1845,10 +1840,12 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
         color={focusTask.color || (categories||[]).find(x=>x.id===focusTask.tag)?.color || TAG_COLORS[focusTask.tag] || 'var(--teal)'}
         time={focusTask._time}
         durationMins={focusTask._dur}
+        pauses={(focusPauses[pauseKeyFor(focusTask)]||{}).pauses || []}
+        pausedAt={(focusPauses[pauseKeyFor(focusTask)]||{}).pausedAt || null}
         onDone={()=>{ if(!effectiveDone(focusTask)) syncToggle(focusTask.id, focusTask.label, focusTask.tag, focusTask.isCommitment?null:dateKey, true); setFocusTask(null) }}
-        onPause={({elapsedMins, remainingMins})=>handlePauseSplit(focusTask, elapsedMins, remainingMins)}
+        onPause={()=>pauseFocus(focusTask)}
+        onResume={()=>resumeFocus(focusTask)}
         onExtend={focusTask.isCommitment ? (mins)=>handleExtend(focusTask, mins) : null}
-        onEndNow={({elapsedMins})=>handleEndNow(focusTask, elapsedMins)}
         onClose={()=>setFocusTask(null)} />}
       {shiftPlan&&<ShiftChooser plan={shiftPlan} onApply={(ids)=>{applyShift(shiftPlan.pivot, ids); setShiftPlan(null)}} onCancel={()=>setShiftPlan(null)}/>}
       {shiftResult&&<ShiftToast result={shiftResult} onClose={()=>setShiftResult(null)}/>}

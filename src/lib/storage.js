@@ -211,6 +211,15 @@ export const setRecurringMeta = v  => dbSet('recurring_meta', v)
 export const getRoutineGroups = () => dbGet('routine_groups').then(v => Array.isArray(v) ? v : null)
 export const setRoutineGroups = v  => dbSet('routine_groups', v)
 
+// ── Subscribed (external) calendars ─────────────────────────────
+// Read-only calendar feeds the user subscribes to by ICS URL — e.g. a published
+// Apple Family / iCloud calendar. Just the subscription config lives here (one
+// synced kv_store blob, no schema migration); the fetched events themselves are
+// cached device-local (see src/lib/calendars.js). Each entry:
+//   { id, name, url, color, enabled, createdAt }
+export const getExternalCalendars = () => dbGet('external_calendars').then(v => Array.isArray(v) ? v : [])
+export const setExternalCalendars = v  => dbSet('external_calendars', v)
+
 // ── Classes ────────────────────────────────────────────────────
 export async function getClasses() {
   if (USE_SUPABASE) {

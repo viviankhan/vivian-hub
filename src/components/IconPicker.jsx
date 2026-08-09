@@ -7,7 +7,9 @@ import { useState, useRef, useEffect } from 'react'
 import { Glyph } from '../lib/glyphs.jsx'
 import { ICONS } from '../lib/iconset.js'
 
-const QUICK_EMOJIS = ['☀️','🌙','💧','☕','🏃‍♀️','🧘','📚','📝','💊','🪥','🛁','🍽️','📵','🎹','💤','✨','🔬','💼','🎯','❤️','⭐','🔥','📌','🎨']
+const QUICK_EMOJIS = ['☀️','🌙','💧','☕','🏃‍♀️','🧘','📚','📝','💊','🪥','🛁','🍽️','📵','🎹','💤','✨','🔬','💼','🎯','❤️','⭐','🔥','📌','🎨',
+  // Science & lab
+  '🧬','🦠','🧫','🧪','⚗️','🥼','🥽','👓','💉','🩸','🌡️','🧠','⚛️','🔭']
 
 export function isImageIcon(v) {
   return typeof v === 'string' && (v.startsWith('data:image') || v.startsWith('http'))
