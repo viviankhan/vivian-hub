@@ -1,0 +1,7 @@
+# Supabase project config (see https://supabase.com/docs/guides/cli/config).
+# The only thing pinned here is the calendar proxy: it must run WITHOUT JWT
+# verification so the browser's CORS preflight (which carries no auth header)
+# isn't rejected before the function runs. The function is a read-only URL
+# fetcher with SSRF guards, so it's safe to leave open.
+[functions.ics-proxy]
+verify_jwt = false

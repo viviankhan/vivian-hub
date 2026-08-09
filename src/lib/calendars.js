@@ -37,46 +37,48 @@ export function normalizeIcsUrl(url) {
   return u
 }
 
-// Fetch raw .ics text for a URL, preferring the proxy (CORS-safe) and falling
-// back to a direct fetch. Throws with a friendly message on total failure.
+// Fetch raw .ics text for a URL. When a proxy is configured we go through it and
+// report its exact outcome (so a failure says *why* — 404, 401, 502…). Only when
+// there's no proxy do we try a direct browser fetch. Throws a short, specific
+// message on failure.
 export async function fetchIcsText(url) {
   const target = normalizeIcsUrl(url)
   if (!/^https?:\/\//i.test(target)) throw new Error('That doesn’t look like a calendar link. Use the webcal:// or https:// URL Apple gives you.')
 
-  const attempts = []
   if (PROXY) {
-    attempts.push(async () => {
-      const res = await fetch(`${PROXY}?url=${encodeURIComponent(target)}`, {
-        headers: SUPABASE_KEY ? { Authorization: `Bearer ${SUPABASE_KEY}`, apikey: SUPABASE_KEY } : {},
-      })
-      if (!res.ok) throw new Error(`Proxy responded ${res.status}`)
-      return res.text()
-    })
-  }
-  // Direct fetch (works only if the feed sends permissive CORS headers).
-  attempts.push(async () => {
-    const res = await fetch(target)
-    if (!res.ok) throw new Error(`Feed responded ${res.status}`)
-    return res.text()
-  })
-
-  let lastErr
-  for (const run of attempts) {
+    const endpoint = `${PROXY}?url=${encodeURIComponent(target)}`
+    let res
     try {
-      const text = await run()
-      if (text && /BEGIN:VCALENDAR/i.test(text)) return text
-      lastErr = new Error('That link didn’t return a calendar (no VCALENDAR data).')
-    } catch (e) { lastErr = e }
+      res = await fetch(endpoint, { headers: SUPABASE_KEY ? { Authorization: `Bearer ${SUPABASE_KEY}`, apikey: SUPABASE_KEY } : {} })
+    } catch (e) {
+      // A rejected fetch (not an HTTP status) = the request never completed. For
+      // a Supabase function this is almost always the CORS preflight being
+      // blocked because the function has JWT verification ON — turn it OFF.
+      console.warn('[Bloom] proxy fetch rejected:', endpoint, e)
+      throw new Error('Proxy blocked (CORS/JWT). In Supabase, open the ics-proxy function’s settings and turn OFF “Verify JWT”, then tap ⟳.')
+    }
+    if (!res.ok) {
+      let body = ''
+      try { body = (await res.text()).slice(0, 100) } catch {}
+      console.warn('[Bloom] proxy error', res.status, endpoint, body)
+      if (res.status === 404) throw new Error('Proxy 404 — no “ics-proxy” function at this project. Check the function name is exactly ics-proxy and it’s deployed.')
+      if (res.status === 401 || res.status === 403) throw new Error('Proxy 401 — auth rejected. Turn OFF “Verify JWT” on the ics-proxy function, then tap ⟳.')
+      if (res.status === 502 || res.status === 500) throw new Error(`Proxy couldn’t load that link (${res.status}). Check the calendar URL is a public webcal/ICS link.${body ? ' · ' + body : ''}`)
+      throw new Error(`Proxy error ${res.status}${body ? ' — ' + body : ''}`)
+    }
+    const text = await res.text()
+    if (/BEGIN:VCALENDAR/i.test(text)) return text
+    throw new Error('That link didn’t return a calendar. Make sure it’s the public webcal/ICS link, not the Calendar sharing page.')
   }
-  // Log the raw cause for debugging, but show the user something they can act
-  // on — a bare "Failed to fetch" is almost always the CORS wall that the proxy
-  // is there to get past.
-  console.warn('[Bloom] calendar fetch failed:', lastErr)
-  const raw = String(lastErr?.message || '')
-  if (/VCALENDAR/.test(raw)) throw lastErr
-  throw new Error(PROXY
-    ? 'Couldn’t reach the calendar. If you just added it, make sure the ics-proxy function is deployed (see CALENDAR_SYNC.md), then tap ⟳.'
-    : 'Couldn’t reach the calendar. An iCloud link needs the calendar proxy set up (see CALENDAR_SYNC.md).')
+
+  // No proxy configured — direct browser fetch (works only for CORS-enabled feeds).
+  let res
+  try { res = await fetch(target) }
+  catch (e) { console.warn('[Bloom] direct fetch failed:', e); throw new Error('Couldn’t reach the calendar. An iCloud link needs the ics-proxy function set up (see CALENDAR_SYNC.md).') }
+  if (!res.ok) throw new Error(`Calendar feed responded ${res.status}.`)
+  const text = await res.text()
+  if (/BEGIN:VCALENDAR/i.test(text)) return text
+  throw new Error('That link didn’t return a calendar (no VCALENDAR data).')
 }
 
 // Fetch + parse a subscription; on success cache the parsed events on-device.

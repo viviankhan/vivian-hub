@@ -69,9 +69,11 @@ export default function ExternalCalendars({ calendars = [], statuses = {}, onAdd
             <span style={{ width:12, height:12, borderRadius:'50%', background:cal.color || DEFAULT_CAL_COLOR, flexShrink:0, opacity: cal.enabled ? 1 : .35 }} />
             <div style={{ flex:1, minWidth:0 }}>
               <div style={{ fontSize:13.5, fontWeight:600, color:'var(--text)', opacity: cal.enabled ? 1 : .6, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{cal.name}</div>
-              <div style={{ fontSize:11, color: st.state === 'error' ? '#DC2626' : 'var(--muted)', marginTop:2, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>
+              <div onClick={st.state === 'error' && st.error ? () => window.alert(st.error) : undefined}
+                title={st.state === 'error' ? (st.error || '') : ''}
+                style={{ fontSize:11, color: st.state === 'error' ? '#DC2626' : 'var(--muted)', marginTop:2, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis', cursor: st.state === 'error' ? 'pointer' : 'default', textDecoration: st.state === 'error' ? 'underline dotted' : 'none' }}>
                 {st.state === 'syncing' ? 'Syncing…'
-                  : st.state === 'error' ? (st.error || 'Couldn’t sync')
+                  : st.state === 'error' ? `${st.error || 'Couldn’t sync'} (tap for details)`
                   : `${st.count ?? 0} event${(st.count ?? 0) === 1 ? '' : 's'} · updated ${timeAgo(st.fetchedAt)}`}
               </div>
             </div>
@@ -127,9 +129,13 @@ export default function ExternalCalendars({ calendars = [], statuses = {}, onAdd
         <div style={{ fontSize:11, color:'var(--muted)', marginTop:8, lineHeight:1.6 }}>
           It syncs one way and read-only — Mom’s events appear here, and nothing you do in Bloom changes her calendar.
         </div>
-        {!hasProxy && (
+        {hasProxy ? (
           <div style={{ fontSize:11, color:'#9A6a00', marginTop:8, lineHeight:1.6 }}>
-            Note: fetching an iCloud link from the browser usually needs the calendar proxy set up (see CALENDAR_SYNC.md). Without it, only feeds that allow cross-origin access will load.
+            Not syncing? The <b>ics-proxy</b> Supabase function must be deployed <i>and</i> have <b>Verify JWT turned OFF</b> (the browser’s preflight has no auth, so JWT-on blocks it). Tap the red error above for the exact reason. See CALENDAR_SYNC.md.
+          </div>
+        ) : (
+          <div style={{ fontSize:11, color:'#9A6a00', marginTop:8, lineHeight:1.6 }}>
+            Note: fetching an iCloud link from the browser needs the calendar proxy set up (see CALENDAR_SYNC.md). Without it, only feeds that allow cross-origin access will load.
           </div>
         )}
       </div>

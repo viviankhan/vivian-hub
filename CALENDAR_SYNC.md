@@ -40,10 +40,18 @@ is just one more Edge Function to deploy:
 supabase functions deploy ics-proxy
 ```
 
-That's it — the app automatically calls `https://<your-project>.supabase.co/functions/v1/ics-proxy`
-(it sends your anon key, so JWT verification can stay on). The function only ever
-fetches the calendar URL you pass it and returns the text; it never touches your
-database, and it refuses local/private hosts.
+**Turn off JWT verification for this function.** A browser sends a CORS
+*preflight* (an `OPTIONS` request with no auth header) before the real fetch, and
+Supabase rejects that preflight when JWT verification is on — so the call fails
+before your function even runs. The repo's `supabase/config.toml` already sets
+`verify_jwt = false` for `ics-proxy`, so a CLI deploy picks it up automatically.
+If you deployed from the **dashboard**, open the function → **Details/Settings**
+and switch **Verify JWT** (a.k.a. "Enforce JWT verification") **off**. The
+function is a read-only URL fetcher with SSRF guards, so leaving it open is safe.
+
+That's it — the app automatically calls `https://<your-project>.supabase.co/functions/v1/ics-proxy`.
+The function only ever fetches the calendar URL you pass it and returns the text;
+it never touches your database, and it refuses local/private hosts.
 
 **Alternatives**
 - Point `VITE_ICS_PROXY` at any other CORS-enabled `.ics` proxy you prefer.
