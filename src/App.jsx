@@ -696,20 +696,25 @@ export default function App() {
   // Watch the device position while Bloom is open; when it reaches a task's
   // tagged location, stamp `startedAt` so the task's progress begins — no matter
   // the time it was set for — and nudge you that it started.
+  //
+  // Only tasks whose location opts in with `autoStart` are watched. A tagged
+  // place is informative by default (it just shows where the task happens);
+  // arrival auto-start is a per-task toggle set in the add sheet.
   useEffect(() => {
     if (loading || !geolocationSupported()) return
     const dd = new Date()
     const today = `${dd.getFullYear()}-${String(dd.getMonth()+1).padStart(2,'0')}-${String(dd.getDate()).padStart(2,'0')}`
-    // Current set of not-done, located, not-yet-started items — commitments AND
-    // today's recurring occurrences that carry a location. Read fresh on each
-    // position update via the getter so it tracks live state. Recurring ones use
-    // an "occ:" id so arrival marks the per-day occurrence, not the commitment.
+    // Current set of not-done, located, not-yet-started items whose location
+    // asked to auto-start on arrival — commitments AND today's recurring
+    // occurrences. Read fresh on each position update via the getter so it
+    // tracks live state. Recurring ones use an "occ:" id so arrival marks the
+    // per-day occurrence, not the commitment.
     const getLocatedTasks = () => {
       const commits = commitments
-        .filter(c => !c.done && commitmentMeta[c.id]?.location && !commitmentMeta[c.id]?.startedAt)
+        .filter(c => !c.done && commitmentMeta[c.id]?.location?.autoStart && !commitmentMeta[c.id]?.startedAt)
         .map(c => ({ id: c.id, name: c.text, location: commitmentMeta[c.id].location }))
       const recs = recurringOccurrencesForDate(recurringTasksEnriched, today, recurringExceptions)
-        .filter(o => o.location && !completions[`${today}_${o.id}`] && !occStarted[occKey(o.id, today)])
+        .filter(o => o.location?.autoStart && !completions[`${today}_${o.id}`] && !occStarted[occKey(o.id, today)])
         .map(o => ({ id: 'occ:' + occKey(o.id, today), name: o.title || o.text || 'Task', location: o.location }))
       return [...commits, ...recs]
     }

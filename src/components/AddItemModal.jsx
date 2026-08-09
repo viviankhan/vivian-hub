@@ -416,6 +416,7 @@ export default function AddItemModal({ existing = null, existingRecurring = null
   }
   const setLocName   = (name) => setLocation(prev => ({ ...(prev || { radius: DEFAULT_RADIUS_M }), name }))
   const setLocRadius = (radius) => setLocation(prev => prev ? { ...prev, radius } : prev)
+  const setLocAutoStart = (on) => setLocation(prev => prev ? { ...prev, autoStart: on } : prev)
   const clearLocation = () => { setLocation(null); setLocErr('') }
   const locHasCoords = !!(location && typeof location.lat === 'number' && typeof location.lng === 'number')
 
@@ -463,7 +464,7 @@ export default function AddItemModal({ existing = null, existingRecurring = null
         subtasks,
         done: false,
         block: block || false,
-        location: locHasCoords ? { name: (location.name || '').trim(), lat: location.lat, lng: location.lng, radius: location.radius || DEFAULT_RADIUS_M } : null,
+        location: locHasCoords ? { name: (location.name || '').trim(), lat: location.lat, lng: location.lng, radius: location.radius || DEFAULT_RADIUS_M, autoStart: !!location.autoStart } : null,
         createdAt: new Date().toISOString(),
       }
       setItemSound(occ.id, sound)
@@ -495,7 +496,7 @@ export default function AddItemModal({ existing = null, existingRecurring = null
         icon: effectiveIcon || null,
         color: color || null,
         block: block || false,
-        location: locHasCoords ? { name: (location.name || '').trim(), lat: location.lat, lng: location.lng, radius: location.radius || DEFAULT_RADIUS_M } : null,
+        location: locHasCoords ? { name: (location.name || '').trim(), lat: location.lat, lng: location.lng, radius: location.radius || DEFAULT_RADIUS_M, autoStart: !!location.autoStart } : null,
         startDate,
         endDate: repeatEnd || null,
       }
@@ -528,7 +529,7 @@ export default function AddItemModal({ existing = null, existingRecurring = null
       subtasks,
       // An arrival location, if tagged. Preserve any prior startedAt so editing
       // the task doesn't wipe an in-progress arrival.
-      location: locHasCoords ? { name: (location.name || '').trim(), lat: location.lat, lng: location.lng, radius: location.radius || DEFAULT_RADIUS_M } : null,
+      location: locHasCoords ? { name: (location.name || '').trim(), lat: location.lat, lng: location.lng, radius: location.radius || DEFAULT_RADIUS_M, autoStart: !!location.autoStart } : null,
       startedAt: existing?.startedAt ?? null,
       block,
     }
@@ -1002,9 +1003,9 @@ export default function AddItemModal({ existing = null, existingRecurring = null
               <RowDivider />
               <DetailRow icon={<PinIcon />}
                 text={locHasCoords ? (location.name?.trim() || 'Location set') : 'Add a location'} textMuted={!locHasCoords}
-                hint={locHasCoords ? 'On' : null} open={expanded==='location'} onClick={() => toggleRow('location')}>
+                hint={locHasCoords ? (location.autoStart ? 'Auto-start' : 'Set') : null} open={expanded==='location'} onClick={() => toggleRow('location')}>
                 <div style={{ fontSize:11.5, color:'var(--muted)', lineHeight:1.5, marginBottom:10 }}>
-                  Tag where this happens. When you arrive, Bloom starts the task's progress automatically — no matter the time it's set for.
+                  Tag where this happens. It's just a note by default — turn on auto-start below to have Bloom begin the task's progress the moment you arrive, no matter the time it's set for.
                 </div>
                 {/* Type-to-search a place — set a location without being there. */}
                 <input value={locQuery} onChange={e => setLocQuery(e.target.value)} placeholder="Search a place or address…"
@@ -1045,6 +1046,17 @@ export default function AddItemModal({ existing = null, existingRecurring = null
                         </button>
                       )
                     })}
+                  </div>
+                  {/* Auto-start toggle — off by default (location is informative). */}
+                  <div style={{ display:'flex', alignItems:'center', gap:12, marginTop:16, paddingTop:14, borderTop:'1px solid #F1EDF2' }}>
+                    <div style={{ flex:1, minWidth:0 }}>
+                      <div style={{ fontSize:13.5, fontWeight:500, color:'var(--text)' }}>Start on arrival</div>
+                      <div style={{ fontSize:11, color:'var(--muted)', marginTop:1, lineHeight:1.35 }}>Begin the task's progress automatically when you get here. Off keeps it as just a location.</div>
+                    </div>
+                    <button type="button" onClick={() => setLocAutoStart(!location.autoStart)} aria-pressed={!!location.autoStart}
+                      style={{ width:46, height:27, borderRadius:14, border:'none', cursor:'pointer', padding:3, flexShrink:0, background: location.autoStart ? 'var(--forest)' : '#CBD2DA', transition:'background .2s', display:'flex', justifyContent: location.autoStart ? 'flex-end' : 'flex-start' }}>
+                      <span style={{ width:21, height:21, borderRadius:'50%', background:'white', boxShadow:'0 1px 3px rgba(0,0,0,.28)' }} />
+                    </button>
                   </div>
                   <button onClick={clearLocation}
                     style={{ marginTop:12, fontSize:11, padding:'5px 12px', borderRadius:16, cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:600, border:'1px solid var(--border)', background:'white', color:'var(--muted)' }}>
