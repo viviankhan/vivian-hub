@@ -55,6 +55,9 @@ self.addEventListener('fetch', event => {
 // still appear when the page is backgrounded, and the tap handler below works.
 self.addEventListener('message', event => {
   const data = event.data || {}
+  // The page found a newer worker waiting and asked it to take over now, so a
+  // deploy applies without waiting for all tabs to close.
+  if (data.type === 'skip-waiting') { self.skipWaiting(); return }
   if (data.type === 'show-notification') {
     const { title, options } = data
     self.registration.showNotification(title, {

@@ -262,13 +262,30 @@ export async function registerServiceWorker() {
       window.location.reload()
     })
 
-    // Check for a new build now, and every time the app comes back to the
-    // foreground (how you'd normally return to an installed PWA).
+    // A freshly-found worker sits in "waiting" until it takes control. It's set
+    // to skipWaiting on install, but nudge any worker that's already waiting (or
+    // becomes ready) so a deploy is picked up without waiting for a natural
+    // navigation — this is the difference between "the update shows up on its
+    // own" and "the app looks stuck on the old version".
+    const promote = (worker) => { try { worker && worker.postMessage({ type: 'skip-waiting' }) } catch {} }
+    if (swRegistration.waiting) promote(swRegistration.waiting)
+    swRegistration.addEventListener('updatefound', () => {
+      const installing = swRegistration.installing
+      if (!installing) return
+      installing.addEventListener('statechange', () => {
+        if (installing.state === 'installed' && navigator.serviceWorker.controller) promote(installing)
+      })
+    })
+
+    // Check for a new build now, when the app returns to the foreground (how
+    // you'd normally reopen an installed PWA), and on a slow heartbeat so a
+    // deploy lands even in a long-lived open tab.
     const checkForUpdate = () => { swRegistration && swRegistration.update().catch(() => {}) }
     checkForUpdate()
     document.addEventListener('visibilitychange', () => {
       if (document.visibilityState === 'visible') checkForUpdate()
     })
+    setInterval(checkForUpdate, 60 * 1000)
 
     // Make sure it's active before we try to message it.
     await navigator.serviceWorker.ready
