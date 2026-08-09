@@ -129,15 +129,9 @@ export default function ExternalCalendars({ calendars = [], statuses = {}, onAdd
         <div style={{ fontSize:11, color:'var(--muted)', marginTop:8, lineHeight:1.6 }}>
           It syncs one way and read-only — Mom’s events appear here, and nothing you do in Bloom changes her calendar.
         </div>
-        {hasProxy ? (
-          <div style={{ fontSize:11, color:'#9A6a00', marginTop:8, lineHeight:1.6 }}>
-            Not syncing? The <b>ics-proxy</b> Supabase function must be deployed <i>and</i> have <b>Verify JWT turned OFF</b> (the browser’s preflight has no auth, so JWT-on blocks it). Tap the red error above for the exact reason. See CALENDAR_SYNC.md.
-          </div>
-        ) : (
-          <div style={{ fontSize:11, color:'#9A6a00', marginTop:8, lineHeight:1.6 }}>
-            Note: fetching an iCloud link from the browser needs the calendar proxy set up (see CALENDAR_SYNC.md). Without it, only feeds that allow cross-origin access will load.
-          </div>
-        )}
+        <div style={{ fontSize:11, color:'var(--muted)', marginTop:8, lineHeight:1.6 }}>
+          Bloom fetches through your own Supabase <b>ics-proxy</b> function when it’s reachable; if it isn’t, it falls back to a public relay so your (already-public) calendar still loads. For a fully private path, deploy ics-proxy with <b>Verify JWT OFF</b> — see CALENDAR_SYNC.md. Tap a red error for its exact reason.
+        </div>
       </div>
     </div>
   )

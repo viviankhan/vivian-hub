@@ -37,60 +37,79 @@ export function normalizeIcsUrl(url) {
   return u
 }
 
-// Fetch raw .ics text for a URL. When a proxy is configured we go through it and
-// report its exact outcome (so a failure says *why* — 404, 401, 502…). Only when
-// there's no proxy do we try a direct browser fetch. Throws a short, specific
-// message on failure.
+// Public, no-auth CORS relays used as a fallback when your own Supabase proxy
+// isn't reachable/authorized. They fetch the (already-public) calendar and add
+// CORS headers. Reasonable for a calendar you've published, but they do see the
+// URL — the private Supabase proxy is preferred and tried first.
+const PUBLIC_RELAYS = [
+  (u) => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
+  (u) => `https://corsproxy.io/?url=${encodeURIComponent(u)}`,
+]
+
+// Try Bloom's own Supabase Edge Function proxy. Returns .ics text, or throws
+// with a specific reason. Sends the project key the right way (apikey for the
+// new "publishable" keys; Bearer only for a real JWT) and retries with no auth,
+// which works when the function has JWT verification turned off.
+async function viaSupabaseProxy(target) {
+  const endpoint = `${PROXY}?url=${encodeURIComponent(target)}`
+  const isJwt = typeof SUPABASE_KEY === 'string' && SUPABASE_KEY.startsWith('eyJ')
+  const headerVariants = []
+  if (SUPABASE_KEY) headerVariants.push(isJwt ? { Authorization: `Bearer ${SUPABASE_KEY}`, apikey: SUPABASE_KEY } : { apikey: SUPABASE_KEY })
+  headerVariants.push({})
+
+  let res, lastStatus = 0, lastBody = ''
+  for (const headers of headerVariants) {
+    try { res = await fetch(endpoint, { headers }) }
+    catch (e) { console.warn('[Bloom] proxy fetch rejected:', e); throw new Error('proxy-unreachable') }
+    if (res.ok) break
+    lastStatus = res.status
+    try { lastBody = (await res.text()).slice(0, 120) } catch {}
+    console.warn('[Bloom] proxy error', res.status, JSON.stringify(headers), lastBody)
+    if (res.status !== 401 && res.status !== 403) break
+    res = null
+  }
+  if (!res || !res.ok) { const e = new Error(`proxy-${lastStatus || 'error'}`); e.status = lastStatus; e.body = lastBody; throw e }
+  const text = await res.text()
+  if (/BEGIN:VCALENDAR/i.test(text)) return text
+  throw new Error('proxy-no-vcalendar')
+}
+
+async function viaRelay(mk, target) {
+  const res = await fetch(mk(target))
+  if (!res.ok) throw new Error(`relay-${res.status}`)
+  const text = await res.text()
+  if (/BEGIN:VCALENDAR/i.test(text)) return text
+  throw new Error('relay-no-vcalendar')
+}
+
+// Fetch raw .ics text for a URL. Prefer your private Supabase proxy; if it can't
+// be reached or authorized, fall back to a public relay, then a direct fetch.
 export async function fetchIcsText(url) {
   const target = normalizeIcsUrl(url)
   if (!/^https?:\/\//i.test(target)) throw new Error('That doesn’t look like a calendar link. Use the webcal:// or https:// URL Apple gives you.')
 
+  let proxyErr = null
   if (PROXY) {
-    const endpoint = `${PROXY}?url=${encodeURIComponent(target)}`
-    // Supabase validates a Bearer token even when the function's JWT check is
-    // OFF, so only put the key in Authorization when it's actually a JWT (legacy
-    // anon keys start with "eyJ"). New "publishable" keys (sb_...) go in the
-    // apikey header only — a Bearer'd non-JWT is exactly what triggers a 401.
-    const isJwt = typeof SUPABASE_KEY === 'string' && SUPABASE_KEY.startsWith('eyJ')
-    const headerVariants = []
-    if (SUPABASE_KEY) headerVariants.push(isJwt ? { Authorization: `Bearer ${SUPABASE_KEY}`, apikey: SUPABASE_KEY } : { apikey: SUPABASE_KEY })
-    headerVariants.push({})   // last resort: no auth at all (works when JWT verify is off)
-
-    let res, lastStatus = 0, lastBody = ''
-    for (const headers of headerVariants) {
-      try {
-        res = await fetch(endpoint, { headers })
-      } catch (e) {
-        console.warn('[Bloom] proxy fetch rejected:', endpoint, e)
-        throw new Error('Proxy blocked (CORS). The ics-proxy function isn’t reachable — confirm it’s deployed at this project, then tap ⟳.')
-      }
-      if (res.ok) break
-      lastStatus = res.status
-      try { lastBody = (await res.text()).slice(0, 120) } catch {}
-      console.warn('[Bloom] proxy error', res.status, JSON.stringify(headers), lastBody)
-      if (res.status !== 401 && res.status !== 403) break   // only an auth error is worth retrying without auth
-      res = null
-    }
-
-    if (!res || !res.ok) {
-      if (lastStatus === 404) throw new Error('Proxy 404 — no “ics-proxy” function at this project. Check the function name is exactly ics-proxy and it’s deployed.')
-      if (lastStatus === 401 || lastStatus === 403) throw new Error('Proxy 401 even with no auth — the ics-proxy function still has JWT/auth enforced. In its Settings turn OFF “Verify JWT”, Save, then tap ⟳.')
-      if (lastStatus === 502 || lastStatus === 500) throw new Error(`Proxy couldn’t load that link (${lastStatus}). Check the calendar URL is a public webcal/ICS link.${lastBody ? ' · ' + lastBody : ''}`)
-      throw new Error(`Proxy error ${lastStatus || '?'}${lastBody ? ' — ' + lastBody : ''}`)
-    }
-    const text = await res.text()
-    if (/BEGIN:VCALENDAR/i.test(text)) return text
-    throw new Error('That link didn’t return a calendar. Make sure it’s the public webcal/ICS link, not the Calendar sharing page.')
+    try { return await viaSupabaseProxy(target) }
+    catch (e) { proxyErr = e; console.warn('[Bloom] Supabase proxy failed, falling back to public relay:', e?.message) }
   }
 
-  // No proxy configured — direct browser fetch (works only for CORS-enabled feeds).
-  let res
-  try { res = await fetch(target) }
-  catch (e) { console.warn('[Bloom] direct fetch failed:', e); throw new Error('Couldn’t reach the calendar. An iCloud link needs the ics-proxy function set up (see CALENDAR_SYNC.md).') }
-  if (!res.ok) throw new Error(`Calendar feed responded ${res.status}.`)
-  const text = await res.text()
-  if (/BEGIN:VCALENDAR/i.test(text)) return text
-  throw new Error('That link didn’t return a calendar (no VCALENDAR data).')
+  // Public relays (no auth) — get past CORS without your Supabase function.
+  for (const mk of PUBLIC_RELAYS) {
+    try { return await viaRelay(mk, target) }
+    catch (e) { console.warn('[Bloom] relay failed:', e?.message) }
+  }
+
+  // Last resort: a direct fetch (works only for CORS-enabled feeds).
+  try {
+    const res = await fetch(target)
+    if (res.ok) { const t = await res.text(); if (/BEGIN:VCALENDAR/i.test(t)) return t }
+  } catch (e) { console.warn('[Bloom] direct fetch failed:', e?.message) }
+
+  // Everything failed — surface the most useful reason.
+  if (proxyErr?.status === 404) throw new Error('Couldn’t load the calendar. (ics-proxy 404 — check the function name; also the public relay was unreachable.)')
+  if (proxyErr?.status === 401 || proxyErr?.status === 403) throw new Error('Couldn’t load the calendar. Your ics-proxy is auth-blocked and the public relay was also unreachable — check your connection and try ⟳.')
+  throw new Error('Couldn’t reach the calendar. Check it’s a public webcal/ICS link and you’re online, then tap ⟳.')
 }
 
 // Fetch + parse a subscription; on success cache the parsed events on-device.
