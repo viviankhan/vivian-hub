@@ -39,14 +39,28 @@ self.addEventListener('activate', event => {
 self.addEventListener('fetch', event => {
   const req = event.request
   if (req.method !== 'GET') return
+
+  // Only ever handle our OWN same-origin requests. A cross-origin call — a
+  // Supabase Edge Function, a published iCloud .ics feed, any external API —
+  // must reach the network untouched. Intercepting one and then falling back to
+  // an empty cache match hands respondWith an undefined value, which the browser
+  // surfaces as "FetchEvent.respondWith received an unexpected error" and breaks
+  // the request. Returning here leaves those to the browser's normal fetch.
+  let url
+  try { url = new URL(req.url) } catch { return }
+  if (url.origin !== self.location.origin) return
+
   if (req.mode === 'navigate') {
     event.respondWith(
       fetch(req).catch(() => caches.match(BASE + 'index.html').then(r => r || caches.match(BASE)))
     )
     return
   }
+  // Same-origin asset: network first, then cache. Never resolve respondWith with
+  // undefined — fall back to a proper network-error Response so a cache miss
+  // can't reproduce the "respondWith received an unexpected error" failure.
   event.respondWith(
-    fetch(req).catch(() => caches.match(req))
+    fetch(req).catch(() => caches.match(req).then(r => r || Response.error()))
   )
 })
 

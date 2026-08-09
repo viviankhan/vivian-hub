@@ -68,7 +68,15 @@ export async function fetchIcsText(url) {
       lastErr = new Error('That link didn’t return a calendar (no VCALENDAR data).')
     } catch (e) { lastErr = e }
   }
-  throw lastErr || new Error('Could not reach that calendar link.')
+  // Log the raw cause for debugging, but show the user something they can act
+  // on — a bare "Failed to fetch" is almost always the CORS wall that the proxy
+  // is there to get past.
+  console.warn('[Bloom] calendar fetch failed:', lastErr)
+  const raw = String(lastErr?.message || '')
+  if (/VCALENDAR/.test(raw)) throw lastErr
+  throw new Error(PROXY
+    ? 'Couldn’t reach the calendar. If you just added it, make sure the ics-proxy function is deployed (see CALENDAR_SYNC.md), then tap ⟳.'
+    : 'Couldn’t reach the calendar. An iCloud link needs the calendar proxy set up (see CALENDAR_SYNC.md).')
 }
 
 // Fetch + parse a subscription; on success cache the parsed events on-device.
