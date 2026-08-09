@@ -972,11 +972,17 @@ export default function AddItemModal({ existing = null, existingRecurring = null
                 {/* End-of-task alert — fires when the task's window closes. */}
                 {(() => {
                   const on = !useDefault && reminders.includes('end')
+                  // Star it too when 'when it ends' is part of the default set,
+                  // matching the numeric chips above.
+                  const isDef = useDefault && getDefaultLeads().includes('end')
                   return (
                     <button onClick={() => toggleLead('end')}
-                      style={{ fontSize:11, padding:'5px 12px', borderRadius:20, cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight: on ? 700 : 600,
-                        border: on ? 'none' : '1px solid var(--border)', background: on ? 'var(--forest)' : 'white', color: on ? 'var(--green-light)' : 'var(--muted)' }}>
-                      {on ? '✓ ' : ''}When it ends
+                      style={{ fontSize:11, padding:'5px 12px', borderRadius:20, cursor:'pointer', fontFamily:'DM Sans,sans-serif',
+                        fontWeight: (on || isDef) ? 700 : 600,
+                        border: on ? 'none' : isDef ? '1.5px solid var(--forest)' : '1px solid var(--border)',
+                        background: on ? 'var(--forest)' : isDef ? 'rgba(56,110,90,.12)' : 'white',
+                        color: on ? 'var(--green-light)' : isDef ? 'var(--forest)' : 'var(--muted)' }}>
+                      {on ? '✓ ' : isDef ? '★ ' : ''}When it ends
                     </button>
                   )
                 })()}
