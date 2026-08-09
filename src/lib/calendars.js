@@ -47,24 +47,36 @@ export async function fetchIcsText(url) {
 
   if (PROXY) {
     const endpoint = `${PROXY}?url=${encodeURIComponent(target)}`
-    let res
-    try {
-      res = await fetch(endpoint, { headers: SUPABASE_KEY ? { Authorization: `Bearer ${SUPABASE_KEY}`, apikey: SUPABASE_KEY } : {} })
-    } catch (e) {
-      // A rejected fetch (not an HTTP status) = the request never completed. For
-      // a Supabase function this is almost always the CORS preflight being
-      // blocked because the function has JWT verification ON — turn it OFF.
-      console.warn('[Bloom] proxy fetch rejected:', endpoint, e)
-      throw new Error('Proxy blocked (CORS/JWT). In Supabase, open the ics-proxy function’s settings and turn OFF “Verify JWT”, then tap ⟳.')
+    // Supabase validates a Bearer token even when the function's JWT check is
+    // OFF, so only put the key in Authorization when it's actually a JWT (legacy
+    // anon keys start with "eyJ"). New "publishable" keys (sb_...) go in the
+    // apikey header only — a Bearer'd non-JWT is exactly what triggers a 401.
+    const isJwt = typeof SUPABASE_KEY === 'string' && SUPABASE_KEY.startsWith('eyJ')
+    const headerVariants = []
+    if (SUPABASE_KEY) headerVariants.push(isJwt ? { Authorization: `Bearer ${SUPABASE_KEY}`, apikey: SUPABASE_KEY } : { apikey: SUPABASE_KEY })
+    headerVariants.push({})   // last resort: no auth at all (works when JWT verify is off)
+
+    let res, lastStatus = 0, lastBody = ''
+    for (const headers of headerVariants) {
+      try {
+        res = await fetch(endpoint, { headers })
+      } catch (e) {
+        console.warn('[Bloom] proxy fetch rejected:', endpoint, e)
+        throw new Error('Proxy blocked (CORS). The ics-proxy function isn’t reachable — confirm it’s deployed at this project, then tap ⟳.')
+      }
+      if (res.ok) break
+      lastStatus = res.status
+      try { lastBody = (await res.text()).slice(0, 120) } catch {}
+      console.warn('[Bloom] proxy error', res.status, JSON.stringify(headers), lastBody)
+      if (res.status !== 401 && res.status !== 403) break   // only an auth error is worth retrying without auth
+      res = null
     }
-    if (!res.ok) {
-      let body = ''
-      try { body = (await res.text()).slice(0, 100) } catch {}
-      console.warn('[Bloom] proxy error', res.status, endpoint, body)
-      if (res.status === 404) throw new Error('Proxy 404 — no “ics-proxy” function at this project. Check the function name is exactly ics-proxy and it’s deployed.')
-      if (res.status === 401 || res.status === 403) throw new Error('Proxy 401 — auth rejected. Turn OFF “Verify JWT” on the ics-proxy function, then tap ⟳.')
-      if (res.status === 502 || res.status === 500) throw new Error(`Proxy couldn’t load that link (${res.status}). Check the calendar URL is a public webcal/ICS link.${body ? ' · ' + body : ''}`)
-      throw new Error(`Proxy error ${res.status}${body ? ' — ' + body : ''}`)
+
+    if (!res || !res.ok) {
+      if (lastStatus === 404) throw new Error('Proxy 404 — no “ics-proxy” function at this project. Check the function name is exactly ics-proxy and it’s deployed.')
+      if (lastStatus === 401 || lastStatus === 403) throw new Error('Proxy 401 even with no auth — the ics-proxy function still has JWT/auth enforced. In its Settings turn OFF “Verify JWT”, Save, then tap ⟳.')
+      if (lastStatus === 502 || lastStatus === 500) throw new Error(`Proxy couldn’t load that link (${lastStatus}). Check the calendar URL is a public webcal/ICS link.${lastBody ? ' · ' + lastBody : ''}`)
+      throw new Error(`Proxy error ${lastStatus || '?'}${lastBody ? ' — ' + lastBody : ''}`)
     }
     const text = await res.text()
     if (/BEGIN:VCALENDAR/i.test(text)) return text
