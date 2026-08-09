@@ -433,18 +433,31 @@ export default function App() {
   // this reconciles to the shared source of truth and re-syncs React state.
   useEffect(() => {
     let alive = true
-    hydratePrefs().then(changed => {
-      if (!alive || !changed) return
-      setFontState(getFontPref()); setThemeState(getThemePref()); setSeasonState(getSeasonPref())
-      setCustomColorState(getCustomColor()); setBackgroundState(getBackgroundPref()); setCustomBgState(getCustomBackground())
-      setLayoutState(getLayoutPref()); setSoundState(getSoundEnabled()); setSummaryState(getSummaryPref())
-      applySavedAppearance()   // re-apply theme/season/background/font/layout from the hydrated values
-      // Nudge components that read their own device-local stores to refresh.
-      try { window.dispatchEvent(new Event(RECURRING_FILTER_EVENT)) } catch {}
-      try { window.dispatchEvent(new Event('bloom-saved-colors')) } catch {}
-      try { window.dispatchEvent(new Event('bloom-duration-presets')) } catch {}
-    })
-    return () => { alive = false }
+    let lastPull = 0
+    const pull = () => {
+      lastPull = Date.now()
+      hydratePrefs().then(changed => {
+        if (!alive || !changed) return
+        setFontState(getFontPref()); setThemeState(getThemePref()); setSeasonState(getSeasonPref())
+        setCustomColorState(getCustomColor()); setBackgroundState(getBackgroundPref()); setCustomBgState(getCustomBackground())
+        setLayoutState(getLayoutPref()); setSoundState(getSoundEnabled()); setSummaryState(getSummaryPref())
+        applySavedAppearance()   // re-apply theme/season/background/font/layout from the hydrated values
+        // Nudge components that read their own device-local stores to refresh.
+        try { window.dispatchEvent(new Event(RECURRING_FILTER_EVENT)) } catch {}
+        try { window.dispatchEvent(new Event('bloom-saved-colors')) } catch {}
+        try { window.dispatchEvent(new Event('bloom-duration-presets')) } catch {}
+        try { window.dispatchEvent(new Event('bloom-default-alerts')) } catch {}
+      })
+    }
+    pull()
+    // Re-pull when the app returns to the foreground. Prefs used to hydrate only
+    // once at launch, so on an installed PWA (which rarely fully restarts) a
+    // change made on another device — background, default alerts — never showed
+    // up. Reopening the app now reconciles to the shared source of truth.
+    const onVis = () => { if (!document.hidden && Date.now() - lastPull > 4000) pull() }
+    document.addEventListener('visibilitychange', onVis)
+    window.addEventListener('focus', onVis)
+    return () => { alive = false; document.removeEventListener('visibilitychange', onVis); window.removeEventListener('focus', onVis) }
   }, [])
 
   // Saved colors, the repeating filter, and duration presets are changed inside
@@ -677,11 +690,15 @@ export default function App() {
     document.addEventListener('visibilitychange', onVis)
     window.addEventListener('focus', resync)
     window.addEventListener('online', resync)
+    // The default-alert set can change from a cross-device sync (or the Settings
+    // panel) — re-arm timers against the new leads when it does.
+    window.addEventListener('bloom-default-alerts', resync)
     const beat = setInterval(() => { if (!document.hidden) resync() }, 60 * 1000)
     return () => {
       document.removeEventListener('visibilitychange', onVis)
       window.removeEventListener('focus', resync)
       window.removeEventListener('online', resync)
+      window.removeEventListener('bloom-default-alerts', resync)
       clearInterval(beat)
     }
   }, [loading, events, commitments, commitmentMeta, recurringReminderItems])

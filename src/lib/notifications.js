@@ -199,18 +199,48 @@ async function reconcileTriggered(liveTags) {
   } catch {}
 }
 
-// ── Settings (persisted, local-only) ───────────────────────────
-export function getSettings() {
+// ── Settings (persisted) ───────────────────────────────────────
+// Two halves with different scopes:
+//   • `enabled` is device-local (it tracks this device's notification
+//     permission/opt-in) and stays in SETTINGS_KEY.
+//   • `leads` (the default-alert set) is a shared preference and lives in its
+//     own DEFAULT_ALERTS_KEY, which prefs.js syncs across devices — so the
+//     alerts you set on one device follow you to the others.
+const DEFAULT_ALERTS_KEY = 'bloom_default_alerts'
+
+function readLeads() {
   try {
-    const raw = localStorage.getItem(SETTINGS_KEY)
-    return { enabled: false, leads: [24 * 60, 60], ...(raw ? JSON.parse(raw) : {}) }
-  } catch {
-    return { enabled: false, leads: [24 * 60, 60] }
-  }
+    const raw = JSON.parse(localStorage.getItem(DEFAULT_ALERTS_KEY) || 'null')
+    if (Array.isArray(raw)) return raw
+  } catch {}
+  // Back-compat: leads used to live inside the settings blob. Migrate the value
+  // into its own (synced) key so an existing user's alerts start following them.
+  try {
+    const s = JSON.parse(localStorage.getItem(SETTINGS_KEY) || 'null')
+    if (s && Array.isArray(s.leads)) {
+      try { localStorage.setItem(DEFAULT_ALERTS_KEY, JSON.stringify(s.leads)) } catch {}
+      return s.leads
+    }
+  } catch {}
+  return DEFAULT_LEADS
+}
+
+export function getSettings() {
+  let enabled = false
+  try {
+    const s = JSON.parse(localStorage.getItem(SETTINGS_KEY) || 'null')
+    if (s && typeof s.enabled === 'boolean') enabled = s.enabled
+  } catch {}
+  return { enabled, leads: readLeads() }
 }
 export function saveSettings(patch) {
   const next = { ...getSettings(), ...patch }
-  try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(next)) } catch {}
+  // enabled → device-local; leads → the synced key.
+  try { localStorage.setItem(SETTINGS_KEY, JSON.stringify({ enabled: next.enabled })) } catch {}
+  if ('leads' in patch) {
+    try { localStorage.setItem(DEFAULT_ALERTS_KEY, JSON.stringify(next.leads)) } catch {}
+    try { window.dispatchEvent(new Event('bloom-default-alerts')) } catch {}
+  }
   return next
 }
 

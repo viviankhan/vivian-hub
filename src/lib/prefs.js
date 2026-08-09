@@ -12,12 +12,18 @@
 import { getUiPrefs, setUiPrefs } from './storage.js'
 
 // Every localStorage key that should follow the user across devices.
+// Note: 'bloom_bg_custom' (an uploaded background image, stored as a large
+// data URI) is deliberately NOT here — it stays device-local, as the Look
+// settings say. Putting it in the synced blob bloated it enough that the whole
+// ui_prefs write could fail, which silently broke syncing of *everything* else
+// (background choice, default alerts…). The preset background id still syncs.
 const PREF_KEYS = [
   'bloom_theme', 'bloom_season', 'bloom_custom_color',
-  'bloom_background', 'bloom_bg_custom',
+  'bloom_background',
   'bloom_font', 'bloom_layout', 'bloom_summary', 'bloom_sound',
   'bloom_saved_colors', 'vivian_duration_presets', 'bloom_recurring_view_filter',
   'bloom_saved_places', 'bloom_recent_places',
+  'bloom_default_alerts',   // reminder default-alert set — see notifications.js
 ]
 
 let hydrating = false
@@ -64,6 +70,9 @@ export function pushPrefs() {
   if (hydrating) return
   clearTimeout(pushTimer)
   pushTimer = setTimeout(() => {
-    try { setUiPrefs(snapshotLocalPrefs()) } catch {}
+    // Surface failures (e.g. a too-large blob) instead of hiding them — a
+    // silently-failing push is exactly how cross-device sync "just stops".
+    Promise.resolve(setUiPrefs(snapshotLocalPrefs()))
+      .catch(e => console.warn('[prefs] sync push failed:', e && (e.message || e)))
   }, 700)
 }

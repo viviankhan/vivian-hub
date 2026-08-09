@@ -208,6 +208,14 @@ export default function NotificationsSettings({ events, commitments, recurring =
     return () => document.removeEventListener('visibilitychange', onVis)
   }, [])
 
+  // Reflect a default-alert set that changed elsewhere (a cross-device sync)
+  // while this panel is open, so it never shows stale alerts.
+  useEffect(() => {
+    const h = () => setLeads(getSettings().leads || [])
+    window.addEventListener('bloom-default-alerts', h)
+    return () => window.removeEventListener('bloom-default-alerts', h)
+  }, [])
+
   // ── Location arrivals ────────────────────────────────────────
   const geoOk = geolocationSupported()
   const [geoPerm, setGeoPerm] = useState('unknown')  // granted | denied | prompt | unknown
