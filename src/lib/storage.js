@@ -220,6 +220,14 @@ export const setRoutineGroups = v  => dbSet('routine_groups', v)
 export const getExternalCalendars = () => dbGet('external_calendars').then(v => Array.isArray(v) ? v : [])
 export const setExternalCalendars = v  => dbSet('external_calendars', v)
 
+// ── Manual time logs (Informatics) ─────────────────────────────
+// Time the user records by hand for something that didn't run as a timed task —
+// "3h on MCAT on Tuesday." Lets the Informatics page answer "how many hours did
+// I spend on X" even when nothing had a duration attached. One synced kv_store
+// blob (array), no schema migration. Each: { id, date, mins, cat, title, createdAt }.
+export const getTimeLogs = () => dbGet('time_logs').then(v => Array.isArray(v) ? v : [])
+export const setTimeLogs = v  => dbSet('time_logs', v)
+
 // ── Classes ────────────────────────────────────────────────────
 export async function getClasses() {
   if (USE_SUPABASE) {

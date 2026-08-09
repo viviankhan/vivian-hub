@@ -20,14 +20,27 @@ function Bar({ frac, color }) {
   )
 }
 
-export default function Informatics({ commitments = [], recurringTasks = [], completions = {}, log = [], categories = [] }) {
+function todayStr() {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
+}
+const DUR_CHIPS = [15, 30, 45, 60, 90, 120]
+
+export default function Informatics({ commitments = [], recurringTasks = [], completions = {}, log = [], categories = [], timeLogs = [], addTimeLog, deleteTimeLog }) {
   const [range, setRange] = useState('all')
   const [query, setQuery] = useState('')
   const [asked, setAsked] = useState('')   // the submitted question
 
+  // "Log time" form — record hours for something that had no timed task.
+  const [logOpen, setLogOpen] = useState(false)
+  const [lTitle, setLTitle] = useState('')
+  const [lCat, setLCat] = useState('')
+  const [lMins, setLMins] = useState(0)
+  const [lDate, setLDate] = useState(todayStr())
+
   const allEntries = useMemo(
-    () => computeEntries({ log, commitments, recurringTasks, completions }),
-    [log, commitments, recurringTasks, completions],
+    () => computeEntries({ log, commitments, recurringTasks, completions, timeLogs }),
+    [log, commitments, recurringTasks, completions, timeLogs],
   )
   const entries = useMemo(() => filterByRange(allEntries, range), [allEntries, range])
   const agg = useMemo(() => aggregate(entries, categories), [entries, categories])
@@ -47,6 +60,17 @@ export default function Informatics({ commitments = [], recurringTasks = [], com
 
   const ask = (text) => { const v = (text ?? query).trim(); setAsked(v); setQuery(v) }
 
+  const saveLog = () => {
+    if (!(lMins > 0) || !addTimeLog) return
+    const title = lTitle.trim() || (categories.find(c => c.id === lCat)?.label || 'Logged time')
+    addTimeLog({ date: lDate || todayStr(), mins: lMins, cat: lCat, title })
+    setLTitle(''); setLCat(''); setLMins(0); setLDate(todayStr()); setLogOpen(false)
+  }
+
+  // Manual logs within the current range, most recent first (for the list + delete).
+  const rangeLogs = filterByRange((timeLogs || []).map(t => ({ ...t })), range)
+    .slice().sort((a, b) => (b.date || '').localeCompare(a.date || ''))
+
   const rangeLabel = RANGES.find(r => r[0] === range)?.[1].toLowerCase()
 
   return (
@@ -54,8 +78,8 @@ export default function Informatics({ commitments = [], recurringTasks = [], com
       <div className="page-title">Informatics</div>
       <div className="page-sub">Ask where your time went — “how many hours did I spend on MCAT studying?” — and see the topics you studied, projects you finished, and skills you used, broken down by category and task. Hours show wherever a task had a duration; everything you checked off still counts as a session.</div>
 
-      {/* Range */}
-      <div style={{ display:'flex', gap:6, margin:'4px 0 14px', flexWrap:'wrap' }}>
+      {/* Range + log-time */}
+      <div style={{ display:'flex', gap:6, margin:'4px 0 14px', flexWrap:'wrap', alignItems:'center' }}>
         {RANGES.map(([id, label]) => (
           <button key={id} onClick={() => setRange(id)}
             style={{ fontSize:11.5, padding:'6px 13px', borderRadius:20, cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:600,
@@ -63,7 +87,58 @@ export default function Informatics({ commitments = [], recurringTasks = [], com
             {label}
           </button>
         ))}
+        <button onClick={() => setLogOpen(o => !o)}
+          style={{ marginLeft:'auto', fontSize:11.5, padding:'6px 13px', borderRadius:20, cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:700,
+            border:'none', background: logOpen ? 'var(--forest)' : 'var(--forest)', color:'var(--green-light)' }}>
+          {logOpen ? 'Close' : '+ Log time'}
+        </button>
       </div>
+
+      {/* Log time — record hours for something that wasn't a timed task. */}
+      {logOpen && (
+        <div style={{ background:'white', border:'1px solid var(--border)', borderRadius:14, padding:'14px 16px', marginBottom:14 }}>
+          <div style={{ fontSize:12.5, color:'var(--text)', fontWeight:700, marginBottom:8 }}>Log time on something</div>
+          <input value={lTitle} onChange={e => setLTitle(e.target.value)} placeholder="What did you work on? (e.g. MCAT biochem)"
+            style={{ width:'100%', fontSize:13, padding:'9px 11px', borderRadius:10, border:'1px solid var(--border)', background:'var(--cream)', fontFamily:'DM Sans,sans-serif', color:'var(--text)', boxSizing:'border-box', marginBottom:10 }} />
+          {categories.length > 0 && (
+            <div style={{ display:'flex', gap:6, flexWrap:'wrap', marginBottom:10 }}>
+              <button onClick={() => setLCat('')} style={{ fontSize:11, padding:'4px 10px', borderRadius:16, cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:600, border:`1px solid ${lCat==='' ? 'var(--teal)' : 'var(--border)'}`, background: lCat==='' ? '#F0FDFB' : 'white', color: lCat==='' ? 'var(--teal)' : 'var(--muted)' }}>No category</button>
+              {categories.map(c => (
+                <button key={c.id} onClick={() => setLCat(c.id)}
+                  style={{ display:'inline-flex', alignItems:'center', gap:5, fontSize:11, padding:'4px 10px', borderRadius:16, cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:600,
+                    border:`1px solid ${lCat===c.id ? c.color : 'var(--border)'}`, background: lCat===c.id ? `${c.color}18` : 'white', color: lCat===c.id ? c.color : 'var(--muted)' }}>
+                  {c.icon && <Icon value={c.icon} size={12} color={lCat===c.id ? c.color : 'var(--muted)'} />}{c.label}
+                </button>
+              ))}
+            </div>
+          )}
+          <div style={{ display:'flex', gap:6, flexWrap:'wrap', marginBottom:10, alignItems:'center' }}>
+            {DUR_CHIPS.map(m => (
+              <button key={m} onClick={() => setLMins(m)}
+                style={{ fontSize:11.5, padding:'6px 11px', borderRadius:16, cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:600, border:`1px solid ${lMins===m ? 'var(--teal)' : 'var(--border)'}`, background: lMins===m ? '#F0FDFB' : 'white', color: lMins===m ? 'var(--teal)' : 'var(--muted)' }}>
+                {fmtHours(m)}
+              </button>
+            ))}
+            <span style={{ display:'inline-flex', alignItems:'center', gap:4, marginLeft:4 }}>
+              <input type="number" min="0" value={Math.floor(lMins/60) || ''} onChange={e => setLMins((Math.max(0, +e.target.value||0))*60 + (lMins%60))}
+                style={{ width:44, fontSize:13, padding:'7px 6px', borderRadius:8, border:'1px solid var(--border)', textAlign:'center', fontFamily:'DM Sans,sans-serif', color:'var(--text)', background:'white' }} />
+              <span style={{ fontSize:11, color:'var(--muted)' }}>h</span>
+              <input type="number" min="0" max="59" value={lMins%60 || ''} onChange={e => setLMins(Math.floor(lMins/60)*60 + Math.min(59, Math.max(0, +e.target.value||0)))}
+                style={{ width:44, fontSize:13, padding:'7px 6px', borderRadius:8, border:'1px solid var(--border)', textAlign:'center', fontFamily:'DM Sans,sans-serif', color:'var(--text)', background:'white' }} />
+              <span style={{ fontSize:11, color:'var(--muted)' }}>m</span>
+            </span>
+          </div>
+          <div style={{ display:'flex', gap:8, alignItems:'center' }}>
+            <input type="date" value={lDate} onChange={e => setLDate(e.target.value)} max={todayStr()}
+              style={{ fontSize:12.5, padding:'8px 10px', borderRadius:10, border:'1px solid var(--border)', fontFamily:'DM Sans,sans-serif', color:'var(--text)', background:'white' }} />
+            <button onClick={saveLog} disabled={!(lMins > 0)}
+              style={{ marginLeft:'auto', fontSize:13, padding:'9px 18px', borderRadius:10, border:'none', cursor: lMins>0 ? 'pointer' : 'default', fontFamily:'DM Sans,sans-serif', fontWeight:700,
+                background: lMins>0 ? 'var(--forest)' : '#E5E7EB', color: lMins>0 ? 'var(--green-light)' : '#9CA3AF' }}>
+              Log {lMins>0 ? fmtHours(lMins) : 'time'}
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Question box */}
       <div style={{ background:'white', border:'1px solid var(--border)', borderRadius:14, padding:'14px 16px', marginBottom:14 }}>
@@ -161,6 +236,30 @@ export default function Informatics({ commitments = [], recurringTasks = [], com
                 {t.mins > 0 && <span style={{ fontSize:12.5, fontWeight:700, color:'var(--text)', flexShrink:0, minWidth:52, textAlign:'right' }}>{fmtHours(t.mins)}</span>}
               </div>
             ))}
+          </div>
+        </>
+      )}
+
+      {/* Time you logged by hand — removable. */}
+      {rangeLogs.length > 0 && (
+        <>
+          <div style={{ fontSize:11, color:'var(--muted)', letterSpacing:1.5, textTransform:'uppercase', fontWeight:600, margin:'16px 0 8px' }}>Time you logged</div>
+          <div style={{ background:'white', border:'1px solid var(--border)', borderRadius:14, padding:'6px 16px' }}>
+            {rangeLogs.map((t, i, arr) => {
+              const c = categories.find(x => x.id === t.cat)
+              return (
+                <div key={t.id} style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 0', borderBottom: i < arr.length-1 ? '1px solid #F1EEF3' : 'none' }}>
+                  <span style={{ width:9, height:9, borderRadius:3, background: c?.color || '#C6A15B', flexShrink:0 }} />
+                  <div style={{ flex:1, minWidth:0 }}>
+                    <div style={{ fontSize:13, color:'var(--text)', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{t.title}</div>
+                    <div style={{ fontSize:11, color:'var(--muted)' }}>{new Date((t.date||'')+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric'})}{c?` · ${c.label}`:''}</div>
+                  </div>
+                  <span style={{ fontSize:12.5, fontWeight:700, color:'var(--text)', flexShrink:0 }}>{fmtHours(t.mins)}</span>
+                  <button onClick={() => deleteTimeLog && deleteTimeLog(t.id)} title="Remove" aria-label="Remove logged time"
+                    style={{ background:'none', border:'none', cursor:'pointer', color:'#B9B3AC', fontSize:15, padding:'0 2px', flexShrink:0 }}>✕</button>
+                </div>
+              )
+            })}
           </div>
         </>
       )}

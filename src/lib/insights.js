@@ -73,12 +73,20 @@ export function computeActivity({ log = [], commitments = [], recurringTasks = [
   return out
 }
 
-// Prefer the log-based activity (captures untimed work too); fall back to the
-// duration-only entries for installs with no completion history yet.
+// Time the user recorded by hand (see storage.getTimeLogs) → entries. This is
+// how work with no duration attached still counts as real hours.
+export function timeLogEntries(timeLogs = []) {
+  return (timeLogs || [])
+    .filter(t => t && t.date && t.mins > 0)
+    .map(t => ({ date: t.date, mins: t.mins, cat: t.cat || '', title: (t.title || '').trim() || 'Logged time', kind: 'manual', id: t.id }))
+}
+
+// The full entry list the page runs on: everything you checked off (with hours
+// filled in where a task had a duration) plus any time you logged by hand.
 export function computeEntries(data) {
   const activity = computeActivity(data)
-  if (activity.length) return activity
-  return computeTimeEntries(data)
+  const spine = activity.length ? activity : computeTimeEntries(data)
+  return [...spine, ...timeLogEntries(data.timeLogs)]
 }
 
 // Build the flat time-entry list from the app's data.

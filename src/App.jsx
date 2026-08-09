@@ -10,6 +10,7 @@ import {
   getVacations, addVacation as dbAddVacation, deleteVacation as dbDeleteVacation,
   getEvents, addEvent as dbAddEvent, deleteEvent as dbDeleteEvent,
   getExternalCalendars, setExternalCalendars,
+  getTimeLogs, setTimeLogs,
   getRecurringTasks, addRecurringTask, updateRecurringTask, deleteRecurringTask, clearRecurringTasks,
   getRecurringExceptions, setRecurringExceptions,
   getRecurringMeta, setRecurringMeta,
@@ -483,23 +484,25 @@ export default function App() {
   const [extSpans,         setExtSpans_]        = useState({})   // id → span[]
   const [calStatuses,      setCalStatuses_]     = useState({})   // id → { state, error, count, fetchedAt }
   const [categories,       setCategories_]      = useState([])
+  const [timeLogs,         setTimeLogs_]        = useState([])   // manual hours logged on the Informatics page
   const [routines,         setRoutines_]         = useState(DEFAULT_ROUTINES)
   const [loading,          setLoading]          = useState(true)
 
   useEffect(() => {
     async function load() {
       await runMigrationIfNeeded()
-      const [comp, l, n, fcp, fcs, sch, com, rt, vac, evs, cats, cmeta, rexc, rmeta, rout] = await Promise.all([
+      const [comp, l, n, fcp, fcs, sch, com, rt, vac, evs, cats, cmeta, rexc, rmeta, rout, tlogs] = await Promise.all([
         getCompletions(), getLogEntries(), getNotes(),
         getFcProgress(), getFcStudied(), getScheduledTasks(),
         getCommitments(), getRecurringTasks(), getVacations(), getEvents(),
         seedCategoriesIfNeeded(), getCommitmentMeta(), getRecurringExceptions(), getRecurringMeta(),
-        getRoutineGroups(),
+        getRoutineGroups(), getTimeLogs(),
       ])
       setCompletions_(comp); setLog_(l); setNotes_(n)
       setFcProgress_(fcp); setFcStudied_(fcs); setScheduled_(sch)
       setCommitments_(com); setRecurringTaskRows(rt); setVacations_(vac); setEvents_(evs)
       setCategories_(cats); setCommitmentMeta_(cmeta); setRecurringExceptions_(rexc); setRecurringMeta_(rmeta)
+      setTimeLogs_(Array.isArray(tlogs) ? tlogs : [])
       // Routine groups: use what's saved, or seed the Morning/Night defaults.
       if (rout) {
         // One-time tint upgrade: bump any routine still on an old seed tint to
@@ -1082,6 +1085,15 @@ export default function App() {
     try { await dbDeleteEvent(id) } catch (e) { reportSaveError(e) }
   }, [])
 
+  // ── Manual time logs (Informatics) ──────────────────────────
+  const addTimeLog = useCallback(entry => {
+    const row = { id: 'tl-' + Date.now().toString(36), createdAt: new Date().toISOString(), ...entry }
+    setTimeLogs_(prev => { const next = [row, ...prev]; setTimeLogs(next).catch(reportSaveError); return next })
+  }, [])
+  const deleteTimeLog = useCallback(id => {
+    setTimeLogs_(prev => { const next = prev.filter(t => t.id !== id); setTimeLogs(next).catch(reportSaveError); return next })
+  }, [])
+
   // ── Unified toggle ───────────────────────────────────────────
   const syncToggle = useCallback(async (id, label, tag, date, explicitNext) => {
     const storageKey = date ? `${date}_${id}` : id
@@ -1242,7 +1254,7 @@ export default function App() {
           categories={categories}
           routines={routines} addRoutine={addRoutineFn} updateRoutine={updateRoutineFn} deleteRoutine={deleteRoutineFn}
           defaultWeekTasks={DEFAULT_RECURRING_TASKS} defaultDailyTodos={DEFAULT_DAILY_TODOS} />}
-        {tab==='informatics' && <Informatics commitments={commitmentsView} recurringTasks={recurringTasksEnriched} completions={completions} log={log} categories={categories} />}
+        {tab==='informatics' && <Informatics commitments={commitmentsView} recurringTasks={recurringTasksEnriched} completions={completions} log={log} categories={categories} timeLogs={timeLogs} addTimeLog={addTimeLog} deleteTimeLog={deleteTimeLog} />}
       </main>
 
       <SettingsDrawer
