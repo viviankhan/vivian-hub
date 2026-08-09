@@ -34,6 +34,53 @@ export function topicWords(q) {
   return (q || '').toLowerCase().match(/[a-z0-9]+/g)?.filter(w => w.length >= 2 && !QUERY_STOP.has(w)).map(stem) || []
 }
 
+// Strip a leading time prefix ("9:00 AM — ", "9:00 – ") off a task label so the
+// same task on different days groups under one title.
+export function cleanTitle(label) {
+  return (label || '').replace(/^\s*\d{1,2}:\d{2}\s*(?:am|pm)?\s*[—–-]\s*/i, '').trim()
+}
+
+// The richer "activity" list, built from the completion log so it captures
+// EVERYTHING you finished — not just work that had a duration. Each entry gets
+// its minutes filled in when the task's duration is known (a one-off commitment
+// or a recurring template), and 0 otherwise. This is what lets the page surface
+// topics studied / projects done / skills used even with no hours attached.
+//   log: [{ date, label, tag, storageKey, ts }]
+export function computeActivity({ log = [], commitments = [], recurringTasks = [] }) {
+  const cById = new Map((commitments || []).map(c => [c.id, c]))
+  const rById = new Map((recurringTasks || []).map(t => [t.id, t]))
+  const out = []
+  for (const e of (log || [])) {
+    const key = e.storageKey || ''
+    const date = e.date || (e.ts ? String(e.ts).slice(0, 10) : '')
+    if (!date) continue
+    let mins = 0, cat = e.tag || '', title = cleanTitle(e.label || '')
+    const c = cById.get(key)
+    if (c) {
+      if (c.block) continue
+      mins = c.durationMins || 0; cat = cat || c.cat || ''; if (!title) title = (c.text || '').trim()
+    } else {
+      const m = key.match(DATE_KEY_RE)
+      if (m && rById.has(m[2])) {
+        const t = rById.get(m[2])
+        if (t.block) continue
+        mins = t.durationMins || 0; cat = cat || t.cat || t.tag || ''
+        if (!title) title = (t.title || t.text || '').trim()
+      }
+    }
+    out.push({ date, mins, cat, title: title || 'Untitled', kind: 'log' })
+  }
+  return out
+}
+
+// Prefer the log-based activity (captures untimed work too); fall back to the
+// duration-only entries for installs with no completion history yet.
+export function computeEntries(data) {
+  const activity = computeActivity(data)
+  if (activity.length) return activity
+  return computeTimeEntries(data)
+}
+
 // Build the flat time-entry list from the app's data.
 //   commitments:     enriched commitment rows (durationMins, cat, text, done, date, block)
 //   recurringTasks:  rule-enriched recurring rows (durationMins, cat/tag, title/text, block)
@@ -95,8 +142,8 @@ export function aggregate(entries, categories) {
   return {
     totalMins,
     days: dayset.size,
-    byCategory: [...byCat.values()].sort((a, b) => b.mins - a.mins),
-    byTask: [...byTask.values()].sort((a, b) => b.mins - a.mins),
+    byCategory: [...byCat.values()].sort((a, b) => b.mins - a.mins || b.count - a.count),
+    byTask: [...byTask.values()].sort((a, b) => b.mins - a.mins || b.count - a.count),
   }
 }
 

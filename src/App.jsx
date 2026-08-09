@@ -1237,7 +1237,7 @@ export default function App() {
           categories={categories}
           routines={routines} addRoutine={addRoutineFn} updateRoutine={updateRoutineFn} deleteRoutine={deleteRoutineFn}
           defaultWeekTasks={DEFAULT_RECURRING_TASKS} defaultDailyTodos={DEFAULT_DAILY_TODOS} />}
-        {tab==='informatics' && <Informatics commitments={commitmentsView} recurringTasks={recurringTasksEnriched} completions={completions} categories={categories} />}
+        {tab==='informatics' && <Informatics commitments={commitmentsView} recurringTasks={recurringTasksEnriched} completions={completions} log={log} categories={categories} />}
       </main>
 
       <SettingsDrawer
