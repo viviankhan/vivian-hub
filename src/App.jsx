@@ -36,7 +36,7 @@ import { refreshCalendar, loadCachedCalendar, clearCachedCalendar, eventsToSpans
 import ThoughtsBoard from './components/ThoughtsBoard.jsx'
 import NotificationsSettings from './components/NotificationsSettings.jsx'
 import SearchOverlay, { SearchIcon } from './components/SearchOverlay.jsx'
-import { registerServiceWorker, syncReminders, notifyArrival } from './lib/notifications.js'
+import { registerServiceWorker, syncReminders, notifyArrival, getDefaultLeads } from './lib/notifications.js'
 import { ensureBackgroundPush, syncScheduledPushes } from './lib/push.js'
 import { buildLabelModel, historyFromData } from './lib/predictLabel.js'
 import { geolocationSupported, watchArrivals } from './lib/geofence.js'
@@ -434,22 +434,30 @@ export default function App() {
   useEffect(() => {
     let alive = true
     let lastPull = 0
-    const pull = () => {
+    const pull = (isFirst) => {
       lastPull = Date.now()
       hydratePrefs().then(changed => {
-        if (!alive || !changed) return
-        setFontState(getFontPref()); setThemeState(getThemePref()); setSeasonState(getSeasonPref())
-        setCustomColorState(getCustomColor()); setBackgroundState(getBackgroundPref()); setCustomBgState(getCustomBackground())
-        setLayoutState(getLayoutPref()); setSoundState(getSoundEnabled()); setSummaryState(getSummaryPref())
-        applySavedAppearance()   // re-apply theme/season/background/font/layout from the hydrated values
-        // Nudge components that read their own device-local stores to refresh.
-        try { window.dispatchEvent(new Event(RECURRING_FILTER_EVENT)) } catch {}
-        try { window.dispatchEvent(new Event('bloom-saved-colors')) } catch {}
-        try { window.dispatchEvent(new Event('bloom-duration-presets')) } catch {}
-        try { window.dispatchEvent(new Event('bloom-default-alerts')) } catch {}
+        if (!alive) return
+        if (changed) {
+          setFontState(getFontPref()); setThemeState(getThemePref()); setSeasonState(getSeasonPref())
+          setCustomColorState(getCustomColor()); setBackgroundState(getBackgroundPref()); setCustomBgState(getCustomBackground())
+          setLayoutState(getLayoutPref()); setSoundState(getSoundEnabled()); setSummaryState(getSummaryPref())
+          applySavedAppearance()   // re-apply theme/season/background/font/layout from the hydrated values
+          // Nudge components that read their own device-local stores to refresh.
+          try { window.dispatchEvent(new Event(RECURRING_FILTER_EVENT)) } catch {}
+          try { window.dispatchEvent(new Event('bloom-saved-colors')) } catch {}
+          try { window.dispatchEvent(new Event('bloom-duration-presets')) } catch {}
+          try { window.dispatchEvent(new Event('bloom-default-alerts')) } catch {}
+        }
+        // On the very first load, upload any pref that only exists on this
+        // device so it can reach the others. This is what carries a default
+        // alert set (or background) chosen *before* syncing was wired up — the
+        // hydrate above never overwrites a key the cloud doesn't have yet, so
+        // without this push a pre-existing default would stay stuck locally.
+        if (isFirst) { try { getDefaultLeads() } catch {} ; pushPrefs() }
       })
     }
-    pull()
+    pull(true)
     // Re-pull when the app returns to the foreground. Prefs used to hydrate only
     // once at launch, so on an installed PWA (which rarely fully restarts) a
     // change made on another device — background, default alerts — never showed
@@ -460,11 +468,14 @@ export default function App() {
     return () => { alive = false; document.removeEventListener('visibilitychange', onVis); window.removeEventListener('focus', onVis) }
   }, [])
 
-  // Saved colors, the repeating filter, and duration presets are changed inside
-  // components (which broadcast these events) — mirror those to the cloud too.
+  // Saved colors, the repeating filter, duration presets, and the default
+  // reminder alerts are changed inside components (which broadcast these
+  // events) — mirror those to the cloud too. Without 'bloom-default-alerts'
+  // here, editing your default alerts saved locally but never synced, so the
+  // change never reached other devices or their new-task defaults.
   useEffect(() => {
     const h = () => pushPrefs()
-    const evs = ['bloom-saved-colors', RECURRING_FILTER_EVENT, 'bloom-duration-presets']
+    const evs = ['bloom-saved-colors', RECURRING_FILTER_EVENT, 'bloom-duration-presets', 'bloom-default-alerts']
     evs.forEach(e => window.addEventListener(e, h))
     return () => evs.forEach(e => window.removeEventListener(e, h))
   }, [])
