@@ -20,7 +20,8 @@ import { AlertPicker, alertName } from './AlertPicker.jsx'
 import { SOUNDS, playSound } from '../lib/sounds.js'
 import { getDurationPresets, setDurationPresets, resetDurationPresets, parseDuration, durationLabel } from '../lib/durations.js'
 import { predictLabel } from '../lib/predictLabel.js'
-import { geolocationSupported, getCurrentLocation, searchPlaces, DEFAULT_RADIUS_M } from '../lib/geofence.js'
+import { geolocationSupported, getCurrentLocation, searchPlaces, reverseGeocode, RADIUS_OPTIONS, radiusLabel } from '../lib/geofence.js'
+import { getSavedPlaces, getRecentPlaces, rememberPlace } from '../lib/places.js'
 import { activeAccent } from '../lib/appearance.js'
 
 const DEFAULT_CATEGORIES = [{ id:'other', label:'Other', color:'#8899AA' }]
@@ -254,6 +255,11 @@ export default function AddItemModal({ existing = null, existingRecurring = null
   const [locQuery, setLocQuery]   = useState('')
   const [locResults, setLocResults] = useState([])
   const [locSearching, setLocSearching] = useState(false)
+  // One-tap suggestions: the user's saved default places + recently-used ones.
+  const [savedPlaces]  = useState(() => getSavedPlaces())
+  const [recentPlaces] = useState(() => getRecentPlaces())
+  // Arrival radius is opt-in — this reveals the scrolling radius menu.
+  const [radiusMenuOpen, setRadiusMenuOpen] = useState(false)
   useEffect(() => {
     const q = locQuery.trim()
     if (q.length < 3) { setLocResults([]); setLocSearching(false); return }
@@ -409,16 +415,32 @@ export default function AddItemModal({ existing = null, existingRecurring = null
     setLocErr(''); setLocBusy(true)
     try {
       const { lat, lng } = await getCurrentLocation()
-      setLocation(prev => ({ name: prev?.name || '', radius: prev?.radius || DEFAULT_RADIUS_M, lat, lng }))
+      // Radius stays whatever it was (absent = vicinity default).
+      setLocation(prev => ({ ...(prev || {}), name: prev?.name || '', lat, lng }))
+      // Suggest a name from the address if the field is still blank, so tagging
+      // "here" doesn't leave an unnamed pin.
+      const suggestion = await reverseGeocode(lat, lng)
+      if (suggestion) setLocation(prev => (prev && !(prev.name || '').trim()) ? { ...prev, name: suggestion } : prev)
     } catch (e) {
       setLocErr(e && e.code === 1 ? 'Location permission denied. Allow it to tag a place.' : 'Couldn’t get your location. Try again.')
     } finally { setLocBusy(false) }
   }
-  const setLocName   = (name) => setLocation(prev => ({ ...(prev || { radius: DEFAULT_RADIUS_M }), name }))
-  const setLocRadius = (radius) => setLocation(prev => prev ? { ...prev, radius } : prev)
+  // Adopt a saved / recent / searched place wholesale (its name + coords, and
+  // its radius if it pinned one — otherwise keep the current radius choice).
+  const pickPlace = (p) => {
+    setLocation(prev => ({ name: p.name || '', lat: p.lat, lng: p.lng, radius: p.radius ?? prev?.radius, autoStart: prev?.autoStart }))
+    setLocQuery(''); setLocResults([]); setLocErr('')
+  }
+  const setLocName   = (name) => setLocation(prev => ({ ...(prev || {}), name }))
+  const setLocRadius = (radius) => { setLocation(prev => prev ? { ...prev, radius: radius || undefined } : prev); setRadiusMenuOpen(false) }
   const setLocAutoStart = (on) => setLocation(prev => prev ? { ...prev, autoStart: on } : prev)
-  const clearLocation = () => { setLocation(null); setLocErr('') }
+  const clearLocation = () => { setLocation(null); setLocErr(''); setRadiusMenuOpen(false) }
   const locHasCoords = !!(location && typeof location.lat === 'number' && typeof location.lng === 'number')
+  // The location object as persisted on a task: an explicit radius only when one
+  // was chosen (absent = vicinity), plus the arrival auto-start opt-in.
+  const buildLocation = () => locHasCoords
+    ? { name: (location.name || '').trim(), lat: location.lat, lng: location.lng, radius: location.radius || null, autoStart: !!location.autoStart }
+    : null
 
   const toggleLead = (val) => {
     // Choosing a specific alert switches this item off the global defaults. The
@@ -445,6 +467,8 @@ export default function AddItemModal({ existing = null, existingRecurring = null
 
   const submit = (scope) => {
     if (!canSave) return
+    // Remember a tagged place so it's a one-tap suggestion next time.
+    if (locHasCoords) rememberPlace(buildLocation())
     // Editing just THIS occurrence of a series → detach it: the parent hides the
     // series on this date and drops in a one-off commitment with the edits. The
     // other days of the series are untouched.
@@ -464,7 +488,7 @@ export default function AddItemModal({ existing = null, existingRecurring = null
         subtasks,
         done: false,
         block: block || false,
-        location: locHasCoords ? { name: (location.name || '').trim(), lat: location.lat, lng: location.lng, radius: location.radius || DEFAULT_RADIUS_M, autoStart: !!location.autoStart } : null,
+        location: buildLocation(),
         createdAt: new Date().toISOString(),
       }
       setItemSound(occ.id, sound)
@@ -496,7 +520,7 @@ export default function AddItemModal({ existing = null, existingRecurring = null
         icon: effectiveIcon || null,
         color: color || null,
         block: block || false,
-        location: locHasCoords ? { name: (location.name || '').trim(), lat: location.lat, lng: location.lng, radius: location.radius || DEFAULT_RADIUS_M, autoStart: !!location.autoStart } : null,
+        location: buildLocation(),
         startDate,
         endDate: repeatEnd || null,
       }
@@ -529,7 +553,7 @@ export default function AddItemModal({ existing = null, existingRecurring = null
       subtasks,
       // An arrival location, if tagged. Preserve any prior startedAt so editing
       // the task doesn't wipe an in-progress arrival.
-      location: locHasCoords ? { name: (location.name || '').trim(), lat: location.lat, lng: location.lng, radius: location.radius || DEFAULT_RADIUS_M, autoStart: !!location.autoStart } : null,
+      location: buildLocation(),
       startedAt: existing?.startedAt ?? null,
       block,
     }
@@ -1007,6 +1031,25 @@ export default function AddItemModal({ existing = null, existingRecurring = null
                 <div style={{ fontSize:11.5, color:'var(--muted)', lineHeight:1.5, marginBottom:10 }}>
                   Tag where this happens. It's just a note by default — turn on auto-start below to have Bloom begin the task's progress the moment you arrive, no matter the time it's set for.
                 </div>
+                {/* One-tap suggestions: saved defaults + recently-used places. */}
+                {(savedPlaces.length > 0 || recentPlaces.length > 0) && (
+                  <div style={{ marginBottom:10 }}>
+                    <div style={{ fontSize:10, color:'var(--muted)', letterSpacing:1, textTransform:'uppercase', marginBottom:6 }}>Suggestions</div>
+                    <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
+                      {[...savedPlaces.map(p => ({ ...p, saved:true })), ...recentPlaces.map(p => ({ ...p, saved:false }))].map((p, i) => {
+                        const on = locHasCoords && Math.abs(location.lat - p.lat) < 0.0004 && Math.abs(location.lng - p.lng) < 0.0004
+                        return (
+                          <button key={p.id || i} type="button" onClick={() => pickPlace(p)}
+                            style={{ display:'inline-flex', alignItems:'center', gap:5, fontSize:11.5, padding:'6px 11px', borderRadius:16, cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:600, maxWidth:'100%',
+                              border: on ? 'none' : '1px solid var(--border)', background: on ? 'var(--forest)' : 'white', color: on ? 'var(--green-light)' : 'var(--muted)' }}>
+                            <span style={{ opacity:.85 }}>{p.saved ? '★' : '🕘'}</span>
+                            <span style={{ minWidth:0, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{p.name || 'Unnamed place'}</span>
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )}
                 {/* Type-to-search a place — set a location without being there. */}
                 <input value={locQuery} onChange={e => setLocQuery(e.target.value)} placeholder="Search a place or address…"
                   style={{ ...inp, fontSize:13, marginBottom: (locResults.length || locSearching) ? 6 : 10 }} />
@@ -1014,8 +1057,7 @@ export default function AddItemModal({ existing = null, existingRecurring = null
                 {locResults.length > 0 && (
                   <div style={{ border:'1px solid var(--border)', borderRadius:10, overflow:'hidden', marginBottom:10 }}>
                     {locResults.map((p, i) => (
-                      <button key={i} type="button"
-                        onClick={() => { setLocation({ name: p.name, lat: p.lat, lng: p.lng, radius: location?.radius || DEFAULT_RADIUS_M }); setLocQuery(''); setLocResults([]); setLocErr('') }}
+                      <button key={i} type="button" onClick={() => pickPlace(p)}
                         style={{ display:'flex', alignItems:'center', gap:8, width:'100%', textAlign:'left', padding:'9px 11px', border:'none', borderTop: i ? '1px solid #F1EDF2' : 'none', background:'white', cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontSize:12.5, color:'var(--text)' }}>
                         <PinIcon /><span style={{ flex:1, minWidth:0, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{p.name}</span>
                       </button>
@@ -1035,18 +1077,34 @@ export default function AddItemModal({ existing = null, existingRecurring = null
                   <div style={{ fontSize:10.5, color:'var(--muted)', marginTop:6 }}>
                     Pinned at {location.lat.toFixed(4)}, {location.lng.toFixed(4)}.
                   </div>
-                  <div style={{ fontSize:10, color:'var(--muted)', letterSpacing:1, textTransform:'uppercase', margin:'14px 0 6px' }}>Arrival radius</div>
-                  <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
-                    {[100, 150, 300, 500].map(r => {
-                      const on = (location.radius || DEFAULT_RADIUS_M) === r
-                      return (
-                        <button key={r} onClick={() => setLocRadius(r)}
-                          style={{ fontSize:11, padding:'5px 12px', borderRadius:16, cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:600, border: on ? 'none' : '1px solid var(--border)', background: on ? 'var(--forest)' : 'white', color: on ? 'var(--green-light)' : 'var(--muted)' }}>
-                          {on ? '✓ ' : ''}{r} m
-                        </button>
-                      )
-                    })}
+                  {/* Arrival radius is opt-in. By default arrival fires when you
+                      reach the vicinity (like "Arriving" in a maps app); tap to
+                      open a scrolling menu and pin an exact distance if wanted. */}
+                  <div style={{ display:'flex', alignItems:'center', gap:8, margin:'14px 0 0' }}>
+                    <span style={{ fontSize:10, color:'var(--muted)', letterSpacing:1, textTransform:'uppercase', flex:1 }}>Arrival radius</span>
+                    <button type="button" onClick={() => setRadiusMenuOpen(o => !o)}
+                      style={{ display:'inline-flex', alignItems:'center', gap:6, fontSize:11.5, padding:'5px 11px', borderRadius:16, cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:600,
+                        border: location.radius ? 'none' : '1px solid var(--border)', background: location.radius ? 'var(--forest)' : 'white', color: location.radius ? 'var(--green-light)' : 'var(--muted)' }}>
+                      {radiusLabel(location.radius)}<span style={{ fontSize:9, opacity:.8 }}>{radiusMenuOpen ? '▲' : '▼'}</span>
+                    </button>
                   </div>
+                  {radiusMenuOpen && (
+                    <div style={{ marginTop:8, border:'1px solid var(--border)', borderRadius:10, overflow:'hidden' }}>
+                      <div style={{ maxHeight:150, overflowY:'auto', WebkitOverflowScrolling:'touch' }}>
+                        {[null, ...RADIUS_OPTIONS].map((r, i) => {
+                          const on = (location.radius || null) === r
+                          return (
+                            <button key={r ?? 'vicinity'} type="button" onClick={() => setLocRadius(r)}
+                              style={{ display:'flex', alignItems:'center', gap:8, width:'100%', textAlign:'left', padding:'9px 12px', border:'none', borderTop: i ? '1px solid #F1EDF2' : 'none', cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontSize:12.5, fontWeight: on ? 700 : 500, background: on ? '#F1FBF5' : 'white', color: on ? 'var(--forest)' : 'var(--text)' }}>
+                              <span style={{ width:14, color:'var(--forest)' }}>{on ? '✓' : ''}</span>
+                              <span style={{ flex:1 }}>{r ? radiusLabel(r) : 'Vicinity'}</span>
+                              {!r && <span style={{ fontSize:10.5, color:'var(--muted)' }}>Default · like “Arriving”</span>}
+                            </button>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  )}
                   {/* Auto-start toggle — off by default (location is informative). */}
                   <div style={{ display:'flex', alignItems:'center', gap:12, marginTop:16, paddingTop:14, borderTop:'1px solid #F1EDF2' }}>
                     <div style={{ flex:1, minWidth:0 }}>

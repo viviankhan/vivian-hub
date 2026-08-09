@@ -17,6 +17,7 @@ const PREF_KEYS = [
   'bloom_background', 'bloom_bg_custom',
   'bloom_font', 'bloom_layout', 'bloom_summary', 'bloom_sound',
   'bloom_saved_colors', 'vivian_duration_presets', 'bloom_recurring_view_filter',
+  'bloom_saved_places', 'bloom_recent_places',
 ]
 
 let hydrating = false

@@ -88,6 +88,20 @@ function shortPlaceName(r) {
   return label || (r.display_name || '').split(',').slice(0, 2).join(',').trim()
 }
 
+// Reverse-geocode a coordinate into a short human name, so tagging "my current
+// location" can suggest a name ("Gym, Brooklyn") instead of leaving it blank.
+// Best-effort: returns '' on no match or network/permission trouble.
+export async function reverseGeocode(lat, lng) {
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return ''
+  try {
+    const url = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&addressdetails=1&zoom=18&lat=${lat}&lon=${lng}`
+    const res = await fetch(url, { headers: { 'Accept': 'application/json' } })
+    if (!res.ok) return ''
+    const data = await res.json()
+    return data ? shortPlaceName(data) : ''
+  } catch { return '' }
+}
+
 // Great-circle distance between two lat/lng points, in meters (haversine).
 export function distanceMeters(a, b) {
   if (!a || !b) return Infinity
@@ -101,8 +115,22 @@ export function distanceMeters(a, b) {
   return 2 * R * Math.asin(Math.min(1, Math.sqrt(h)))
 }
 
-// The default arrival radius, in meters, when a task's location doesn't set one.
+// The default arrival radius, in meters, used when a task's location doesn't
+// pin an explicit one. This is the "vicinity" behaviour — like a maps app
+// switching to "Arriving" as you get close — so most tasks never need to think
+// about a radius at all. An explicit radius is opt-in (see RADIUS_OPTIONS).
 export const DEFAULT_RADIUS_M = 150
+
+// The optional, explicit radii a user can pick in the arrival-radius menu, in
+// meters. Choosing none keeps the "vicinity" default above.
+export const RADIUS_OPTIONS = [50, 100, 150, 250, 400, 600, 1000]
+
+// A short label for an arrival radius. A falsy radius is the default vicinity
+// ("Arriving"); an explicit one reads as "250 m" or "1 km".
+export function radiusLabel(radius) {
+  if (!radius) return 'Vicinity'
+  return radius >= 1000 ? `${(radius / 1000).toString().replace(/\.0$/, '')} km` : `${radius} m`
+}
 
 // Watch the device position and fire `onArrive(task)` once per task the moment
 // the device is within that task's radius. `getTasks()` returns the current

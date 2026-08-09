@@ -10,8 +10,9 @@ import {
 } from '../lib/notifications.js'
 import {
   geolocationSupported, geolocationPermission, getCurrentLocation,
-  getGeoStatus, onGeoStatus,
+  getGeoStatus, onGeoStatus, searchPlaces, reverseGeocode,
 } from '../lib/geofence.js'
+import { getSavedPlaces, addSavedPlace, removeSavedPlace, onSavedPlaces } from '../lib/places.js'
 import {
   pushSupported, backgroundPushEnabled, enableBackgroundPush, disableBackgroundPush,
 } from '../lib/push.js'
@@ -40,6 +41,123 @@ function isStandalone() {
 function isIOS() {
   return /iphone|ipad|ipod/i.test(navigator.userAgent) ||
     (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
+}
+
+// ── Saved places ─────────────────────────────────────────────
+// A small set of named default places (Home, Gym, Office…) the user curates
+// here — the location equivalent of the default alerts above. They surface as
+// one-tap suggestions in every task's Add sheet, so a regular spot never has to
+// be searched for or re-pinned. Name + location only; the arrival radius stays
+// a per-task choice.
+function SavedPlaces() {
+  const geoOk = geolocationSupported()
+  const [places, setPlaces]     = useState(() => getSavedPlaces())
+  const [draft, setDraft]       = useState(null)   // { name, lat, lng } while adding
+  const [query, setQuery]       = useState('')
+  const [results, setResults]   = useState([])
+  const [searching, setSearching] = useState(false)
+  const [busy, setBusy]         = useState(false)
+  const [err, setErr]           = useState('')
+
+  useEffect(() => onSavedPlaces(setPlaces), [])
+  useEffect(() => {
+    const q = query.trim()
+    if (q.length < 3) { setResults([]); setSearching(false); return }
+    setSearching(true)
+    let cancelled = false
+    const t = setTimeout(async () => {
+      const r = await searchPlaces(q)
+      if (!cancelled) { setResults(r); setSearching(false) }
+    }, 400)
+    return () => { cancelled = true; clearTimeout(t) }
+  }, [query])
+
+  const useHere = async () => {
+    setErr(''); setBusy(true)
+    try {
+      const { lat, lng } = await getCurrentLocation()
+      setDraft({ name: '', lat, lng })
+      const name = await reverseGeocode(lat, lng)
+      if (name) setDraft(d => (d && !(d.name || '').trim()) ? { ...d, name } : d)
+    } catch (e) {
+      setErr(e && e.code === 1 ? 'Location permission denied. Allow it to save a place.' : 'Couldn’t get your location. Try again.')
+    } finally { setBusy(false) }
+  }
+  const pick = (p) => { setDraft({ name: p.name || '', lat: p.lat, lng: p.lng }); setQuery(''); setResults([]) }
+  const save = () => { if (draft) { addSavedPlace({ name: draft.name, lat: draft.lat, lng: draft.lng }); setDraft(null); setQuery(''); setResults([]); setErr('') } }
+  const cancel = () => { setDraft(null); setQuery(''); setResults([]); setErr('') }
+
+  const chip = { fontSize:11.5, padding:'6px 11px', borderRadius:16, cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:600 }
+  const inp = { width:'100%', fontFamily:'DM Sans,sans-serif', fontSize:13, padding:'9px 12px', borderRadius:10, border:'1px solid var(--border)', color:'var(--text)', background:'white', outline:'none' }
+
+  return (
+    <div style={card}>
+      <div style={{ display:'inline-flex', alignItems:'center', gap:7, fontSize:13.5, fontWeight:600, color:'var(--text)', marginBottom:3 }}>
+        <Icon value="glyph:pin" size={16} color="var(--teal)" />Saved places
+      </div>
+      <div style={{ fontSize:11.5, color:'var(--muted)', marginBottom:12 }}>
+        Your regular spots. Save one here and it becomes a one-tap suggestion whenever you give a task a location — no searching or re-pinning.
+      </div>
+
+      {places.length > 0 && (
+        <div style={{ marginBottom:12 }}>
+          {places.map(p => (
+            <div key={p.id} style={{ display:'flex', alignItems:'center', gap:11, padding:'9px 2px', borderBottom:'1px solid #F1EDF2' }}>
+              <span style={{ color:'var(--teal)' }}>★</span>
+              <div style={{ flex:1, minWidth:0 }}>
+                <div style={{ fontSize:14, color:'var(--text)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{p.name || 'Unnamed place'}</div>
+                <div style={{ fontSize:10.5, color:'var(--muted)' }}>{p.lat.toFixed(4)}, {p.lng.toFixed(4)}</div>
+              </div>
+              <button onClick={() => removeSavedPlace(p.id)} aria-label={`Remove ${p.name || 'place'}`}
+                style={{ border:'none', background:'none', cursor:'pointer', color:'#B4BEC8', fontSize:17, lineHeight:1, padding:'0 4px' }}>✕</button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {!geoOk && (
+        <div style={{ fontSize:11.5, color:'var(--muted)' }}>This device doesn’t support location, so places can’t be saved here.</div>
+      )}
+
+      {geoOk && !draft && (
+        <>
+          <div style={{ fontSize:10, color:'var(--muted)', letterSpacing:1, textTransform:'uppercase', marginBottom:6 }}>Add a place</div>
+          <input value={query} onChange={e => setQuery(e.target.value)} placeholder="Search a place or address…"
+            style={{ ...inp, marginBottom: (results.length || searching) ? 6 : 10 }} />
+          {searching && <div style={{ fontSize:11, color:'var(--muted)', padding:'2px 2px 8px' }}>Searching…</div>}
+          {results.length > 0 && (
+            <div style={{ border:'1px solid var(--border)', borderRadius:10, overflow:'hidden', marginBottom:10 }}>
+              {results.map((p, i) => (
+                <button key={i} type="button" onClick={() => pick(p)}
+                  style={{ display:'flex', alignItems:'center', gap:8, width:'100%', textAlign:'left', padding:'9px 11px', border:'none', borderTop: i ? '1px solid #F1EDF2' : 'none', background:'white', cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontSize:12.5, color:'var(--text)' }}>
+                  <Icon value="glyph:pin" size={14} color="var(--teal)" /><span style={{ flex:1, minWidth:0, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{p.name}</span>
+                </button>
+              ))}
+            </div>
+          )}
+          <button type="button" onClick={useHere} disabled={busy}
+            style={{ ...chip, width:'100%', padding:'10px', border:'1px solid var(--teal)', background:'white', color:'var(--teal)', display:'flex', alignItems:'center', justifyContent:'center', gap:8 }}>
+            <Icon value="glyph:pin" size={15} />{busy ? 'Getting location…' : 'Use my current location'}
+          </button>
+          {err && <div style={{ fontSize:10.5, color:'#DC2626', marginTop:8 }}>{err}</div>}
+        </>
+      )}
+
+      {geoOk && draft && (
+        <div style={{ border:'1px solid var(--border)', borderRadius:12, padding:'12px 14px' }}>
+          <div style={{ fontSize:10, color:'var(--muted)', letterSpacing:1, textTransform:'uppercase', marginBottom:6 }}>Name this place</div>
+          <input value={draft.name} onChange={e => setDraft(d => ({ ...d, name: e.target.value }))} placeholder="e.g. Home, Gym, Office"
+            style={inp} autoFocus />
+          <div style={{ fontSize:10.5, color:'var(--muted)', margin:'6px 0 12px' }}>Pinned at {draft.lat.toFixed(4)}, {draft.lng.toFixed(4)}.</div>
+          <div style={{ display:'flex', gap:8 }}>
+            <button onClick={save} disabled={!draft.name.trim()}
+              style={{ ...chip, flex:1, padding:'10px', border:'none', background: draft.name.trim() ? 'var(--forest)' : '#E5E7EB', color: draft.name.trim() ? 'var(--green-light)' : '#9CA3AF' }}>Save place</button>
+            <button onClick={cancel} style={{ ...chip, padding:'10px 16px', border:'1px solid var(--border)', background:'white', color:'var(--muted)' }}>Cancel</button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
 }
 
 export default function NotificationsSettings({ events, commitments, recurring = [], locatedCount = 0 }) {
@@ -371,6 +489,9 @@ export default function NotificationsSettings({ events, commitments, recurring =
           </>
         )}
       </div>
+
+      {/* ── Saved places ──────────────────────────────────── */}
+      <SavedPlaces />
 
       {/* ── What you'll get ───────────────────────────────── */}
       <div style={{ ...card, marginBottom:0 }}>
