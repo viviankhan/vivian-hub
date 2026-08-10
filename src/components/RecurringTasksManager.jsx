@@ -65,7 +65,21 @@ export function flatToPerDay(flat, dateStr) {
 
 // ── Helpers ────────────────────────────────────────────────────
 function slugify(t) { return t.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/(^-|-$)/g,'').slice(0,28) }
-function fmtDate(d) { if (!d) return ''; const [y,m,day]=d.split('-'); return `${m}/${day}/${y}` }
+// "Jul 27, 2026" — matches the month/day/year style used elsewhere (Events, etc.)
+// rather than the raw 07/27/2026 slashes.
+function fmtDate(d) {
+  if (!d) return ''
+  return new Date(d + 'T12:00:00').toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' })
+}
+// A clean one-line summary of a task's active window. Handles start-only,
+// end-only, and both — with proper spacing (the old inline version ran
+// "From 07/27/2026" straight into "No end date").
+function dateRangeText(startDate, endDate) {
+  if (startDate && endDate) return `${fmtDate(startDate)} – ${fmtDate(endDate)}`
+  if (startDate) return `From ${fmtDate(startDate)}`
+  if (endDate)   return `Until ${fmtDate(endDate)}`
+  return ''
+}
 
 function Tag({ label, color, icon }) {
   const c = color || '#9CA3AF'
@@ -229,11 +243,12 @@ function TaskListRow({ task, onEdit, today, categories, routines }) {
       <div style={{ flex:1, minWidth:0 }}>
         <div style={{ fontSize:13, color:'var(--text)', fontWeight:500, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{text}</div>
         {task.note && <div style={{ fontSize:11, color:'var(--muted)', marginTop:1 }}>{task.note}</div>}
-        {hasDateRange && (
-          <div style={{ fontSize:10, color:'var(--muted)', marginTop:2 }}>
-            {task.startDate && `From ${fmtDate(task.startDate)}`}
-            {task.startDate && task.endDate && ' · '}
-            {task.endDate ? `Until ${fmtDate(task.endDate)}` : 'No end date'}
+        {(hasDateRange || task.autoComplete) && (
+          <div style={{ display:'flex', alignItems:'center', gap:6, flexWrap:'wrap', fontSize:10, color:'var(--muted)', marginTop:3 }}>
+            {hasDateRange && <span>{dateRangeText(task.startDate, task.endDate)}</span>}
+            {task.autoComplete && (
+              <span style={{ display:'inline-flex', alignItems:'center', gap:3, fontSize:9, padding:'1px 6px', borderRadius:6, background:'#EAF5F8', color:'#2A7A90', fontWeight:700, letterSpacing:.4, textTransform:'uppercase' }}>✓ Auto</span>
+            )}
           </div>
         )}
       </div>

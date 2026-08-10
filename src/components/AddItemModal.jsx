@@ -346,6 +346,9 @@ export default function AddItemModal({ existing = null, existingRecurring = null
   // Morning/Night (or custom) group in the Recurring tab + tints its timeline
   // block with that group's film.
   const [routine, setRoutine] = useState(existing?.routine ?? rec?.routine ?? '')
+  // Auto-complete: when on, the recurring task ticks itself off once its
+  // window has passed — works for any task, not just those in a routine.
+  const [autoComplete, setAutoComplete] = useState(!!(existing?.autoComplete ?? rec?.autoComplete))
 
   // Which grouped row is expanded for editing (only one open at a time). On the
   // recurring page the Repeat row opens by default so the days are right there.
@@ -533,6 +536,7 @@ export default function AddItemModal({ existing = null, existingRecurring = null
         location: buildLocation(),
         startDate,
         endDate: repeatEnd || null,
+        autoComplete,
       }
       onSaveRecurring(recurringTask)
       // Converting an existing one-off into a series → remove the original
@@ -834,8 +838,22 @@ export default function AddItemModal({ existing = null, existingRecurring = null
                       Repeats on the <b style={{ color:'var(--text)' }}>{ordinal(date ? parseInt(date.slice(8,10), 10) : new Date().getDate())}</b> of each month{date ? '' : ' (from today)'}.
                     </div>
                   )}
+                  {/* Start date — the first day it can appear. Independent of the
+                      end date, so it can be set (or changed) even when it repeats
+                      indefinitely. Bound to the same `date` the top row uses. */}
+                  <div style={{ fontSize:10, color:'var(--muted)', letterSpacing:1, textTransform:'uppercase', margin:'6px 0 6px' }}>Starts</div>
+                  <div style={{ display:'flex', gap:8, alignItems:'center' }}>
+                    <DateField value={date} onChange={setDate} style={{ ...inp, flex:1 }} />
+                    {date && (
+                      <button onClick={() => setDate('')}
+                        style={{ fontSize:11, padding:'8px 12px', borderRadius:16, cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:600, border:'1px solid var(--border)', background:'white', color:'var(--muted)', whiteSpace:'nowrap' }}>Clear</button>
+                    )}
+                  </div>
+                  <div style={{ fontSize:10.5, color:'var(--muted)', marginTop:8 }}>
+                    {date ? 'First day this can appear.' : 'Starts today if left blank.'}
+                  </div>
                   {/* End date */}
-                  <div style={{ fontSize:10, color:'var(--muted)', letterSpacing:1, textTransform:'uppercase', margin:'6px 0 6px' }}>Ends</div>
+                  <div style={{ fontSize:10, color:'var(--muted)', letterSpacing:1, textTransform:'uppercase', margin:'16px 0 6px' }}>Ends</div>
                   <div style={{ display:'flex', gap:8, alignItems:'center' }}>
                     <DateField value={repeatEnd} onChange={setRepeatEnd} style={{ ...inp, flex:1 }} />
                     {repeatEnd && (
@@ -845,6 +863,19 @@ export default function AddItemModal({ existing = null, existingRecurring = null
                   </div>
                   <div style={{ fontSize:10.5, color:'var(--muted)', marginTop:8 }}>
                     {repeatEnd ? 'Stops repeating after this date.' : 'No end date — repeats indefinitely. Shows on Today, Week & Calendar; manage it in the Recurring tab.'}
+                  </div>
+                  {/* Auto-complete — ticks itself off when its window passes. */}
+                  <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:12, marginTop:16 }}>
+                    <div style={{ flex:1, minWidth:0 }}>
+                      <div style={{ fontSize:13.5, color:'var(--text)', fontWeight:600 }}>Auto-complete when it's over</div>
+                      <div style={{ fontSize:10.5, color:'var(--muted)', marginTop:2 }}>Ticks itself off once its time has passed — good for habits you'd rather not check by hand. You can still tap to undo.</div>
+                    </div>
+                    <button type="button" role="switch" aria-checked={autoComplete} aria-label="Auto-complete when it's over"
+                      onClick={() => setAutoComplete(v => !v)}
+                      style={{ width:52, height:31, borderRadius:16, border:'none', cursor:'pointer', padding:3, flexShrink:0,
+                        background: autoComplete ? 'var(--teal)' : '#CBD2DA', transition:'background .2s', display:'flex', justifyContent: autoComplete ? 'flex-end' : 'flex-start' }}>
+                      <span style={{ width:25, height:25, borderRadius:'50%', background:'white', boxShadow:'0 1px 3px rgba(0,0,0,.28)' }} />
+                    </button>
                   </div>
                   {/* Routine group — files this under a Morning/Night (or custom)
                       routine, groups it in the Recurring tab, and tints its

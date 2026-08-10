@@ -815,8 +815,8 @@ export default function App() {
       // Repeat rule extras (freq/interval/monthDay/durationMins) + routine group
       // aren't table columns — stash them in the synced recurring_meta blob
       // keyed by row id.
-      const { freq, interval, monthDay, durationMins, routine, icon, color, block, location } = task
-      if ((freq && freq !== 'weekly') || (interval && interval > 1) || monthDay || durationMins || routine || icon || color || block || location) {
+      const { freq, interval, monthDay, durationMins, routine, icon, color, block, location, autoComplete } = task
+      if ((freq && freq !== 'weekly') || (interval && interval > 1) || monthDay || durationMins || routine || icon || color || block || location || autoComplete) {
         setRecurringMeta_(prev => {
           const next = { ...prev, [created.id]: {
             ...(freq ? { freq } : {}),
@@ -828,6 +828,7 @@ export default function App() {
             ...(color ? { color } : {}),
             ...(block ? { block: true } : {}),
             ...(location ? { location } : {}),
+            ...(autoComplete ? { autoComplete: true } : {}),
           } }
           setRecurringMeta(next).catch(reportSaveError)
           return next
@@ -843,7 +844,7 @@ export default function App() {
     // Keep the rule extras (freq/interval/monthDay/durationMins) + routine group
     // in sync with the edit — set them when present, clear them when it's back
     // to plain weekly with no duration and no routine.
-    const { freq, interval, monthDay, durationMins, routine, icon, color, block, location } = task
+    const { freq, interval, monthDay, durationMins, routine, icon, color, block, location, autoComplete } = task
     const extra = {
       ...(freq && freq !== 'weekly' ? { freq } : {}),
       ...(interval && interval > 1 ? { interval } : {}),
@@ -854,6 +855,7 @@ export default function App() {
       ...(color ? { color } : {}),
       ...(block ? { block: true } : {}),
       ...(location ? { location } : {}),
+      ...(autoComplete ? { autoComplete: true } : {}),
     }
     setRecurringMeta_(prev => {
       const has = id in prev
