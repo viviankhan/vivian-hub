@@ -89,6 +89,7 @@ const EndAlertIcon   = () => (<svg viewBox="0 0 24 24" width="14" height="14" fi
 const LeadAlertIcon  = () => (<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2M9 3h6"/></svg>)
 const MoreIcon = () => (<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="17" x2="20" y2="17"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="16" cy="17" r="2"/></svg>)
 const BlockIcon = () => (<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="5" width="18" height="14" rx="2.5"/><path d="M3 9.5h18"/></svg>)
+const CheckIcon = () => (<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9"/><polyline points="8.5 12.2 11 14.7 15.7 9.5"/></svg>)
 
 // A tappable grouped-list row: [icon] main text … [hint] [chevron], with an
 // optional expanded body underneath.
@@ -592,6 +593,11 @@ export default function AddItemModal({ existing = null, existingRecurring = null
       location: buildLocation(),
       startedAt: existing?.startedAt ?? null,
       block,
+      // Routine grouping + auto-complete apply to any task now, not just
+      // recurring ones — a one-off can sit inside a routine (tinted + grouped)
+      // for its day, and tick itself off once its window passes.
+      routine: routine || null,
+      autoComplete,
     }
     setItemSound(commitment.id, sound)
     // null → use global defaults; otherwise this item's own lead-minute list.
@@ -928,44 +934,38 @@ export default function AddItemModal({ existing = null, existingRecurring = null
                   <div style={{ fontSize:10.5, color:'var(--muted)', marginTop:8 }}>
                     {repeatEnd ? 'Stops repeating after this date.' : 'No end date — repeats indefinitely. Shows on Today, Week & Calendar; manage it in the Recurring tab.'}
                   </div>
-                  {/* Auto-complete — ticks itself off when its window passes. */}
-                  <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:12, marginTop:16 }}>
-                    <div style={{ flex:1, minWidth:0 }}>
-                      <div style={{ fontSize:13.5, color:'var(--text)', fontWeight:600 }}>Auto-complete when it's over</div>
-                      <div style={{ fontSize:10.5, color:'var(--muted)', marginTop:2 }}>Ticks itself off once its time has passed — good for habits you'd rather not check by hand. You can still tap to undo.</div>
-                    </div>
-                    <button type="button" role="switch" aria-checked={autoComplete} aria-label="Auto-complete when it's over"
-                      onClick={() => setAutoComplete(v => !v)}
-                      style={{ width:52, height:31, borderRadius:16, border:'none', cursor:'pointer', padding:3, flexShrink:0,
-                        background: autoComplete ? 'var(--teal)' : '#CBD2DA', transition:'background .2s', display:'flex', justifyContent: autoComplete ? 'flex-end' : 'flex-start' }}>
-                      <span style={{ width:25, height:25, borderRadius:'50%', background:'white', boxShadow:'0 1px 3px rgba(0,0,0,.28)' }} />
-                    </button>
-                  </div>
-                  {/* Routine group — files this under a Morning/Night (or custom)
-                      routine, groups it in the Recurring tab, and tints its
-                      timeline block with the routine's film. */}
-                  {routines.length > 0 && <>
-                    <div style={{ fontSize:10, color:'var(--muted)', letterSpacing:1, textTransform:'uppercase', margin:'16px 0 8px' }}>Routine</div>
-                    <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
-                      <button onClick={() => setRoutine('')}
-                        style={{ fontSize:12, padding:'7px 13px', borderRadius:16, cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:600,
-                          border: routine ? '1px solid var(--border)' : '1.5px solid var(--forest)',
-                          background: routine ? 'white' : 'var(--forest)', color: routine ? 'var(--muted)' : 'var(--green-light)' }}>None</button>
-                      {routines.map(r => {
-                        const on = routine === r.id
-                        return (
-                          <button key={r.id} onClick={() => setRoutine(r.id)}
-                            style={{ display:'inline-flex', alignItems:'center', gap:6, fontSize:12, padding:'7px 13px', borderRadius:16, cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:600,
-                              border: on ? `1.5px solid ${r.tint}` : '1px solid var(--border)',
-                              background: on ? r.tint : 'white', color: on ? '#3A3A3A' : 'var(--muted)' }}>
-                            <span style={{ width:10, height:10, borderRadius:'50%', background:r.tint, boxShadow: on ? 'inset 0 0 0 1px rgba(0,0,0,.15)' : 'none', flexShrink:0 }} />
-                            {r.name}
-                          </button>
-                        )
-                      })}
-                    </div>
-                  </>}
                 </>}
+              </DetailRow>
+            </>}
+            {/* Routine — any task can be filed under a routine group (not just
+                recurring ones): it groups in the Recurring tab and washes the
+                routine's film behind the task on the timeline, one-off or not. */}
+            {routines.length > 0 && <>
+              <RowDivider />
+              <DetailRow icon={<span style={{ width:15, height:15, borderRadius:'50%', background: activeRoutine ? activeRoutine.tint : 'transparent', border: activeRoutine ? 'none' : '2px solid #C3C9D2' }} />}
+                text={activeRoutine ? activeRoutine.name : 'No routine'} textMuted={!activeRoutine}
+                hint={activeRoutine ? 'On' : null} open={expanded==='routine'} onClick={() => toggleRow('routine')}>
+                <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
+                  <button onClick={() => setRoutine('')}
+                    style={{ fontSize:12, padding:'7px 13px', borderRadius:16, cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:600,
+                      border: routine ? '1px solid var(--border)' : '1.5px solid var(--forest)',
+                      background: routine ? 'white' : 'var(--forest)', color: routine ? 'var(--muted)' : 'var(--green-light)' }}>None</button>
+                  {routines.map(r => {
+                    const on = routine === r.id
+                    return (
+                      <button key={r.id} onClick={() => setRoutine(r.id)}
+                        style={{ display:'inline-flex', alignItems:'center', gap:6, fontSize:12, padding:'7px 13px', borderRadius:16, cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:600,
+                          border: on ? `1.5px solid ${r.tint}` : '1px solid var(--border)',
+                          background: on ? r.tint : 'white', color: on ? '#3A3A3A' : 'var(--muted)' }}>
+                        <span style={{ width:10, height:10, borderRadius:'50%', background:r.tint, boxShadow: on ? 'inset 0 0 0 1px rgba(0,0,0,.15)' : 'none', flexShrink:0 }} />
+                        {r.name}
+                      </button>
+                    )
+                  })}
+                </div>
+                <div style={{ fontSize:10.5, color:'var(--muted)', marginTop:9 }}>
+                  Files this task under the routine and tints it with that group's film — even a single day's one-off task.
+                </div>
               </DetailRow>
             </>}
             <RowDivider />
@@ -1047,6 +1047,20 @@ export default function AddItemModal({ existing = null, existingRecurring = null
                   </div>
                   <button type="button" onClick={() => setBlock(b => !b)} aria-pressed={block}
                     style={{ width:46, height:27, borderRadius:14, border:'none', cursor:'pointer', padding:3, flexShrink:0, background: block ? 'var(--forest)' : '#CBD2DA', transition:'background .2s', display:'flex', justifyContent: block ? 'flex-end' : 'flex-start' }}>
+                    <span style={{ width:21, height:21, borderRadius:'50%', background:'white', boxShadow:'0 1px 3px rgba(0,0,0,.28)' }} />
+                  </button>
+                </div>
+                {/* Auto-complete — available for any task, not just recurring
+                    ones: it ticks itself off once its scheduled window passes. */}
+                <RowDivider />
+                <div style={{ display:'flex', alignItems:'center', gap:12, padding:'13px 15px' }}>
+                  <IconCircle color={ROW_ACCENT}><CheckIcon /></IconCircle>
+                  <div style={{ flex:1, minWidth:0 }}>
+                    <div style={{ fontSize:15, fontWeight:500, color:'var(--text)' }}>Auto-complete when it's over</div>
+                    <div style={{ fontSize:11, color:'var(--muted)', marginTop:1, lineHeight:1.35 }}>Ticks itself off once its time has passed — good for things you'd rather not check by hand. You can still tap to undo.</div>
+                  </div>
+                  <button type="button" onClick={() => setAutoComplete(v => !v)} aria-pressed={autoComplete}
+                    style={{ width:46, height:27, borderRadius:14, border:'none', cursor:'pointer', padding:3, flexShrink:0, background: autoComplete ? 'var(--forest)' : '#CBD2DA', transition:'background .2s', display:'flex', justifyContent: autoComplete ? 'flex-end' : 'flex-start' }}>
                     <span style={{ width:21, height:21, borderRadius:'50%', background:'white', boxShadow:'0 1px 3px rgba(0,0,0,.28)' }} />
                   </button>
                 </div>

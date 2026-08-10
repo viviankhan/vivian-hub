@@ -1036,14 +1036,14 @@ export default function App() {
   // commitments table has a single `cat` column). Only stored when there's more
   // than one — a single label is fully covered by the `cat` column.
   const addCommitment = useCallback(async c => {
-    const { description, subtasks, cats, color, icon, location, startedAt, block, ...core } = c
+    const { description, subtasks, cats, color, icon, location, startedAt, block, routine, autoComplete, ...core } = c
     try {
       const created = await dbAddCommitment(core)
       setCommitments_(prev => [created, ...prev])
       pushUndo('added “' + (created.text || 'task') + '”', () => deleteCommitment(created.id))
       const hasCats = Array.isArray(cats) && cats.length > 1
-      const extra = { ...(hasCats ? { cats } : {}), ...(color ? { color } : {}), ...(icon ? { icon } : {}), ...(location ? { location } : {}), ...(startedAt ? { startedAt } : {}), ...(block ? { block: true } : {}) }
-      if ((description && description.trim()) || (subtasks && subtasks.length) || hasCats || color || icon || location || startedAt || block) {
+      const extra = { ...(hasCats ? { cats } : {}), ...(color ? { color } : {}), ...(icon ? { icon } : {}), ...(location ? { location } : {}), ...(startedAt ? { startedAt } : {}), ...(block ? { block: true } : {}), ...(routine ? { routine } : {}), ...(autoComplete ? { autoComplete: true } : {}) }
+      if ((description && description.trim()) || (subtasks && subtasks.length) || hasCats || color || icon || location || startedAt || block || routine || autoComplete) {
         setCommitmentMeta_(prev => {
           const next = { ...prev, [created.id]: { description: description || '', subtasks: subtasks || [], ...extra } }
           setCommitmentMeta(next).catch(reportSaveError)
@@ -1053,13 +1053,13 @@ export default function App() {
     } catch (e) { reportSaveError(e) }
   }, [])
   const updateCommitment = useCallback(async (id, changes) => {
-    const { description, subtasks, cats, color, icon, location, startedAt, block, ...core } = changes
+    const { description, subtasks, cats, color, icon, location, startedAt, block, routine, autoComplete, ...core } = changes
     try {
       if (Object.keys(core).length) {
         const updated = await dbUpdateCommitment(id, core)
         setCommitments_(prev => prev.map(c => c.id===id ? updated : c))
       }
-      if (description !== undefined || subtasks !== undefined || cats !== undefined || color !== undefined || icon !== undefined || location !== undefined || startedAt !== undefined || block !== undefined) {
+      if (description !== undefined || subtasks !== undefined || cats !== undefined || color !== undefined || icon !== undefined || location !== undefined || startedAt !== undefined || block !== undefined || routine !== undefined || autoComplete !== undefined) {
         setCommitmentMeta_(prev => {
           const merged = { ...(prev[id] || {}) }
           if (description !== undefined) merged.description = description
@@ -1087,6 +1087,14 @@ export default function App() {
           if (block !== undefined) {
             if (block) merged.block = true
             else delete merged.block
+          }
+          if (routine !== undefined) {
+            if (routine) merged.routine = routine
+            else delete merged.routine
+          }
+          if (autoComplete !== undefined) {
+            if (autoComplete) merged.autoComplete = true
+            else delete merged.autoComplete
           }
           const next = { ...prev, [id]: merged }
           setCommitmentMeta(next).catch(reportSaveError)
@@ -1252,6 +1260,8 @@ export default function App() {
     location: commitmentMeta[c.id]?.location ?? null,
     startedAt: commitmentMeta[c.id]?.startedAt ?? null,
     block: commitmentMeta[c.id]?.block ?? false,
+    routine: commitmentMeta[c.id]?.routine ?? null,
+    autoComplete: commitmentMeta[c.id]?.autoComplete ?? false,
   }))
 
   const sharedProps = {

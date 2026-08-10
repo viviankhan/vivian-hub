@@ -1186,6 +1186,9 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
       note:[c.person&&`With: ${c.person}`,c.prepMin&&`Leave ${c.prepMin} min early`].filter(Boolean).join(' · '),
       tag:c.cat||null, isCommitment:true,
       color:c.color||null, icon:c.icon||null, _time:c.time||null, _dur:c.durationMins||null,
+      // A one-off commitment can now belong to a routine (film + grouping) and
+      // opt into auto-complete, just like a recurring task.
+      routine:c.routine||null, autoComplete:!!c.autoComplete,
       startedAt:c.startedAt||null,
       subtasks:Array.isArray(c.subtasks)?c.subtasks:[],
       subCount:Array.isArray(c.subtasks)?c.subtasks.length:0,
