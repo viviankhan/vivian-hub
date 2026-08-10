@@ -168,7 +168,7 @@ const InboxIcon2 = () => (<svg viewBox="0 0 24 24" width="18" height="18" fill="
 const TrashIcon2 = () => (<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4.5 7h15M9 7V5.2A1.2 1.2 0 0 1 10.2 4h3.6A1.2 1.2 0 0 1 15 5.2V7M6.5 7l1 12.5h9L17.5 7"/></svg>)
 const TargetIcon = () => (<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4.5"/><circle cx="12" cy="12" r="1" fill="currentColor" stroke="none"/></svg>)
 
-export default function AddItemModal({ existing = null, existingRecurring = null, occurrenceDate = null, onSaveOccurrence = null, onDeleteOccurrence = null, onDeleteFuture = null, presetDate = null, presetText = '', presetTime = '', presetDur = null, presetCat = '', lockDate = false, defaultRepeat = false, categories = [], routines = [], labelModel = null, onSave, onSaveRecurring = null, onDelete = null, onDuplicate = null, onMoveToInbox = null, onClose, title = 'Add to calendar' }) {
+export default function AddItemModal({ existing = null, existingRecurring = null, occurrenceDate = null, onSaveOccurrence = null, onDeleteOccurrence = null, onDeleteFuture = null, presetDate = null, presetText = '', presetTime = '', presetDur = null, presetCat = '', lockDate = false, defaultRepeat = false, categories = [], routines = [], templates = [], labelModel = null, onSave, onSaveRecurring = null, onDelete = null, onDuplicate = null, onMoveToInbox = null, onClose, title = 'Add to calendar' }) {
   const cats = (categories && categories.length) ? categories : DEFAULT_CATEGORIES
   const isEdit = !!existing
   // Editing an existing recurring task: it comes in the Recurring-tab row shape
@@ -353,6 +353,28 @@ export default function AddItemModal({ existing = null, existingRecurring = null
   const toggleRow = (k) => setExpanded(e => (e === k ? null : k))
   // Header ⋯ overflow menu (edit mode only) — Duplicate / Move to Inbox / Delete.
   const [menuOpen, setMenuOpen] = useState(false)
+  // ── Task Menu picker ─────────────────────────────────────────
+  // When adding a brand-new task, you can pull from a saved "task menu" preset:
+  // it fills in the title, duration, tags, color/icon, notes and subtasks so all
+  // that's left is a start time. Only offered for a new one-off (not when
+  // editing, and not once it's been turned into a recurring template — those
+  // already carry their own details).
+  const canUseTemplates = !isEdit && !isRecEdit && Array.isArray(templates) && templates.length > 0
+  const [appliedTemplateId, setAppliedTemplateId] = useState(null)
+  const applyTemplate = (t) => {
+    setAppliedTemplateId(t.id)
+    setLabel(t.text || '')
+    if (t.durationMins) { setManualDur(t.durationMins); setDurText(''); if (time) setEndTime(addMinutes(time, t.durationMins)) }
+    const tplCats = (Array.isArray(t.cats) && t.cats.length) ? t.cats : (t.cat ? [t.cat] : [])
+    setSelectedCats(tplCats); setCatsTouched(true)
+    setColor(t.color || '')
+    setIcon(t.icon || ''); setIconTouched(true)
+    setDescription(t.description || '')
+    // Fresh subtask ids + all unchecked, so each task made from the template is
+    // its own independent copy.
+    setSubtasks(Array.isArray(t.subtasks) ? t.subtasks.map((s, i) => ({ id: 'st-' + Date.now() + '-' + i, text: s.text, done: false })) : [])
+    if (t.person !== undefined) setPerson(t.person || '')
+  }
   const hasMenu = (isEdit || isRecEdit) && (onDuplicate || onMoveToInbox || onDelete)
   const runMenu = (fn) => { setMenuOpen(false); onClose(); fn(existing || rec) }
 
@@ -686,6 +708,45 @@ export default function AddItemModal({ existing = null, existingRecurring = null
         </div>
 
         <div style={{ padding:'16px 14px calc(20px + env(safe-area-inset-bottom))' }}>
+          {/* ── Task Menu picker ──────────────────────────────── */}
+          {/* Pull a saved preset so the details fill in and only a time is left. */}
+          {canUseTemplates && (
+            <div style={{ ...card, padding:'12px 14px 13px' }}>
+              <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:9 }}>
+                <span style={{ fontSize:10, color:'var(--muted)', letterSpacing:1, textTransform:'uppercase' }}>From your Task Menu</span>
+                {appliedTemplateId && (
+                  <button onClick={() => setAppliedTemplateId(null)}
+                    style={{ marginLeft:'auto', fontSize:10.5, fontWeight:700, letterSpacing:.4, border:'none', background:'none', cursor:'pointer', color:'var(--teal)', padding:0 }}>
+                    Clear
+                  </button>
+                )}
+              </div>
+              <div style={{ display:'flex', gap:6, overflowX:'auto', paddingBottom:2, WebkitOverflowScrolling:'touch' }}>
+                {templates.map(t => {
+                  const on = appliedTemplateId === t.id
+                  const tplCat = cats.find(c => c.id === (t.cats?.[0] || t.cat)) || null
+                  const accent = t.color || tplCat?.color || ROW_ACCENT
+                  const tplIcon = t.icon || tplCat?.icon || ''
+                  return (
+                    <button key={t.id} onClick={() => applyTemplate(t)} title={t.text}
+                      style={{ flexShrink:0, display:'inline-flex', alignItems:'center', gap:7, maxWidth:220, fontSize:12.5, padding:'7px 12px', borderRadius:20, cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:600,
+                        border: on ? 'none' : '1px solid var(--border)', background: on ? accent : 'white', color: on ? iconColorOn(accent) : 'var(--text)' }}>
+                      <span style={{ display:'inline-flex', flexShrink:0 }}>
+                        {tplIcon
+                          ? <Icon value={tplIcon} size={15} color={on ? iconColorOn(accent) : accent} />
+                          : <span style={{ width:9, height:9, borderRadius:'50%', background:accent, display:'inline-block' }} />}
+                      </span>
+                      <span style={{ minWidth:0, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{t.text}</span>
+                      {t.durationMins ? <span style={{ fontSize:10.5, opacity:.75, flexShrink:0 }}>{durationLabel(t.durationMins)}</span> : null}
+                    </button>
+                  )
+                })}
+              </div>
+              <div style={{ fontSize:10.5, color:'var(--muted)', marginTop:8 }}>
+                {appliedTemplateId ? 'Filled in from your menu — just set a start time below.' : 'Tap one to fill in the details, then set a time.'}
+              </div>
+            </div>
+          )}
           {/* ── Scheduling rows ───────────────────────────────── */}
           <div style={card}>
             {/* Date */}

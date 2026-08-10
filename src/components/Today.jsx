@@ -955,7 +955,7 @@ function WeekStrip({ viewDate, setViewDate, commitments, categories, doneCount, 
 }
 
 // ── Main ───────────────────────────────────────────────────────
-export default function Today({ todos, weekState, syncToggle, commitments, addCommitment, updateCommitment, deleteCommitment, appendLog, scheduled, categories, recurringTasks, recurringExceptions, occStarted = {}, skipRecurringOccurrence, deleteRecurringTask, addRecurringTask, updateRecurringTask, routines = [], summary, labelModel = null }) {
+export default function Today({ todos, weekState, syncToggle, commitments, addCommitment, updateCommitment, deleteCommitment, appendLog, scheduled, categories, recurringTasks, recurringExceptions, occStarted = {}, skipRecurringOccurrence, deleteRecurringTask, addRecurringTask, updateRecurringTask, routines = [], taskTemplates = [], summary, labelModel = null }) {
   const [now,         setNow]         = useState(nowMins())
   // The day the timeline is showing. Defaults to today; the week strip up top
   // navigates to any day. "Now" logic (the progress marker, current/overdue,
@@ -1866,7 +1866,7 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
         onClose={()=>setFocusTask(null)} />}
       {shiftPlan&&<ShiftChooser plan={shiftPlan} onApply={(ids)=>{applyShift(shiftPlan.pivot, ids); setShiftPlan(null)}} onCancel={()=>setShiftPlan(null)}/>}
       {shiftResult&&<ShiftToast result={shiftResult} onClose={()=>setShiftResult(null)}/>}
-      {addingTask&&<AddItemModal presetDate={dateKey} presetTime={addPreset?.time||''} presetDur={addPreset?.dur||null} presetCat={addPreset?.cat||''} categories={categories} routines={routines} labelModel={labelModel} onSave={handleAdd} onSaveRecurring={addRecurringTask} onClose={()=>{ setAddingTask(false); setAddPreset(null) }} title="Add to Today"/>}
+      {addingTask&&<AddItemModal presetDate={dateKey} presetTime={addPreset?.time||''} presetDur={addPreset?.dur||null} presetCat={addPreset?.cat||''} categories={categories} routines={routines} templates={taskTemplates} labelModel={labelModel} onSave={handleAdd} onSaveRecurring={addRecurringTask} onClose={()=>{ setAddingTask(false); setAddPreset(null) }} title="Add to Today"/>}
       {editing&&<AddItemModal existing={editing} categories={categories} routines={routines} onSave={handleSaveEdit}
         onSaveRecurring={addRecurringTask}
         onDelete={c=>deleteCommitment&&deleteCommitment(c.id)}

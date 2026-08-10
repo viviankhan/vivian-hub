@@ -36,7 +36,7 @@ function endTimeFrom(start, mins) {
   return `${String(Math.floor(total/60)).padStart(2,'0')}:${String(total%60).padStart(2,'0')}`
 }
 
-export default function Calendar({ commitments, vacations, events, log, categories, jumpTo, addCommitment, updateCommitment, deleteCommitment, todos, recurringTasks, recurringExceptions, skipRecurringOccurrence, addRecurringTask, updateRecurringTask, deleteRecurringTask, routines = [], labelModel = null }) {
+export default function Calendar({ commitments, vacations, events, log, categories, jumpTo, addCommitment, updateCommitment, deleteCommitment, todos, recurringTasks, recurringExceptions, skipRecurringOccurrence, addRecurringTask, updateRecurringTask, deleteRecurringTask, routines = [], taskTemplates = [], labelModel = null }) {
   // monthOffset shifts by whole months from the current month: 0 = this month,
   // -1 = last month, +1 = next month, and so on — unbounded either way.
   const [monthOffset, setMonthOffset] = useState(0)
@@ -331,6 +331,7 @@ export default function Calendar({ commitments, vacations, events, log, categori
           routines={routines}
           presetDate={selected || ''}
           categories={categories}
+          templates={taskTemplates}
           labelModel={labelModel}
           onSave={handleAdd}
           onSaveRecurring={addRecurringTask}
