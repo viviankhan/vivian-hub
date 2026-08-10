@@ -21,9 +21,20 @@ function fmt12(t) {
   const [h, m] = t.split(':').map(Number)
   return `${h % 12 || 12}:${String(m).padStart(2,'0')} ${h >= 12 ? 'PM' : 'AM'}`
 }
+// Current wall-clock time as "HH:MM" — for the "Start now" / "End now" buttons.
+function nowHM() {
+  const d = new Date()
+  return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`
+}
+// Today's local date as "YYYY-MM-DD" — the "now" buttons only make sense on it.
+function todayISO() {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
+}
 
 const inp = { width:'100%', fontSize:12, padding:'8px 10px', borderRadius:10, border:'1px solid var(--border)', fontFamily:'DM Sans,sans-serif', boxSizing:'border-box', color:'var(--text)' }
 const fieldLabel = { fontSize:10, color:'var(--muted)', letterSpacing:1, textTransform:'uppercase', marginBottom:4 }
+const nowBtn = { fontSize:10.5, fontWeight:700, letterSpacing:.4, border:'none', background:'none', cursor:'pointer', color:'var(--teal)', padding:0, whiteSpace:'nowrap' }
 
 // ── Multi-day events ───────────────────────────────────────────
 function EventSection({ events, addEvent, deleteEvent }) {
@@ -44,6 +55,12 @@ function EventSection({ events, addEvent, deleteEvent }) {
 
   const reset = () => { setLabel(''); setStartDate(''); setEndDate(''); setAllDay(true); setStartTime(''); setEndTime(''); setColor(DEFAULT_EVENT_COLOR); setIcon(''); setOpen(false) }
   const canSave = label.trim() && startDate && endDate && endDate >= startDate
+  // "Start now" / "End now" set the respective time to the current wall clock.
+  // Only meaningful when that day is today (or not yet chosen) — same idea as
+  // the "End now" button on the task editor.
+  const today = todayISO()
+  const canStartNow = !startDate || startDate === today
+  const canEndNow = !endDate || endDate === today
 
   const submit = () => {
     if (!canSave) return
@@ -146,11 +163,23 @@ function EventSection({ events, addEvent, deleteEvent }) {
           {!allDay && (
             <div style={{ display:'flex', gap:8, marginBottom:10 }}>
               <div style={{ flex:1, minWidth:0 }}>
-                <div style={fieldLabel}>Start time</div>
+                <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:6, marginBottom:4 }}>
+                  <span style={{ ...fieldLabel, marginBottom:0 }}>Start time</span>
+                  {canStartNow && (
+                    <button type="button" onClick={() => setStartTime(nowHM())} title="Set the start to the current time"
+                      style={nowBtn}>Start now</button>
+                  )}
+                </div>
                 <TimeField value={startTime} onChange={setStartTime} style={{ ...inp, marginBottom:0 }} />
               </div>
               <div style={{ flex:1, minWidth:0 }}>
-                <div style={fieldLabel}>End time</div>
+                <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:6, marginBottom:4 }}>
+                  <span style={{ ...fieldLabel, marginBottom:0 }}>End time</span>
+                  {canEndNow && (
+                    <button type="button" onClick={() => setEndTime(nowHM())} title="Set the end to the current time"
+                      style={nowBtn}>End now</button>
+                  )}
+                </div>
                 <TimeField value={endTime} onChange={setEndTime} style={{ ...inp, marginBottom:0 }} />
               </div>
             </div>
