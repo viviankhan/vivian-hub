@@ -88,17 +88,26 @@ function BgTile({ label, css, selected, empty, onClick }) {
   )
 }
 
-export default function Customization({ font, onFont, theme, onTheme, season, onSeason, customColor, onCustomColor, background, onBackground, customBackground, onCustomBackground, layout, onLayout, soundOn, onSound, summary, onSummary, effectsOn, onEffects }) {
+export default function Customization({ font, onFont, theme, onTheme, season, onSeason, customColor, onCustomColor, background, onBackground, customBackground, onCustomBackground, mobileBackground, onMobileBackground, mobileCustomBackground, onMobileCustomBackground, layout, onLayout, soundOn, onSound, summary, onSummary, effectsOn, onEffects }) {
   const autoSeason = resolveSeason('auto')
   const bgFileRef = useRef(null)
   const [bgErr, setBgErr] = useState('')
+  // The Background section edits one target at a time — the desktop layer or the
+  // mobile (portrait phone) layer — so each can have its own scene or photo.
+  const hasMobileBg = !!onMobileBackground
+  const [bgTarget, setBgTarget] = useState('desktop')
+  const onMobile = hasMobileBg && bgTarget === 'mobile'
+  const activeBg        = onMobile ? mobileBackground : background
+  const setActiveBg     = onMobile ? onMobileBackground : onBackground
+  const activeCustom    = onMobile ? mobileCustomBackground : customBackground
+  const setActiveCustom = onMobile ? onMobileCustomBackground : onCustomBackground
   const builtinBgs = BACKGROUNDS.filter(b => b.id !== 'none' && b.id !== 'custom')
   const onBgFile = async (e) => {
     const f = e.target.files?.[0]; e.target.value = ''
     if (!f) return
     if (!f.type.startsWith('image/')) { setBgErr('Please choose an image file.'); return }
     if (f.size > 12 * 1024 * 1024) { setBgErr('Image too large (max 12 MB).'); return }
-    try { const uri = await fileToBackgroundDataUri(f); onCustomBackground && onCustomBackground(uri); setBgErr('') }
+    try { const uri = await fileToBackgroundDataUri(f); setActiveCustom && setActiveCustom(uri); setBgErr('') }
     catch { setBgErr('Could not read that image.') }
   }
   return (
@@ -191,22 +200,37 @@ export default function Customization({ font, onFont, theme, onTheme, season, on
       {/* ── Background illustration ───────────────────────────── */}
       <div style={sectionLabel}>Background</div>
       <div style={card}>
+        {/* Desktop / Mobile target switch — each keeps its own scene or photo. */}
+        {hasMobileBg && (
+          <div style={{ display:'flex', gap:4, padding:4, background:'#EDF3F6', borderRadius:12, marginBottom:14 }}>
+            {[['desktop','Desktop'], ['mobile','Mobile']].map(([id, label]) => {
+              const on = bgTarget === id
+              return (
+                <button key={id} onClick={() => setBgTarget(id)}
+                  style={{ flex:1, padding:'8px 6px', borderRadius:9, border:'none', cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontSize:13, fontWeight:600,
+                    background: on ? 'var(--teal)' : 'transparent', color: on ? 'white' : 'var(--muted)', transition:'background .15s' }}>
+                  {label}
+                </button>
+              )
+            })}
+          </div>
+        )}
         <div style={{ display:'flex', gap:12, overflowX:'auto', paddingBottom:4, WebkitOverflowScrolling:'touch' }}>
-          <BgTile label="None" empty selected={background === 'none' || !background} onClick={() => onBackground('none')} />
+          <BgTile label="None" empty selected={activeBg === 'none' || !activeBg} onClick={() => setActiveBg('none')} />
           {builtinBgs.map(b => (
-            <BgTile key={b.id} label={b.label} css={bgCss(b.id)} selected={background === b.id} onClick={() => onBackground(b.id)} />
+            <BgTile key={b.id} label={b.label} css={bgCss(b.id, undefined, { mobile: onMobile })} selected={activeBg === b.id} onClick={() => setActiveBg(b.id)} />
           ))}
-          {customBackground && (
-            <BgTile label="Yours" css={bgCss('custom')} selected={background === 'custom'} onClick={() => onBackground('custom')} />
+          {activeCustom && (
+            <BgTile label="Yours" css={bgCss('custom', activeCustom)} selected={activeBg === 'custom'} onClick={() => setActiveBg('custom')} />
           )}
         </div>
         <div style={{ display:'flex', gap:8, marginTop:12, alignItems:'center' }}>
           <button onClick={() => bgFileRef.current?.click()}
             style={{ fontSize:12, padding:'9px 14px', borderRadius:10, border:'1px solid var(--border)', background:'white', color:'var(--text)', cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:600, display:'inline-flex', alignItems:'center', gap:7 }}>
-            <Icon value="glyph:camera" size={15} color="var(--muted)" />{customBackground ? 'Replace your image' : 'Upload your own'}
+            <Icon value="glyph:camera" size={15} color="var(--muted)" />{activeCustom ? 'Replace your image' : 'Upload your own'}
           </button>
-          {customBackground && (
-            <button onClick={() => { onCustomBackground && onCustomBackground(''); onBackground('none') }}
+          {activeCustom && (
+            <button onClick={() => { setActiveCustom && setActiveCustom(''); setActiveBg('none') }}
               style={{ fontSize:12, padding:'9px 12px', borderRadius:10, border:'1px solid var(--border)', background:'white', color:'var(--muted)', cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:600 }}>Remove</button>
           )}
           <input ref={bgFileRef} type="file" accept="image/*" hidden onChange={onBgFile} />
@@ -214,7 +238,10 @@ export default function Customization({ font, onFont, theme, onTheme, season, on
         {bgErr && <div style={{ fontSize:11, color:'#EF4444', marginTop:8 }}>{bgErr}</div>}
       </div>
       <div style={help}>
-        A soft scene behind your day, or upload your own photo. Uploaded images
+        A soft scene behind your day, or upload your own photo. {hasMobileBg && <>
+        Pick a look for <b>Desktop</b> and <b>Mobile</b> separately — the built-in
+        scenes are sized to fill each one, so a phone in portrait gets a scene
+        that actually shows instead of a sliver at the bottom. </>}Uploaded images
         get a light veil so text stays readable, and are stored on this device.
       </div>
 

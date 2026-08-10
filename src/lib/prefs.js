@@ -12,14 +12,15 @@
 import { getUiPrefs, setUiPrefs } from './storage.js'
 
 // Every localStorage key that should follow the user across devices.
-// Note: 'bloom_bg_custom' (an uploaded background image, stored as a large
-// data URI) is deliberately NOT here — it stays device-local, as the Look
-// settings say. Putting it in the synced blob bloated it enough that the whole
-// ui_prefs write could fail, which silently broke syncing of *everything* else
-// (background choice, default alerts…). The preset background id still syncs.
+// Note: the uploaded background images ('bloom_bg_custom' and its mobile
+// counterpart 'bloom_bg_custom_mobile'), stored as large data URIs, are
+// deliberately NOT here — they stay device-local, as the Look settings say.
+// Putting one in the synced blob bloated it enough that the whole ui_prefs
+// write could fail, which silently broke syncing of *everything* else
+// (background choice, default alerts…). The preset background ids still sync.
 const PREF_KEYS = [
   'bloom_theme', 'bloom_season', 'bloom_custom_color',
-  'bloom_background',
+  'bloom_background', 'bloom_background_mobile',
   'bloom_font', 'bloom_layout', 'bloom_summary', 'bloom_sound', 'bloom_effects',
   'bloom_saved_colors', 'vivian_duration_presets', 'bloom_recurring_view_filter',
   'bloom_saved_places', 'bloom_recent_places',

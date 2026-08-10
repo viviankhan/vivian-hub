@@ -344,25 +344,57 @@ export const BACKGROUNDS = [
   ...Object.entries(BG_ART).map(([id, a]) => ({ id, label: a.label })),
   { id:'custom', label:'Custom' },
 ]
+// The background is chosen independently for desktop and mobile (phones in
+// portrait), because the built-in scenes scale with screen *width* — on a wide
+// desktop they fill nicely, but on a narrow portrait phone they shrink to a
+// sliver at the bottom. So the mobile choice is its own preference (and gets a
+// viewport-height-based size below so it actually reads on a phone).
+//
+// Desktop background.
 export function getBackgroundPref() { try { return localStorage.getItem('bloom_background') || 'none' } catch { return 'none' } }
 export function setBackgroundPref(v) { try { localStorage.setItem('bloom_background', v) } catch {} }
 export function getCustomBackground() { try { return localStorage.getItem('bloom_bg_custom') || '' } catch { return '' } }
 export function setCustomBackground(uri) {
   try { uri ? localStorage.setItem('bloom_bg_custom', uri) : localStorage.removeItem('bloom_bg_custom') } catch {}
 }
-// The CSS `background` shorthand for an illustration id (for the layer + previews).
-export function bgCss(id) {
+// Mobile background. Until the user picks one explicitly it mirrors the desktop
+// choice, so existing setups keep working — once they choose (even "None") it
+// becomes independent. The preset id syncs across devices; the uploaded image,
+// like the desktop one, stays device-local (too large for the synced blob).
+export function getMobileBackgroundPref() {
+  try { const v = localStorage.getItem('bloom_background_mobile'); return v != null ? v : getBackgroundPref() } catch { return 'none' }
+}
+export function setMobileBackgroundPref(v) { try { localStorage.setItem('bloom_background_mobile', v) } catch {} }
+export function getMobileCustomBackground() {
+  try { return localStorage.getItem('bloom_bg_custom_mobile') || getCustomBackground() } catch { return '' }
+}
+export function setMobileCustomBackground(uri) {
+  try { uri ? localStorage.setItem('bloom_bg_custom_mobile', uri) : localStorage.removeItem('bloom_bg_custom_mobile') } catch {}
+}
+// The CSS `background` shorthand for an illustration id (for the layer +
+// previews). `customUri` overrides the uploaded image to draw (so a preview can
+// show the mobile image); `mobile` swaps the built-in scenes to a
+// viewport-height size so they stay visible on a narrow portrait phone.
+export function bgCss(id, customUri, { mobile = false } = {}) {
   if (id === 'custom') {
-    const uri = getCustomBackground()
+    const uri = customUri !== undefined ? customUri : getCustomBackground()
     // A translucent white veil over the photo keeps foreground text readable.
     return uri ? `linear-gradient(rgba(255,255,255,.55), rgba(255,255,255,.55)), url("${uri}") center / cover no-repeat` : 'none'
   }
   const a = BG_ART[id]
-  return a ? `${encSvg(a.svg)} ${a.layout}` : 'none'
+  if (!a) return 'none'
+  // On mobile, size the scene by height (auto width) so it reads at portrait
+  // widths instead of collapsing to a thin strip at the very bottom.
+  const layout = mobile ? 'center bottom / auto 42vh no-repeat' : a.layout
+  return `${encSvg(a.svg)} ${layout}`
 }
-export function applyBackground(id) {
+// Apply both the desktop and mobile background layers (CSS picks which shows by
+// viewport). Reads the saved prefs, so callers just persist then call this.
+export function applyBackground() {
   if (typeof document === 'undefined') return
-  document.documentElement.style.setProperty('--bloom-illustration', bgCss(id))
+  const r = document.documentElement.style
+  r.setProperty('--bloom-illustration', bgCss(getBackgroundPref(), getCustomBackground()))
+  r.setProperty('--bloom-illustration-mobile', bgCss(getMobileBackgroundPref(), getMobileCustomBackground(), { mobile: true }))
 }
 // Resize an uploaded image to a reasonably small JPEG data URI for a background.
 export function fileToBackgroundDataUri(file, maxSize = 1400, quality = 0.82) {
@@ -390,5 +422,5 @@ export function applySavedAppearance() {
   applyLook(getSeasonPref(), getThemePref())
   applyFont(getFontPref())
   applyLayout(getLayoutPref())
-  applyBackground(getBackgroundPref())
+  applyBackground()
 }

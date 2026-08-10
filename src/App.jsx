@@ -48,7 +48,9 @@ import { getFontPref, setFontPref, applyFont, getThemePref, setThemePref, applyT
   getSummaryPref, setSummaryPref, getEffectsEnabled, setEffectsEnabled,
   getSeasonPref, setSeasonPref, applyLook, resolveSeason,
   getBackgroundPref, setBackgroundPref, applyBackground,
-  getCustomBackground, setCustomBackground, applySavedAppearance } from './lib/appearance.js'
+  getCustomBackground, setCustomBackground,
+  getMobileBackgroundPref, setMobileBackgroundPref,
+  getMobileCustomBackground, setMobileCustomBackground, applySavedAppearance } from './lib/appearance.js'
 import { hydratePrefs, pushPrefs } from './lib/prefs.js'
 import { RECURRING_FILTER_EVENT } from './lib/viewFilter.js'
 import SeasonalEffects from './components/SeasonalEffects.jsx'
@@ -113,7 +115,7 @@ function saveBottomBar(items) {
 }
 
 // ── Settings Drawer ────────────────────────────────────────────
-function SettingsDrawer({ open, onClose, settingsTab, setSettingsTab, notes, updateNotes, categories, addCategory, updateCategory, deleteCategory, events, commitments, recurring, locatedCount, externalCalendars, calendarStatuses, addCalendar, toggleCalendar, removeCalendar, refreshOneCalendar, font, setFont, theme, setTheme, season, setSeason, customColor, setCustom, background, setBackground, customBg, setCustomBg, layout, setLayout, soundOn, setSound, summary, setSummary, effectsOn, setEffects }) {
+function SettingsDrawer({ open, onClose, settingsTab, setSettingsTab, notes, updateNotes, categories, addCategory, updateCategory, deleteCategory, events, commitments, recurring, locatedCount, externalCalendars, calendarStatuses, addCalendar, toggleCalendar, removeCalendar, refreshOneCalendar, font, setFont, theme, setTheme, season, setSeason, customColor, setCustom, background, setBackground, customBg, setCustomBg, mobileBackground, setMobileBackground, mobileCustomBg, setMobileCustomBg, layout, setLayout, soundOn, setSound, summary, setSummary, effectsOn, setEffects }) {
   if (!open) return null
   const SECTIONS = [
     ['customize','Look','sun'],
@@ -136,7 +138,7 @@ function SettingsDrawer({ open, onClose, settingsTab, setSettingsTab, notes, upd
         {/* Scrollable content */}
         <div style={{ flex:1, minHeight:0, overflowY:'auto', WebkitOverflowScrolling:'touch' }}>
           <div style={{ padding:'20px 24px' }}>
-            {settingsTab==='customize'  && <Customization font={font} onFont={setFont} theme={theme} onTheme={setTheme} season={season} onSeason={setSeason} customColor={customColor} onCustomColor={setCustom} background={background} onBackground={setBackground} customBackground={customBg} onCustomBackground={setCustomBg} layout={layout} onLayout={setLayout} soundOn={soundOn} onSound={setSound} summary={summary} onSummary={setSummary} effectsOn={effectsOn} onEffects={setEffects} />}
+            {settingsTab==='customize'  && <Customization font={font} onFont={setFont} theme={theme} onTheme={setTheme} season={season} onSeason={setSeason} customColor={customColor} onCustomColor={setCustom} background={background} onBackground={setBackground} customBackground={customBg} onCustomBackground={setCustomBg} mobileBackground={mobileBackground} onMobileBackground={setMobileBackground} mobileCustomBackground={mobileCustomBg} onMobileCustomBackground={setMobileCustomBg} layout={layout} onLayout={setLayout} soundOn={soundOn} onSound={setSound} summary={summary} onSummary={setSummary} effectsOn={effectsOn} onEffects={setEffects} />}
 
             {settingsTab==='reminders'  && <NotificationsSettings events={events} commitments={commitments} recurring={recurring} locatedCount={locatedCount} />}
             {settingsTab==='calendars'  && <ExternalCalendars calendars={externalCalendars} statuses={calendarStatuses} onAdd={addCalendar} onToggle={toggleCalendar} onRemove={removeCalendar} onRefresh={refreshOneCalendar} />}
@@ -305,10 +307,16 @@ export default function App() {
   // re-derives every surface from that one color (banner stays season-driven).
   const setCustom  = useCallback(hex => { setCustomColorState(hex); setCustomColor(hex); setThemeState('custom'); setThemePref('custom'); applyLook(getSeasonPref(), 'custom'); pushPrefs() }, [])
   // Optional decorative background illustration (built-in scene or an upload).
+  // Chosen independently for desktop and mobile (portrait phones); CSS picks
+  // which layer shows by viewport. applyBackground() re-reads both saved prefs.
   const [background, setBackgroundState] = useState(getBackgroundPref)
   const [customBg, setCustomBgState] = useState(getCustomBackground)
-  const setBackground = useCallback(id => { setBackgroundState(id); setBackgroundPref(id); applyBackground(id); pushPrefs() }, [])
-  const setCustomBg   = useCallback(uri => { setCustomBackground(uri); setCustomBgState(uri); setBackgroundState('custom'); setBackgroundPref('custom'); applyBackground('custom'); pushPrefs() }, [])
+  const [mobileBackground, setMobileBackgroundState] = useState(getMobileBackgroundPref)
+  const [mobileCustomBg, setMobileCustomBgState] = useState(getMobileCustomBackground)
+  const setBackground = useCallback(id => { setBackgroundState(id); setBackgroundPref(id); applyBackground(); pushPrefs() }, [])
+  const setCustomBg   = useCallback(uri => { setCustomBackground(uri); setCustomBgState(uri); setBackgroundState('custom'); setBackgroundPref('custom'); applyBackground(); pushPrefs() }, [])
+  const setMobileBackground = useCallback(id => { setMobileBackgroundState(id); setMobileBackgroundPref(id); applyBackground(); pushPrefs() }, [])
+  const setMobileCustomBg   = useCallback(uri => { setMobileCustomBackground(uri); setMobileCustomBgState(uri); setMobileBackgroundState('custom'); setMobileBackgroundPref('custom'); applyBackground(); pushPrefs() }, [])
   const setLayout  = useCallback(v  => { setLayoutState(v);  setLayoutPref(v);  applyLayout(v); pushPrefs() }, [])
   const setSound   = useCallback(on => { setSoundState(on);  setSoundEnabled(on); pushPrefs() }, [])
   const setSummary = useCallback(v  => { setSummaryState(v); setSummaryPref(v); pushPrefs() }, [])
@@ -446,6 +454,7 @@ export default function App() {
         if (changed) {
           setFontState(getFontPref()); setThemeState(getThemePref()); setSeasonState(getSeasonPref())
           setCustomColorState(getCustomColor()); setBackgroundState(getBackgroundPref()); setCustomBgState(getCustomBackground())
+          setMobileBackgroundState(getMobileBackgroundPref()); setMobileCustomBgState(getMobileCustomBackground())
           setLayoutState(getLayoutPref()); setSoundState(getSoundEnabled()); setSummaryState(getSummaryPref())
           setEffectsState(getEffectsEnabled())
           applySavedAppearance()   // re-apply theme/season/background/font/layout from the hydrated values
@@ -1306,6 +1315,8 @@ export default function App() {
         season={season} setSeason={setSeason}
         customColor={customColor} setCustom={setCustom}
         background={background} setBackground={setBackground} customBg={customBg} setCustomBg={setCustomBg}
+        mobileBackground={mobileBackground} setMobileBackground={setMobileBackground}
+        mobileCustomBg={mobileCustomBg} setMobileCustomBg={setMobileCustomBg}
         layout={layout} setLayout={setLayout} soundOn={soundOn} setSound={setSound}
         summary={summary} setSummary={setSummary}
         effectsOn={effectsOn} setEffects={setEffects} />
