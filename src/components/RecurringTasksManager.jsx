@@ -364,7 +364,7 @@ function RoutinesView({ routines, tasks, categories, today, onEditTask, addRouti
 }
 
 // ── Main ───────────────────────────────────────────────────────
-export default function RecurringTasksManager({ recurringTasks, addRecurringTask, updateRecurringTask, deleteRecurringTask, clearRecurringTasks, categories, routines = [], addRoutine, updateRoutine, deleteRoutine, defaultWeekTasks, defaultDailyTodos }) {
+export default function RecurringTasksManager({ recurringTasks, addRecurringTask, updateRecurringTask, deleteRecurringTask, clearRecurringTasks, categories, routines = [], taskTemplates = [], labelModel = null, addRoutine, updateRoutine, deleteRoutine, defaultWeekTasks, defaultDailyTodos }) {
   const [editing,     setEditing]     = useState(null) // null | 'new' | task object
   const [view,        setView]        = useState('schedule') // 'schedule' | 'routines'
   const [filterDay,   setFilterDay]   = useState(todayName())
@@ -543,6 +543,8 @@ export default function RecurringTasksManager({ recurringTasks, addRecurringTask
         <AddItemModal
           categories={categories}
           routines={routines}
+          templates={taskTemplates}
+          labelModel={labelModel}
           defaultRepeat
           onSaveRecurring={(task)=>{ addRecurringTask(task); setEditing(null) }}
           onClose={()=>setEditing(null)}
@@ -554,6 +556,8 @@ export default function RecurringTasksManager({ recurringTasks, addRecurringTask
           existingRecurring={editing}
           categories={categories}
           routines={routines}
+          templates={taskTemplates}
+          labelModel={labelModel}
           onSaveRecurring={(task)=>{ updateRecurringTask(task.id, task); setEditing(null) }}
           onDelete={(t)=>{ deleteRecurringTask(t.id); setEditing(null) }}
           onClose={()=>setEditing(null)}

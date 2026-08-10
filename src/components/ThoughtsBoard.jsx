@@ -49,7 +49,7 @@ function Sticky({ t, onSchedule, onDelete, style, compact }) {
 }
 
 // ── Board ──────────────────────────────────────────────────────
-export default function ThoughtsBoard({ addCommitment, categories }) {
+export default function ThoughtsBoard({ addCommitment, addRecurringTask, categories, routines = [], taskTemplates = [], labelModel = null }) {
   const [thoughts, setThoughtsState] = useState([])
   const [loaded, setLoaded] = useState(false)
   const [text, setText]   = useState('')
@@ -129,6 +129,13 @@ export default function ThoughtsBoard({ addCommitment, categories }) {
   const handleScheduled = (commitment, reminderMins) => {
     if (addCommitment) addCommitment(commitment)
     setItemReminders(commitment.id, reminderMins)
+    if (scheduling) markScheduled(scheduling.id)
+    setScheduling(null)
+  }
+  // Turning the thought into a recurring task instead of a one-off commitment —
+  // same "mark this thought scheduled" bookkeeping as the commitment path.
+  const handleScheduledRecurring = (task) => {
+    if (addRecurringTask) addRecurringTask(task)
     if (scheduling) markScheduled(scheduling.id)
     setScheduling(null)
   }
@@ -222,7 +229,11 @@ export default function ThoughtsBoard({ addCommitment, categories }) {
         <AddItemModal
           presetText={scheduling.text}
           categories={categories}
+          routines={routines}
+          templates={taskTemplates}
+          labelModel={labelModel}
           onSave={handleScheduled}
+          onSaveRecurring={handleScheduledRecurring}
           onClose={() => setScheduling(null)}
           title="Schedule this thought" />
       )}

@@ -250,7 +250,7 @@ export default function ThisWeek({ todos, weekState, syncToggle, commitments, ad
               ))}
 
               {addingDay===day.date&&(
-                <AddItemModal presetDate={day.date} categories={categories} templates={taskTemplates} labelModel={labelModel}
+                <AddItemModal presetDate={day.date} categories={categories} routines={routines} templates={taskTemplates} labelModel={labelModel}
                   onSave={(commitment, reminderMins)=>{ if(addCommitment) addCommitment(commitment); setItemReminders(commitment.id, reminderMins); setAddingDay(null) }}
                   onSaveRecurring={addRecurringTask}
                   onClose={()=>setAddingDay(null)} title="Add to this day" />
