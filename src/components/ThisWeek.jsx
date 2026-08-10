@@ -97,7 +97,7 @@ function fmtRange(startDate, endDate) {
   return `${s} – ${e}`
 }
 
-export default function ThisWeek({ todos, weekState, syncToggle, commitments, addCommitment, deleteCommitment, categories, recurringTasks, recurringExceptions, skipRecurringOccurrence, addRecurringTask, routines = [], labelModel = null }) {
+export default function ThisWeek({ todos, weekState, syncToggle, commitments, addCommitment, deleteCommitment, categories, recurringTasks, recurringExceptions, skipRecurringOccurrence, addRecurringTask, routines = [], taskTemplates = [], labelModel = null }) {
   const today = todayStr()
   const [weekOffset, setWeekOffset] = useState(0)
   // Just the 7-day Sun→Sat scaffold; recurring items are filled per-day below
@@ -250,7 +250,7 @@ export default function ThisWeek({ todos, weekState, syncToggle, commitments, ad
               ))}
 
               {addingDay===day.date&&(
-                <AddItemModal presetDate={day.date} categories={categories} labelModel={labelModel}
+                <AddItemModal presetDate={day.date} categories={categories} templates={taskTemplates} labelModel={labelModel}
                   onSave={(commitment, reminderMins)=>{ if(addCommitment) addCommitment(commitment); setItemReminders(commitment.id, reminderMins); setAddingDay(null) }}
                   onSaveRecurring={addRecurringTask}
                   onClose={()=>setAddingDay(null)} title="Add to this day" />

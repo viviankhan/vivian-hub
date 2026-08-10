@@ -11,6 +11,7 @@ import {
   getEvents, addEvent as dbAddEvent, deleteEvent as dbDeleteEvent,
   getExternalCalendars, setExternalCalendars,
   getTimeLogs, setTimeLogs,
+  getTaskTemplates, setTaskTemplates,
   getRecurringTasks, addRecurringTask, updateRecurringTask, deleteRecurringTask, clearRecurringTasks,
   getRecurringExceptions, setRecurringExceptions,
   getRecurringMeta, setRecurringMeta,
@@ -32,6 +33,7 @@ import CategoriesManager from './components/CategoriesManager.jsx'
 import EventsManager from './components/EventsManager.jsx'
 import ExternalCalendars from './components/ExternalCalendars.jsx'
 import Informatics from './components/Informatics.jsx'
+import TaskMenu from './components/TaskMenu.jsx'
 import { refreshCalendar, loadCachedCalendar, clearCachedCalendar, eventsToSpans } from './lib/calendars.js'
 import ThoughtsBoard from './components/ThoughtsBoard.jsx'
 import NotificationsSettings from './components/NotificationsSettings.jsx'
@@ -75,6 +77,7 @@ const TABS = [
   { id:'today',       label:'Today',       glyph:'list' },
   { id:'week',        label:'Week',        glyph:'calendar' },
   { id:'commitments', label:'Commitments', glyph:'check' },
+  { id:'taskmenu',    label:'Task Menu',    glyph:'clipboard' },
   { id:'calendar',    label:'Calendar',    glyph:'grid' },
   { id:'thoughts',    label:'Thoughts',    glyph:'bulb' },
   { id:'events',      label:'Events',      glyph:'ticket' },
@@ -524,24 +527,26 @@ export default function App() {
   const [calStatuses,      setCalStatuses_]     = useState({})   // id → { state, error, count, fetchedAt }
   const [categories,       setCategories_]      = useState([])
   const [timeLogs,         setTimeLogs_]        = useState([])   // manual hours logged on the Informatics page
+  const [taskTemplates,    setTaskTemplates_]   = useState([])   // reusable date-less task presets (the Task Menu)
   const [routines,         setRoutines_]         = useState(DEFAULT_ROUTINES)
   const [loading,          setLoading]          = useState(true)
 
   useEffect(() => {
     async function load() {
       await runMigrationIfNeeded()
-      const [comp, l, n, fcp, fcs, sch, com, rt, vac, evs, cats, cmeta, rexc, rmeta, rout, tlogs] = await Promise.all([
+      const [comp, l, n, fcp, fcs, sch, com, rt, vac, evs, cats, cmeta, rexc, rmeta, rout, tlogs, tpls] = await Promise.all([
         getCompletions(), getLogEntries(), getNotes(),
         getFcProgress(), getFcStudied(), getScheduledTasks(),
         getCommitments(), getRecurringTasks(), getVacations(), getEvents(),
         seedCategoriesIfNeeded(), getCommitmentMeta(), getRecurringExceptions(), getRecurringMeta(),
-        getRoutineGroups(), getTimeLogs(),
+        getRoutineGroups(), getTimeLogs(), getTaskTemplates(),
       ])
       setCompletions_(comp); setLog_(l); setNotes_(n)
       setFcProgress_(fcp); setFcStudied_(fcs); setScheduled_(sch)
       setCommitments_(com); setRecurringTaskRows(rt); setVacations_(vac); setEvents_(evs)
       setCategories_(cats); setCommitmentMeta_(cmeta); setRecurringExceptions_(rexc); setRecurringMeta_(rmeta)
       setTimeLogs_(Array.isArray(tlogs) ? tlogs : [])
+      setTaskTemplates_(Array.isArray(tpls) ? tpls : [])
       // Routine groups: use what's saved, or seed the Morning/Night defaults.
       if (rout) {
         // One-time tint upgrade: bump any routine still on an old seed tint to
@@ -1139,6 +1144,20 @@ export default function App() {
     setTimeLogs_(prev => { const next = prev.filter(t => t.id !== id); setTimeLogs(next).catch(reportSaveError); return next })
   }, [])
 
+  // ── Task Menu templates (one synced kv blob) ─────────────────
+  // Reusable, date-less task presets. Each op writes the whole next array, like
+  // the routine groups + time logs above.
+  const addTaskTemplate = useCallback(tpl => {
+    const row = { id: tpl.id || ('tpl-' + Date.now().toString(36)), createdAt: tpl.createdAt || new Date().toISOString(), ...tpl }
+    setTaskTemplates_(prev => { const next = [...prev, row]; setTaskTemplates(next).catch(reportSaveError); return next })
+  }, [])
+  const updateTaskTemplate = useCallback((id, changes) => {
+    setTaskTemplates_(prev => { const next = prev.map(t => t.id === id ? { ...t, ...changes } : t); setTaskTemplates(next).catch(reportSaveError); return next })
+  }, [])
+  const deleteTaskTemplate = useCallback(id => {
+    setTaskTemplates_(prev => { const next = prev.filter(t => t.id !== id); setTaskTemplates(next).catch(reportSaveError); return next })
+  }, [])
+
   // ── Unified toggle ───────────────────────────────────────────
   const syncToggle = useCallback(async (id, label, tag, date, explicitNext) => {
     const storageKey = date ? `${date}_${id}` : id
@@ -1245,6 +1264,8 @@ export default function App() {
     addRoutine: addRoutineFn,
     updateRoutine: updateRoutineFn,
     deleteRoutine: deleteRoutineFn,
+    // The Task Menu — reusable date-less presets the add sheet can pull from.
+    taskTemplates,
     summary,
   }
 
@@ -1289,6 +1310,8 @@ export default function App() {
         {tab==='today'       && <Today       {...sharedProps} appendLog={appendLog} scheduled={scheduled} deleteCommitment={deleteCommitment} />}
         {tab==='week'        && <ThisWeek    {...sharedProps} deleteCommitment={deleteCommitment} />}
         {tab==='commitments' && <Commitments {...sharedProps} />}
+        {tab==='taskmenu'    && <TaskMenu templates={taskTemplates} addTemplate={addTaskTemplate}
+          updateTemplate={updateTaskTemplate} deleteTemplate={deleteTaskTemplate} categories={categories} />}
         {tab==='calendar'    && <Calendar    {...sharedProps} jumpTo={jumpTo} />}
         {tab==='thoughts'    && <ThoughtsBoard addCommitment={addCommitment} categories={categories} />}
         {tab==='events'      && <EventsManager events={events} addEvent={addEvent} deleteEvent={deleteEvent}

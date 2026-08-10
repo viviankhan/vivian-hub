@@ -228,6 +228,15 @@ export const setExternalCalendars = v  => dbSet('external_calendars', v)
 export const getTimeLogs = () => dbGet('time_logs').then(v => Array.isArray(v) ? v : [])
 export const setTimeLogs = v  => dbSet('time_logs', v)
 
+// ── Task Menu templates ─────────────────────────────────────────
+// Reusable, date-less task presets — a "task menu" you pick from when creating
+// a task so all the preset details (duration, tags, color/icon, description,
+// subtasks) auto-fill and you only have to set a start time. One synced
+// kv_store blob (array), no schema migration. Each entry:
+//   { id, text, durationMins, cat, cats, color, icon, description, subtasks, person, createdAt }
+export const getTaskTemplates = () => dbGet('task_templates').then(v => Array.isArray(v) ? v : [])
+export const setTaskTemplates = v  => dbSet('task_templates', v)
+
 // ── Classes ────────────────────────────────────────────────────
 export async function getClasses() {
   if (USE_SUPABASE) {
