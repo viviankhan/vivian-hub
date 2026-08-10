@@ -43,75 +43,75 @@ function tokenSet(text) {
 // "writing" and "wrote"-ish forms all collapse to the same stem the task text
 // does. Keep keywords specific enough not to fire on everyday filler.
 const TAXONOMY = [
-  { id: 'writing', label: 'Writing', icon: '✍️', color: '#6C7BE0',
+  { id: 'writing', label: 'Writing', icon: 'glyph:pencil', color: '#6C7BE0',
     words: ['write', 'writing', 'wrote', 'essay', 'draft', 'blog', 'article', 'report', 'journal', 'manuscript', 'thesis', 'summary', 'summarize', 'copywriting', 'proofread', 'edit', 'editing'],
     phrases: ['personal statement', 'cover letter', 'lab report', 'take notes', 'note taking', 'blog post', 'op-ed'] },
 
-  { id: 'reading', label: 'Reading', icon: '📖', color: '#C58BE0',
+  { id: 'reading', label: 'Reading', icon: 'glyph:bookOpen', color: '#C58BE0',
     words: ['read', 'reading', 'textbook', 'chapter', 'novel', 'paper', 'literature', 'book', 'articles'],
     phrases: ['read chapter', 'do the reading', 'assigned reading', 'literature review'] },
 
-  { id: 'studying', label: 'Studying & memory', icon: '📚', color: '#E08B8B',
+  { id: 'studying', label: 'Studying & memory', icon: 'glyph:brain', color: '#E08B8B',
     words: ['study', 'studying', 'review', 'revise', 'flashcard', 'anki', 'memorize', 'quiz', 'recall', 'exam', 'midterm', 'final', 'lecture', 'homework', 'coursework'],
     phrases: ['study for', 'exam prep', 'review notes', 'go over', 'practice test', 'practice exam', 'mcat', 'do practice'] },
 
-  { id: 'programming', label: 'Programming', icon: '💻', color: '#4FB3A9',
+  { id: 'programming', label: 'Programming', icon: 'glyph:code', color: '#4FB3A9',
     words: ['code', 'coding', 'program', 'programming', 'debug', 'script', 'python', 'javascript', 'typescript', 'java', 'react', 'algorithm', 'function', 'api', 'refactor', 'deploy', 'compile', 'git', 'leetcode', 'sql', 'query', 'backend', 'frontend'],
     phrases: ['fix bug', 'build feature', 'pull request', 'unit test', 'code review', 'ship the'] },
 
-  { id: 'data', label: 'Data & analysis', icon: '📊', color: '#5B8FE0',
+  { id: 'data', label: 'Data & analysis', icon: 'glyph:chart', color: '#5B8FE0',
     words: ['data', 'analyze', 'analysis', 'statistics', 'stats', 'spreadsheet', 'excel', 'dataset', 'chart', 'graph', 'regression', 'model', 'metric', 'dashboard', 'visualization'],
     phrases: ['analyze data', 'crunch numbers', 'pivot table', 'data set', 'run the numbers'] },
 
-  { id: 'research', label: 'Research', icon: '🔍', color: '#7E8BE0',
+  { id: 'research', label: 'Research', icon: 'glyph:search', color: '#7E8BE0',
     words: ['research', 'experiment', 'hypothesis', 'survey', 'investigate', 'cite', 'citation', 'reference', 'methodology', 'findings'],
     phrases: ['lit review', 'literature review', 'look into', 'gather sources', 'systematic review'] },
 
-  { id: 'lab', label: 'Lab work', icon: '🔬', color: '#4FA96B',
+  { id: 'lab', label: 'Lab work', icon: 'glyph:flask', color: '#4FA96B',
     words: ['lab', 'assay', 'pipette', 'culture', 'microscope', 'dissection', 'specimen', 'sample', 'reagent', 'titration', 'pcr', 'gel', 'centrifuge', 'buffer', 'protocol', 'staining'],
     phrases: ['run the assay', 'lab work', 'wet lab', 'cell culture', 'bench work'] },
 
-  { id: 'math', label: 'Math & problem solving', icon: '🧮', color: '#E0A24F',
+  { id: 'math', label: 'Math & problem solving', icon: 'glyph:calculator', color: '#E0A24F',
     words: ['math', 'calculus', 'algebra', 'equation', 'integral', 'derivative', 'geometry', 'trig', 'trigonometry', 'proof', 'compute', 'calculate', 'formula'],
     phrases: ['problem set', 'p-set', 'math homework', 'work through problems', 'solve for'] },
 
-  { id: 'design', label: 'Design & visual', icon: '🎨', color: '#E07BB5',
+  { id: 'design', label: 'Design & visual', icon: 'glyph:palette', color: '#E07BB5',
     words: ['design', 'figma', 'sketch', 'illustrate', 'photoshop', 'logo', 'layout', 'prototype', 'wireframe', 'mockup', 'typography', 'palette', 'canva'],
     phrases: ['ui design', 'ux design', 'visual design', 'design system', 'lay out'] },
 
-  { id: 'communication', label: 'Communication', icon: '💬', color: '#4FB3E0',
+  { id: 'communication', label: 'Communication', icon: 'glyph:chat', color: '#4FB3E0',
     words: ['email', 'call', 'message', 'reply', 'respond', 'followup', 'reach', 'outreach', 'network', 'correspond', 'text', 'dm', 'coordinate'],
     phrases: ['reach out', 'follow up', 'catch up', 'send email', 'reply to', 'get in touch', 'check in'] },
 
-  { id: 'speaking', label: 'Presenting & speaking', icon: '🎤', color: '#E0664F',
+  { id: 'speaking', label: 'Presenting & speaking', icon: 'glyph:presentation', color: '#E0664F',
     words: ['present', 'presentation', 'speech', 'talk', 'slides', 'deck', 'powerpoint', 'keynote', 'seminar', 'pitch', 'defend', 'demo', 'webinar'],
     phrases: ['public speaking', 'give a talk', 'present to', 'stand up', 'slide deck'] },
 
-  { id: 'planning', label: 'Planning & organizing', icon: '🗂️', color: '#8B9AA9',
+  { id: 'planning', label: 'Planning & organizing', icon: 'glyph:clipboard', color: '#8B9AA9',
     words: ['plan', 'planning', 'organize', 'schedule', 'roadmap', 'milestone', 'agenda', 'prioritize', 'coordinate', 'delegate', 'outline', 'strategy'],
     phrases: ['plan out', 'set up', 'game plan', 'to-do', 'project plan', 'map out', 'block out'] },
 
-  { id: 'teaching', label: 'Teaching & mentoring', icon: '🧑‍🏫', color: '#C99A4F',
+  { id: 'teaching', label: 'Teaching & mentoring', icon: 'glyph:gradcap', color: '#C99A4F',
     words: ['teach', 'tutor', 'mentor', 'explain', 'grade', 'grading', 'coach', 'onboard'],
     phrases: ['office hours', 'help with homework', 'walk through', 'tutoring session'] },
 
-  { id: 'fitness', label: 'Fitness & training', icon: '🏃', color: '#4FC97E',
+  { id: 'fitness', label: 'Fitness & training', icon: 'glyph:dumbbell', color: '#4FC97E',
     words: ['workout', 'running', 'gym', 'yoga', 'exercise', 'stretch', 'cardio', 'lift', 'lifting', 'swim', 'pilates', 'jog', 'hike', 'treadmill', 'peloton'],
     phrases: ['work out', 'go for a run', 'leg day', 'strength training'] },
 
-  { id: 'creative', label: 'Creative & making', icon: '🎨', color: '#B57BE0',
+  { id: 'creative', label: 'Creative & making', icon: 'glyph:brush', color: '#B57BE0',
     words: ['draw', 'drawing', 'paint', 'painting', 'music', 'piano', 'guitar', 'compose', 'craft', 'knit', 'photograph', 'photo', 'film', 'video', 'record', 'sing', 'instrument'],
     phrases: ['edit video', 'make a video', 'record a', 'practice piano', 'practice guitar'] },
 
-  { id: 'cooking', label: 'Cooking', icon: '🍳', color: '#E0A85B',
+  { id: 'cooking', label: 'Cooking', icon: 'glyph:utensils', color: '#E0A85B',
     words: ['cook', 'cooking', 'bake', 'baking', 'recipe', 'kitchen'],
     phrases: ['meal prep', 'cook dinner', 'make dinner', 'prep meals'] },
 
-  { id: 'language', label: 'Language learning', icon: '🗣️', color: '#5BB0E0',
+  { id: 'language', label: 'Language learning', icon: 'glyph:globe', color: '#5BB0E0',
     words: ['spanish', 'french', 'mandarin', 'chinese', 'german', 'japanese', 'korean', 'duolingo', 'vocabulary', 'vocab', 'translate', 'conjugate', 'bilingual'],
     phrases: ['language practice', 'learn spanish', 'learn french', 'practice vocab'] },
 
-  { id: 'finance', label: 'Finance & budgeting', icon: '💰', color: '#4FA95B',
+  { id: 'finance', label: 'Finance & budgeting', icon: 'glyph:wallet', color: '#4FA95B',
     words: ['budget', 'invoice', 'tax', 'taxes', 'finance', 'expense', 'invest', 'accounting', 'payroll', 'reconcile', 'billing', 'receipt'],
     phrases: ['do taxes', 'balance the', 'track expenses', 'pay bills'] },
 ]
@@ -150,7 +150,7 @@ export function inferSkills(text) {
 
 export function skillMeta(id) {
   const s = SKILL_BY_ID.get(id)
-  return s ? { id: s.id, label: s.label, icon: s.icon, color: s.color } : { id, label: id, icon: '⭐', color: '#9AA6B2' }
+  return s ? { id: s.id, label: s.label, icon: s.icon, color: s.color } : { id, label: id, icon: 'glyph:star', color: '#9AA6B2' }
 }
 
 // Roll a list of time entries up by skill. Each row carries the total minutes,

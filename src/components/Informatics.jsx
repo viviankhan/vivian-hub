@@ -181,7 +181,7 @@ export default function Informatics({ commitments = [], recurringTasks = [], com
                 <div style={{ marginTop:12, borderTop:'1px solid rgba(255,255,255,.16)', paddingTop:10 }}>
                   {answer.skills.map(s => (
                     <div key={s.id} style={{ display:'flex', alignItems:'center', gap:8, fontSize:12.5, padding:'4px 0', opacity:.94 }}>
-                      <span style={{ fontSize:14 }}>{s.icon}</span>
+                      <Icon value={s.icon} size={14} color="currentColor" />
                       <span style={{ flex:1, minWidth:0, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{s.label}</span>
                       <span style={{ fontWeight:600, flexShrink:0 }}>{s.mins > 0 ? fmtHours(s.mins) : sessions(s.count)}</span>
                     </div>
@@ -209,7 +209,7 @@ export default function Informatics({ commitments = [], recurringTasks = [], com
                 <div style={{ display:'flex', gap:6, flexWrap:'wrap', marginTop:12 }}>
                   {answer.skills.map(s => (
                     <span key={s.id} style={{ display:'inline-flex', alignItems:'center', gap:4, fontSize:11.5, fontWeight:600, padding:'4px 10px', borderRadius:16, background:'rgba(255,255,255,.14)' }}>
-                      <span>{s.icon}</span>{s.label}
+                      <Icon value={s.icon} size={12} color="currentColor" />{s.label}
                     </span>
                   ))}
                 </div>
@@ -238,7 +238,7 @@ export default function Informatics({ commitments = [], recurringTasks = [], com
                   <span style={{ fontSize:11, opacity:.7, alignSelf:'center' }}>Skills:</span>
                   {answer.skills.map(s => (
                     <span key={s.id} style={{ display:'inline-flex', alignItems:'center', gap:4, fontSize:11, fontWeight:600, padding:'3px 9px', borderRadius:16, background:'rgba(255,255,255,.1)' }}>
-                      <span>{s.icon}</span>{s.label}
+                      <Icon value={s.icon} size={12} color="currentColor" />{s.label}
                     </span>
                   ))}
                 </div>
@@ -319,7 +319,7 @@ export default function Informatics({ commitments = [], recurringTasks = [], com
                       <div onClick={() => setOpenSkill(open ? null : s.id)} role="button" tabIndex={0}
                         onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setOpenSkill(open ? null : s.id) } }}
                         style={{ display:'flex', alignItems:'center', gap:8, cursor:'pointer' }}>
-                        <span style={{ fontSize:15, width:18, textAlign:'center', flexShrink:0 }}>{s.icon}</span>
+                        <span style={{ width:18, display:'inline-flex', justifyContent:'center', flexShrink:0 }}><Icon value={s.icon} size={15} color={s.color} /></span>
                         <span style={{ fontSize:13, fontWeight:600, color:'var(--text)', flex:1, minWidth:0, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{s.label}</span>
                         <span style={{ fontSize:11, color:'var(--muted)', flexShrink:0 }}>{sessions(s.count)}</span>
                         {s.mins > 0 && <span style={{ fontSize:12.5, color:'var(--muted)', fontWeight:600, flexShrink:0, minWidth:52, textAlign:'right' }}>{fmtHours(s.mins)}</span>}
