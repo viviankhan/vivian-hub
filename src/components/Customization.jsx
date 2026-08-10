@@ -88,7 +88,7 @@ function BgTile({ label, css, selected, empty, onClick }) {
   )
 }
 
-export default function Customization({ font, onFont, theme, onTheme, season, onSeason, customColor, onCustomColor, background, onBackground, customBackground, onCustomBackground, layout, onLayout, soundOn, onSound, summary, onSummary }) {
+export default function Customization({ font, onFont, theme, onTheme, season, onSeason, customColor, onCustomColor, background, onBackground, customBackground, onCustomBackground, layout, onLayout, soundOn, onSound, summary, onSummary, effectsOn, onEffects }) {
   const autoSeason = resolveSeason('auto')
   const bgFileRef = useRef(null)
   const [bgErr, setBgErr] = useState('')
@@ -141,6 +141,24 @@ export default function Customization({ font, onFont, theme, onTheme, season, on
         the calendar. Motion is slow
         and subtle, and skipped entirely if your device prefers reduced motion.
       </div>
+
+      {/* ── Ambient motion toggle ─────────────────────────────── */}
+      {onEffects && <>
+        <div style={sectionLabel}>Ambient Motion</div>
+        <div style={{ ...card, display:'flex', alignItems:'center', gap:12, marginBottom:8 }}>
+          <span style={{ display:'inline-flex', color:'var(--teal)' }}>
+            <Icon value={SEASON_ICON[season] || 'glyph:leaf'} size={22} color="var(--teal)" />
+          </span>
+          <span style={{ flex:1, fontSize:15, fontWeight:500, color:'var(--text)' }}>Falling leaves &amp; drifting particles</span>
+          <Switch on={effectsOn} onClick={() => onEffects(!effectsOn)} />
+        </div>
+        <div style={help}>
+          The gentle drifting motion for the current look — petals, leaves, snow,
+          or bubbles. Turn it off to keep the season’s colors without any moving
+          particles. (Motion is always skipped when your device prefers reduced
+          motion, whatever this is set to.)
+        </div>
+      </>}
 
       {/* ── Accent color ──────────────────────────────────────── */}
       <div style={sectionLabel}>Accent color</div>

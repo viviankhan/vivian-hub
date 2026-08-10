@@ -292,6 +292,16 @@ export function getSoundEnabled() {
 export function setSoundEnabled(on) {
   try { localStorage.setItem('bloom_sound', on ? 'on' : 'off') } catch {}
 }
+// Ambient seasonal motion (falling leaves / petals / snow / drifting bubbles).
+// On by default. Independent of the season skin, so you can keep the banner +
+// accent of a season while turning the drifting particles off. (A device that
+// prefers reduced motion still gets no motion regardless of this switch.)
+export function getEffectsEnabled() {
+  try { return localStorage.getItem('bloom_effects') !== 'off' } catch { return true }
+}
+export function setEffectsEnabled(on) {
+  try { localStorage.setItem('bloom_effects', on ? 'on' : 'off') } catch {}
+}
 
 // Apply whatever's saved — call once as early as possible to avoid a flash of
 // the default look before React mounts.

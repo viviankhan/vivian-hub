@@ -712,6 +712,10 @@ textarea { resize: vertical; min-height: 160px; line-height: 1.6; }
   .content { padding-bottom: calc(84px + env(safe-area-inset-bottom)); }
   /* Lift the FAB above the bottom bar. */
   .today-fab { bottom: calc(92px + env(safe-area-inset-bottom)); right: 18px; }
+  /* The decorative background scene is anchored to the bottom of the viewport —
+     exactly where the fixed bottom nav sits on mobile, which hid it entirely.
+     Lift the layer's bottom edge above the bar so the selected scene shows. */
+  .bg-illustration { bottom: calc(66px + env(safe-area-inset-bottom)); }
 }
 
 /* ── RESPONSIVE ─────────────────────────────────────────────── */

@@ -45,7 +45,7 @@ import Customization from './components/Customization.jsx'
 import { getFontPref, setFontPref, applyFont, getThemePref, setThemePref, applyTheme,
   getCustomColor, setCustomColor,
   getLayoutPref, setLayoutPref, applyLayout, getSoundEnabled, setSoundEnabled,
-  getSummaryPref, setSummaryPref,
+  getSummaryPref, setSummaryPref, getEffectsEnabled, setEffectsEnabled,
   getSeasonPref, setSeasonPref, applyLook, resolveSeason,
   getBackgroundPref, setBackgroundPref, applyBackground,
   getCustomBackground, setCustomBackground, applySavedAppearance } from './lib/appearance.js'
@@ -113,7 +113,7 @@ function saveBottomBar(items) {
 }
 
 // ── Settings Drawer ────────────────────────────────────────────
-function SettingsDrawer({ open, onClose, settingsTab, setSettingsTab, notes, updateNotes, categories, addCategory, updateCategory, deleteCategory, events, commitments, recurring, locatedCount, externalCalendars, calendarStatuses, addCalendar, toggleCalendar, removeCalendar, refreshOneCalendar, font, setFont, theme, setTheme, season, setSeason, customColor, setCustom, background, setBackground, customBg, setCustomBg, layout, setLayout, soundOn, setSound, summary, setSummary }) {
+function SettingsDrawer({ open, onClose, settingsTab, setSettingsTab, notes, updateNotes, categories, addCategory, updateCategory, deleteCategory, events, commitments, recurring, locatedCount, externalCalendars, calendarStatuses, addCalendar, toggleCalendar, removeCalendar, refreshOneCalendar, font, setFont, theme, setTheme, season, setSeason, customColor, setCustom, background, setBackground, customBg, setCustomBg, layout, setLayout, soundOn, setSound, summary, setSummary, effectsOn, setEffects }) {
   if (!open) return null
   const SECTIONS = [
     ['customize','Look','sun'],
@@ -136,7 +136,7 @@ function SettingsDrawer({ open, onClose, settingsTab, setSettingsTab, notes, upd
         {/* Scrollable content */}
         <div style={{ flex:1, minHeight:0, overflowY:'auto', WebkitOverflowScrolling:'touch' }}>
           <div style={{ padding:'20px 24px' }}>
-            {settingsTab==='customize'  && <Customization font={font} onFont={setFont} theme={theme} onTheme={setTheme} season={season} onSeason={setSeason} customColor={customColor} onCustomColor={setCustom} background={background} onBackground={setBackground} customBackground={customBg} onCustomBackground={setCustomBg} layout={layout} onLayout={setLayout} soundOn={soundOn} onSound={setSound} summary={summary} onSummary={setSummary} />}
+            {settingsTab==='customize'  && <Customization font={font} onFont={setFont} theme={theme} onTheme={setTheme} season={season} onSeason={setSeason} customColor={customColor} onCustomColor={setCustom} background={background} onBackground={setBackground} customBackground={customBg} onCustomBackground={setCustomBg} layout={layout} onLayout={setLayout} soundOn={soundOn} onSound={setSound} summary={summary} onSummary={setSummary} effectsOn={effectsOn} onEffects={setEffects} />}
 
             {settingsTab==='reminders'  && <NotificationsSettings events={events} commitments={commitments} recurring={recurring} locatedCount={locatedCount} />}
             {settingsTab==='calendars'  && <ExternalCalendars calendars={externalCalendars} statuses={calendarStatuses} onAdd={addCalendar} onToggle={toggleCalendar} onRemove={removeCalendar} onRefresh={refreshOneCalendar} />}
@@ -284,6 +284,8 @@ export default function App() {
   const [layout, setLayoutState] = useState(getLayoutPref)
   const [soundOn,setSoundState]  = useState(getSoundEnabled)
   const [summary,setSummaryState]= useState(getSummaryPref)
+  // Ambient seasonal motion (falling leaves / petals / snow / bubbles) on/off.
+  const [effectsOn,setEffectsState] = useState(getEffectsEnabled)
   // Arrival-started recurring occurrences (device-local): occKey → timestamp.
   // A recurring task with a location auto-starts on arrival like a one-off, but
   // per-day, so it needs its own started map keyed by occurrence.
@@ -310,6 +312,9 @@ export default function App() {
   const setLayout  = useCallback(v  => { setLayoutState(v);  setLayoutPref(v);  applyLayout(v); pushPrefs() }, [])
   const setSound   = useCallback(on => { setSoundState(on);  setSoundEnabled(on); pushPrefs() }, [])
   const setSummary = useCallback(v  => { setSummaryState(v); setSummaryPref(v); pushPrefs() }, [])
+  // Ambient motion toggle — flips the drifting particles without touching the
+  // season's banner/accent. SeasonalEffects renders nothing when this is off.
+  const setEffects = useCallback(on => { setEffectsState(on); setEffectsEnabled(on); pushPrefs() }, [])
 
   // ── Customizable mobile bottom bar ───────────────────────────
   // `barItems` is the ordered list of destinations shown in the phone bottom
@@ -442,6 +447,7 @@ export default function App() {
           setFontState(getFontPref()); setThemeState(getThemePref()); setSeasonState(getSeasonPref())
           setCustomColorState(getCustomColor()); setBackgroundState(getBackgroundPref()); setCustomBgState(getCustomBackground())
           setLayoutState(getLayoutPref()); setSoundState(getSoundEnabled()); setSummaryState(getSummaryPref())
+          setEffectsState(getEffectsEnabled())
           applySavedAppearance()   // re-apply theme/season/background/font/layout from the hydrated values
           // Nudge components that read their own device-local stores to refresh.
           try { window.dispatchEvent(new Event(RECURRING_FILTER_EVENT)) } catch {}
@@ -1235,7 +1241,7 @@ export default function App() {
     <div>
       <div className="shimmer-bg" aria-hidden="true" />
       <div className="bg-illustration" aria-hidden="true" />
-      <SeasonalEffects effect={resolveSeason(season).effect} />
+      <SeasonalEffects effect={effectsOn ? resolveSeason(season).effect : null} />
       <header className="header">
         <div className="header-top">
           <div className="header-left">
@@ -1301,7 +1307,8 @@ export default function App() {
         customColor={customColor} setCustom={setCustom}
         background={background} setBackground={setBackground} customBg={customBg} setCustomBg={setCustomBg}
         layout={layout} setLayout={setLayout} soundOn={soundOn} setSound={setSound}
-        summary={summary} setSummary={setSummary} />
+        summary={summary} setSummary={setSummary}
+        effectsOn={effectsOn} setEffects={setEffects} />
 
       <SearchOverlay
         open={searchOpen} onClose={() => setSearchOpen(false)}
