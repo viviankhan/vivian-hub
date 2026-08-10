@@ -605,6 +605,9 @@ export default function AddItemModal({ existing = null, existingRecurring = null
   // instead of borrowing a real category's color.
   const primaryCat = cats.find(c => c.id === effectiveCats[0]) || null
   const headerColor = color || primaryCat?.color || activeAccent()
+  // The routine this task is filed under, if any — lets the Color row offer a
+  // one-tap "match the routine's color" shortcut.
+  const activeRoutine = routine ? routines.find(r => r.id === routine) : null
   // Foreground that stays readable on the header band — dark on light colors,
   // light on dark ones — with matching muted/hairline/button tints.
   const headerFg   = iconColorOn(headerColor)
@@ -999,11 +1002,25 @@ export default function AddItemModal({ existing = null, existingRecurring = null
             <DetailRow icon={<span style={{ width:15, height:15, borderRadius:'50%', background:headerColor }} />} iconColor={headerColor}
               text="Color" hint={color ? 'Custom' : 'From label'} open={expanded==='color'} onClick={() => toggleRow('color')}>
               <ColorSwatchRow value={color} onChange={setColor} size={28} />
-              <button onClick={() => setColor('')}
-                style={{ marginTop:11, fontSize:11, padding:'5px 12px', borderRadius:16, cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:600,
-                  border: color ? '1px solid var(--border)' : 'none', background: color ? 'white' : 'var(--forest)', color: color ? 'var(--muted)' : 'var(--green-light)' }}>
-                {color ? 'Match label color' : '✓ Matching label color'}
-              </button>
+              <div style={{ display:'flex', gap:8, flexWrap:'wrap', marginTop:11 }}>
+                <button onClick={() => setColor('')}
+                  style={{ fontSize:11, padding:'5px 12px', borderRadius:16, cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:600,
+                    border: color ? '1px solid var(--border)' : 'none', background: color ? 'white' : 'var(--forest)', color: color ? 'var(--muted)' : 'var(--green-light)' }}>
+                  {color ? 'Match label color' : '✓ Matching label color'}
+                </button>
+                {/* When this task belongs to a routine, offer to paint it the
+                    routine's film color so it reads as part of that group. */}
+                {activeRoutine && (
+                  <button onClick={() => setColor(activeRoutine.tint)}
+                    style={{ display:'inline-flex', alignItems:'center', gap:6, fontSize:11, padding:'5px 12px', borderRadius:16, cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:600,
+                      border: color === activeRoutine.tint ? 'none' : '1px solid var(--border)',
+                      background: color === activeRoutine.tint ? activeRoutine.tint : 'white',
+                      color: color === activeRoutine.tint ? '#3A3A3A' : 'var(--muted)' }}>
+                    <span style={{ width:11, height:11, borderRadius:'50%', background:activeRoutine.tint, boxShadow:'inset 0 0 0 1px rgba(0,0,0,.15)', flexShrink:0 }} />
+                    {color === activeRoutine.tint ? 'Routine color' : 'Use routine color'}
+                  </button>
+                )}
+              </div>
             </DetailRow>
             {/* More options — the secondary settings (time block, alerts, who you
                 committed to, location) tuck under here so the sheet stays short
