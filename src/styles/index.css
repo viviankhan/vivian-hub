@@ -197,6 +197,28 @@ body {
 }
 @media (prefers-reduced-motion: reduce) { .nav-btn:hover::before { animation: none; } }
 
+/* ── "More" dropdown (desktop nav) ───────────────────────────── */
+.nav-more-caret { font-size: 9px; letter-spacing: 0; margin-left: 3px; opacity: .8; }
+.nav-more-scrim { position: fixed; inset: 0; z-index: 60; background: transparent; }
+.nav-more-menu {
+  position: fixed; z-index: 61; min-width: 176px; padding: 6px;
+  background: #fff; border: 1px solid var(--border); border-radius: 13px;
+  box-shadow: 0 14px 34px rgba(120,150,190,.24);
+  display: flex; flex-direction: column; gap: 2px;
+  animation: more-menu-in .13s ease-out;
+}
+@keyframes more-menu-in { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .nav-more-menu { animation: none; } }
+.nav-more-item {
+  display: flex; align-items: center; gap: 10px; width: 100%;
+  padding: 9px 11px; border: none; background: none; border-radius: 9px;
+  font-family: 'DM Sans', sans-serif; font-size: 13px; font-weight: 600;
+  color: var(--text); cursor: pointer; text-align: left; transition: background .15s, color .15s;
+}
+.nav-more-item svg { flex-shrink: 0; color: currentColor; }
+.nav-more-item:hover { background: color-mix(in srgb, var(--teal) 12%, #fff); }
+.nav-more-item.active { color: var(--teal); background: color-mix(in srgb, var(--teal) 14%, #fff); }
+
 /* ── CONTENT ────────────────────────────────────────────────── */
 .content {
   padding: 24px;

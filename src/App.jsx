@@ -83,6 +83,11 @@ const TABS = [
   { id:'informatics', label:'Insights',    glyph:'chart' },
 ]
 
+// On the desktop top bar these tabs are tucked under a single "More" dropdown
+// rather than shown as their own tabs, keeping the bar short. They still render
+// the same views when selected, and remain full rows in the mobile drawer.
+const MORE_TAB_IDS = ['recurring', 'taskmenu', 'events']
+
 // ── Customizable bottom bar (mobile) ───────────────────────────
 // The phone bottom bar is a user-arranged list of destinations, dragged in
 // from the side menu and dragged off to remove. It holds any tab plus the
@@ -497,6 +502,26 @@ export default function App() {
   }, [])
   const [searchOpen,   setSearchOpen]   = useState(false)
   const [navOpen,      setNavOpen]      = useState(false)  // mobile side-nav drawer
+  // Desktop "More" dropdown (Recurring / Task Menu / Events). Anchored with a
+  // fixed position from the button's rect so it isn't clipped by the nav's
+  // horizontal overflow scroll.
+  const [moreOpen,     setMoreOpen]     = useState(false)
+  const [moreCoords,   setMoreCoords]   = useState(null)
+  const moreBtnRef = useRef(null)
+  const openMore = () => {
+    const r = moreBtnRef.current?.getBoundingClientRect()
+    if (r) setMoreCoords({ top: r.bottom + 4, right: Math.max(8, window.innerWidth - r.right) })
+    setMoreOpen(o => !o)
+  }
+  // The dropdown is anchored to a captured rect, so close it if the layout
+  // shifts under it (resize / scroll) rather than leaving it floating.
+  useEffect(() => {
+    if (!moreOpen) return
+    const close = () => setMoreOpen(false)
+    window.addEventListener('resize', close)
+    window.addEventListener('scroll', close, true)
+    return () => { window.removeEventListener('resize', close); window.removeEventListener('scroll', close, true) }
+  }, [moreOpen])
   // Set when a search suggestion is picked → Calendar navigates to this date.
   // The nonce lets re-picking the same date re-trigger the jump.
   const [jumpTo,       setJumpTo]       = useState(null)
@@ -1296,13 +1321,41 @@ export default function App() {
           </div>
         </div>
         <nav className="nav">
-          {TABS.map(t => (
+          {TABS.filter(t => !MORE_TAB_IDS.includes(t.id)).map(t => (
             <button key={t.id} className={`nav-btn ${tab===t.id ? 'active' : ''}`} onClick={() => setTab(t.id)}>
               {t.label}
             </button>
           ))}
+          <button ref={moreBtnRef}
+            className={`nav-btn ${MORE_TAB_IDS.includes(tab) ? 'active' : ''}`}
+            aria-haspopup="menu" aria-expanded={moreOpen} onClick={openMore}>
+            More <span className="nav-more-caret" aria-hidden="true">▾</span>
+          </button>
         </nav>
       </header>
+
+      {/* Desktop "More" dropdown — Recurring / Task Menu / Events. Fixed-
+          positioned from the button rect so the nav's overflow scroll can't
+          clip it; the scrim catches an outside click to close. */}
+      {moreOpen && moreCoords && (
+        <>
+          <div className="nav-more-scrim" onClick={() => setMoreOpen(false)} aria-hidden="true" />
+          <div className="nav-more-menu" role="menu" style={{ top: moreCoords.top, right: moreCoords.right }}>
+            {MORE_TAB_IDS.map(id => {
+              const t = TABS.find(x => x.id === id)
+              if (!t) return null
+              return (
+                <button key={id} role="menuitem"
+                  className={`nav-more-item ${tab===id ? 'active' : ''}`}
+                  onClick={() => { setTab(id); setMoreOpen(false) }}>
+                  <Glyph id={t.glyph} size={16} />
+                  <span>{t.label}</span>
+                </button>
+              )
+            })}
+          </div>
+        </>
+      )}
 
       <main className="content">
         {tab==='today'       && <Today       {...sharedProps} appendLog={appendLog} scheduled={scheduled} deleteCommitment={deleteCommitment} />}
