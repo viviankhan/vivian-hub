@@ -7,11 +7,14 @@ import { iconColorOn } from '../lib/glyphs.jsx'
 import RecurringFilter from './RecurringFilter.jsx'
 import { getRecurringFilter, RECURRING_FILTER_EVENT, visibleRecurring } from '../lib/viewFilter.js'
 
-// Pastel shading for how busy a day is (number of events on it).
-const BUSY_SHADES = ['#F4F0FA', '#EAE1F4', '#DBC9EC', '#C9AEDF']
+// Shading for how busy a day is (number of events on it). Derived from the
+// active theme accent (var(--teal)) via color-mix — a light→accent wash — so it
+// recolors with the rest of the app per theme/season instead of a fixed purple.
+const BUSY_LEVELS = [14, 26, 42, 60]   // % of the accent mixed into white
+function busyWash(pct) { return `color-mix(in srgb, var(--teal) ${pct}%, #FFFFFF)` }
 function busyShade(count) {
   if (count <= 0) return null
-  return BUSY_SHADES[Math.min(count, BUSY_SHADES.length) - 1]
+  return busyWash(BUSY_LEVELS[Math.min(count, BUSY_LEVELS.length) - 1])
 }
 
 const calNavBtn = { fontSize:16, lineHeight:1, width:32, height:32, borderRadius:9, border:'1px solid var(--border)', background:'white', color:'var(--muted)', cursor:'pointer', fontFamily:'DM Sans,sans-serif', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }
@@ -322,7 +325,7 @@ export default function Calendar({ commitments, vacations, events, log, categori
       <div style={{ display:'flex', alignItems:'center', gap:6, marginTop:18 }}>
         <span style={{ fontSize:11, color:'var(--muted)' }}>Quieter</span>
         <div style={{ width:16, height:16, borderRadius:4, background:'white', border:'1px solid var(--border)' }} />
-        {BUSY_SHADES.map(c => <div key={c} style={{ width:16, height:16, borderRadius:4, background:c }} />)}
+        {BUSY_LEVELS.map(p => <div key={p} style={{ width:16, height:16, borderRadius:4, background:busyWash(p) }} />)}
         <span style={{ fontSize:11, color:'var(--muted)' }}>Busier</span>
       </div>
 
