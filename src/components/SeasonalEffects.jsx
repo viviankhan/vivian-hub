@@ -3,7 +3,7 @@
 // slow and low-contrast so it reads as atmosphere, never distraction. Each
 // season drifts its own thing:
 //   • bloom  — translucent iridescent bubbles rising, swaying
-//   • spring — soft flower blossoms drifting down
+//   • spring — soft petals drifting down
 //   • summer — green leaves + a few dandelion puffs
 //   • fall   — an assortment of maple & oak leaves in red/orange/yellow
 //   • winter — six-fold snowflakes (and the odd snow speck)
@@ -18,9 +18,9 @@ const pick = arr => arr[Math.floor(Math.random() * arr.length)]
 // picked per particle); durations are long on purpose (slow drift) and
 // opacities stay low (unobtrusive).
 const EFFECTS = {
-  // Spring — pastel blossoms.
+  // Spring — pastel petals.
   petals: { count: 13, size: [12, 20], mode: 'fall', dur: [20, 34], op: [0.30, 0.52],
-    kinds: ['flower'], colors: ['#F4A6C0', '#F6C6D4', '#EBB6E4', '#F7D9E4', '#F2B8CE', '#E7C7F0'] },
+    kinds: ['petal'], colors: ['#F4A6C0', '#F6C6D4', '#EBB6E4', '#F7D9E4', '#F2B8CE', '#E7C7F0'] },
   // Summer — green leaves with a scatter of dandelion puffs.
   greenleaves: { count: 13, size: [12, 20], mode: 'fall', dur: [22, 38], op: [0.30, 0.52],
     kinds: ['leaf', 'leaf', 'leaf', 'dandelion'], colors: ['#6FA84E', '#84B85C', '#5C9A46', '#A6C97E', '#8FBF63'] },
@@ -47,16 +47,13 @@ function bubbleStyle(size) {
 }
 
 // ── Shape silhouettes (all self-contained SVG) ────────────────
-function Flower({ size, color }) {
+// A single soft petal — a rounded teardrop, wider up top and tapering down.
+function Petal({ size, color }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden="true">
-      <g fill={color}>
-        <circle cx="12" cy="6.2" r="3.3" /><circle cx="17.3" cy="10" r="3.3" />
-        <circle cx="15.3" cy="16.2" r="3.3" /><circle cx="8.7" cy="16.2" r="3.3" />
-        <circle cx="6.7" cy="10" r="3.3" />
-      </g>
-      <circle cx="12" cy="11.8" r="2.5" fill="rgba(255,240,170,.95)" />
-    </svg>
+    <span style={{
+      display: 'block', width: size, height: Math.round(size * 0.72), background: color,
+      borderRadius: '52% 52% 52% 52% / 62% 62% 40% 40%',
+    }} />
   )
 }
 function SimpleLeaf({ size, color }) {
@@ -114,7 +111,7 @@ function Dandelion({ size, color }) {
 function Shape({ kind, size, color }) {
   switch (kind) {
     case 'bubble':    return <span style={bubbleStyle(size)} />
-    case 'flower':    return <Flower size={size} color={color} />
+    case 'petal':     return <Petal size={size} color={color} />
     case 'maple':     return <MapleLeaf size={size} color={color} />
     case 'oak':       return <OakLeaf size={size} color={color} />
     case 'leaf':      return <SimpleLeaf size={size} color={color} />

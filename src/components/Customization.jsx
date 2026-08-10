@@ -158,7 +158,7 @@ export default function Customization({ font, onFont, theme, onTheme, season, on
           <span style={{ display:'inline-flex', color:'var(--teal)' }}>
             <Icon value={SEASON_ICON[season] || 'glyph:leaf'} size={22} color="var(--teal)" />
           </span>
-          <span style={{ flex:1, fontSize:15, fontWeight:500, color:'var(--text)' }}>Falling leaves &amp; drifting particles</span>
+          <span style={{ flex:1, fontSize:15, fontWeight:500, color:'var(--text)' }}>Drifting seasonal particles</span>
           <Switch on={effectsOn} onClick={() => onEffects(!effectsOn)} />
         </div>
         <div style={help}>
