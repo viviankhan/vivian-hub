@@ -130,6 +130,11 @@ function localTodayStr() {
   const d = new Date()
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
 }
+// Current wall-clock time as "HH:MM" (to the minute) — for the "End now" button.
+function nowHHMM() {
+  const d = new Date()
+  return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`
+}
 function ordinal(n) {
   const s = ['th', 'st', 'nd', 'rd'], v = n % 100
   return n + (s[(v - 20) % 10] || s[v] || s[0])
@@ -366,6 +371,11 @@ export default function AddItemModal({ existing = null, existingRecurring = null
 
   const spanDur = diffMinutes(time, endTime)               // from start→end, if valid
   const endInvalid = !!(time && endTime && !spanDur)       // end set but ≤ start
+  // "End now": for a task happening today that has a start time, set the end to
+  // the current time — extending it if it ran over, or shortening it if it
+  // wrapped up early. Only meaningful once the start has actually passed.
+  const canEndNow = !!time && date === localTodayStr() && diffMinutes(time, nowHHMM()) !== null
+  const endNow = () => setEndTime(nowHHMM())
   // The effective length: a valid start→end span wins; otherwise a typed/tapped
   // duration (which also works with no start time set).
   const durationMins = endInvalid ? null : (spanDur || manualDur)
@@ -705,7 +715,15 @@ export default function AddItemModal({ existing = null, existingRecurring = null
                   <TimeField value={time} onChange={onStartChange} style={inp} />
                 </div>
                 <div style={{ flex:1, minWidth:0 }}>
-                  <div style={fieldLabel}>End</div>
+                  <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:6, marginBottom:4 }}>
+                    <span style={{ ...fieldLabel, marginBottom:0 }}>End</span>
+                    {canEndNow && (
+                      <button type="button" onClick={endNow} title="Set the end to the current time"
+                        style={{ fontSize:10.5, fontWeight:700, letterSpacing:.4, border:'none', background:'none', cursor:'pointer', color:'var(--teal)', padding:0, whiteSpace:'nowrap' }}>
+                        End now
+                      </button>
+                    )}
+                  </div>
                   <TimeField value={endTime} onChange={setEndTime} style={{ ...inp, borderColor: endInvalid ? '#DC2626' : 'var(--border)' }} />
                 </div>
               </div>
