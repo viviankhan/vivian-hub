@@ -7,7 +7,8 @@
 // menu of things you can ask about.
 import { useMemo, useState } from 'react'
 import { Icon } from './IconPicker.jsx'
-import { computeEntries, filterByRange, aggregate, answerQuery, fmtHours, decimalHours } from '../lib/insights.js'
+import { computeEntries, filterByRange, aggregate, answerQuestion, fmtHours, decimalHours } from '../lib/insights.js'
+import { computeSkills } from '../lib/skills.js'
 
 const RANGES = [['week', 'Past week'], ['month', 'Past month'], ['all', 'All time']]
 const sessions = (n) => `${n} time${n === 1 ? '' : 's'}`
@@ -44,19 +45,26 @@ export default function Informatics({ commitments = [], recurringTasks = [], com
   )
   const entries = useMemo(() => filterByRange(allEntries, range), [allEntries, range])
   const agg = useMemo(() => aggregate(entries, categories), [entries, categories])
-  const answer = useMemo(() => asked ? answerQuery(entries, asked, categories) : null, [asked, entries, categories])
+  const skills = useMemo(() => computeSkills(entries, categories), [entries, categories])
+  const answer = useMemo(() => asked ? answerQuestion(entries, asked, categories) : null, [asked, entries, categories])
+  const [openSkill, setOpenSkill] = useState(null)   // expanded skill row (shows its tasks)
 
   const hasHours = agg.totalMins > 0
   const totalSessions = entries.length
   const maxCatMins = agg.byCategory[0]?.mins || 1
   const maxCatCount = Math.max(1, ...agg.byCategory.map(c => c.count))
+  const maxSkillMins = skills[0]?.mins || 1
+  const maxSkillCount = Math.max(1, ...skills.map(s => s.count))
 
-  // Suggestions of what to ask: the top categories, then a few frequent task
-  // names — the things there's actually data for.
+  // Suggestions of what to ask: a couple of self-questions, then the top skills,
+  // categories, and a few frequent task names — the things there's data for.
   const suggestions = [
-    ...agg.byCategory.slice(0, 5).map(c => c.label),
-    ...agg.byTask.slice(0, 4).map(t => t.title),
-  ].filter((v, i, a) => v && a.indexOf(v) === i).slice(0, 7)
+    ...(skills.length ? ['What skills am I using?'] : []),
+    ...(totalSessions ? ['Where does my time go?'] : []),
+    ...skills.slice(0, 3).map(s => s.label),
+    ...agg.byCategory.slice(0, 3).map(c => c.label),
+    ...agg.byTask.slice(0, 3).map(t => t.title),
+  ].filter((v, i, a) => v && a.indexOf(v) === i).slice(0, 8)
 
   const ask = (text) => { const v = (text ?? query).trim(); setAsked(v); setQuery(v) }
 
@@ -76,7 +84,7 @@ export default function Informatics({ commitments = [], recurringTasks = [], com
   return (
     <div>
       <div className="page-title">Informatics</div>
-      <div className="page-sub">Ask where your time went — “how many hours did I spend on MCAT studying?” — and see the topics you studied, projects you finished, and skills you used, broken down by category and task. Hours show wherever a task had a duration; everything you checked off still counts as a session.</div>
+      <div className="page-sub">Ask about yourself — “how many hours on MCAT studying?”, “what skills am I using?”, “where does my time go?” It reads the titles, descriptions and subtasks of everything you finished, infers the skills behind them, and breaks your time down by area, task and skill. Hours show wherever a task had a duration; everything you checked off still counts as a session.</div>
 
       {/* Range + log-time */}
       <div style={{ display:'flex', gap:6, margin:'4px 0 14px', flexWrap:'wrap', alignItems:'center' }}>
@@ -162,42 +170,99 @@ export default function Informatics({ commitments = [], recurringTasks = [], com
       </div>
 
       {/* Answer */}
-      {answer && (
-        answer.sessions > 0 ? (
-          <div style={{ background:'linear-gradient(150deg, var(--forest), #2c3a34)', color:'var(--green-light)', borderRadius:16, padding:'18px 20px', marginBottom:16 }}>
-            <div style={{ fontSize:12.5, opacity:.8 }}>{answer.totalMins > 0 ? 'Time on' : 'Worked on'} “{answer.topic}” · {rangeLabel}</div>
-            <div className="serif" style={{ fontSize:40, fontWeight:700, lineHeight:1.1, margin:'2px 0 2px' }}>{answer.totalMins > 0 ? fmtHours(answer.totalMins) : sessions(answer.sessions)}</div>
-            <div style={{ fontSize:12.5, opacity:.8 }}>
-              {answer.totalMins > 0
-                ? <>{decimalHours(answer.totalMins)} hours · {sessions(answer.sessions)} across {answer.days} day{answer.days===1?'':'s'}</>
-                : <>{sessions(answer.sessions)} across {answer.days} day{answer.days===1?'':'s'} · no time estimate on these</>}
-            </div>
-            {answer.byCategory.length > 0 && (
-              <div style={{ display:'flex', gap:6, flexWrap:'wrap', marginTop:12 }}>
-                {answer.byCategory.map(c => (
-                  <span key={c.id} style={{ display:'inline-flex', alignItems:'center', gap:5, fontSize:11.5, fontWeight:600, padding:'4px 10px', borderRadius:16, background:'rgba(255,255,255,.14)' }}>
-                    {c.icon && <Icon value={c.icon} size={12} color="currentColor" />}{c.label} · {c.mins > 0 ? fmtHours(c.mins) : sessions(c.count)}
-                  </span>
-                ))}
+      {answer && ((answer.type === 'skills' ? answer.skills.length > 0 : answer.sessions > 0) ? (
+        <div style={{ background:'linear-gradient(150deg, var(--forest), #2c3a34)', color:'var(--green-light)', borderRadius:16, padding:'18px 20px', marginBottom:16 }}>
+          {answer.type === 'skills' ? (
+            <>
+              <div style={{ fontSize:12.5, opacity:.8 }}>Skills you’ve been using · {rangeLabel}</div>
+              <div className="serif" style={{ fontSize:40, fontWeight:700, lineHeight:1.1, margin:'2px 0 2px' }}>{answer.skills.length} skill{answer.skills.length===1?'':'s'}</div>
+              <div style={{ fontSize:12.5, opacity:.8 }}>inferred from {sessions(answer.sessions)}{answer.totalMins > 0 ? ` · ${fmtHours(answer.totalMins)} tracked` : ''}</div>
+              {answer.skills.length > 0 && (
+                <div style={{ marginTop:12, borderTop:'1px solid rgba(255,255,255,.16)', paddingTop:10 }}>
+                  {answer.skills.map(s => (
+                    <div key={s.id} style={{ display:'flex', alignItems:'center', gap:8, fontSize:12.5, padding:'4px 0', opacity:.94 }}>
+                      <span style={{ fontSize:14 }}>{s.icon}</span>
+                      <span style={{ flex:1, minWidth:0, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{s.label}</span>
+                      <span style={{ fontWeight:600, flexShrink:0 }}>{s.mins > 0 ? fmtHours(s.mins) : sessions(s.count)}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </>
+          ) : answer.type === 'overview' ? (
+            <>
+              <div style={{ fontSize:12.5, opacity:.8 }}>Where your time went · {rangeLabel}</div>
+              <div className="serif" style={{ fontSize:40, fontWeight:700, lineHeight:1.1, margin:'2px 0 2px' }}>{answer.totalMins > 0 ? fmtHours(answer.totalMins) : sessions(answer.sessions)}</div>
+              <div style={{ fontSize:12.5, opacity:.8 }}>{answer.totalMins > 0 ? <>{decimalHours(answer.totalMins)} hours · </> : null}{sessions(answer.sessions)} across {answer.days} day{answer.days===1?'':'s'}</div>
+              {answer.byCategory.length > 0 && (
+                <div style={{ marginTop:12, borderTop:'1px solid rgba(255,255,255,.16)', paddingTop:10 }}>
+                  {answer.byCategory.map(c => (
+                    <div key={c.id} style={{ display:'flex', alignItems:'center', gap:8, fontSize:12.5, padding:'3px 0', opacity:.92 }}>
+                      {c.icon && <Icon value={c.icon} size={12} color="currentColor" />}
+                      <span style={{ flex:1, minWidth:0, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{c.label}</span>
+                      <span style={{ fontWeight:600, flexShrink:0 }}>{c.mins > 0 ? fmtHours(c.mins) : sessions(c.count)}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {answer.skills.length > 0 && (
+                <div style={{ display:'flex', gap:6, flexWrap:'wrap', marginTop:12 }}>
+                  {answer.skills.map(s => (
+                    <span key={s.id} style={{ display:'inline-flex', alignItems:'center', gap:4, fontSize:11.5, fontWeight:600, padding:'4px 10px', borderRadius:16, background:'rgba(255,255,255,.14)' }}>
+                      <span>{s.icon}</span>{s.label}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </>
+          ) : (
+            <>
+              <div style={{ fontSize:12.5, opacity:.8 }}>{answer.totalMins > 0 ? 'Time on' : 'Worked on'} “{answer.topic}” · {rangeLabel}</div>
+              <div className="serif" style={{ fontSize:40, fontWeight:700, lineHeight:1.1, margin:'2px 0 2px' }}>{answer.totalMins > 0 ? fmtHours(answer.totalMins) : sessions(answer.sessions)}</div>
+              <div style={{ fontSize:12.5, opacity:.8 }}>
+                {answer.totalMins > 0
+                  ? <>{decimalHours(answer.totalMins)} hours · {sessions(answer.sessions)} across {answer.days} day{answer.days===1?'':'s'}</>
+                  : <>{sessions(answer.sessions)} across {answer.days} day{answer.days===1?'':'s'} · no time estimate on these</>}
               </div>
-            )}
-            {answer.byTask.length > 0 && (
-              <div style={{ marginTop:12, borderTop:'1px solid rgba(255,255,255,.16)', paddingTop:10 }}>
-                {answer.byTask.map(t => (
-                  <div key={t.title} style={{ display:'flex', justifyContent:'space-between', gap:10, fontSize:12.5, padding:'3px 0', opacity:.92 }}>
-                    <span style={{ whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{t.title}{t.count>1?` ×${t.count}`:''}</span>
-                    <span style={{ fontWeight:600, flexShrink:0 }}>{t.mins > 0 ? fmtHours(t.mins) : sessions(t.count)}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        ) : (
-          <div style={{ background:'#FBF3E7', border:'1px solid #E6DCC8', borderRadius:14, padding:'14px 16px', marginBottom:16, fontSize:13, color:'var(--text)' }}>
-            No tracked time matches “{answer.topic}” {rangeLabel === 'all time' ? 'yet' : `in the ${rangeLabel}`}. Try a category or task name, or widen the range. Only finished tasks that had a time estimate are counted.
-          </div>
-        )
-      )}
+              {answer.byCategory.length > 0 && (
+                <div style={{ display:'flex', gap:6, flexWrap:'wrap', marginTop:12 }}>
+                  {answer.byCategory.map(c => (
+                    <span key={c.id} style={{ display:'inline-flex', alignItems:'center', gap:5, fontSize:11.5, fontWeight:600, padding:'4px 10px', borderRadius:16, background:'rgba(255,255,255,.14)' }}>
+                      {c.icon && <Icon value={c.icon} size={12} color="currentColor" />}{c.label} · {c.mins > 0 ? fmtHours(c.mins) : sessions(c.count)}
+                    </span>
+                  ))}
+                </div>
+              )}
+              {answer.skills && answer.skills.length > 0 && (
+                <div style={{ display:'flex', gap:6, flexWrap:'wrap', marginTop:10 }}>
+                  <span style={{ fontSize:11, opacity:.7, alignSelf:'center' }}>Skills:</span>
+                  {answer.skills.map(s => (
+                    <span key={s.id} style={{ display:'inline-flex', alignItems:'center', gap:4, fontSize:11, fontWeight:600, padding:'3px 9px', borderRadius:16, background:'rgba(255,255,255,.1)' }}>
+                      <span>{s.icon}</span>{s.label}
+                    </span>
+                  ))}
+                </div>
+              )}
+              {answer.byTask.length > 0 && (
+                <div style={{ marginTop:12, borderTop:'1px solid rgba(255,255,255,.16)', paddingTop:10 }}>
+                  {answer.byTask.map(t => (
+                    <div key={t.title} style={{ display:'flex', justifyContent:'space-between', gap:10, fontSize:12.5, padding:'3px 0', opacity:.92 }}>
+                      <span style={{ whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{t.title}{t.count>1?` ×${t.count}`:''}</span>
+                      <span style={{ fontWeight:600, flexShrink:0 }}>{t.mins > 0 ? fmtHours(t.mins) : sessions(t.count)}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      ) : (
+        <div style={{ background:'#FBF3E7', border:'1px solid #E6DCC8', borderRadius:14, padding:'14px 16px', marginBottom:16, fontSize:13, color:'var(--text)' }}>
+          {answer.type === 'skills'
+            ? <>No skills inferred {rangeLabel === 'all time' ? 'yet' : `in the ${rangeLabel}`}. Add descriptions or subtasks to your tasks — the more detail, the more the page can pick up.</>
+            : <>No tracked time matches “{answer.topic}” {rangeLabel === 'all time' ? 'yet' : `in the ${rangeLabel}`}. Try a category, task or skill name, or widen the range.</>}
+        </div>
+      ))}
 
       {/* Overview */}
       <div style={{ display:'flex', alignItems:'baseline', justifyContent:'space-between', marginBottom:8 }}>
@@ -225,8 +290,8 @@ export default function Informatics({ commitments = [], recurringTasks = [], com
             ))}
           </div>
 
-          {/* Topics, projects & skills — the specific things you worked on. */}
-          <div style={{ fontSize:11, color:'var(--muted)', letterSpacing:1.5, textTransform:'uppercase', fontWeight:600, margin:'6px 0 8px' }}>Topics, projects &amp; skills</div>
+          {/* Topics & projects — the specific things you worked on. */}
+          <div style={{ fontSize:11, color:'var(--muted)', letterSpacing:1.5, textTransform:'uppercase', fontWeight:600, margin:'6px 0 8px' }}>Topics &amp; projects</div>
           <div style={{ background:'white', border:'1px solid var(--border)', borderRadius:14, padding:'6px 16px' }}>
             {agg.byTask.slice(0, 12).map((t, i, arr) => (
               <div key={t.title} style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 0', borderBottom: i < arr.length-1 ? '1px solid #F1EEF3' : 'none' }}>
@@ -237,6 +302,46 @@ export default function Informatics({ commitments = [], recurringTasks = [], com
               </div>
             ))}
           </div>
+
+          {/* Skills you've practiced — inferred from titles, descriptions and
+              subtasks. Tap a skill to see which tasks it came from. */}
+          {skills.length > 0 && (
+            <>
+              <div style={{ display:'flex', alignItems:'baseline', justifyContent:'space-between', margin:'16px 0 8px' }}>
+                <div style={{ fontSize:11, color:'var(--muted)', letterSpacing:1.5, textTransform:'uppercase', fontWeight:600 }}>Skills you’ve practiced</div>
+                <div style={{ fontSize:11, color:'var(--muted)' }}>{skills.length} skill{skills.length===1?'':'s'}</div>
+              </div>
+              <div style={{ background:'white', border:'1px solid var(--border)', borderRadius:14, padding:'14px 16px' }}>
+                {skills.slice(0, 14).map((s, i, arr) => {
+                  const open = openSkill === s.id
+                  return (
+                    <div key={s.id} style={{ marginBottom: i < arr.length-1 ? 12 : 0 }}>
+                      <div onClick={() => setOpenSkill(open ? null : s.id)} role="button" tabIndex={0}
+                        onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setOpenSkill(open ? null : s.id) } }}
+                        style={{ display:'flex', alignItems:'center', gap:8, cursor:'pointer' }}>
+                        <span style={{ fontSize:15, width:18, textAlign:'center', flexShrink:0 }}>{s.icon}</span>
+                        <span style={{ fontSize:13, fontWeight:600, color:'var(--text)', flex:1, minWidth:0, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{s.label}</span>
+                        <span style={{ fontSize:11, color:'var(--muted)', flexShrink:0 }}>{sessions(s.count)}</span>
+                        {s.mins > 0 && <span style={{ fontSize:12.5, color:'var(--muted)', fontWeight:600, flexShrink:0, minWidth:52, textAlign:'right' }}>{fmtHours(s.mins)}</span>}
+                        <span style={{ fontSize:10, color:'var(--muted)', flexShrink:0, transform: open ? 'rotate(90deg)' : 'none', transition:'transform .15s' }}>▶</span>
+                      </div>
+                      <Bar frac={hasHours ? s.mins / maxSkillMins : s.count / maxSkillCount} color={s.color} />
+                      {open && s.tasks.length > 0 && (
+                        <div style={{ marginTop:8, paddingLeft:26 }}>
+                          {s.tasks.slice(0, 8).map(t => (
+                            <div key={t.title} style={{ display:'flex', justifyContent:'space-between', gap:10, fontSize:12, color:'var(--muted)', padding:'2px 0' }}>
+                              <span style={{ whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{t.title}{t.count>1?` ×${t.count}`:''}</span>
+                              {t.mins > 0 && <span style={{ flexShrink:0 }}>{fmtHours(t.mins)}</span>}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            </>
+          )}
         </>
       )}
 

@@ -14,7 +14,17 @@
 // Time-block "containers" are skipped — they're windows of the day, not work.
 // ─────────────────────────────────────────────────────────────
 
+import { computeSkills, skillForTopic, entryText, inferSkills } from './skills.js'
+
 const DATE_KEY_RE = /^(\d{4}-\d{2}-\d{2})_(.+)$/
+
+// Join a task's subtasks into one searchable string ("Draft intro · Run assay").
+// Subtasks describe what the work actually involved, so they're prime material
+// for skill inference — included whether or not they were checked off.
+function subtaskText(subs) {
+  if (!Array.isArray(subs)) return ''
+  return subs.map(s => (s && s.text ? String(s.text) : '')).filter(Boolean).join(' · ')
+}
 
 // Filler words stripped from a question so "how many hours did I spend on mcat
 // studying?" reduces to the topic words ["mcat","studying"].
@@ -54,11 +64,12 @@ export function computeActivity({ log = [], commitments = [], recurringTasks = [
     const key = e.storageKey || ''
     const date = e.date || (e.ts ? String(e.ts).slice(0, 10) : '')
     if (!date) continue
-    let mins = 0, cat = e.tag || '', title = cleanTitle(e.label || '')
+    let mins = 0, cat = e.tag || '', title = cleanTitle(e.label || ''), desc = '', subs = ''
     const c = cById.get(key)
     if (c) {
       if (c.block) continue
       mins = c.durationMins || 0; cat = cat || c.cat || ''; if (!title) title = (c.text || '').trim()
+      desc = c.description || ''; subs = subtaskText(c.subtasks)
     } else {
       const m = key.match(DATE_KEY_RE)
       if (m && rById.has(m[2])) {
@@ -66,9 +77,10 @@ export function computeActivity({ log = [], commitments = [], recurringTasks = [
         if (t.block) continue
         mins = t.durationMins || 0; cat = cat || t.cat || t.tag || ''
         if (!title) title = (t.title || t.text || '').trim()
+        desc = t.note || t.description || ''; subs = subtaskText(t.subtasks)
       }
     }
-    out.push({ date, mins, cat, title: title || 'Untitled', kind: 'log' })
+    out.push({ date, mins, cat, title: title || 'Untitled', desc, subs, kind: 'log' })
   }
   return out
 }
@@ -100,7 +112,7 @@ export function computeTimeEntries({ commitments = [], recurringTasks = [], comp
   for (const c of commitments) {
     if (c.block) continue
     if (!c.done || !c.durationMins || !c.date) continue
-    entries.push({ date: c.date, mins: c.durationMins, cat: c.cat || '', title: (c.text || '').trim(), kind: 'task' })
+    entries.push({ date: c.date, mins: c.durationMins, cat: c.cat || '', title: (c.text || '').trim(), desc: c.description || '', subs: subtaskText(c.subtasks), kind: 'task' })
   }
 
   // Recurring occurrences: one entry per date the task was checked off.
@@ -111,7 +123,7 @@ export function computeTimeEntries({ commitments = [], recurringTasks = [], comp
     if (!m) continue                                  // a plain commitment id — handled above
     const t = recById.get(m[2])
     if (!t || t.block || !t.durationMins) continue
-    entries.push({ date: m[1], mins: t.durationMins, cat: t.cat || t.tag || '', title: (t.title || t.text || '').trim(), kind: 'recurring' })
+    entries.push({ date: m[1], mins: t.durationMins, cat: t.cat || t.tag || '', title: (t.title || t.text || '').trim(), desc: t.note || t.description || '', subs: subtaskText(t.subtasks), kind: 'recurring' })
   }
 
   return entries
@@ -162,23 +174,71 @@ export function aggregate(entries, categories) {
 export function answerQuery(entries, query, categories) {
   const words = topicWords(query)
   if (!words.length) return null
+  // If the topic names a skill ("writing", "lab work"), fold that skill's own
+  // keyword vocabulary into the match so entries that exercise the skill without
+  // literally containing the word still count.
+  const skillId = skillForTopic(words.join(' '))
   const matched = []
   for (const e of entries) {
-    const cm = catMeta(e.cat, categories)
-    const hay = `${cm.label} ${e.title}`.toLowerCase()
+    const hay = entryText(e, categories).toLowerCase()
     const hayWords = hay.match(/[a-z0-9]+/g)?.map(stem) || []
-    const hit = words.some(w => hay.includes(w) || hayWords.some(hw => hw === w || (w.length >= 4 && hw.startsWith(w)) || (hw.length >= 4 && w.startsWith(hw))))
+    let hit = words.some(w => hay.includes(w) || hayWords.some(hw => hw === w || (w.length >= 4 && hw.startsWith(w)) || (hw.length >= 4 && w.startsWith(hw))))
+    if (!hit && skillId) hit = inferSkills(hay).includes(skillId)
     if (hit) matched.push(e)
   }
   const agg = aggregate(matched, categories)
   return {
+    type: 'topic',
     topic: words.join(' '),
     totalMins: agg.totalMins,
     sessions: matched.length,
     days: agg.days,
     byCategory: agg.byCategory,
     byTask: agg.byTask.slice(0, 8),
+    skills: computeSkills(matched, categories).slice(0, 6),
   }
+}
+
+// Intent cues for "questions about yourself" — the page can answer more than
+// "how many hours on X".
+const SKILL_INTENT = /\bskills?\b|good at|best at|strength|strong suit|abilities|what can i do|what am i building|practic(e|ing) most/i
+const TIME_INTENT = /where (does|did|is).*(time|hours?|day)|spend (the )?most|most time|busiest|what do i (spend|do) most|how do i spend|time breakdown|where (do|did) i put/i
+const SUMMARY_INTENT = /summar|overview|about (me|myself)|tell me about (me|myself)|how (am|have) i (doing|been)|what have i (been )?(doing|working|up to)|recap|what did i (do|get done)/i
+
+// Answer a free-typed question about yourself. Detects a few intents and
+// returns a typed result the Informatics page renders differently:
+//   { type:'skills'  , skills, sessions, totalMins }
+//   { type:'overview', byCategory, byTask, skills, totalMins, sessions, days }
+//   { type:'topic'   , ...answerQuery(...) }   ← the classic "hours on X"
+export function answerQuestion(entries, query, categories) {
+  const q = (query || '').trim()
+  if (!q) return null
+  const topic = topicWords(q).join(' ')
+
+  // "What skills am I using / good at?" — but only when it's a general skills
+  // question, not "hours on <a specific skill>", which topic-mode handles better.
+  if (SKILL_INTENT.test(q) && !skillForTopic(topic)) {
+    const skills = computeSkills(entries, categories)
+    const agg = aggregate(entries, categories)
+    return { type: 'skills', topic: topic || 'your skills', skills: skills.slice(0, 12), sessions: entries.length, totalMins: agg.totalMins, days: agg.days }
+  }
+
+  // "Where does my time go? / What do I spend the most time on?"
+  if (TIME_INTENT.test(q) || SUMMARY_INTENT.test(q)) {
+    const agg = aggregate(entries, categories)
+    return {
+      type: 'overview',
+      topic: topic || 'your time',
+      totalMins: agg.totalMins,
+      sessions: entries.length,
+      days: agg.days,
+      byCategory: agg.byCategory.slice(0, 8),
+      byTask: agg.byTask.slice(0, 6),
+      skills: computeSkills(entries, categories).slice(0, 6),
+    }
+  }
+
+  return answerQuery(entries, q, categories)
 }
 
 // "7h 30m" — compact hours+minutes. Also exposes decimal hours for a subtitle.
