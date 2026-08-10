@@ -24,7 +24,6 @@ import { DEFAULT_RECURRING_TASKS, DEFAULT_DAILY_TODOS } from './data/schedule.js
 
 import Today       from './components/Today.jsx'
 import ThisWeek    from './components/ThisWeek.jsx'
-import Commitments from './components/Commitments.jsx'
 import Calendar    from './components/Calendar.jsx'
 import Notes       from './components/Notes.jsx'
 import Edits       from './components/Edits.jsx'
@@ -76,7 +75,6 @@ const LEGACY_ROUTINE_TINTS = { morning: '#F9C9D9' }
 const TABS = [
   { id:'today',       label:'Today',       glyph:'list' },
   { id:'week',        label:'Week',        glyph:'calendar' },
-  { id:'commitments', label:'Commitments', glyph:'check' },
   { id:'taskmenu',    label:'Task Menu',    glyph:'clipboard' },
   { id:'calendar',    label:'Calendar',    glyph:'grid' },
   { id:'thoughts',    label:'Thoughts',    glyph:'bulb' },
@@ -95,7 +93,7 @@ const DEFAULT_BOTTOM_BAR = ['calendar', 'today', 'thoughts']
 const BAR_VALID = new Set([...TABS.map(t => t.id), 'settings'])
 // The bottom bar keeps its own shorter vocabulary for a couple of tabs, so it
 // reads the way it always has even though the side menu uses the full names.
-const BAR_LABELS = { today: 'Timeline', commitments: 'Inbox' }
+const BAR_LABELS = { today: 'Timeline' }
 function barItemMeta(id) {
   if (id === 'settings') return { id, label: 'Settings', glyph: null, settings: true }
   const t = TABS.find(x => x.id === id)
@@ -1309,7 +1307,6 @@ export default function App() {
       <main className="content">
         {tab==='today'       && <Today       {...sharedProps} appendLog={appendLog} scheduled={scheduled} deleteCommitment={deleteCommitment} />}
         {tab==='week'        && <ThisWeek    {...sharedProps} deleteCommitment={deleteCommitment} />}
-        {tab==='commitments' && <Commitments {...sharedProps} />}
         {tab==='taskmenu'    && <TaskMenu templates={taskTemplates} addTemplate={addTaskTemplate}
           updateTemplate={updateTaskTemplate} deleteTemplate={deleteTaskTemplate} categories={categories} />}
         {tab==='calendar'    && <Calendar    {...sharedProps} jumpTo={jumpTo} />}
