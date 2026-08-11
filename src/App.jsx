@@ -52,7 +52,7 @@ import { getFontPref, setFontPref, applyFont, getThemePref, setThemePref, applyT
   getCustomBackground, setCustomBackground,
   getMobileBackgroundPref, setMobileBackgroundPref,
   getMobileCustomBackground, setMobileCustomBackground, applySavedAppearance } from './lib/appearance.js'
-import { hydratePrefs, pushPrefs } from './lib/prefs.js'
+import { hydratePrefs, pushPrefs, reconcileBackgroundImages, pushBackgroundImage } from './lib/prefs.js'
 import { RECURRING_FILTER_EVENT } from './lib/viewFilter.js'
 import SeasonalEffects from './components/SeasonalEffects.jsx'
 
@@ -320,9 +320,12 @@ export default function App() {
   const [mobileBackground, setMobileBackgroundState] = useState(getMobileBackgroundPref)
   const [mobileCustomBg, setMobileCustomBgState] = useState(getMobileCustomBackground)
   const setBackground = useCallback(id => { setBackgroundState(id); setBackgroundPref(id); applyBackground(); pushPrefs() }, [])
-  const setCustomBg   = useCallback(uri => { setCustomBackground(uri); setCustomBgState(uri); setBackgroundState('custom'); setBackgroundPref('custom'); applyBackground(); pushPrefs() }, [])
+  // The uploaded image itself rides its own synced kv_store row (pushBackground-
+  // Image), separate from the pref blob (pushPrefs) which only carries the
+  // choice id — so a big photo syncs across devices without bloating that blob.
+  const setCustomBg   = useCallback(uri => { setCustomBackground(uri); setCustomBgState(uri); setBackgroundState('custom'); setBackgroundPref('custom'); applyBackground(); pushPrefs(); pushBackgroundImage('bloom_bg_custom') }, [])
   const setMobileBackground = useCallback(id => { setMobileBackgroundState(id); setMobileBackgroundPref(id); applyBackground(); pushPrefs() }, [])
-  const setMobileCustomBg   = useCallback(uri => { setMobileCustomBackground(uri); setMobileCustomBgState(uri); setMobileBackgroundState('custom'); setMobileBackgroundPref('custom'); applyBackground(); pushPrefs() }, [])
+  const setMobileCustomBg   = useCallback(uri => { setMobileCustomBackground(uri); setMobileCustomBgState(uri); setMobileBackgroundState('custom'); setMobileBackgroundPref('custom'); applyBackground(); pushPrefs(); pushBackgroundImage('bloom_bg_custom_mobile') }, [])
   const setLayout  = useCallback(v  => { setLayoutState(v);  setLayoutPref(v);  applyLayout(v); pushPrefs() }, [])
   const setSound   = useCallback(on => { setSoundState(on);  setSoundEnabled(on); pushPrefs() }, [])
   const setSummary = useCallback(v  => { setSummaryState(v); setSummaryPref(v); pushPrefs() }, [])
@@ -476,6 +479,15 @@ export default function App() {
         // hydrate above never overwrites a key the cloud doesn't have yet, so
         // without this push a pre-existing default would stay stuck locally.
         if (isFirst) { try { getDefaultLeads() } catch {} ; pushPrefs() }
+      })
+      // The uploaded background images sync via their own rows (not the pref
+      // blob), so reconcile them separately — this is what auto-populates a
+      // loved background onto a fresh desktop instead of demanding a re-upload.
+      reconcileBackgroundImages().then(bgChanged => {
+        if (!alive || !bgChanged) return
+        setCustomBgState(getCustomBackground())
+        setMobileCustomBgState(getMobileCustomBackground())
+        applyBackground()
       })
     }
     pull(true)

@@ -9,15 +9,16 @@
 // phone and vice-versa. localStorage stays the fast local cache; the cloud blob
 // is the shared source of truth, applied on load.
 // ─────────────────────────────────────────────────────────────
-import { getUiPrefs, setUiPrefs } from './storage.js'
+import { getUiPrefs, setUiPrefs, dbGet, dbSet } from './storage.js'
 
 // Every localStorage key that should follow the user across devices.
 // Note: the uploaded background images ('bloom_bg_custom' and its mobile
 // counterpart 'bloom_bg_custom_mobile'), stored as large data URIs, are
-// deliberately NOT here — they stay device-local, as the Look settings say.
-// Putting one in the synced blob bloated it enough that the whole ui_prefs
-// write could fail, which silently broke syncing of *everything* else
-// (background choice, default alerts…). The preset background ids still sync.
+// deliberately NOT here — putting one in this shared blob bloated it enough
+// that the whole ui_prefs write could fail, silently breaking syncing of
+// *everything* else. They DO sync now, just via their own dedicated kv_store
+// rows (see pushBackgroundImage / reconcileBackgroundImages below), so a big
+// photo can follow the user without endangering the rest of the prefs.
 const PREF_KEYS = [
   'bloom_theme', 'bloom_season', 'bloom_custom_color',
   'bloom_background', 'bloom_background_mobile',
@@ -76,4 +77,51 @@ export function pushPrefs() {
     Promise.resolve(setUiPrefs(snapshotLocalPrefs()))
       .catch(e => console.warn('[prefs] sync push failed:', e && (e.message || e)))
   }, 700)
+}
+
+// ── Uploaded background images ─────────────────────────────────
+// The uploaded background photos are large data URIs. They are kept OUT of the
+// shared ui_prefs blob (a big value there could fail the whole write and, as it
+// once did, silently break syncing of everything else). Instead each rides its
+// OWN kv_store row — so a background you love follows you to every device
+// without endangering the rest of the prefs. Keyed by the same localStorage
+// name so there's one obvious row per target (desktop + mobile portrait).
+const BG_IMAGE_KEYS = ['bloom_bg_custom', 'bloom_bg_custom_mobile']
+
+// Push one background image (by its localStorage key) up to its own row.
+// An empty string is written when the image was removed — a real "cleared"
+// signal the other devices can honor (distinct from a never-synced null row).
+export function pushBackgroundImage(key) {
+  if (!BG_IMAGE_KEYS.includes(key)) return
+  let v = ''
+  try { v = localStorage.getItem(key) || '' } catch {}
+  Promise.resolve(dbSet(key, v))
+    .catch(e => console.warn('[prefs] background image sync failed:', e && (e.message || e)))
+}
+
+// Reconcile the synced background images into localStorage. The cloud is the
+// source of truth: a saved image (or an explicit clear) wins over whatever this
+// device happens to have, so a beloved background auto-populates on a fresh
+// device and is never clobbered by an emptier one. When the cloud has never had
+// a value (null row) but this device does, seed the cloud from it — that
+// carries an image uploaded before syncing existed up to the others.
+// Returns true if a local value actually changed, so the caller can re-apply.
+export async function reconcileBackgroundImages() {
+  let changed = false
+  for (const k of BG_IMAGE_KEYS) {
+    try {
+      const cloud = await dbGet(k)            // string = image, '' = cleared, null = never set
+      let local = ''
+      try { local = localStorage.getItem(k) || '' } catch {}
+      if (typeof cloud === 'string') {
+        if (local !== cloud) {
+          try { cloud ? localStorage.setItem(k, cloud) : localStorage.removeItem(k) } catch {}
+          changed = true
+        }
+      } else if (local) {
+        Promise.resolve(dbSet(k, local)).catch(() => {})
+      }
+    } catch {}
+  }
+  return changed
 }

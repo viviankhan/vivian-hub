@@ -359,8 +359,8 @@ export function setCustomBackground(uri) {
 }
 // Mobile background. Until the user picks one explicitly it mirrors the desktop
 // choice, so existing setups keep working — once they choose (even "None") it
-// becomes independent. The preset id syncs across devices; the uploaded image,
-// like the desktop one, stays device-local (too large for the synced blob).
+// becomes independent. The preset id syncs across devices; the uploaded image
+// syncs too, via its own kv_store row (see prefs.js), so it follows the user.
 export function getMobileBackgroundPref() {
   try { const v = localStorage.getItem('bloom_background_mobile'); return v != null ? v : getBackgroundPref() } catch { return 'none' }
 }

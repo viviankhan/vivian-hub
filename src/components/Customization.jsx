@@ -242,7 +242,8 @@ export default function Customization({ font, onFont, theme, onTheme, season, on
         Pick a look for <b>Desktop</b> and <b>Mobile</b> separately — the built-in
         scenes are sized to fill each one, so a phone in portrait gets a scene
         that actually shows instead of a sliver at the bottom. </>}Uploaded images
-        get a light veil so text stays readable, and are stored on this device.
+        get a light veil so text stays readable, and now follow you to your other
+        devices — no re-uploading on each new one.
       </div>
 
       {/* ── Layout ────────────────────────────────────────────── */}
