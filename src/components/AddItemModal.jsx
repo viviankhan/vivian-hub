@@ -397,10 +397,20 @@ export default function AddItemModal({ existing = null, existingRecurring = null
 
   const spanDur = diffMinutes(time, endTime)               // from start→end, if valid
   const endInvalid = !!(time && endTime && !spanDur)       // end set but ≤ start
-  // "End now": for a task happening today that has a start time, set the end to
-  // the current time — extending it if it ran over, or shortening it if it
-  // wrapped up early. Only meaningful once the start has actually passed.
-  const canEndNow = !!time && date === localTodayStr() && diffMinutes(time, nowHHMM()) !== null
+  // "Start now" / "End now" snap a time to the current wall clock. They make
+  // sense for something happening today (a one-off dated today, or an
+  // unscheduled task), and for a recurring task — which lands every day, so
+  // "now" always applies to its next run (the edit then saves via the usual
+  // this-event / all-events choice).
+  const nowInScope = date === localTodayStr() || isRecEdit || !date
+  // "Start now": begin this at the current time, keeping its length (the end
+  // slides along, like moving the block).
+  const canStartNow = nowInScope
+  const startNow = () => onStartChange(nowHHMM())
+  // "End now": set the end to the current time — extending it if it ran over, or
+  // shortening it if it wrapped up early. Only meaningful once the start has
+  // actually passed (a positive span).
+  const canEndNow = !!time && nowInScope && diffMinutes(time, nowHHMM()) !== null
   const endNow = () => setEndTime(nowHHMM())
   // The effective length: a valid start→end span wins; otherwise a typed/tapped
   // duration (which also works with no start time set).
@@ -785,7 +795,15 @@ export default function AddItemModal({ existing = null, existingRecurring = null
               open={expanded==='time'} onClick={() => toggleRow('time')}>
               <div style={{ display:'flex', gap:8, marginBottom:8 }}>
                 <div style={{ flex:1, minWidth:0 }}>
-                  <div style={fieldLabel}>Start</div>
+                  <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:6, marginBottom:4 }}>
+                    <span style={{ ...fieldLabel, marginBottom:0 }}>Start</span>
+                    {canStartNow && (
+                      <button type="button" onClick={startNow} title="Start this at the current time"
+                        style={{ fontSize:10.5, fontWeight:700, letterSpacing:.4, border:'none', background:'none', cursor:'pointer', color:'var(--teal)', padding:0, whiteSpace:'nowrap' }}>
+                        Start now
+                      </button>
+                    )}
+                  </div>
                   <TimeField value={time} onChange={onStartChange} style={inp} />
                 </div>
                 <div style={{ flex:1, minWidth:0 }}>
