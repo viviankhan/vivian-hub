@@ -991,7 +991,7 @@ function WeekStrip({ viewDate, setViewDate, commitments, categories, doneCount, 
 }
 
 // ── Main ───────────────────────────────────────────────────────
-export default function Today({ todos, weekState, syncToggle, clearCompletion, commitments, addCommitment, updateCommitment, deleteCommitment, appendLog, scheduled, categories, recurringTasks, recurringExceptions, occStarted = {}, skipRecurringOccurrence, deleteRecurringTask, addRecurringTask, updateRecurringTask, routines = [], taskTemplates = [], summary, labelModel = null }) {
+export default function Today({ todos, weekState, syncToggle, clearCompletion, pushUndo, commitments, addCommitment, updateCommitment, deleteCommitment, appendLog, scheduled, categories, recurringTasks, recurringExceptions, occStarted = {}, skipRecurringOccurrence, deleteRecurringTask, addRecurringTask, updateRecurringTask, routines = [], taskTemplates = [], summary, labelModel = null }) {
   const [now,         setNow]         = useState(nowMins())
   // The day the timeline is showing. Defaults to today; the week strip up top
   // navigates to any day. "Now" logic (the progress marker, current/overdue,
@@ -1365,6 +1365,7 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, c
     const offset = newStartMins - earliestMins
 
     const newOverrides = { ...timeOverrides }
+    const prevOverrides = timeOverrides                 // for Undo
     let shifted = 0, committed = 0, fixed = 0
     timedUndone.forEach(task => {
       if (INFLEXIBLE_TAGS.has(task.tag)) { fixed++; return }
@@ -1393,6 +1394,12 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, c
     localStorage.setItem('vivian_timeshift_' + dateKey, JSON.stringify(newOverrides))
     setShiftResult({ shifted, committed, fixed })
     setShiftDayOpen(false)
+    if (pushUndo && shifted) {
+      pushUndo('shifted the day', () => {
+        setTimeOverrides(prevOverrides)
+        localStorage.setItem('vivian_timeshift_' + dateKey, JSON.stringify(prevOverrides))
+      })
+    }
   }
 
   // ── Shift to now ──────────────────────────────────────────────
@@ -1404,10 +1411,12 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, c
     if (pivotMins===null) return
     const sel = new Set(selectedIds)
     const overrides = { ...timeOverrides }
+    const prevOverrides = timeOverrides                 // for Undo
+    const commitReverts = []                            // {id, time} for Undo
     let shifted=0, committed=0, fixed=0
 
     const setStart = (t, mins) => {
-      if (t.isCommitment && updateCommitment) updateCommitment(t.id, { time: minsToHHMM(mins) })
+      if (t.isCommitment && updateCommitment) { commitReverts.push({ id: t.id, time: t._time || null }); updateCommitment(t.id, { time: minsToHHMM(mins) }) }
       else overrides[t.id] = mins
     }
     const sendToTomorrow = (t) => {
@@ -1448,6 +1457,16 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, c
     setTimeOverrides(overrides)
     localStorage.setItem('vivian_timeshift_'+dateKey, JSON.stringify(overrides))
     setShiftResult({ shifted, committed, fixed })
+    // Undo restores the timeline to exactly where it was: the recurring/local
+    // overrides and any commitment start times we moved. Re-timed routine steps
+    // then re-derive their checkmarks from the restored times.
+    if (pushUndo && (shifted || committed)) {
+      pushUndo('shifted the schedule', () => {
+        setTimeOverrides(prevOverrides)
+        localStorage.setItem('vivian_timeshift_'+dateKey, JSON.stringify(prevOverrides))
+        commitReverts.forEach(r => updateCommitment && updateCommitment(r.id, { time: r.time }))
+      })
+    }
   }
 
   // "Start now": if later movable tasks exist, ask which to push; otherwise
@@ -1615,10 +1634,20 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, c
       if (time) {
         const [h, m] = time.split(':').map(Number)
         const newMins = h * 60 + m
+        const hadOverride = task.id in timeOverrides
+        const prevMins = timeOverrides[task.id]
         setTimeOverrides(prev => {
           const next = { ...prev, [task.id]: newMins }
           localStorage.setItem('vivian_timeshift_' + dateKey, JSON.stringify(next))
           return next
+        })
+        if (pushUndo) pushUndo('moved “' + (task.title || stripTimePrefix(task.label)) + '”', () => {
+          setTimeOverrides(prev => {
+            const next = { ...prev }
+            if (hadOverride) next[task.id] = prevMins; else delete next[task.id]
+            localStorage.setItem('vivian_timeshift_' + dateKey, JSON.stringify(next))
+            return next
+          })
         })
       }
     } else {

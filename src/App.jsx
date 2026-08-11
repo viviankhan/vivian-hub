@@ -1011,20 +1011,32 @@ export default function App() {
   // `undoingRef` keeps an undo from itself being recorded as a new action.
   const undoStackRef = useRef([])
   const undoingRef = useRef(false)
+  // The toast is an object: { text, action }. When `action` is true it's the
+  // "you just did X" prompt and carries a tappable Undo button (the only way to
+  // undo on a phone, where there's no Ctrl+Z); otherwise it's a brief result
+  // message ("Undid: X" / "Nothing to undo").
   const [undoToast, setUndoToast] = useState(null)
+  const undoTimerRef = useRef(null)
+  const showToast = useCallback((text, action = false) => {
+    clearTimeout(undoTimerRef.current)
+    setUndoToast({ text, action })
+    // Leave the Undo prompt up long enough to actually reach for it on mobile.
+    undoTimerRef.current = setTimeout(() => setUndoToast(null), action ? 6000 : 2000)
+  }, [])
   const pushUndo = useCallback((label, undo) => {
     if (undoingRef.current) return
     undoStackRef.current.push({ label, undo })
     if (undoStackRef.current.length > 25) undoStackRef.current.shift()
-  }, [])
+    // Surface the "Undo" affordance the moment the change lands.
+    showToast(label, true)
+  }, [showToast])
   const runUndo = useCallback(() => {
     const entry = undoStackRef.current.pop()
-    if (!entry) { setUndoToast('Nothing to undo'); setTimeout(() => setUndoToast(null), 1600); return }
+    if (!entry) { showToast('Nothing to undo'); return }
     undoingRef.current = true
     try { entry.undo() } finally { setTimeout(() => { undoingRef.current = false }, 0) }
-    setUndoToast('Undid: ' + entry.label)
-    setTimeout(() => setUndoToast(null), 2400)
-  }, [])
+    showToast('Undid: ' + entry.label)
+  }, [showToast])
   useEffect(() => {
     const onKey = (e) => {
       const z = e.key === 'z' || e.key === 'Z'
@@ -1294,7 +1306,7 @@ export default function App() {
   const sharedProps = {
     // Every consumer reads todos[k] || weekState[k] — both point at the same
     // completions object rather than keeping two copies in sync.
-    todos: completions, weekState: completions, syncToggle, clearCompletion,
+    todos: completions, weekState: completions, syncToggle, clearCompletion, pushUndo,
     log, appendLog, notes, updateNotes,
     fcProgress, updateFcProgress, fcStudied, updateFcStudied,
     scheduled, addScheduledTask,
@@ -1439,13 +1451,21 @@ export default function App() {
         commitments={commitments} events={events} log={log}
         onJump={date => { setTab('calendar'); setJumpTo({ date, nonce: Date.now() }) }} />
 
-      {/* Undo feedback (Ctrl/Cmd+Z) */}
+      {/* Undo toast — appears after any change; tap Undo to reverse it (also
+          Ctrl/Cmd+Z on desktop). */}
       {undoToast && (
         <div style={{ position:'fixed', left:'50%', bottom:96, transform:'translateX(-50%)', zIndex:900,
-          background:'#2C3A34', color:'white', padding:'10px 18px', borderRadius:999, fontSize:13, fontWeight:600,
+          background:'#2C3A34', color:'white', padding: undoToast.action ? '8px 8px 8px 18px' : '10px 18px', borderRadius:999, fontSize:13, fontWeight:600,
           boxShadow:'0 8px 30px rgba(0,0,0,.28)', fontFamily:'DM Sans,sans-serif', maxWidth:'calc(100vw - 32px)',
-          whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis', pointerEvents:'none' }}>
-          ↩ {undoToast}
+          display:'flex', alignItems:'center', gap:12, pointerEvents: undoToast.action ? 'auto' : 'none' }}>
+          <span style={{ minWidth:0, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>↩ {undoToast.text}</span>
+          {undoToast.action && (
+            <button onClick={runUndo}
+              style={{ flexShrink:0, background:'rgba(255,255,255,.16)', color:'white', border:'none', borderRadius:999,
+                padding:'6px 16px', fontSize:13, fontWeight:700, cursor:'pointer', fontFamily:'DM Sans,sans-serif' }}>
+              Undo
+            </button>
+          )}
         </div>
       )}
 
