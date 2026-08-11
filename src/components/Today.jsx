@@ -268,36 +268,70 @@ function ShiftToast({ result, onClose }) {
 }
 
 // ── "Start now" push chooser ───────────────────────────────────
-// Lets you pick which later tasks get pushed down to make room (or all).
-function ShiftChooser({ plan, onApply, onCancel }) {
+// Lets you pick which later tasks get pushed down to make room. Tasks are
+// grouped by their routine, so you can shift just "the rest of this routine"
+// with one tap, or reach across the day and pick specific ones.
+function ShiftChooser({ plan, routines = [], onApply, onCancel }) {
   const [sel, setSel] = useState(() => new Set(plan.selected))
   const ids = plan.rest.map(t => t.id)
   const allOn = ids.length > 0 && ids.every(id => sel.has(id))
   const toggle = (id) => setSel(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n })
+  const setMany = (groupIds, on) => setSel(s => { const n = new Set(s); groupIds.forEach(id => on ? n.add(id) : n.delete(id)); return n })
   const pivotTitle = plan.pivot.title || stripTimePrefix(plan.pivot.label)
+
+  // Bucket the tasks by routine, preserving each group's earliest time so the
+  // groups read top-to-bottom in day order. Tasks with no routine fall into a
+  // trailing "Other" group.
+  const rMap = new Map(routines.map(r => [r.id, r]))
+  const groups = []
+  const byKey = new Map()
+  for (const t of plan.rest) {
+    const key = (t.routine && rMap.has(t.routine)) ? t.routine : '__none'
+    let g = byKey.get(key)
+    if (!g) { g = { key, routine: rMap.get(key) || null, tasks: [] }; byKey.set(key, g); groups.push(g) }
+    g.tasks.push(t)
+  }
+
   return (
     <div onClick={onCancel} style={{position:'fixed',inset:0,background:'rgba(0,0,0,.5)',zIndex:610,display:'flex',alignItems:'center',justifyContent:'center',padding:16}}>
       <div onClick={e=>e.stopPropagation()} style={{background:'white',borderRadius:18,width:'100%',maxWidth:400,maxHeight:'86vh',overflowY:'auto',boxShadow:'0 24px 64px rgba(0,0,0,.3)',padding:20}}>
         <div className="serif" style={{fontSize:18,fontWeight:600,color:'var(--text)',marginBottom:3}}>Start “{pivotTitle}” now</div>
-        <div style={{fontSize:12.5,color:'var(--muted)',marginBottom:14}}>Choose which later tasks to push down to make room. Unchecked tasks stay where they are.</div>
+        <div style={{fontSize:12.5,color:'var(--muted)',marginBottom:14}}>Choose which later tasks to shift along. Unchecked tasks stay put. A re-timed routine step just re-ticks itself once its new time passes.</div>
         <button onClick={()=>setSel(allOn ? new Set() : new Set(ids))}
-          style={{fontSize:11,padding:'5px 12px',borderRadius:16,border:'1px solid var(--border)',background:'white',color:'var(--teal)',fontWeight:600,cursor:'pointer',fontFamily:'DM Sans,sans-serif',marginBottom:10}}>
+          style={{fontSize:11,padding:'5px 12px',borderRadius:16,border:'1px solid var(--border)',background:'white',color:'var(--teal)',fontWeight:600,cursor:'pointer',fontFamily:'DM Sans,sans-serif',marginBottom:12}}>
           {allOn ? 'Deselect all' : 'Select all'}
         </button>
-        <div style={{display:'flex',flexDirection:'column',gap:2,marginBottom:16}}>
-          {plan.rest.map(t=>{
-            const on = sel.has(t.id)
-            const isDone = plan.doneIds?.has(t.id)
-            const title = t.title || stripTimePrefix(t.label)
+        <div style={{display:'flex',flexDirection:'column',gap:14,marginBottom:16}}>
+          {groups.map(g=>{
+            const gids = g.tasks.map(t=>t.id)
+            const gAllOn = gids.every(id=>sel.has(id))
+            const tint = g.routine?.tint || 'var(--muted)'
             return (
-              <div key={t.id} onClick={()=>toggle(t.id)}
-                style={{display:'flex',alignItems:'center',gap:11,padding:'9px 4px',cursor:'pointer'}}>
-                <div style={{width:20,height:20,borderRadius:6,flexShrink:0,border:on?'none':'2px solid #CDD3DA',background:on?'var(--teal)':'transparent',display:'flex',alignItems:'center',justifyContent:'center'}}>
-                  {on && <span style={{color:'white',fontSize:12,fontWeight:700}}>✓</span>}
+              <div key={g.key}>
+                <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:4,paddingBottom:4,borderBottom:'1px solid #F1EDF2'}}>
+                  <span style={{width:9,height:9,borderRadius:'50%',background:tint,flexShrink:0}} />
+                  <span style={{flex:1,minWidth:0,fontSize:11,fontWeight:700,letterSpacing:.6,textTransform:'uppercase',color:'var(--muted)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{g.routine ? g.routine.name : 'Other tasks'}</span>
+                  <button onClick={()=>setMany(gids, !gAllOn)}
+                    style={{fontSize:10.5,fontWeight:700,letterSpacing:.3,border:'none',background:'none',cursor:'pointer',color:'var(--teal)',padding:0,whiteSpace:'nowrap'}}>
+                    {gAllOn ? 'Clear' : 'Select all'}
+                  </button>
                 </div>
-                <span style={{fontSize:12,color:'var(--muted)',minWidth:64,fontVariantNumeric:'tabular-nums'}}>{fmtTimeLabel(t._mins)}</span>
-                <span style={{flex:1,minWidth:0,fontSize:14,color:'var(--text)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{title}</span>
-                {isDone && <span style={{fontSize:10,color:'var(--muted)',letterSpacing:.5,textTransform:'uppercase',fontWeight:600,flexShrink:0}}>done · redo</span>}
+                {g.tasks.map(t=>{
+                  const on = sel.has(t.id)
+                  const isDone = plan.doneIds?.has(t.id)
+                  const title = t.title || stripTimePrefix(t.label)
+                  return (
+                    <div key={t.id} onClick={()=>toggle(t.id)}
+                      style={{display:'flex',alignItems:'center',gap:11,padding:'8px 4px',cursor:'pointer'}}>
+                      <div style={{width:20,height:20,borderRadius:6,flexShrink:0,border:on?'none':'2px solid #CDD3DA',background:on?'var(--teal)':'transparent',display:'flex',alignItems:'center',justifyContent:'center'}}>
+                        {on && <span style={{color:'white',fontSize:12,fontWeight:700}}>✓</span>}
+                      </div>
+                      <span style={{fontSize:12,color:'var(--muted)',minWidth:64,fontVariantNumeric:'tabular-nums'}}>{fmtTimeLabel(t._mins)}</span>
+                      <span style={{flex:1,minWidth:0,fontSize:14,color:'var(--text)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{title}</span>
+                      {isDone && <span style={{fontSize:10,color:'var(--muted)',letterSpacing:.5,textTransform:'uppercase',fontWeight:600,flexShrink:0}}>done</span>}
+                    </div>
+                  )
+                })}
               </div>
             )
           })}
@@ -305,7 +339,7 @@ function ShiftChooser({ plan, onApply, onCancel }) {
         <div style={{display:'flex',gap:8}}>
           <button onClick={()=>onApply([...sel])}
             style={{flex:1,padding:'12px',borderRadius:12,border:'none',background:'var(--forest)',color:'var(--green-light)',fontWeight:700,fontSize:14,cursor:'pointer',fontFamily:'DM Sans,sans-serif'}}>
-            {sel.size ? `Start now · push ${sel.size}` : 'Start now · push none'}
+            {sel.size ? `Start now · shift ${sel.size}` : 'Start now · shift none'}
           </button>
           <button onClick={onCancel}
             style={{padding:'12px 16px',borderRadius:12,border:'1px solid var(--border)',background:'white',color:'var(--muted)',cursor:'pointer',fontSize:13,fontFamily:'DM Sans,sans-serif'}}>Cancel</button>
@@ -957,7 +991,7 @@ function WeekStrip({ viewDate, setViewDate, commitments, categories, doneCount, 
 }
 
 // ── Main ───────────────────────────────────────────────────────
-export default function Today({ todos, weekState, syncToggle, commitments, addCommitment, updateCommitment, deleteCommitment, appendLog, scheduled, categories, recurringTasks, recurringExceptions, occStarted = {}, skipRecurringOccurrence, deleteRecurringTask, addRecurringTask, updateRecurringTask, routines = [], taskTemplates = [], summary, labelModel = null }) {
+export default function Today({ todos, weekState, syncToggle, clearCompletion, commitments, addCommitment, updateCommitment, deleteCommitment, appendLog, scheduled, categories, recurringTasks, recurringExceptions, occStarted = {}, skipRecurringOccurrence, deleteRecurringTask, addRecurringTask, updateRecurringTask, routines = [], taskTemplates = [], summary, labelModel = null }) {
   const [now,         setNow]         = useState(nowMins())
   // The day the timeline is showing. Defaults to today; the week strip up top
   // navigates to any day. "Now" logic (the progress marker, current/overdue,
@@ -1396,15 +1430,18 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
       .sort((a,b)=>a._mins-b._mins)
       .forEach(t=>{
         const dur = t._dur || 0
-        const done = isDoneCheck(t.id,t.isCommitment)
         if (INFLEXIBLE_TAGS.has(t.tag)) { cursor=Math.max(cursor,t._mins+dur); return }
-        if (!sel.has(t.id)) { cursor=Math.max(cursor,t._mins+dur); return }        // not chosen → leave (incl. done)
-        if (!done && t._mins >= cursor) { cursor=t._mins+dur; return }             // open & no overlap → leave in place
+        if (!sel.has(t.id)) { cursor=Math.max(cursor,t._mins+dur); return }   // not chosen → leave
+        if (t._mins >= cursor) { cursor=t._mins+dur; return }                 // no overlap → leave in place
         if (cursor+dur > END_OF_DAY_MINS) { sendToTomorrow(t); return }
-        // Chosen. If it had been ticked off — usually an auto-complete because
-        // its time already passed — re-open it, since we're doing it now.
-        if (done) syncToggle(t.id, t.label, t.tag, t.isCommitment ? null : dateKey, false)
         setStart(t, cursor); shifted++
+        // A routine / block / auto-complete task's checkmark should follow its
+        // NEW time, not a stale tap: drop any explicit record so it re-derives
+        // from the clock — ticked once the new slot has passed, unticked until
+        // then. That's the whole point when you push a routine later.
+        if ((t.autoComplete || (t.routine && routineIds.has(t.routine)) || inAnyBlock(t)) && clearCompletion) {
+          clearCompletion(t.id, t.isCommitment ? null : dateKey)
+        }
         cursor += dur
       })
 
@@ -1419,22 +1456,23 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
     const pivotMins = pivotTask._mins ?? parseTimeMins(pivotTask.label)
     if (pivotMins===null) return
     const pivotEnd = now + (pivotTask._dur || 0)
-    // Everything scheduled at/after the pivot that could move. We deliberately
-    // KEEP tasks already ticked off here: a routine step often auto-completes
-    // just because its clock time slid past while you were running late, and
-    // "start now · shift the rest" is exactly when you want to pull those
-    // not-really-done steps forward. They show unchecked (and marked "done"),
-    // and choosing one re-times it and re-opens it. Only genuinely fixed things
-    // (class/meeting/deadline/urgent) are still left out.
+    // Everything scheduled at/after the pivot that could move. We KEEP tasks
+    // already ticked off here: when you push a routine later (a slower morning),
+    // its steps come along too — a re-timed step's checkmark then just follows
+    // the clock again. Only genuinely fixed things (class/meeting/deadline/
+    // urgent) are left out.
     const rest = tasksWithStatus
       .filter(t => t.id!==pivotTask.id && t._mins!==null && t._mins>=pivotMins
         && !INFLEXIBLE_TAGS.has(t.tag))
       .sort((a,b)=>a._mins-b._mins)
     if (rest.length === 0) { applyShift(pivotTask, []); return }
     const doneIds = new Set(rest.filter(t => isDoneCheck(t.id,t.isCommitment)).map(t=>t.id))
-    // Pre-check the still-open tasks that overlap the pivot's new slot; leave
-    // already-done ones unchecked so nothing is re-opened unless you ask.
-    const selected = new Set(rest.filter(t => !doneIds.has(t.id) && t._mins < pivotEnd).map(t=>t.id))
+    // Default selection: if the pivot belongs to a routine, pre-check the rest of
+    // that routine's steps — the common case is "shift the rest of THIS routine".
+    // Otherwise fall back to the still-open tasks that overlap the new slot.
+    const selected = pivotTask.routine
+      ? new Set(rest.filter(t => t.routine === pivotTask.routine).map(t=>t.id))
+      : new Set(rest.filter(t => !doneIds.has(t.id) && t._mins < pivotEnd).map(t=>t.id))
     setShiftPlan({ pivot: pivotTask, rest, selected, doneIds })
   }
 
@@ -1882,7 +1920,7 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
         onExtend={focusTask.isCommitment ? (mins)=>handleExtend(focusTask, mins) : null}
         onEndNow={({elapsedMins})=>handleEndNow(focusTask, elapsedMins)}
         onClose={()=>setFocusTask(null)} />}
-      {shiftPlan&&<ShiftChooser plan={shiftPlan} onApply={(ids)=>{applyShift(shiftPlan.pivot, ids); setShiftPlan(null)}} onCancel={()=>setShiftPlan(null)}/>}
+      {shiftPlan&&<ShiftChooser plan={shiftPlan} routines={routines} onApply={(ids)=>{applyShift(shiftPlan.pivot, ids); setShiftPlan(null)}} onCancel={()=>setShiftPlan(null)}/>}
       {shiftResult&&<ShiftToast result={shiftResult} onClose={()=>setShiftResult(null)}/>}
       {addingTask&&<AddItemModal presetDate={dateKey} presetTime={addPreset?.time||''} presetDur={addPreset?.dur||null} presetCat={addPreset?.cat||''} categories={categories} routines={routines} templates={taskTemplates} labelModel={labelModel} onSave={handleAdd} onSaveRecurring={addRecurringTask} onClose={()=>{ setAddingTask(false); setAddPreset(null) }} title="Add to Today"/>}
       {editing&&<AddItemModal existing={editing} categories={categories} routines={routines} onSave={handleSaveEdit}

@@ -1250,6 +1250,21 @@ export default function App() {
     }
   }, [completions, commitments])
 
+  // Drop a task's stored completion record entirely (as opposed to syncToggle,
+  // which records an explicit true/false). With no record, a routine / block /
+  // auto-complete task falls back to being ticked purely by the clock — checked
+  // once its window has passed, unchecked until then. Used when the timeline
+  // re-times such a task so its checkmark follows the new time, not a stale tap.
+  const clearCompletion = useCallback((id, date) => {
+    const storageKey = date ? `${date}_${id}` : id
+    setCompletions_(prev => {
+      if (!(storageKey in prev)) return prev
+      const next = { ...prev }; delete next[storageKey]
+      setCompletion(storageKey, false).catch(reportSaveError)
+      return next
+    })
+  }, [])
+
   if (loading) return (
     <div style={{ minHeight:'100vh', background:'#FAFAF7', display:'flex', alignItems:'center', justifyContent:'center' }}>
       <div style={{ textAlign:'center' }}>
@@ -1279,7 +1294,7 @@ export default function App() {
   const sharedProps = {
     // Every consumer reads todos[k] || weekState[k] — both point at the same
     // completions object rather than keeping two copies in sync.
-    todos: completions, weekState: completions, syncToggle,
+    todos: completions, weekState: completions, syncToggle, clearCompletion,
     log, appendLog, notes, updateNotes,
     fcProgress, updateFcProgress, fcStudied, updateFcStudied,
     scheduled, addScheduledTask,
