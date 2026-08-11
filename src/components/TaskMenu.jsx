@@ -87,6 +87,14 @@ function TemplateEditor({ existing = null, categories = [], onSave, onClose }) {
   }
   const editSub = (id, t) => setSubtasks(prev => prev.map(s => s.id === id ? { ...s, text: t } : s))
   const removeSub = (id) => setSubtasks(prev => prev.filter(s => s.id !== id))
+  const moveSub = (id, dir) => setSubtasks(prev => {
+    const i = prev.findIndex(s => s.id === id)
+    const j = i + dir
+    if (i < 0 || j < 0 || j >= prev.length) return prev
+    const next = [...prev]
+    ;[next[i], next[j]] = [next[j], next[i]]
+    return next
+  })
 
   const primaryCat = cats.find(c => c.id === selectedCats[0]) || null
   const headerColor = color || primaryCat?.color || activeAccent()
@@ -235,12 +243,20 @@ function TemplateEditor({ existing = null, categories = [], onSave, onClose }) {
 
           {/* Subtasks + notes */}
           <div style={{ ...card, padding:'6px 15px 14px' }}>
-            {subtasks.map(s => (
-              <div key={s.id} style={{ display:'flex', alignItems:'center', gap:10, padding:'8px 0', borderBottom:'1px solid #F1EDF2' }}>
+            {subtasks.map((s, i) => (
+              <div key={s.id} style={{ display:'flex', alignItems:'center', gap:8, padding:'8px 0', borderBottom:'1px solid #F1EDF2' }}>
                 <span style={{ width:18, height:18, borderRadius:5, flexShrink:0, border:'2px solid #CDD3DA' }} />
                 <input value={s.text} onChange={e => editSub(s.id, e.target.value)}
                   style={{ flex:1, minWidth:0, fontSize:14, padding:'2px 0', border:'none', background:'transparent', fontFamily:'DM Sans,sans-serif', outline:'none', color:'var(--text)' }} />
-                <button onClick={() => removeSub(s.id)} style={{ background:'none', border:'none', cursor:'pointer', color:'#CBD0D8', fontSize:16, padding:'0 2px', flexShrink:0 }}>✕</button>
+                {subtasks.length > 1 && (
+                  <span style={{ display:'inline-flex', flexDirection:'column', flexShrink:0, lineHeight:0 }}>
+                    <button onClick={() => moveSub(s.id, -1)} disabled={i === 0} aria-label="Move subtask up"
+                      style={{ background:'none', border:'none', cursor: i === 0 ? 'default' : 'pointer', color: i === 0 ? '#E2E4E9' : '#AEB6C0', fontSize:10, padding:'0 3px', lineHeight:1 }}>▲</button>
+                    <button onClick={() => moveSub(s.id, 1)} disabled={i === subtasks.length - 1} aria-label="Move subtask down"
+                      style={{ background:'none', border:'none', cursor: i === subtasks.length - 1 ? 'default' : 'pointer', color: i === subtasks.length - 1 ? '#E2E4E9' : '#AEB6C0', fontSize:10, padding:'0 3px', lineHeight:1 }}>▼</button>
+                  </span>
+                )}
+                <button onClick={() => removeSub(s.id)} aria-label="Remove subtask" style={{ background:'none', border:'none', cursor:'pointer', color:'#CBD0D8', fontSize:16, padding:'0 2px', flexShrink:0 }}>✕</button>
               </div>
             ))}
             <div style={{ display:'flex', alignItems:'center', gap:10, padding:'9px 0 6px' }}>
