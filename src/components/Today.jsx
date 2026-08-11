@@ -287,6 +287,7 @@ function ShiftChooser({ plan, onApply, onCancel }) {
         <div style={{display:'flex',flexDirection:'column',gap:2,marginBottom:16}}>
           {plan.rest.map(t=>{
             const on = sel.has(t.id)
+            const isDone = plan.doneIds?.has(t.id)
             const title = t.title || stripTimePrefix(t.label)
             return (
               <div key={t.id} onClick={()=>toggle(t.id)}
@@ -296,6 +297,7 @@ function ShiftChooser({ plan, onApply, onCancel }) {
                 </div>
                 <span style={{fontSize:12,color:'var(--muted)',minWidth:64,fontVariantNumeric:'tabular-nums'}}>{fmtTimeLabel(t._mins)}</span>
                 <span style={{flex:1,minWidth:0,fontSize:14,color:'var(--text)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{title}</span>
+                {isDone && <span style={{fontSize:10,color:'var(--muted)',letterSpacing:.5,textTransform:'uppercase',fontWeight:600,flexShrink:0}}>done · redo</span>}
               </div>
             )
           })}
@@ -1394,11 +1396,14 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
       .sort((a,b)=>a._mins-b._mins)
       .forEach(t=>{
         const dur = t._dur || 0
-        if (isDoneCheck(t.id,t.isCommitment)) { cursor=Math.max(cursor,t._mins+dur); return }
+        const done = isDoneCheck(t.id,t.isCommitment)
         if (INFLEXIBLE_TAGS.has(t.tag)) { cursor=Math.max(cursor,t._mins+dur); return }
-        if (!sel.has(t.id)) { cursor=Math.max(cursor,t._mins+dur); return }  // not chosen → leave
-        if (t._mins >= cursor) { cursor=t._mins+dur; return }                // chosen but no overlap → leave
+        if (!sel.has(t.id)) { cursor=Math.max(cursor,t._mins+dur); return }        // not chosen → leave (incl. done)
+        if (!done && t._mins >= cursor) { cursor=t._mins+dur; return }             // open & no overlap → leave in place
         if (cursor+dur > END_OF_DAY_MINS) { sendToTomorrow(t); return }
+        // Chosen. If it had been ticked off — usually an auto-complete because
+        // its time already passed — re-open it, since we're doing it now.
+        if (done) syncToggle(t.id, t.label, t.tag, t.isCommitment ? null : dateKey, false)
         setStart(t, cursor); shifted++
         cursor += dur
       })
@@ -1414,14 +1419,23 @@ export default function Today({ todos, weekState, syncToggle, commitments, addCo
     const pivotMins = pivotTask._mins ?? parseTimeMins(pivotTask.label)
     if (pivotMins===null) return
     const pivotEnd = now + (pivotTask._dur || 0)
+    // Everything scheduled at/after the pivot that could move. We deliberately
+    // KEEP tasks already ticked off here: a routine step often auto-completes
+    // just because its clock time slid past while you were running late, and
+    // "start now · shift the rest" is exactly when you want to pull those
+    // not-really-done steps forward. They show unchecked (and marked "done"),
+    // and choosing one re-times it and re-opens it. Only genuinely fixed things
+    // (class/meeting/deadline/urgent) are still left out.
     const rest = tasksWithStatus
       .filter(t => t.id!==pivotTask.id && t._mins!==null && t._mins>=pivotMins
-        && !isDoneCheck(t.id,t.isCommitment) && !INFLEXIBLE_TAGS.has(t.tag))
+        && !INFLEXIBLE_TAGS.has(t.tag))
       .sort((a,b)=>a._mins-b._mins)
     if (rest.length === 0) { applyShift(pivotTask, []); return }
-    // Pre-check the ones that actually overlap the task's new slot.
-    const selected = new Set(rest.filter(t => t._mins < pivotEnd).map(t=>t.id))
-    setShiftPlan({ pivot: pivotTask, rest, selected })
+    const doneIds = new Set(rest.filter(t => isDoneCheck(t.id,t.isCommitment)).map(t=>t.id))
+    // Pre-check the still-open tasks that overlap the pivot's new slot; leave
+    // already-done ones unchecked so nothing is re-opened unless you ask.
+    const selected = new Set(rest.filter(t => !doneIds.has(t.id) && t._mins < pivotEnd).map(t=>t.id))
+    setShiftPlan({ pivot: pivotTask, rest, selected, doneIds })
   }
 
   // ── Pause & resume (Focus mode) ──────────────────────────────
