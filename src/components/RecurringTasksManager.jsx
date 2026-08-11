@@ -1,11 +1,46 @@
 import { useState, useMemo } from 'react'
 import { Icon } from './IconPicker.jsx'
 import DateField from './DateField.jsx'
+import TimeField from './TimeField.jsx'
 import AddItemModal from './AddItemModal.jsx'
 import ColorSwatchRow from './ColorSwatchRow.jsx'
+import { splitTimePrefix, recursDaily } from '../lib/occurrences.js'
 
 const DAYS = ['monday','tuesday','wednesday','thursday','friday','saturday','sunday']
 const DAY_SHORT = { monday:'Mon', tuesday:'Tue', wednesday:'Wed', thursday:'Thu', friday:'Fri', saturday:'Sat', sunday:'Sun' }
+
+// ── Time helpers for shifting a whole routine ──────────────────
+// A recurring task keeps its time in the label prefix ("7:00 AM — …"). These
+// helpers read that time, and rewrite the prefix when a routine is nudged
+// earlier/later so every step moves together and keeps its spacing.
+const MAX_MIN = 23 * 60 + 59
+function fmt12Mins(mins) {
+  const h = Math.floor(mins / 60), m = mins % 60
+  return `${h % 12 || 12}:${String(m).padStart(2, '0')} ${h >= 12 ? 'PM' : 'AM'}`
+}
+// The field that carries a task's display text (and its time prefix): 'week'
+// tasks store it in `text`, 'today' tasks in `label`.
+function labelField(task) { return task.type === 'week' ? 'text' : 'label' }
+// Minutes-since-midnight of a task's time prefix, or null if it has none.
+function taskTimeMins(task) {
+  const { time } = splitTimePrefix(task[labelField(task)] || task.label || task.text || '')
+  if (!time) return null
+  const [h, m] = time.split(':').map(Number)
+  return h * 60 + m
+}
+// Rewrite a label's leading time prefix to `mins`. Labels with no time prefix
+// come back unchanged (a routine can hold un-timed steps; they just don't move).
+function setLabelTime(label, mins) {
+  const { time, title } = splitTimePrefix(label || '')
+  if (!time) return label
+  return `${fmt12Mins(mins)} — ${title}`
+}
+// The earliest → latest window across a routine's timed tasks, or null.
+function routineTimeRange(tasks) {
+  const mins = tasks.map(taskTimeMins).filter(x => x != null)
+  if (!mins.length) return null
+  return { start: Math.min(...mins), end: Math.max(...mins) }
+}
 
 // Categories are the shared, user-editable list (Settings → Categories),
 // passed in as a prop. This resolves a category id to its label + color + icon.
@@ -253,9 +288,10 @@ function TaskListRow({ task, onEdit, today, categories, routines }) {
         )}
       </div>
       <Tag label={catLabel} color={catColor} icon={catIcon} />
-      {/* Frequency — a Daily/Monthly chip, or the weekday pills for weekly. */}
+      {/* Frequency — a Daily/Monthly chip, or the weekday pills for weekly.
+          A weekly rule with all seven days reads as DAILY too (it lands daily). */}
       <div style={{ display:'flex', gap:3, flexWrap:'wrap', justifyContent:'flex-end', maxWidth:150, flexShrink:0 }}>
-        {task.freq==='daily' ? (
+        {recursDaily(task) ? (
           <span style={{ fontSize:9, padding:'2px 7px', borderRadius:6, background:'var(--forest)', color:'var(--green-light)', fontWeight:700, letterSpacing:.5 }}>DAILY{task.interval>1?` ×${task.interval}`:''}</span>
         ) : task.freq==='monthly' ? (
           <span style={{ fontSize:9, padding:'2px 7px', borderRadius:6, background:'var(--forest)', color:'var(--green-light)', fontWeight:700, letterSpacing:.5 }}>MONTHLY</span>
@@ -270,8 +306,35 @@ function TaskListRow({ task, onEdit, today, categories, routines }) {
   )
 }
 
+// ── Per-routine start-time shifter ─────────────────────────────
+// Move a whole routine earlier or later in one go: set a new start time (the
+// earliest step lands there and the rest follow, keeping their spacing) or nudge
+// every timed step by a few minutes. Nothing downstream has to be edited by hand.
+function RoutineShiftBar({ range, onShift, onSetStart }) {
+  const steps = [-15, -5, 5, 15]
+  const btn = { fontSize:11, padding:'4px 9px', borderRadius:7, border:'1px solid var(--border)', background:'white', color:'var(--text)', cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:700, lineHeight:1 }
+  return (
+    <div style={{ display:'flex', alignItems:'center', gap:8, flexWrap:'wrap', marginBottom:9, padding:'8px 10px', background:'#FBFAF8', border:'1px solid var(--border)', borderRadius:9 }}>
+      <span style={{ fontSize:10, color:'var(--muted)', letterSpacing:.5, textTransform:'uppercase', fontWeight:700 }}>Starts</span>
+      <TimeField value={`${String(Math.floor(range.start/60)).padStart(2,'0')}:${String(range.start%60).padStart(2,'0')}`}
+        onChange={hhmm => { if (!hhmm) return; const [h,m] = hhmm.split(':').map(Number); onSetStart(h*60+m) }}
+        style={{ width:98, fontSize:12, padding:'5px 8px', borderRadius:8, border:'1px solid var(--border)', fontFamily:'DM Sans,sans-serif', color:'var(--text)' }} />
+      {range.end !== range.start && (
+        <span style={{ fontSize:11, color:'var(--muted)' }}>→ {fmt12Mins(range.end)}</span>
+      )}
+      <div style={{ display:'flex', gap:4, marginLeft:'auto', flexWrap:'wrap' }}>
+        {steps.map(s => (
+          <button key={s} onClick={()=>onShift(s)} title={`${s<0?'Earlier':'Later'} by ${Math.abs(s)} min`} style={btn}>
+            {s<0?'−':'+'}{Math.abs(s)}m
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 // ── Routines view — tasks grouped by routine, with group management ─────
-function RoutinesView({ routines, tasks, categories, today, onEditTask, addRoutine, updateRoutine, deleteRoutine }) {
+function RoutinesView({ routines, tasks, categories, today, onEditTask, updateRecurringTask, addRoutine, updateRoutine, deleteRoutine }) {
   const [newName, setNewName] = useState('')
   const [newTint, setNewTint] = useState('#D9C7EE')
   const [confirmDel, setConfirmDel] = useState(null)
@@ -283,10 +346,30 @@ function RoutinesView({ routines, tasks, categories, today, onEditTask, addRouti
   const unassigned = tasks.filter(t => !t.routine || !routines.some(r => r.id === t.routine))
   const addNew = () => { if (newName.trim()) { addRoutine(newName.trim(), newTint); setNewName('') } }
 
+  // Shift every timed task in a routine by `delta` minutes, clamped so no step
+  // spills before midnight or past 11:59 PM (which would break the spacing).
+  // Each task keeps every other field — category, days, and its routine tag —
+  // so nothing downstream needs re-editing by hand.
+  const shiftRoutine = (rid, delta) => {
+    if (!updateRecurringTask || !delta) return
+    const items = byRoutine(rid)
+    const mins = items.map(taskTimeMins).filter(x => x != null)
+    if (!mins.length) return
+    const lo = Math.min(...mins), hi = Math.max(...mins)
+    const d = Math.max(-lo, Math.min(MAX_MIN - hi, delta))
+    if (!d) return
+    items.forEach(task => {
+      const cur = taskTimeMins(task)
+      if (cur == null) return
+      const f = labelField(task)
+      updateRecurringTask(task.id, { ...task, [f]: setLabelTime(task[f], cur + d) })
+    })
+  }
+
   return (
     <div>
       <div className="page-sub" style={{ marginBottom:16 }}>
-        Group recurring tasks into routines. A task's routine washes a soft color film behind it on the timeline — set it when you add or edit the task.
+        Group recurring tasks into routines. A task's routine washes a soft color film behind it on the timeline — set it when you add or edit the task. Use each routine's start time to shift the whole thing earlier or later; every step moves together.
       </div>
 
       {/* Add a routine group — kept at the top so it's the first thing you reach. */}
@@ -309,6 +392,7 @@ function RoutinesView({ routines, tasks, categories, today, onEditTask, addRouti
 
       {routines.map(r => {
         const items = byRoutine(r.id)
+        const range = routineTimeRange(items)
         return (
           <div key={r.id} style={{ marginBottom:18 }}>
             {/* Group header — swatch (tap to recolor), editable name, count, delete */}
@@ -336,6 +420,12 @@ function RoutinesView({ routines, tasks, categories, today, onEditTask, addRouti
                     style={{ fontSize:12, padding:'6px 12px', borderRadius:8, border:'1px solid var(--border)', background:'white', color:'var(--muted)', cursor:'pointer', fontFamily:'DM Sans,sans-serif' }}>Cancel</button>
                 </div>
               </div>
+            )}
+            {/* Shift the whole routine earlier/later — only when it has timed steps */}
+            {range && (
+              <RoutineShiftBar range={range}
+                onShift={(delta)=>shiftRoutine(r.id, delta)}
+                onSetStart={(mins)=>shiftRoutine(r.id, mins - range.start)} />
             )}
             {/* A tinted rail down the group's tasks so the film color reads here too */}
             <div style={{ borderLeft:`3px solid ${r.tint}`, paddingLeft:10, borderRadius:2 }}>
@@ -366,7 +456,7 @@ function RoutinesView({ routines, tasks, categories, today, onEditTask, addRouti
 // ── Main ───────────────────────────────────────────────────────
 export default function RecurringTasksManager({ recurringTasks, addRecurringTask, updateRecurringTask, deleteRecurringTask, clearRecurringTasks, categories, routines = [], taskTemplates = [], labelModel = null, addRoutine, updateRoutine, deleteRoutine, defaultWeekTasks, defaultDailyTodos }) {
   const [editing,     setEditing]     = useState(null) // null | 'new' | task object
-  const [view,        setView]        = useState('schedule') // 'schedule' | 'routines'
+  const [view,        setView]        = useState('routines') // 'routines' | 'schedule'
   const [filterDay,   setFilterDay]   = useState(todayName())
   const [filterType,  setFilterType]  = useState('all')
   const [confirmClear, setConfirmClear] = useState(false)
@@ -436,24 +526,48 @@ export default function RecurringTasksManager({ recurringTasks, addRecurringTask
     }
   }
 
-  // Filter. Daily and monthly tasks have no weekday list, so a day filter only
-  // narrows weekly tasks — daily/monthly always show (they land on every day /
-  // a day-of-month, not a weekday).
+  // A task's frequency bucket. "Every day" covers a daily rule and a weekly rule
+  // with all 7 days ticked — both land on every date, so they get one Daily home
+  // rather than appearing under every weekday. Day-of-month tasks are Monthly.
+  const freqBucket = (t) => {
+    if (recursDaily(t)) return 'daily'
+    if ((t.freq || 'weekly') === 'monthly') return 'monthly'
+    return 'weekly'
+  }
+
+  // Frequency-aware filter. `filterDay` is one of:
+  //   'all'     — everything (grouped into Daily / Weekly / Monthly on render)
+  //   'daily'   — only tasks that land every day
+  //   'monthly' — only day-of-month tasks
+  //   a weekday — only the weekly tasks that fall on that weekday
+  // Daily and monthly tasks no longer clutter every weekday column; each shows
+  // once, in its own bucket.
   const visible = flatData.filter(t => {
-    const freq = t.freq || 'weekly'
-    if (filterDay !== 'all' && freq === 'weekly' && !(t.days||[]).includes(filterDay)) return false
     if (filterType !== 'all' && t.type !== filterType) return false
-    return true
+    const bucket = freqBucket(t)
+    if (filterDay === 'all')     return true
+    if (filterDay === 'daily')   return bucket === 'daily'
+    if (filterDay === 'monthly') return bucket === 'monthly'
+    return bucket === 'weekly' && (t.days||[]).includes(filterDay)   // a weekday
   })
 
   // Sort: by first day, then type
   const dayOrder = Object.fromEntries(DAYS.map((d,i)=>[d,i]))
-  const sorted = [...visible].sort((a,b)=>{
+  const byDayThenType = (a,b)=>{
     const da = Math.min(...(a.days||[]).map(d=>dayOrder[d]??99))
     const db = Math.min(...(b.days||[]).map(d=>dayOrder[d]??99))
     if (da!==db) return da-db
     return (a.type==='week'?0:1)-(b.type==='week'?0:1)
-  })
+  }
+  const sorted = [...visible].sort(byDayThenType)
+  // "All days" splits the list into labeled sections so a daily habit reads once
+  // under "Every day" and a monthly task once under "Monthly", never repeated
+  // down each weekday. A specific filter collapses to just its own section.
+  const sections = [
+    { key:'daily',   label:'Every day', items: sorted.filter(t=>freqBucket(t)==='daily') },
+    { key:'weekly',  label:'Weekly',    items: sorted.filter(t=>freqBucket(t)==='weekly') },
+    { key:'monthly', label:'Monthly',   items: sorted.filter(t=>freqBucket(t)==='monthly') },
+  ].filter(s => s.items.length)
 
   return (
     <div>
@@ -467,7 +581,7 @@ export default function RecurringTasksManager({ recurringTasks, addRecurringTask
 
       {/* Sub-tabs: the full schedule, or grouped by routine. */}
       <div style={{ display:'flex', gap:4, padding:4, borderRadius:12, background:'#EAE7EE', marginBottom:14 }}>
-        {[['schedule','Schedule'],['routines','Routines']].map(([v,l])=>(
+        {[['routines','Routines'],['schedule','Schedule']].map(([v,l])=>(
           <button key={v} onClick={()=>setView(v)}
             style={{ flex:1, padding:'9px 6px', borderRadius:9, border:'none', cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontSize:13, fontWeight:700,
               background: view===v ? 'var(--forest)' : 'transparent', color: view===v ? 'var(--green-light)' : 'var(--muted)' }}>{l}</button>
@@ -476,17 +590,25 @@ export default function RecurringTasksManager({ recurringTasks, addRecurringTask
 
       {view==='routines' ? (
         <RoutinesView routines={routines} tasks={flatData} categories={categories} today={today}
-          onEditTask={(t)=>setEditing(t)} addRoutine={addRoutine} updateRoutine={updateRoutine} deleteRoutine={deleteRoutine} />
+          onEditTask={(t)=>setEditing(t)} updateRecurringTask={updateRecurringTask}
+          addRoutine={addRoutine} updateRoutine={updateRoutine} deleteRoutine={deleteRoutine} />
       ) : (<>
       <div className="page-sub">
         {filterDay==='all'
-          ? `${flatData.length} recurring tasks across the week`
-          : `${sorted.length} on ${DAY_SHORT[filterDay]}${filterDay===today?' — Today':''} · ${flatData.length} total across the week`}
+          ? `${flatData.length} recurring task${flatData.length===1?'':'s'} — grouped by how often they repeat`
+          : filterDay==='daily'
+            ? `${sorted.length} task${sorted.length===1?'':'s'} that repeat every day`
+          : filterDay==='monthly'
+            ? `${sorted.length} monthly task${sorted.length===1?'':'s'}`
+            : `${sorted.length} weekly on ${DAY_SHORT[filterDay]}${filterDay===today?' — Today':''} · ${flatData.length} total`}
       </div>
 
-      {/* Filters */}
+      {/* Filters — All / Daily, then the weekdays (weekly only), then Monthly.
+          Daily and monthly tasks live in their own buckets, so tapping a weekday
+          shows just that day's weekly tasks. */}
       <div style={{ display:'flex', gap:5, flexWrap:'wrap', marginBottom:8 }}>
-        <button onClick={()=>setFilterDay('all')} style={filterPill(filterDay==='all')}>All days</button>
+        <button onClick={()=>setFilterDay('all')} style={filterPill(filterDay==='all')}>All</button>
+        <button onClick={()=>setFilterDay(filterDay==='daily'?'all':'daily')} style={filterPill(filterDay==='daily')}>Daily</button>
         {DAYS.map(d=>{
           const isToday = d===today
           return (
@@ -497,6 +619,7 @@ export default function RecurringTasksManager({ recurringTasks, addRecurringTask
             </button>
           )
         })}
+        <button onClick={()=>setFilterDay(filterDay==='monthly'?'all':'monthly')} style={filterPill(filterDay==='monthly')}>Monthly</button>
       </div>
       <div style={{ display:'flex', gap:5, marginBottom:16 }}>
         {[['all','All types'],['week','Week only'],['today','Today only']].map(([v,l])=>(
@@ -507,13 +630,23 @@ export default function RecurringTasksManager({ recurringTasks, addRecurringTask
         ))}
       </div>
 
-      {/* Task list */}
+      {/* Task list — sectioned by frequency (Every day / Weekly / Monthly) so a
+          daily habit reads once and a monthly task only under Monthly. */}
       {sorted.length===0 ? (
         <div style={{ textAlign:'center', padding:'28px 0', color:'var(--muted)', fontSize:13 }}>
           No tasks match this filter.
         </div>
-      ) : sorted.map(task=>(
-        <TaskListRow key={task.id+task.type+(task.days||[]).join('')} task={task} onEdit={()=>setEditing(task)} today={today} categories={categories} routines={routines} />
+      ) : sections.map(sec=>(
+        <div key={sec.key} style={{ marginBottom:14 }}>
+          {sections.length>1 && (
+            <div style={{ fontSize:10, color:'var(--muted)', letterSpacing:1.2, textTransform:'uppercase', fontWeight:700, margin:'2px 2px 8px' }}>
+              {sec.label} · {sec.items.length}
+            </div>
+          )}
+          {sec.items.map(task=>(
+            <TaskListRow key={task.id+task.type+(task.days||[]).join('')} task={task} onEdit={()=>setEditing(task)} today={today} categories={categories} routines={routines} />
+          ))}
+        </div>
       ))}
 
       {/* Clear all */}

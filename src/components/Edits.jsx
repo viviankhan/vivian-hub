@@ -4,6 +4,16 @@
 
 const EDIT_LOG = [
   {
+    date: '2026-08-11',
+    summary: 'Shift a whole routine earlier/later, and a cleaner Recurring tab',
+    changes: [
+      'In Recurring → Routines, each routine now has a start-time control: set a new start time (or nudge ±5/±15 min) and every task inside it moves together, keeping its spacing — no more hand-editing each downstream step to fit a slower or earlier morning',
+      'Shifting a routine keeps each task\'s category, days and routine tag intact; editing a single task\'s time also keeps its routine tag',
+      'The Recurring tab now opens on Routines first (instead of the Schedule list)',
+      'Fixed the confusing schedule layout: a daily task no longer shows under every weekday — the list is grouped into "Every day", "Weekly", and "Monthly", with matching Daily / Monthly filter chips, so a monthly task only appears under Monthly',
+    ]
+  },
+  {
     date: '2026-07-28',
     summary: 'Polished filled icon set (Material Design Icons)',
     changes: [
