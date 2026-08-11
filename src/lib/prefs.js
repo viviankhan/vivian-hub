@@ -9,7 +9,14 @@
 // phone and vice-versa. localStorage stays the fast local cache; the cloud blob
 // is the shared source of truth, applied on load.
 // ─────────────────────────────────────────────────────────────
-import { getUiPrefs, setUiPrefs, dbGet, dbSet } from './storage.js'
+import { setUiPrefs, dbSet, dbGetChanged } from './storage.js'
+
+// Remember the cloud `updated_at` we last applied, per synced key, so a
+// foreground reconcile can skip re-reading an unchanged (and often large) blob
+// off the database. See dbGetChanged in storage.js — this is the Disk IO fix.
+const SEEN_PREFIX = 'vivian_synced_seen_'
+const seenGet = (k) => { try { return localStorage.getItem(SEEN_PREFIX + k) } catch { return null } }
+const seenSet = (k, v) => { try { if (v) localStorage.setItem(SEEN_PREFIX + k, v) } catch {} }
 
 // Every localStorage key that should follow the user across devices.
 // Note: the uploaded background images ('bloom_bg_custom' and its mobile
@@ -57,8 +64,12 @@ function applyPrefsToLocal(obj) {
 // local value actually changed (so the caller can re-apply + refresh state).
 export async function hydratePrefs() {
   try {
-    const cloud = await getUiPrefs()
-    if (!cloud) return false
+    const res = await dbGetChanged('ui_prefs', seenGet('ui_prefs'))
+    // Nothing new in the cloud (or no prefs saved yet) — nothing to re-read.
+    if (res.status !== 'changed') return false
+    const cloud = res.value
+    seenSet('ui_prefs', res.updatedAt)
+    if (!cloud || typeof cloud !== 'object') return false
     hydrating = true
     const changed = applyPrefsToLocal(cloud)
     hydrating = false
@@ -110,17 +121,25 @@ export async function reconcileBackgroundImages() {
   let changed = false
   for (const k of BG_IMAGE_KEYS) {
     try {
-      const cloud = await dbGet(k)            // string = image, '' = cleared, null = never set
+      // Only pull the (potentially multi-MB) image down when the cloud copy has
+      // actually changed since we last applied it — otherwise this foreground
+      // reconcile was re-reading the whole photo off disk every time.
+      const res = await dbGetChanged(k, seenGet(k))
+      if (res.status === 'unchanged') { seenSet(k, res.updatedAt); continue }
       let local = ''
       try { local = localStorage.getItem(k) || '' } catch {}
-      if (typeof cloud === 'string') {
-        if (local !== cloud) {
-          try { cloud ? localStorage.setItem(k, cloud) : localStorage.removeItem(k) } catch {}
-          changed = true
-        }
-      } else if (local) {
-        Promise.resolve(dbSet(k, local)).catch(() => {})
+      if (res.status === 'absent') {
+        // Cloud never had this image; seed it from this device if we have one.
+        if (local) Promise.resolve(dbSet(k, local)).catch(() => {})
+        continue
       }
+      // status === 'changed'
+      const cloud = res.value                 // string = image, '' = cleared
+      if (typeof cloud === 'string' && local !== cloud) {
+        try { cloud ? localStorage.setItem(k, cloud) : localStorage.removeItem(k) } catch {}
+        changed = true
+      }
+      seenSet(k, res.updatedAt)
     } catch {}
   }
   return changed

@@ -43,6 +43,36 @@ export async function dbGet(key) {
   }
   return lsGet(key)
 }
+
+// Read a kv_store row's value only when it has changed since `sinceISO`.
+// The tiny `updated_at` column is fetched first; the (potentially large) `value`
+// is read off disk only when it actually differs. This is what stops the big
+// background-image blobs (and the prefs blob) from being re-read on every
+// foreground — the repeated large-row reads Supabase flagged as Disk IO drain.
+// Returns one of:
+//   { status:'unchanged', updatedAt }        — row exists, same timestamp (no value read)
+//   { status:'changed', value, updatedAt }    — row exists and is newer; value read
+//   { status:'absent' }                       — no row for this key
+// Without Supabase it just returns the local value (localStorage has no IO cost).
+export async function dbGetChanged(key, sinceISO) {
+  if (!USE_SUPABASE) return { status: 'changed', value: await lsGet(key), updatedAt: null }
+  const { data: meta, error: metaErr } = await supabase
+    .from('kv_store').select('updated_at').eq('key', key).maybeSingle()
+  if (metaErr) {
+    console.error(`[storage] dbGetChanged('${key}') meta failed:`, metaErr.message)
+    // On a metadata error, treat as unchanged so we never clobber good local data.
+    return { status: 'unchanged', updatedAt: sinceISO ?? null }
+  }
+  if (!meta) return { status: 'absent' }
+  const updatedAt = meta.updated_at ?? null
+  if (sinceISO && updatedAt && updatedAt === sinceISO) return { status: 'unchanged', updatedAt }
+  const { data, error } = await supabase.from('kv_store').select('value').eq('key', key).maybeSingle()
+  if (error) {
+    console.error(`[storage] dbGetChanged('${key}') value failed:`, error.message)
+    return { status: 'unchanged', updatedAt }
+  }
+  return { status: 'changed', value: data?.value ?? null, updatedAt }
+}
 // Two writes to the same key can be in flight at once (e.g. checking a
 // commitment off right as another edit is saving) with no guarantee the
 // network responses land in the same order they were sent — whichever
