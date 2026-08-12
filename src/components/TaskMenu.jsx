@@ -4,7 +4,7 @@
 // date or time. When you later create a task (from Today, the Calendar, or your
 // Commitments), you can pick one of these off the menu and everything preset
 // auto-fills, so all that's left is to choose a start time.
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Icon } from './IconPicker.jsx'
 import ColorIconPicker from './ColorIconPicker.jsx'
 import { suggestGlyph, iconColorOn } from '../lib/glyphs.jsx'
@@ -12,6 +12,19 @@ import { activeAccent } from '../lib/appearance.js'
 import { getDurationPresets, setDurationPresets, resetDurationPresets, parseDuration, durationLabel } from '../lib/durations.js'
 
 const DEFAULT_CATEGORIES = [{ id:'other', label:'Other', color:'#8899AA' }]
+
+// A one-line-looking field that wraps long text and grows to fit, so a long
+// subtask no longer runs off the edge of its row.
+function GrowField({ value, onChange, placeholder, style, onKeyDown }) {
+  const ref = useRef(null)
+  const fit = (el) => { if (el) { el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px' } }
+  useEffect(() => { fit(ref.current) }, [value])
+  return (
+    <textarea ref={ref} rows={1} value={value} placeholder={placeholder} onKeyDown={onKeyDown}
+      onChange={e => { onChange(e); fit(e.target) }}
+      style={{ ...style, resize:'none', overflow:'hidden', lineHeight:1.4 }} />
+  )
+}
 
 const inp = { width:'100%', fontSize:14, padding:'10px 12px', borderRadius:10, border:'1px solid var(--border)', fontFamily:'DM Sans,sans-serif', outline:'none', boxSizing:'border-box' }
 const ROW_ACCENT = '#3E9C86'
@@ -246,7 +259,7 @@ function TemplateEditor({ existing = null, categories = [], onSave, onClose }) {
             {subtasks.map((s, i) => (
               <div key={s.id} style={{ display:'flex', alignItems:'center', gap:8, padding:'8px 0', borderBottom:'1px solid #F1EDF2' }}>
                 <span style={{ width:18, height:18, borderRadius:5, flexShrink:0, border:'2px solid #CDD3DA' }} />
-                <input value={s.text} onChange={e => editSub(s.id, e.target.value)}
+                <GrowField value={s.text} onChange={e => editSub(s.id, e.target.value)}
                   style={{ flex:1, minWidth:0, fontSize:14, padding:'2px 0', border:'none', background:'transparent', fontFamily:'DM Sans,sans-serif', outline:'none', color:'var(--text)' }} />
                 {subtasks.length > 1 && (
                   <span style={{ display:'inline-flex', flexDirection:'column', flexShrink:0, lineHeight:0 }}>

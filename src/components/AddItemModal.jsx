@@ -5,7 +5,7 @@
 // a start time and end time (with quick-duration buttons that fill the end
 // from the start), plus optional custom reminder lead times that override the
 // global defaults just for this item.
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import DateField from './DateField.jsx'
 import TimeField from './TimeField.jsx'
 import MiniCalendar from './MiniCalendar.jsx'
@@ -25,6 +25,20 @@ import { getSavedPlaces, getRecentPlaces, rememberPlace } from '../lib/places.js
 import { activeAccent } from '../lib/appearance.js'
 
 const DEFAULT_CATEGORIES = [{ id:'other', label:'Other', color:'#8899AA' }]
+
+// A one-line-looking text field that WRAPS long text onto more lines and grows
+// to fit, instead of the old <input> that let a long subtask run off the edge
+// of its container. Used for subtask rows.
+function GrowField({ value, onChange, placeholder, style, onKeyDown }) {
+  const ref = useRef(null)
+  const fit = (el) => { if (el) { el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px' } }
+  useEffect(() => { fit(ref.current) }, [value])
+  return (
+    <textarea ref={ref} rows={1} value={value} placeholder={placeholder} onKeyDown={onKeyDown}
+      onChange={e => { onChange(e); fit(e.target) }}
+      style={{ ...style, resize:'none', overflow:'hidden', lineHeight:1.4 }} />
+  )
+}
 
 const inp = { width:'100%', fontSize:14, padding:'10px 12px', borderRadius:10, border:'1px solid var(--border)', fontFamily:'DM Sans,sans-serif', outline:'none', boxSizing:'border-box' }
 const fieldLabel = { fontSize:10, color:'var(--muted)', letterSpacing:1, textTransform:'uppercase', marginBottom:4 }
@@ -1309,7 +1323,7 @@ export default function AddItemModal({ existing = null, existingRecurring = null
                   style={{ width:20, height:20, borderRadius:6, flexShrink:0, cursor:'pointer', border: s.done ? 'none' : '2px solid #CDD3DA', background: s.done ? ROW_ACCENT : 'transparent', display:'flex', alignItems:'center', justifyContent:'center' }}>
                   {s.done && <span style={{ color:'white', fontSize:12, fontWeight:700 }}>✓</span>}
                 </div>
-                <input value={s.text} onChange={e => editSub(s.id, e.target.value)}
+                <GrowField value={s.text} onChange={e => editSub(s.id, e.target.value)}
                   style={{ flex:1, minWidth:0, fontSize:14, padding:'2px 0', border:'none', background:'transparent', fontFamily:'DM Sans,sans-serif', outline:'none', textDecoration: s.done ? 'line-through' : 'none', color: s.done ? 'var(--muted)' : 'var(--text)' }} />
                 {/* Reorder handles — only meaningful with more than one subtask. */}
                 {subtasks.length > 1 && (
