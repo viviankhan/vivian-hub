@@ -91,19 +91,6 @@ const GLYPHS = {
 
 export function hasGlyph(id) { return !!GLYPHS[id] }
 
-// A routine group's icon: its explicitly chosen icon, else one inferred from its
-// name (morning → sun, night/evening → moon), else a generic repeat glyph. Kept
-// here so the Recurring tab and the Today timeline show the same icon for a
-// group.
-export function routineGlyph(routine) {
-  if (routine && routine.icon) return routine.icon
-  const n = (routine?.name || '').toLowerCase()
-  if (n.includes('night') || n.includes('evening') || n.includes('bed')) return 'glyph:moon'
-  if (n.includes('morning') || n.includes('wake') || n.includes('sunrise')) return 'glyph:sun'
-  if (n.includes('after') || n.includes('noon')) return 'glyph:sun'
-  return 'glyph:repeat'
-}
-
 // Pick a readable icon/text color for a filled background: dark on light
 // colors, light on dark ones. Falls back to white for anything it can't parse
 // (e.g. a CSS var), which is the safe default on Bloom's medium accents.
