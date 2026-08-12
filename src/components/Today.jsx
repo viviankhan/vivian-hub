@@ -370,6 +370,32 @@ function ShiftChooser({ plan, routines = [], onApply, onCancel }) {
 function stripTimePrefix(label) {
   return (label || '').replace(/^~?\d{1,2}:\d{2}\s*(AM|PM)?\s*[—–-]\s*/i, '')
 }
+// Did editing this one occurrence change nothing but its start time? If so we can
+// move just this day WITHOUT detaching it from its series (which would turn it
+// into a one-off and lose its delete-this/future/all menu). Any real content
+// change — title, notes, duration, labels, color/icon, subtasks, block,
+// location, or a per-day custom reminder — still needs a detached copy, so this
+// stays conservative: it only returns true when every content field matches the
+// template, and treats an auto-suggested icon (derived from the title) as "no
+// change" so an icon-less routine step isn't detached for no reason.
+function occurrenceOnlyMovedTime(tmpl, occ, reminderMins) {
+  if (reminderMins != null) return false                 // a per-day alert needs a real item id
+  const baseTitle = stripTimePrefix(tmpl.label ?? tmpl.text ?? '')
+  const baseIcon  = tmpl.icon || suggestGlyph(baseTitle) || ''
+  const sameCats  = JSON.stringify(occ.cats || []) === JSON.stringify(tmpl.cat ? [tmpl.cat] : [])
+  const locOf = (l) => (l && typeof l.lat === 'number') ? { lat:+l.lat.toFixed(6), lng:+l.lng.toFixed(6), name:(l.name||'') } : null
+  const sameLoc = JSON.stringify(locOf(occ.location)) === JSON.stringify(locOf(tmpl.location))
+  return (
+    (occ.text || '') === baseTitle &&
+    (occ.description || '') === (tmpl.note || '') &&
+    (occ.durationMins || null) === (tmpl.durationMins || null) &&
+    (occ.color || '') === (tmpl.color || '') &&
+    (occ.icon || '') === baseIcon &&
+    !!occ.block === !!tmpl.block &&
+    (occ.subtasks?.length || 0) === 0 &&
+    sameCats && sameLoc
+  )
+}
 function hhmmToMins(t) {
   if (!t) return null
   const [h, m] = t.split(':').map(Number)
@@ -1586,6 +1612,21 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
     setShiftPlan({ pivot, rest, selected, doneIds, delta, mode:'delta' })
   }
 
+  // Move a recurring occurrence's start for just THIS day via the day-local
+  // override — the same mechanism the shift chooser uses — so the task keeps
+  // repeating and keeps its delete-this/future/all menu instead of being
+  // detached into a one-off. Undoable.
+  const moveOccurrenceForDay = (id, mins) => {
+    const prev = timeOverrides
+    const next = { ...prev, [id]: mins }
+    setTimeOverrides(next)
+    localStorage.setItem('vivian_timeshift_'+dateKey, JSON.stringify(next))
+    if (pushUndo) pushUndo('moved the task', () => {
+      setTimeOverrides(prev)
+      localStorage.setItem('vivian_timeshift_'+dateKey, JSON.stringify(prev))
+    })
+  }
+
   // ── Pause & resume (Focus mode) ──────────────────────────────
   // Pausing no longer splits the task or reschedules a remainder — the task
   // keeps its place on the timeline. We just record the wall-clock span it was
@@ -1658,7 +1699,14 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
     // tells it which occurrence). Per-day skip/reschedule stay on the ⋯ menu.
     if (task.isRecurring && updateRecurringTask) {
       const tmpl = (recurringTasks || []).find(t => t.id === (task.recurringId || task.id))
-      if (tmpl) { setEditingRecDate(dateKey); setEditingRec(tmpl); return }
+      if (tmpl) {
+        // If this day carries a local time move (from a one-day nudge or a
+        // routine shift), open the editor showing THAT moved time — not the
+        // series' original — so re-saving doesn't quietly revert today's move.
+        const ov = timeOverrides[tmpl.id]
+        const forEdit = ov !== undefined ? { ...tmpl, label: shiftLabelTime(tmpl.label, ov) } : tmpl
+        setEditingRecDate(dateKey); setEditingRec(forEdit); return
+      }
     }
     setManaging(task)
   }
@@ -2058,14 +2106,25 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
       {editingRec&&<AddItemModal existingRecurring={editingRec} categories={categories} routines={routines}
         occurrenceDate={editingRecDate}
         onSaveOccurrence={(date, occ, reminderMins)=>{
-          // Detach this one day: hide the series on this date and add a one-off
-          // commitment carrying the edits. Other days stay as-is.
           const pivotId = editingRec.id
+          const newMins = occ.time ? hhmmToMins(occ.time) : null
+          // Time-only change on the day we're looking at → just move it for today
+          // and keep it in its series (so it still repeats and keeps its
+          // delete-this/future/all menu), instead of detaching it into a one-off.
+          if (date === dateKey && newMins !== null && occurrenceOnlyMovedTime(editingRec, occ, reminderMins)) {
+            moveOccurrenceForDay(pivotId, newMins)
+            setEditingRec(null); setEditingRecDate(null)
+            maybePromptShift(pivotId, newMins)
+            return
+          }
+          // A real per-occurrence content edit (new title, subtasks, per-day
+          // alert, …) still detaches: hide the series on this date and add a
+          // one-off commitment carrying the edits. Other days stay as-is.
           skipRecurringOccurrence && skipRecurringOccurrence(editingRec.id, date)
           if (addCommitment) addCommitment(occ)
           setItemReminders(occ.id, reminderMins)
           setEditingRec(null); setEditingRecDate(null)
-          maybePromptShift(pivotId, occ.time ? hhmmToMins(occ.time) : null)
+          maybePromptShift(pivotId, newMins)
         }}
         onSaveRecurring={t=>{ const pivotId=t.id; updateRecurringTask&&updateRecurringTask(t.id,t); setEditingRec(null); setEditingRecDate(null); maybePromptShift(pivotId, parseTimeMins(t.label)) }}
         onDeleteOccurrence={date=>{ skipRecurringOccurrence&&skipRecurringOccurrence(editingRec.id, date); setEditingRec(null); setEditingRecDate(null) }}
