@@ -34,9 +34,12 @@ function GrowField({ value, onChange, placeholder, style, onKeyDown }) {
   const fit = (el) => { if (el) { el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px' } }
   useEffect(() => { fit(ref.current) }, [value])
   return (
+    // minHeight:0 is essential — the global `textarea { min-height:160px }` rule
+    // would otherwise force every subtask field to a giant 160px box. With it
+    // overridden, the field sits at one line and grows only as the text wraps.
     <textarea ref={ref} rows={1} value={value} placeholder={placeholder} onKeyDown={onKeyDown}
       onChange={e => { onChange(e); fit(e.target) }}
-      style={{ ...style, resize:'none', overflow:'hidden', lineHeight:1.4 }} />
+      style={{ ...style, boxSizing:'border-box', resize:'none', overflow:'hidden', lineHeight:1.4, minHeight:0, height:'auto' }} />
   )
 }
 
