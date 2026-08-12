@@ -4,7 +4,7 @@ import { findSlots } from '../lib/scheduler.js'
 import { getRoutines } from '../lib/storage.js'
 import { normalizeRoutineItems, sortByTime, to12 } from './Routines.jsx'
 import { Icon } from './IconPicker.jsx'
-import { iconColorOn, suggestGlyph } from '../lib/glyphs.jsx'
+import { iconColorOn, suggestGlyph, routineGlyph } from '../lib/glyphs.jsx'
 import { bloomBurst } from '../lib/bloom.js'
 import AddItemModal from './AddItemModal.jsx'
 import FocusMode from './FocusMode.jsx'
@@ -619,18 +619,20 @@ function collapseLabelFor(routine) {
   if (n.includes('night') || n.includes('evening')) return 'Last of the evening'
   return `${routine?.name || 'Routine'} — done`
 }
-function RoutineCollapseRow({ routine, count, expanded, onToggle }) {
+function RoutineCollapseRow({ routine, count, expanded, onToggle, onMenu }) {
   const tint = routine?.tint || '#EDE7F0'
-  const n = (routine?.name || '').toLowerCase()
-  const glyph = n.includes('night') || n.includes('evening') ? 'glyph:moon' : 'glyph:sun'
+  const glyph = routineGlyph(routine)
   return (
     <div style={{ position:'relative', zIndex:0, display:'flex', gap:0, minHeight:52, opacity:.85 }}>
       <div style={{ position:'absolute', top:6, bottom:6, left:44, right:0, background:tint, opacity:.4, borderRadius:16, zIndex:-1 }} />
       <div style={{ width:52, flexShrink:0 }} />
       <div style={{ width:52, flexShrink:0, display:'flex', justifyContent:'center', alignItems:'center' }}>
-        <div style={{ width:34, height:34, borderRadius:'50%', background:tint, display:'flex', alignItems:'center', justifyContent:'center' }}>
+        {/* The routine's icon is a button: tap it for the routine's options
+            (Reset to default times). Falls back to a plain badge if no handler. */}
+        <button onClick={onMenu} disabled={!onMenu} title={onMenu ? 'Routine options' : undefined}
+          style={{ width:34, height:34, borderRadius:'50%', background:tint, border:'none', padding:0, cursor: onMenu ? 'pointer' : 'default', display:'flex', alignItems:'center', justifyContent:'center' }}>
           <Icon value={glyph} size={17} color="#5A5560" />
-        </div>
+        </button>
       </div>
       <button onClick={onToggle}
         style={{ flex:1, minWidth:0, textAlign:'left', border:'none', background:'transparent', cursor:'pointer', padding:'10px 10px', display:'flex', alignItems:'center', gap:8, fontFamily:'DM Sans,sans-serif' }}>
@@ -1081,6 +1083,8 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
     try { localStorage.setItem('vivian_collapsed_blocks', JSON.stringify(next)) } catch {}
     return next
   })
+  // Which routine's options menu (tap the group icon) is open on the timeline.
+  const [routineMenu, setRoutineMenu] = useState(null)   // routineId | null
   const [shiftResult, setShiftResult] = useState(null)
   const [customTasks, setCustomTasks] = useState(()=>{
     try { return JSON.parse(localStorage.getItem('vivian_custom_'+todayKey())||'[]') } catch { return [] }
@@ -1131,6 +1135,7 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
     setDeleted(ra('vivian_deleted_' + viewDate))
     setTimeOverrides(ro('vivian_timeshift_' + viewDate))
     setRoutineDone(ro('vivian_routine_' + viewDate))
+    setRoutineMenu(null)
   }, [viewDate])
 
   const toggleRoutine = (key) => {
@@ -1627,6 +1632,27 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
     })
   }
 
+  // Reset a routine to its default: clear today's day-to-day time shifts for the
+  // routine's steps so every step snaps back to the time you set on it. (Steps
+  // that are one-off commitments moved for real aren't reverted — only the
+  // day-local shifts, which cover the usual recurring routine steps.) Undoable.
+  const resetRoutineToDefault = (rid) => {
+    setRoutineMenu(null)
+    const prev = timeOverrides
+    const next = { ...timeOverrides }
+    let touched = false
+    tasksWithStatus.forEach(t => {
+      if (t.routine === rid && (t.id in next)) { delete next[t.id]; touched = true }
+    })
+    if (!touched) return
+    setTimeOverrides(next)
+    localStorage.setItem('vivian_timeshift_'+dateKey, JSON.stringify(next))
+    if (pushUndo) pushUndo('reset the routine', () => {
+      setTimeOverrides(prev)
+      localStorage.setItem('vivian_timeshift_'+dateKey, JSON.stringify(prev))
+    })
+  }
+
   // ── Pause & resume (Focus mode) ──────────────────────────────
   // Pausing no longer splits the task or reschedules a remainder — the task
   // keeps its place on the timeline. We just record the wall-clock span it was
@@ -1967,7 +1993,8 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
               const header = firstOfRoutine
                 ? (emittedCollapse[task.routine] = true,
                    <RoutineCollapseRow key={'rc-'+task.routine} routine={r} count={doneRoutineCounts[task.routine]} expanded={isExp}
-                     onToggle={()=>setExpandedRoutines(p=>({...p,[task.routine]:!p[task.routine]}))} />)
+                     onToggle={()=>setExpandedRoutines(p=>({...p,[task.routine]:!p[task.routine]}))}
+                     onMenu={()=>setRoutineMenu(task.routine)} />)
                 : null
               if (!isExp) {
                 // Collapsed: advance the cursor over the whole routine window once.
@@ -2096,6 +2123,34 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
         onApply={(ids)=>{ shiftPlan.mode==='delta' ? applyTimeShift(shiftPlan.pivot, shiftPlan.delta, ids) : applyShift(shiftPlan.pivot, ids); setShiftPlan(null) }}
         onCancel={()=>setShiftPlan(null)}/>}
       {shiftResult&&<ShiftToast result={shiftResult} onClose={()=>setShiftResult(null)}/>}
+      {/* Routine options — opened by tapping a routine's icon/header on the
+          timeline. "Reset to default" clears today's time shifts for the routine
+          so every step returns to the time you set on it. */}
+      {routineMenu && (() => {
+        const r = routines.find(x=>x.id===routineMenu)
+        if (!r) return null
+        const menuBtn = { padding:'12px 14px', borderRadius:12, border:'1px solid var(--border)', background:'white', color:'var(--text)', cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:600, fontSize:14, textAlign:'left', display:'flex', alignItems:'center', gap:9 }
+        return (
+          <div onClick={()=>setRoutineMenu(null)} style={{position:'fixed',inset:0,background:'rgba(0,0,0,.5)',zIndex:700,display:'flex',alignItems:'center',justifyContent:'center',padding:20}}>
+            <div onClick={e=>e.stopPropagation()} style={{background:'white',borderRadius:18,padding:20,maxWidth:330,width:'100%',boxShadow:'0 24px 64px rgba(0,0,0,.3)'}}>
+              <div style={{display:'flex',alignItems:'center',gap:11,marginBottom:15}}>
+                <span style={{width:36,height:36,borderRadius:'50%',background:r.tint,display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
+                  <Icon value={routineGlyph(r)} size={19} color="#5A5560" />
+                </span>
+                <span className="serif" style={{fontSize:17,fontWeight:600,color:'var(--text)',minWidth:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{r.name}</span>
+              </div>
+              <div style={{display:'flex',flexDirection:'column',gap:9}}>
+                <button onClick={()=>resetRoutineToDefault(r.id)} style={menuBtn}>
+                  <span style={{display:'inline-flex',flexShrink:0,color:'var(--teal)'}}><Icon value="glyph:repeat" size={17} color="currentColor" /></span>
+                  Reset to default times
+                </button>
+                <button onClick={()=>setRoutineMenu(null)} style={{padding:'9px',borderRadius:12,border:'none',background:'none',color:'var(--muted)',cursor:'pointer',fontFamily:'DM Sans,sans-serif',fontSize:13}}>Cancel</button>
+              </div>
+              <div style={{fontSize:11,color:'var(--muted)',marginTop:12,lineHeight:1.5}}>“Reset to default” clears today’s time shifts for this routine, snapping every step back to the time you set on it. Your undone steps stay put.</div>
+            </div>
+          </div>
+        )
+      })()}
       {addingTask&&<AddItemModal presetDate={dateKey} presetTime={addPreset?.time||''} presetDur={addPreset?.dur||null} presetCat={addPreset?.cat||''} categories={categories} routines={routines} templates={taskTemplates} labelModel={labelModel} onSave={handleAdd} onSaveRecurring={addRecurringTask} onClose={()=>{ setAddingTask(false); setAddPreset(null) }} title="Add to Today"/>}
       {editing&&<AddItemModal existing={editing} categories={categories} routines={routines} onSave={handleSaveEdit}
         onSaveRecurring={addRecurringTask}
