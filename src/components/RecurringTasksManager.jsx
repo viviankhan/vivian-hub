@@ -340,6 +340,16 @@ function RoutinesView({ routines, tasks, categories, today, onEditTask, updateRe
   const [confirmDel, setConfirmDel] = useState(null)
   const [tintOpen, setTintOpen] = useState(null)     // routine id whose tint picker is open
   const [newTintOpen, setNewTintOpen] = useState(false)
+  // Which routine groups are folded shut (their tasks hidden). Persisted so the
+  // choice sticks between visits.
+  const [collapsed, setCollapsed] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('vivian_routine_groups_collapsed') || '{}') } catch { return {} }
+  })
+  const toggleCollapsed = (rid) => setCollapsed(prev => {
+    const next = { ...prev, [rid]: !prev[rid] }
+    try { localStorage.setItem('vivian_routine_groups_collapsed', JSON.stringify(next)) } catch {}
+    return next
+  })
   const rInp = { fontSize:13, padding:'9px 12px', borderRadius:10, border:'1px solid var(--border)', fontFamily:'DM Sans,sans-serif', outline:'none', background:'white', color:'var(--text)', boxSizing:'border-box' }
 
   const byRoutine = (rid) => tasks.filter(t => (t.routine || '') === rid)
@@ -393,10 +403,14 @@ function RoutinesView({ routines, tasks, categories, today, onEditTask, updateRe
       {routines.map(r => {
         const items = byRoutine(r.id)
         const range = routineTimeRange(items)
+        const isCollapsed = !!collapsed[r.id]
         return (
           <div key={r.id} style={{ marginBottom:18 }}>
-            {/* Group header — swatch (tap to recolor), editable name, count, delete */}
+            {/* Group header — collapse chevron, swatch (tap to recolor), editable
+                name, count, delete */}
             <div style={{ display:'flex', alignItems:'center', gap:9, marginBottom:8 }}>
+              <button onClick={()=>toggleCollapsed(r.id)} title={isCollapsed?'Expand routine':'Collapse routine'} aria-expanded={!isCollapsed}
+                style={{ background:'none', border:'none', cursor:'pointer', color:'var(--muted)', fontSize:11, padding:'0 2px', flexShrink:0, transform: isCollapsed?'none':'rotate(90deg)', transition:'transform .2s' }}>▶</button>
               <button onClick={()=>setTintOpen(o=>o===r.id?null:r.id)} title="Change film color"
                 style={{ width:24, height:24, borderRadius:7, background:r.tint, border: tintOpen===r.id ? '2px solid var(--text)' : '1px solid rgba(0,0,0,.12)', cursor:'pointer', flexShrink:0, padding:0 }} />
               <input value={r.name} onChange={e=>updateRoutine(r.id,{ name:e.target.value })} aria-label="Routine name"
@@ -421,20 +435,22 @@ function RoutinesView({ routines, tasks, categories, today, onEditTask, updateRe
                 </div>
               </div>
             )}
-            {/* Shift the whole routine earlier/later — only when it has timed steps */}
-            {range && (
-              <RoutineShiftBar range={range}
-                onShift={(delta)=>shiftRoutine(r.id, delta)}
-                onSetStart={(mins)=>shiftRoutine(r.id, mins - range.start)} />
-            )}
-            {/* A tinted rail down the group's tasks so the film color reads here too */}
-            <div style={{ borderLeft:`3px solid ${r.tint}`, paddingLeft:10, borderRadius:2 }}>
-              {items.length===0 ? (
-                <div style={{ fontSize:12, color:'var(--muted)', padding:'4px 2px 6px', fontStyle:'italic' }}>No tasks yet — open a task and pick this routine.</div>
-              ) : items.map(task => (
-                <TaskListRow key={task.id+task.type+(task.days||[]).join('')} task={task} onEdit={()=>onEditTask(task)} today={today} categories={categories} routines={routines} />
-              ))}
-            </div>
+            {!isCollapsed && <>
+              {/* Shift the whole routine earlier/later — only when it has timed steps */}
+              {range && (
+                <RoutineShiftBar range={range}
+                  onShift={(delta)=>shiftRoutine(r.id, delta)}
+                  onSetStart={(mins)=>shiftRoutine(r.id, mins - range.start)} />
+              )}
+              {/* A tinted rail down the group's tasks so the film color reads here too */}
+              <div style={{ borderLeft:`3px solid ${r.tint}`, paddingLeft:10, borderRadius:2 }}>
+                {items.length===0 ? (
+                  <div style={{ fontSize:12, color:'var(--muted)', padding:'4px 2px 6px', fontStyle:'italic' }}>No tasks yet — open a task and pick this routine.</div>
+                ) : items.map(task => (
+                  <TaskListRow key={task.id+task.type+(task.days||[]).join('')} task={task} onEdit={()=>onEditTask(task)} today={today} categories={categories} routines={routines} />
+                ))}
+              </div>
+            </>}
           </div>
         )
       })}
@@ -456,7 +472,7 @@ function RoutinesView({ routines, tasks, categories, today, onEditTask, updateRe
 // ── Main ───────────────────────────────────────────────────────
 export default function RecurringTasksManager({ recurringTasks, addRecurringTask, updateRecurringTask, deleteRecurringTask, clearRecurringTasks, categories, routines = [], taskTemplates = [], labelModel = null, addRoutine, updateRoutine, deleteRoutine, defaultWeekTasks, defaultDailyTodos }) {
   const [editing,     setEditing]     = useState(null) // null | 'new' | task object
-  const [view,        setView]        = useState('routines') // 'routines' | 'schedule'
+  const [view,        setView]        = useState('schedule') // 'schedule' | 'routines'
   const [filterDay,   setFilterDay]   = useState(todayName())
   const [filterType,  setFilterType]  = useState('all')
   const [confirmClear, setConfirmClear] = useState(false)
@@ -581,7 +597,7 @@ export default function RecurringTasksManager({ recurringTasks, addRecurringTask
 
       {/* Sub-tabs: the full schedule, or grouped by routine. */}
       <div style={{ display:'flex', gap:4, padding:4, borderRadius:12, background:'#EAE7EE', marginBottom:14 }}>
-        {[['routines','Routines'],['schedule','Schedule']].map(([v,l])=>(
+        {[['schedule','Schedule'],['routines','Routines']].map(([v,l])=>(
           <button key={v} onClick={()=>setView(v)}
             style={{ flex:1, padding:'9px 6px', borderRadius:9, border:'none', cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontSize:13, fontWeight:700,
               background: view===v ? 'var(--forest)' : 'transparent', color: view===v ? 'var(--green-light)' : 'var(--muted)' }}>{l}</button>
