@@ -131,6 +131,22 @@ export async function ensureBackgroundPush() {
 // Write this device's upcoming reminders into Supabase so the Edge Function can
 // deliver them. Replaces the device's pending (future, unsent) queue each call,
 // so deleted/rescheduled items don't linger. No-op unless background push is on.
+// Debounced form of syncScheduledPushes. The App re-runs the reminder sync on
+// every task/event edit; each run rewrites this device's whole future push
+// queue (a delete + bulk upsert). A burst of edits therefore hammered the DB
+// with full-queue rewrites. Collapsing them into one write after the edits
+// settle is strictly safe — the sync is idempotent, it always replaces the
+// entire future queue — and cuts that write IO sharply.
+let scheduledPushTimer = null
+export function syncScheduledPushesDebounced(events, commitments, recurring = [], wait = 1500) {
+  if (!backgroundPushEnabled() || !pushSupported() || !supabase) return
+  if (scheduledPushTimer) clearTimeout(scheduledPushTimer)
+  scheduledPushTimer = setTimeout(() => {
+    scheduledPushTimer = null
+    syncScheduledPushes(events, commitments, recurring)
+  }, wait)
+}
+
 export async function syncScheduledPushes(events, commitments, recurring = []) {
   if (!backgroundPushEnabled() || !pushSupported() || !supabase) return
   const id = deviceId()

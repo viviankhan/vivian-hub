@@ -38,7 +38,7 @@ import ThoughtsBoard from './components/ThoughtsBoard.jsx'
 import NotificationsSettings from './components/NotificationsSettings.jsx'
 import SearchOverlay, { SearchIcon } from './components/SearchOverlay.jsx'
 import { registerServiceWorker, syncReminders, notifyArrival, getDefaultLeads } from './lib/notifications.js'
-import { ensureBackgroundPush, syncScheduledPushes } from './lib/push.js'
+import { ensureBackgroundPush, syncScheduledPushesDebounced } from './lib/push.js'
 import { buildLabelModel, historyFromData } from './lib/predictLabel.js'
 import { geolocationSupported, watchArrivals } from './lib/geofence.js'
 import { Glyph } from './lib/glyphs.jsx'
@@ -744,7 +744,7 @@ export default function App() {
     // when Bloom is closed (no-op unless background push is turned on). Only on
     // data changes — not the 60s heartbeat below — since the schedule only
     // changes when the underlying items do.
-    syncScheduledPushes(events, remindable, recurringReminderItems)
+    syncScheduledPushesDebounced(events, remindable, recurringReminderItems)
     // Re-sync on any signal that the app came back to life, plus a steady
     // heartbeat. A single long setTimeout drifts badly when the device sleeps,
     // so instead of trusting one timer per reminder we recompute every minute
@@ -837,7 +837,35 @@ export default function App() {
   // which warns before the tab closes/reloads while a save is still pending.)
   const reportSaveError = err => { console.error(err); alert(`⚠️ ${err.message || err}\n\nThis change was NOT saved to the cloud and may revert. Check your connection and try again.`) }
 
-  const updateNotes      = useCallback(async v => { setNotes_(v);      try { await setNotes(v) }      catch (e) { reportSaveError(e) } }, [])
+  // Notes save as you type, but the cloud write is debounced: typing a page
+  // used to fire one Supabase upsert per keystroke (a real Disk IO / WAL drain).
+  // Local state still updates instantly; the cloud gets one write per pause,
+  // and any pending write is flushed when the tab is hidden or closed so the
+  // last keystrokes are never lost.
+  const notesTimer   = useRef(null)
+  const notesPending = useRef(null)
+  const flushNotes = useCallback(() => {
+    if (notesTimer.current) { clearTimeout(notesTimer.current); notesTimer.current = null }
+    if (notesPending.current == null) return
+    const v = notesPending.current
+    notesPending.current = null
+    Promise.resolve(setNotes(v)).catch(reportSaveError)
+  }, [])
+  const updateNotes = useCallback(v => {
+    setNotes_(v)
+    notesPending.current = v
+    if (notesTimer.current) clearTimeout(notesTimer.current)
+    notesTimer.current = setTimeout(flushNotes, 800)
+  }, [flushNotes])
+  useEffect(() => {
+    const onHide = () => { if (document.hidden) flushNotes() }
+    window.addEventListener('beforeunload', flushNotes)
+    document.addEventListener('visibilitychange', onHide)
+    return () => {
+      window.removeEventListener('beforeunload', flushNotes)
+      document.removeEventListener('visibilitychange', onHide)
+    }
+  }, [flushNotes])
   const updateFcProgress = useCallback(async v => { setFcProgress_(v); try { await setFcProgress(v) } catch (e) { reportSaveError(e) } }, [])
   const updateFcStudied  = useCallback(async v => { setFcStudied_(v);  try { await setFcStudied(v) }  catch (e) { reportSaveError(e) } }, [])
 

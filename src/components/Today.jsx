@@ -278,6 +278,21 @@ function ShiftChooser({ plan, routines = [], onApply, onCancel }) {
   const toggle = (id) => setSel(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n })
   const setMany = (groupIds, on) => setSel(s => { const n = new Set(s); groupIds.forEach(id => on ? n.add(id) : n.delete(id)); return n })
   const pivotTitle = plan.pivot.title || stripTimePrefix(plan.pivot.label)
+  // Two modes share this chooser: 'delta' (you changed a task's time — slide the
+  // rest along by the same amount) and the default Start-now packing.
+  const isDelta = plan.mode === 'delta'
+  const deltaMins = Math.abs(plan.delta || 0)
+  const deltaLabel = deltaMins >= 60
+    ? `${Math.floor(deltaMins/60)}h${deltaMins%60 ? ' '+(deltaMins%60)+'m' : ''}`
+    : `${deltaMins}m`
+  const dir = (plan.delta || 0) >= 0 ? 'later' : 'earlier'
+  const heading  = isDelta ? `Reschedule the rest?` : `Start “${pivotTitle}” now`
+  const subhead  = isDelta
+    ? `You moved “${pivotTitle}” ${deltaLabel} ${dir}. Shift the checked tasks along by the same ${deltaLabel} — unchecked tasks stay put. A re-timed routine step re-ticks itself once its new time passes.`
+    : `Choose which later tasks to shift along. Unchecked tasks stay put. A re-timed routine step just re-ticks itself once its new time passes.`
+  const applyLabel = isDelta
+    ? (sel.size ? `Reschedule ${sel.size}` : `Reschedule none`)
+    : (sel.size ? `Start now · shift ${sel.size}` : `Start now · shift none`)
 
   // Bucket the tasks by routine, preserving each group's earliest time so the
   // groups read top-to-bottom in day order. Tasks with no routine fall into a
@@ -295,8 +310,8 @@ function ShiftChooser({ plan, routines = [], onApply, onCancel }) {
   return (
     <div onClick={onCancel} style={{position:'fixed',inset:0,background:'rgba(0,0,0,.5)',zIndex:610,display:'flex',alignItems:'center',justifyContent:'center',padding:16}}>
       <div onClick={e=>e.stopPropagation()} style={{background:'white',borderRadius:18,width:'100%',maxWidth:400,maxHeight:'86vh',overflowY:'auto',boxShadow:'0 24px 64px rgba(0,0,0,.3)',padding:20}}>
-        <div className="serif" style={{fontSize:18,fontWeight:600,color:'var(--text)',marginBottom:3}}>Start “{pivotTitle}” now</div>
-        <div style={{fontSize:12.5,color:'var(--muted)',marginBottom:14}}>Choose which later tasks to shift along. Unchecked tasks stay put. A re-timed routine step just re-ticks itself once its new time passes.</div>
+        <div className="serif" style={{fontSize:18,fontWeight:600,color:'var(--text)',marginBottom:3}}>{heading}</div>
+        <div style={{fontSize:12.5,color:'var(--muted)',marginBottom:14}}>{subhead}</div>
         <button onClick={()=>setSel(allOn ? new Set() : new Set(ids))}
           style={{fontSize:11,padding:'5px 12px',borderRadius:16,border:'1px solid var(--border)',background:'white',color:'var(--teal)',fontWeight:600,cursor:'pointer',fontFamily:'DM Sans,sans-serif',marginBottom:12}}>
           {allOn ? 'Deselect all' : 'Select all'}
@@ -339,7 +354,7 @@ function ShiftChooser({ plan, routines = [], onApply, onCancel }) {
         <div style={{display:'flex',gap:8}}>
           <button onClick={()=>onApply([...sel])}
             style={{flex:1,padding:'12px',borderRadius:12,border:'none',background:'var(--forest)',color:'var(--green-light)',fontWeight:700,fontSize:14,cursor:'pointer',fontFamily:'DM Sans,sans-serif'}}>
-            {sel.size ? `Start now · shift ${sel.size}` : 'Start now · shift none'}
+            {applyLabel}
           </button>
           <button onClick={onCancel}
             style={{padding:'12px 16px',borderRadius:12,border:'1px solid var(--border)',background:'white',color:'var(--muted)',cursor:'pointer',fontSize:13,fontFamily:'DM Sans,sans-serif'}}>Cancel</button>
@@ -354,6 +369,32 @@ function ShiftChooser({ plan, routines = [], onApply, onCancel }) {
 // time is shown separately on a timeline).
 function stripTimePrefix(label) {
   return (label || '').replace(/^~?\d{1,2}:\d{2}\s*(AM|PM)?\s*[—–-]\s*/i, '')
+}
+// Did editing this one occurrence change nothing but its start time? If so we can
+// move just this day WITHOUT detaching it from its series (which would turn it
+// into a one-off and lose its delete-this/future/all menu). Any real content
+// change — title, notes, duration, labels, color/icon, subtasks, block,
+// location, or a per-day custom reminder — still needs a detached copy, so this
+// stays conservative: it only returns true when every content field matches the
+// template, and treats an auto-suggested icon (derived from the title) as "no
+// change" so an icon-less routine step isn't detached for no reason.
+function occurrenceOnlyMovedTime(tmpl, occ, reminderMins) {
+  if (reminderMins != null) return false                 // a per-day alert needs a real item id
+  const baseTitle = stripTimePrefix(tmpl.label ?? tmpl.text ?? '')
+  const baseIcon  = tmpl.icon || suggestGlyph(baseTitle) || ''
+  const sameCats  = JSON.stringify(occ.cats || []) === JSON.stringify(tmpl.cat ? [tmpl.cat] : [])
+  const locOf = (l) => (l && typeof l.lat === 'number') ? { lat:+l.lat.toFixed(6), lng:+l.lng.toFixed(6), name:(l.name||'') } : null
+  const sameLoc = JSON.stringify(locOf(occ.location)) === JSON.stringify(locOf(tmpl.location))
+  return (
+    (occ.text || '') === baseTitle &&
+    (occ.description || '') === (tmpl.note || '') &&
+    (occ.durationMins || null) === (tmpl.durationMins || null) &&
+    (occ.color || '') === (tmpl.color || '') &&
+    (occ.icon || '') === baseIcon &&
+    !!occ.block === !!tmpl.block &&
+    (occ.subtasks?.length || 0) === 0 &&
+    sameCats && sameLoc
+  )
 }
 function hhmmToMins(t) {
   if (!t) return null
@@ -1495,6 +1536,97 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
     setShiftPlan({ pivot: pivotTask, rest, selected, doneIds })
   }
 
+  // ── Reschedule the rest after a time edit ────────────────────
+  // Slide the chosen later tasks by the SAME amount the edited task moved
+  // (keeping their spacing), instead of packing them to "now" like the Start-now
+  // shift. Commitment times move for real; local/recurring todos use the day's
+  // override. Re-timed routine/block/auto-complete steps drop their explicit
+  // check so the checkmark re-derives from the clock — ticked once the new slot
+  // has passed, unticked until then.
+  const applyTimeShift = (pivot, delta, selectedIds) => {
+    if (!delta) return
+    const sel = new Set(selectedIds)
+    const overrides = { ...timeOverrides }
+    const prevOverrides = timeOverrides
+    const commitReverts = []
+    let shifted = 0, committed = 0
+    const setStart = (t, mins) => {
+      if (t.isCommitment && updateCommitment) { commitReverts.push({ id: t.id, time: t._time || null }); updateCommitment(t.id, { time: minsToHHMM(mins) }) }
+      else overrides[t.id] = mins
+    }
+    tasksWithStatus
+      .filter(t => sel.has(t.id) && t._mins !== null && !INFLEXIBLE_TAGS.has(t.tag))
+      .sort((a, b) => a._mins - b._mins)
+      .forEach(t => {
+        const target = t._mins + delta
+        if (target < 0) return
+        if (target > END_OF_DAY_MINS) {
+          // Ran off the end of the day → send it to tomorrow, like the other shifts.
+          committed++
+          const tm = new Date(); tm.setDate(tm.getDate() + 1)
+          const key = `${tm.getFullYear()}-${String(tm.getMonth()+1).padStart(2,'0')}-${String(tm.getDate()).padStart(2,'0')}`
+          if (t.isCommitment && updateCommitment) updateCommitment(t.id, { date: key, time: null })
+          else if (addCommitment) {
+            addCommitment({ id:'shifted-'+t.id+'-'+Date.now(), text:(t.title||t.label||'').replace(/^~?\d{1,2}:\d{2}\s*(?:AM|PM)\s*(?:—\s*)?/i,'').trim(), date:key, cat:t.tag, note:`Shifted from ${dateKey} — ran out of day`, done:false })
+            setDeleted(prev=>{ const next=[...prev,t.id]; localStorage.setItem('vivian_deleted_'+dateKey, JSON.stringify(next)); return next })
+          }
+          return
+        }
+        setStart(t, target)
+        shifted++
+        if ((t.autoComplete || (t.routine && routineIds.has(t.routine)) || inAnyBlock(t)) && clearCompletion) {
+          clearCompletion(t.id, t.isCommitment ? null : dateKey)
+        }
+      })
+    setTimeOverrides(overrides)
+    localStorage.setItem('vivian_timeshift_'+dateKey, JSON.stringify(overrides))
+    setShiftResult({ shifted, committed, fixed:0 })
+    if (pushUndo && (shifted || committed)) {
+      pushUndo('rescheduled the routine', () => {
+        setTimeOverrides(prevOverrides)
+        localStorage.setItem('vivian_timeshift_'+dateKey, JSON.stringify(prevOverrides))
+        commitReverts.forEach(r => updateCommitment && updateCommitment(r.id, { time: r.time }))
+      })
+    }
+  }
+
+  // After a task's time is changed in the editor, offer to slide the rest of its
+  // routine along by the same amount. Only routine steps cascade (the common
+  // "my morning ran late, push the rest" case); the chooser still lets you reach
+  // other tasks. `newMins` is the task's new start in minutes (null = untimed).
+  const maybePromptShift = (pivotId, newMins) => {
+    const pivot = tasksWithStatus.find(t => t.id === pivotId)
+    if (!pivot || pivot._mins === null || newMins === null || newMins === undefined) return
+    if (!pivot.routine) return                       // only routines cascade
+    const delta = newMins - pivot._mins
+    if (delta === 0) return
+    // Later movable tasks by their current position — candidates to slide.
+    const rest = tasksWithStatus
+      .filter(t => t.id !== pivotId && t._mins !== null && t._mins > pivot._mins && !INFLEXIBLE_TAGS.has(t.tag))
+      .sort((a, b) => a._mins - b._mins)
+    if (!rest.length) return
+    const doneIds = new Set(rest.filter(t => isDoneCheck(t.id, t.isCommitment)).map(t => t.id))
+    // Blend of "just this routine" + "pick your own": pre-check the rest of this
+    // task's routine, but show every later task so any can be added/removed.
+    const selected = new Set(rest.filter(t => t.routine === pivot.routine).map(t => t.id))
+    setShiftPlan({ pivot, rest, selected, doneIds, delta, mode:'delta' })
+  }
+
+  // Move a recurring occurrence's start for just THIS day via the day-local
+  // override — the same mechanism the shift chooser uses — so the task keeps
+  // repeating and keeps its delete-this/future/all menu instead of being
+  // detached into a one-off. Undoable.
+  const moveOccurrenceForDay = (id, mins) => {
+    const prev = timeOverrides
+    const next = { ...prev, [id]: mins }
+    setTimeOverrides(next)
+    localStorage.setItem('vivian_timeshift_'+dateKey, JSON.stringify(next))
+    if (pushUndo) pushUndo('moved the task', () => {
+      setTimeOverrides(prev)
+      localStorage.setItem('vivian_timeshift_'+dateKey, JSON.stringify(prev))
+    })
+  }
+
   // ── Pause & resume (Focus mode) ──────────────────────────────
   // Pausing no longer splits the task or reschedules a remainder — the task
   // keeps its place on the timeline. We just record the wall-clock span it was
@@ -1567,7 +1699,14 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
     // tells it which occurrence). Per-day skip/reschedule stay on the ⋯ menu.
     if (task.isRecurring && updateRecurringTask) {
       const tmpl = (recurringTasks || []).find(t => t.id === (task.recurringId || task.id))
-      if (tmpl) { setEditingRecDate(dateKey); setEditingRec(tmpl); return }
+      if (tmpl) {
+        // If this day carries a local time move (from a one-day nudge or a
+        // routine shift), open the editor showing THAT moved time — not the
+        // series' original — so re-saving doesn't quietly revert today's move.
+        const ov = timeOverrides[tmpl.id]
+        const forEdit = ov !== undefined ? { ...tmpl, label: shiftLabelTime(tmpl.label, ov) } : tmpl
+        setEditingRecDate(dateKey); setEditingRec(forEdit); return
+      }
     }
     setManaging(task)
   }
@@ -1591,6 +1730,10 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
     if (updateCommitment) updateCommitment(id, changes)
     setItemReminders(id, reminderMins)
     setEditing(null)
+    // If this moved a routine task's time, offer to slide the rest of the
+    // routine along. Read against the pre-update timeline, so `id`'s old time is
+    // still the baseline for the delta.
+    maybePromptShift(id, commitment.time ? hhmmToMins(commitment.time) : null)
   }
   const handleDelete = (task, reason) => {
     if (task.isCommitment && deleteCommitment) {
@@ -1949,7 +2092,9 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
         onExtend={focusTask.isCommitment ? (mins)=>handleExtend(focusTask, mins) : null}
         onEndNow={({elapsedMins})=>handleEndNow(focusTask, elapsedMins)}
         onClose={()=>setFocusTask(null)} />}
-      {shiftPlan&&<ShiftChooser plan={shiftPlan} routines={routines} onApply={(ids)=>{applyShift(shiftPlan.pivot, ids); setShiftPlan(null)}} onCancel={()=>setShiftPlan(null)}/>}
+      {shiftPlan&&<ShiftChooser plan={shiftPlan} routines={routines}
+        onApply={(ids)=>{ shiftPlan.mode==='delta' ? applyTimeShift(shiftPlan.pivot, shiftPlan.delta, ids) : applyShift(shiftPlan.pivot, ids); setShiftPlan(null) }}
+        onCancel={()=>setShiftPlan(null)}/>}
       {shiftResult&&<ShiftToast result={shiftResult} onClose={()=>setShiftResult(null)}/>}
       {addingTask&&<AddItemModal presetDate={dateKey} presetTime={addPreset?.time||''} presetDur={addPreset?.dur||null} presetCat={addPreset?.cat||''} categories={categories} routines={routines} templates={taskTemplates} labelModel={labelModel} onSave={handleAdd} onSaveRecurring={addRecurringTask} onClose={()=>{ setAddingTask(false); setAddPreset(null) }} title="Add to Today"/>}
       {editing&&<AddItemModal existing={editing} categories={categories} routines={routines} onSave={handleSaveEdit}
@@ -1961,14 +2106,27 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
       {editingRec&&<AddItemModal existingRecurring={editingRec} categories={categories} routines={routines}
         occurrenceDate={editingRecDate}
         onSaveOccurrence={(date, occ, reminderMins)=>{
-          // Detach this one day: hide the series on this date and add a one-off
-          // commitment carrying the edits. Other days stay as-is.
+          const pivotId = editingRec.id
+          const newMins = occ.time ? hhmmToMins(occ.time) : null
+          // Time-only change on the day we're looking at → just move it for today
+          // and keep it in its series (so it still repeats and keeps its
+          // delete-this/future/all menu), instead of detaching it into a one-off.
+          if (date === dateKey && newMins !== null && occurrenceOnlyMovedTime(editingRec, occ, reminderMins)) {
+            moveOccurrenceForDay(pivotId, newMins)
+            setEditingRec(null); setEditingRecDate(null)
+            maybePromptShift(pivotId, newMins)
+            return
+          }
+          // A real per-occurrence content edit (new title, subtasks, per-day
+          // alert, …) still detaches: hide the series on this date and add a
+          // one-off commitment carrying the edits. Other days stay as-is.
           skipRecurringOccurrence && skipRecurringOccurrence(editingRec.id, date)
           if (addCommitment) addCommitment(occ)
           setItemReminders(occ.id, reminderMins)
           setEditingRec(null); setEditingRecDate(null)
+          maybePromptShift(pivotId, newMins)
         }}
-        onSaveRecurring={t=>{ updateRecurringTask&&updateRecurringTask(t.id,t); setEditingRec(null); setEditingRecDate(null) }}
+        onSaveRecurring={t=>{ const pivotId=t.id; updateRecurringTask&&updateRecurringTask(t.id,t); setEditingRec(null); setEditingRecDate(null); maybePromptShift(pivotId, parseTimeMins(t.label)) }}
         onDeleteOccurrence={date=>{ skipRecurringOccurrence&&skipRecurringOccurrence(editingRec.id, date); setEditingRec(null); setEditingRecDate(null) }}
         onDeleteFuture={date=>{
           // End the series the day before this occurrence — today onward drops
