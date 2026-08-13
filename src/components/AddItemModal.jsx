@@ -5,7 +5,7 @@
 // a start time and end time (with quick-duration buttons that fill the end
 // from the start), plus optional custom reminder lead times that override the
 // global defaults just for this item.
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useLayoutEffect } from 'react'
 import DateField from './DateField.jsx'
 import TimeField from './TimeField.jsx'
 import MiniCalendar from './MiniCalendar.jsx'
@@ -31,15 +31,21 @@ const DEFAULT_CATEGORIES = [{ id:'other', label:'Other', color:'#8899AA' }]
 // of its container. Used for subtask rows.
 function GrowField({ value, onChange, placeholder, style, onKeyDown }) {
   const ref = useRef(null)
-  const fit = (el) => { if (el) { el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px' } }
-  useEffect(() => { fit(ref.current) }, [value])
+  // Re-measure after every render (before paint, so no flicker): collapse to 0
+  // then grow to the content's scroll height. minHeight:0 is essential — the
+  // global `textarea { min-height:160px }` rule would otherwise pin every
+  // subtask field to a giant 160px box. With both, the field sits at one line
+  // and grows only as the text wraps.
+  useLayoutEffect(() => {
+    const el = ref.current
+    if (!el) return
+    el.style.height = '0px'
+    el.style.height = el.scrollHeight + 'px'
+  })
   return (
-    // minHeight:0 is essential — the global `textarea { min-height:160px }` rule
-    // would otherwise force every subtask field to a giant 160px box. With it
-    // overridden, the field sits at one line and grows only as the text wraps.
     <textarea ref={ref} rows={1} value={value} placeholder={placeholder} onKeyDown={onKeyDown}
-      onChange={e => { onChange(e); fit(e.target) }}
-      style={{ ...style, boxSizing:'border-box', resize:'none', overflow:'hidden', lineHeight:1.4, minHeight:0, height:'auto' }} />
+      onChange={onChange}
+      style={{ ...style, boxSizing:'border-box', resize:'none', overflow:'hidden', lineHeight:1.4, minHeight:0 }} />
   )
 }
 

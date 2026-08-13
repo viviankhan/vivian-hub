@@ -4,7 +4,7 @@
 // date or time. When you later create a task (from Today, the Calendar, or your
 // Commitments), you can pick one of these off the menu and everything preset
 // auto-fills, so all that's left is to choose a start time.
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useLayoutEffect } from 'react'
 import { Icon } from './IconPicker.jsx'
 import ColorIconPicker from './ColorIconPicker.jsx'
 import { suggestGlyph, iconColorOn } from '../lib/glyphs.jsx'
@@ -17,14 +17,19 @@ const DEFAULT_CATEGORIES = [{ id:'other', label:'Other', color:'#8899AA' }]
 // subtask no longer runs off the edge of its row.
 function GrowField({ value, onChange, placeholder, style, onKeyDown }) {
   const ref = useRef(null)
-  const fit = (el) => { if (el) { el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px' } }
-  useEffect(() => { fit(ref.current) }, [value])
+  // minHeight:0 overrides the global `textarea { min-height:160px }` rule that
+  // would otherwise force each subtask field into a giant box; the layout effect
+  // grows it to fit its wrapped text, before paint so there's no flicker.
+  useLayoutEffect(() => {
+    const el = ref.current
+    if (!el) return
+    el.style.height = '0px'
+    el.style.height = el.scrollHeight + 'px'
+  })
   return (
-    // minHeight:0 overrides the global `textarea { min-height:160px }` rule that
-    // would otherwise force each subtask field into a giant box.
     <textarea ref={ref} rows={1} value={value} placeholder={placeholder} onKeyDown={onKeyDown}
-      onChange={e => { onChange(e); fit(e.target) }}
-      style={{ ...style, boxSizing:'border-box', resize:'none', overflow:'hidden', lineHeight:1.4, minHeight:0, height:'auto' }} />
+      onChange={onChange}
+      style={{ ...style, boxSizing:'border-box', resize:'none', overflow:'hidden', lineHeight:1.4, minHeight:0 }} />
   )
 }
 
