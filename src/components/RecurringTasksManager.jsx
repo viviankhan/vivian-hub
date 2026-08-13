@@ -402,7 +402,6 @@ function RoutinesView({ routines, tasks, categories, today, onEditTask, updateRe
 
       {routines.map(r => {
         const items = byRoutine(r.id)
-        const range = routineTimeRange(items)
         const isCollapsed = !!collapsed[r.id]
         return (
           <div key={r.id} style={{ marginBottom:18 }}>
@@ -436,12 +435,6 @@ function RoutinesView({ routines, tasks, categories, today, onEditTask, updateRe
               </div>
             )}
             {!isCollapsed && <>
-              {/* Shift the whole routine earlier/later — only when it has timed steps */}
-              {range && (
-                <RoutineShiftBar range={range}
-                  onShift={(delta)=>shiftRoutine(r.id, delta)}
-                  onSetStart={(mins)=>shiftRoutine(r.id, mins - range.start)} />
-              )}
               {/* A tinted rail down the group's tasks so the film color reads here too */}
               <div style={{ borderLeft:`3px solid ${r.tint}`, paddingLeft:10, borderRadius:2 }}>
                 {items.length===0 ? (
