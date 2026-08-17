@@ -1371,14 +1371,13 @@ export default function AddItemModal({ existing = null, existingRecurring = null
           </div>
 
           {/* ── Save ──────────────────────────────────────────── */}
-          {/* For a single occurrence of a series, saving asks whether to apply
-              the change to just this event or the whole series — EXCEPT a time
-              block (a container like "Work"), which is a series-wide setting: a
-              per-day block override is almost never intended, and routing its
-              edit through the chooser meant an edit (like a new end time) silently
-              did nothing if the chooser was dismissed, or only touched one day.
-              Blocks therefore save straight to the whole series. */}
-          <button onClick={() => (canEditOccurrence && !block) ? setScopePrompt(true) : submit()} disabled={!canSave}
+          {/* Editing one day of a series (including a repeating time block like
+              "Work") asks whether to apply the change to just this event or the
+              whole series, so a start/end tweak never silently rewrites every
+              day without consent. For a block, "just this event" detaches that
+              day into a one-off block (the parent handles it), which is the only
+              way a per-day start/end change actually sticks. */}
+          <button onClick={() => canEditOccurrence ? setScopePrompt(true) : submit()} disabled={!canSave}
             style={{ width:'100%', padding:'14px', borderRadius:14, border:'none', background: canSave ? headerColor : '#E1E1E6', color: canSave ? 'white' : '#9CA3AF', cursor: canSave ? 'pointer' : 'default', fontFamily:'DM Sans,sans-serif', fontWeight:700, fontSize:15, letterSpacing:.3 }}>
             {(isEdit || isRecEdit) ? 'Save changes' : (block ? 'Add time block' : (repeatOn ? 'Add recurring task' : title))}
           </button>
