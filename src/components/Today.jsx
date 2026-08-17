@@ -382,6 +382,10 @@ function stripTimePrefix(label) {
 // change" so an icon-less routine step isn't detached for no reason.
 function occurrenceOnlyMovedTime(tmpl, occ, reminderMins) {
   if (reminderMins != null) return false                 // a per-day alert needs a real item id
+  // Time blocks don't read the day-local time override (they're rendered from a
+  // separate list), and an "end time" change wouldn't fit a start-only override
+  // anyway — so a single-day block edit must detach, never day-move.
+  if (occ.block || tmpl.block) return false
   const baseTitle = stripTimePrefix(tmpl.label ?? tmpl.text ?? '')
   const baseIcon  = tmpl.icon || suggestGlyph(baseTitle) || ''
   const sameCats  = JSON.stringify(occ.cats || []) === JSON.stringify(tmpl.cat ? [tmpl.cat] : [])
