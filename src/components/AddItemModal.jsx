@@ -192,7 +192,7 @@ const InboxIcon2 = () => (<svg viewBox="0 0 24 24" width="18" height="18" fill="
 const TrashIcon2 = () => (<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4.5 7h15M9 7V5.2A1.2 1.2 0 0 1 10.2 4h3.6A1.2 1.2 0 0 1 15 5.2V7M6.5 7l1 12.5h9L17.5 7"/></svg>)
 const TargetIcon = () => (<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4.5"/><circle cx="12" cy="12" r="1" fill="currentColor" stroke="none"/></svg>)
 
-export default function AddItemModal({ existing = null, existingRecurring = null, occurrenceDate = null, onSaveOccurrence = null, onDeleteOccurrence = null, onDeleteFuture = null, presetDate = null, presetText = '', presetTime = '', presetDur = null, presetCat = '', lockDate = false, defaultRepeat = false, categories = [], routines = [], templates = [], labelModel = null, onSave, onSaveRecurring = null, onDelete = null, onDuplicate = null, onMoveToInbox = null, onClose, title = 'Add to calendar' }) {
+export default function AddItemModal({ existing = null, existingRecurring = null, occurrenceDate = null, onSaveOccurrence = null, onDeleteOccurrence = null, onDeleteFuture = null, presetDate = null, presetText = '', presetTime = '', presetDur = null, presetCat = '', presetCats = null, presetDescription = '', presetSubtasks = null, presetReminders = null, lockDate = false, defaultRepeat = false, categories = [], routines = [], templates = [], labelModel = null, onSave, onSaveRecurring = null, onDelete = null, onDuplicate = null, onMoveToInbox = null, onClose, title = 'Add to calendar' }) {
   const cats = (categories && categories.length) ? categories : DEFAULT_CATEGORIES
   const isEdit = !!existing
   // Editing an existing recurring task: it comes in the Recurring-tab row shape
@@ -226,13 +226,14 @@ export default function AddItemModal({ existing = null, existingRecurring = null
   // past tasks (see `predictedCat` below), never a blind default.
   const [selectedCats, setSelectedCats] = useState(() => {
     if (Array.isArray(existing?.cats) && existing.cats.length) return existing.cats
+    if (Array.isArray(presetCats) && presetCats.length) return presetCats
     const explicit = existing?.cat || rec?.cat || rec?.tag || presetCat
     return explicit ? [explicit] : []
   })
   // Once you touch the labels yourself, stop auto-predicting from the title.
   // (Editing something that already carries a label counts as chosen. A block's
   // preset category counts as chosen too.)
-  const [catsTouched, setCatsTouched] = useState(!!(existing?.cat || rec?.cat || rec?.tag || presetCat || (existing?.cats && existing.cats.length)))
+  const [catsTouched, setCatsTouched] = useState(!!(existing?.cat || rec?.cat || rec?.tag || presetCat || (existing?.cats && existing.cats.length) || (Array.isArray(presetCats) && presetCats.length)))
   // A prediction from history — only offered for a still-untouched, unlabeled
   // task, and only when the model is confident. Otherwise null (stays unlabeled).
   const validCatIds = new Set(cats.map(c => c.id))
@@ -248,8 +249,11 @@ export default function AddItemModal({ existing = null, existingRecurring = null
       return base.includes(id) ? base.filter(c => c !== id) : [...base, id]
     })
   }
-  const [description, setDescription] = useState(existing?.description ?? rec?.note ?? '')
-  const [subtasks, setSubtasks]   = useState(() => Array.isArray(existing?.subtasks) ? existing.subtasks : [])
+  const [description, setDescription] = useState(existing?.description ?? rec?.note ?? presetDescription ?? '')
+  const [subtasks, setSubtasks]   = useState(() =>
+    Array.isArray(existing?.subtasks) ? existing.subtasks
+    : Array.isArray(presetSubtasks) ? presetSubtasks.map((t, i) => ({ id: 'st-' + Date.now() + '-' + i, text: (typeof t === 'string' ? t : (t?.text || '')).trim(), done: false })).filter(s => s.text)
+    : [])
   const [newSub, setNewSub]       = useState('')
   // Who this commitment is to — "I told Sam I'd…". A one-off commitment field
   // (recurring templates don't carry a person). Shown under More options.
@@ -259,7 +263,8 @@ export default function AddItemModal({ existing = null, existingRecurring = null
   // something that already uses one of them, so nothing set is hidden.
   const [moreOpen, setMoreOpen]   = useState(() => {
     const it = existing || rec
-    return !!(it && (it.block || it.person || it.location || getItemReminders(it.id)))
+    return !!(it && (it.block || it.person || it.location || getItemReminders(it.id))) ||
+      (!isEdit && Array.isArray(presetReminders) && presetReminders.length > 0)
   })
   const [alertPickerOpen, setAlertPickerOpen] = useState(false)
 
@@ -307,8 +312,12 @@ export default function AddItemModal({ existing = null, existingRecurring = null
   // scheduled inside it stay normal. Can be one-off or repeat (e.g. weekdays).
   const [block, setBlock] = useState(existing?.block ?? rec?.block ?? false)
   // Reminders: default (use global) unless the user customizes. When editing,
-  // prefill from the item's saved override.
-  const existingReminders = isEdit ? getItemReminders(existing.id) : null
+  // prefill from the item's saved override; for a brand-new task the AI paste
+  // flow can seed reminder leads (minutes before the start).
+  const presetRem = (!isEdit && Array.isArray(presetReminders) && presetReminders.length)
+    ? [...new Set(presetReminders.filter(n => Number.isFinite(n)))].sort((a, b) => b - a)
+    : null
+  const existingReminders = isEdit ? getItemReminders(existing.id) : presetRem
   const [useDefault, setUseDefault] = useState(!existingReminders)
   const [reminders, setReminders]   = useState(existingReminders || [])
 

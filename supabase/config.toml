@@ -5,3 +5,10 @@
 # fetcher with SSRF guards, so it's safe to leave open.
 [functions.ics-proxy]
 verify_jwt = false
+
+# The "paste an event" parser runs without JWT verification for the same reason
+# — the browser's CORS preflight carries no auth header. It only calls Gemini
+# with your server-side key and returns structured JSON; it never touches the
+# database.
+[functions.parse-event]
+verify_jwt = false

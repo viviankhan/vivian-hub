@@ -7,6 +7,8 @@ import { Icon } from './IconPicker.jsx'
 import { iconColorOn, suggestGlyph } from '../lib/glyphs.jsx'
 import { bloomBurst } from '../lib/bloom.js'
 import AddItemModal from './AddItemModal.jsx'
+import EventPaster from './EventPaster.jsx'
+import { aiScheduleAvailable } from '../lib/parseEvent.js'
 import FocusMode from './FocusMode.jsx'
 import DateField from './DateField.jsx'
 import TimeField from './TimeField.jsx'
@@ -1066,6 +1068,8 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
   const pauseKeyFor = (task) => `${dateKey}:${task.id}`
   const [addingTask,  setAddingTask]  = useState(false)
   const [addPreset,   setAddPreset]   = useState(null)  // {time, cat} when adding inside a block
+  const [pasterOpen,  setPasterOpen]  = useState(false) // "paste an event" sheet
+  const [smartDraft,  setSmartDraft]  = useState(null)  // AI-parsed draft → pre-fills the Add sheet
   const [morningOpen, setMorningOpen] = useState(false)
   const [nightOpen,   setNightOpen]   = useState(false)
   const [expandedRoutines, setExpandedRoutines] = useState({})  // routineId → show its done tasks individually
@@ -2077,6 +2081,16 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
           boxShadow:'0 4px 20px rgba(0,0,0,.25)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:100}}>
         +
       </button>
+      {/* Paste-an-event button, stacked above the + FAB. Only shown when the AI
+          function can be reached (Supabase configured). */}
+      {aiScheduleAvailable && (
+        <button onClick={()=>setPasterOpen(true)} className="today-fab-ai" title="Paste an event to schedule" aria-label="Paste an event to schedule"
+          style={{position:'fixed',width:44,height:44,borderRadius:'50%',border:'none',
+            background:'linear-gradient(135deg,#7BBFD4,#C8BFDF)',color:'#17313f',fontSize:19,cursor:'pointer',
+            boxShadow:'0 4px 16px rgba(0,0,0,.22)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:100}}>
+          ✨
+        </button>
+      )}
 
       {focusTask&&<FocusMode
         title={focusTask.title || stripTimePrefix(focusTask.label)}
@@ -2097,6 +2111,22 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
         onCancel={()=>setShiftPlan(null)}/>}
       {shiftResult&&<ShiftToast result={shiftResult} onClose={()=>setShiftResult(null)}/>}
       {addingTask&&<AddItemModal presetDate={dateKey} presetTime={addPreset?.time||''} presetDur={addPreset?.dur||null} presetCat={addPreset?.cat||''} categories={categories} routines={routines} templates={taskTemplates} labelModel={labelModel} onSave={handleAdd} onSaveRecurring={addRecurringTask} onClose={()=>{ setAddingTask(false); setAddPreset(null) }} title="Add to Today"/>}
+      {/* Paste-an-event → parse → open the Add sheet pre-filled for review. */}
+      {pasterOpen&&<EventPaster categories={categories}
+        onDraft={(draft)=>{ setPasterOpen(false); setSmartDraft(draft) }}
+        onClose={()=>setPasterOpen(false)} />}
+      {smartDraft&&<AddItemModal
+        presetText={smartDraft.title||''}
+        presetDate={smartDraft.date||''}
+        presetTime={smartDraft.time||''}
+        presetDur={smartDraft.durationMins||null}
+        presetCats={Array.isArray(smartDraft.categoryIds)?smartDraft.categoryIds:null}
+        presetDescription={smartDraft.description||''}
+        presetSubtasks={Array.isArray(smartDraft.subtasks)?smartDraft.subtasks:null}
+        presetReminders={Array.isArray(smartDraft.reminders)?smartDraft.reminders:null}
+        categories={categories} routines={routines} templates={taskTemplates} labelModel={labelModel}
+        onSave={handleAdd} onSaveRecurring={addRecurringTask}
+        onClose={()=>setSmartDraft(null)} title="Review & schedule"/>}
       {editing&&<AddItemModal existing={editing} categories={categories} routines={routines} onSave={handleSaveEdit}
         onSaveRecurring={addRecurringTask}
         onDelete={c=>deleteCommitment&&deleteCommitment(c.id)}

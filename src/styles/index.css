@@ -721,6 +721,9 @@ textarea { resize: vertical; min-height: 160px; line-height: 1.6; }
 /* Today's floating "+" button — default (desktop) position. On mobile it's
    lifted in the media block below so it clears the fixed bottom bar. */
 .today-fab { bottom: 28px; right: 24px; }
+/* Secondary "paste an event" button, stacked just above the + FAB. Centers
+   align with the FAB so they read as one control stack. */
+.today-fab-ai { bottom: 88px; right: 28px; }
 
 @media (max-width: 768px) {
   .nav { display: none; }                 /* replaced by drawer + bottom bar */
@@ -734,6 +737,7 @@ textarea { resize: vertical; min-height: 160px; line-height: 1.6; }
   .content { padding-bottom: calc(84px + env(safe-area-inset-bottom)); }
   /* Lift the FAB above the bottom bar. */
   .today-fab { bottom: calc(92px + env(safe-area-inset-bottom)); right: 18px; }
+  .today-fab-ai { bottom: calc(152px + env(safe-area-inset-bottom)); right: 22px; }
   /* Phones (portrait) get their own background choice, sized by viewport height
      so the scene reads instead of collapsing to a sliver at the bottom the way
      a width-scaled desktop scene does on a narrow screen. */
