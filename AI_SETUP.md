@@ -1,9 +1,11 @@
-# AI "Paste an event" — 2-minute setup
+# AI assistant — 2-minute setup
 
-The ✨ button on **Today** lets you paste any event description (an email, a
-flyer, a text) and turns it into a task — title, date, time, duration, a tidy
-notes write-up, subtasks, a matching label, and reminders — which opens in the
-normal Add sheet for you to review before saving.
+The ✨ button on **Today** opens an assistant: type an instruction — "make a
+task for the dentist next Tue 3pm", "add the Aug 17 assignments to my Orgo
+task's subtasks and check them off", "reschedule the lab to Friday" — and it
+plans the changes against your current tasks, shows you the plan, and applies it
+only after you tap **Apply**. It can create tasks, add/check subtasks on an
+existing task, mark tasks complete, and reschedule.
 
 It runs on **Google Gemini's free tier**. The AI key stays on the server (a
 Supabase Edge Function), never in the app's public code. You just do this once.

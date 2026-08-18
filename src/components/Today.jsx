@@ -7,7 +7,7 @@ import { Icon } from './IconPicker.jsx'
 import { iconColorOn, suggestGlyph } from '../lib/glyphs.jsx'
 import { bloomBurst } from '../lib/bloom.js'
 import AddItemModal from './AddItemModal.jsx'
-import EventPaster from './EventPaster.jsx'
+import AiAssistant from './AiAssistant.jsx'
 import { aiScheduleAvailable } from '../lib/parseEvent.js'
 import FocusMode from './FocusMode.jsx'
 import DateField from './DateField.jsx'
@@ -1072,8 +1072,7 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
   const pauseKeyFor = (task) => `${dateKey}:${task.id}`
   const [addingTask,  setAddingTask]  = useState(false)
   const [addPreset,   setAddPreset]   = useState(null)  // {time, cat} when adding inside a block
-  const [pasterOpen,  setPasterOpen]  = useState(false) // "paste an event" sheet
-  const [smartDraft,  setSmartDraft]  = useState(null)  // AI-parsed draft → pre-fills the Add sheet
+  const [pasterOpen,  setPasterOpen]  = useState(false) // AI assistant sheet
   const [morningOpen, setMorningOpen] = useState(false)
   const [nightOpen,   setNightOpen]   = useState(false)
   const [expandedRoutines, setExpandedRoutines] = useState({})  // routineId → show its done tasks individually
@@ -1688,6 +1687,57 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
     if (addCommitment) addCommitment(commitment)
     setItemReminders(commitment.id, reminderMins)
   }
+
+  // ── AI assistant ─────────────────────────────────────────────
+  // Snapshot of the user's one-off tasks (commitments) sent to the assistant so
+  // it can act on existing ones by id. Recurring tasks aren't editable this way,
+  // so they're left out; the assistant creates a new task if it can't find a
+  // match here.
+  const assistantTasks = useMemo(() => (commitments || []).map(c => ({
+    id: c.id,
+    title: c.text || '',
+    date: c.date || '',
+    time: c.time || '',
+    done: !!(todos[c.id] || weekState[c.id] || c.done),
+    subtasks: Array.isArray(c.subtasks) ? c.subtasks.map(s => ({ text: s.text, done: !!s.done })) : [],
+  })), [commitments, todos, weekState])
+
+  // Apply a confirmed plan of assistant actions using the ordinary task ops.
+  const applyAssistantActions = (actions) => {
+    (actions || []).forEach((a, idx) => {
+      if (a.kind === 'create') {
+        const base = Date.now() + idx
+        const id = 'c-' + base + '-' + Math.random().toString(36).slice(2, 6)
+        const subtasks = (a.subtasks || []).map((s, i) => ({ id: 'st-' + base + '-' + i, text: s.text, done: !!s.done }))
+        const commitment = {
+          id, text: a.title, date: a.date || null, time: a.time || null,
+          durationMins: a.durationMins || null,
+          cat: (a.categoryIds && a.categoryIds[0]) || null, cats: Array.isArray(a.categoryIds) ? a.categoryIds : [],
+          description: a.description || '', subtasks, done: false, person: null, prepMin: null,
+          createdAt: new Date().toISOString(),
+        }
+        if (addCommitment) addCommitment(commitment)
+        if (Array.isArray(a.reminders) && a.reminders.length) setItemReminders(id, a.reminders)
+      } else if (a.kind === 'addSubtasks') {
+        const c = (commitments || []).find(x => x.id === a.taskId)
+        if (!c || !updateCommitment) return
+        const existing = Array.isArray(c.subtasks) ? c.subtasks : []
+        const base = Date.now() + idx
+        const added = (a.subtasks || []).map((s, i) => ({ id: 'st-' + base + '-' + i + '-' + Math.random().toString(36).slice(2, 5), text: s.text, done: !!s.done }))
+        updateCommitment(a.taskId, { subtasks: [...existing, ...added] })
+      } else if (a.kind === 'setDone') {
+        const c = (commitments || []).find(x => x.id === a.taskId)
+        if (c && syncToggle) syncToggle(a.taskId, c.text, c.cat, null, !!a.done)
+      } else if (a.kind === 'reschedule') {
+        if (!updateCommitment) return
+        const changes = {}
+        if (a.date) changes.date = a.date
+        if (a.time) changes.time = a.time
+        if (a.durationMins) changes.durationMins = a.durationMins
+        if (Object.keys(changes).length) updateCommitment(a.taskId, changes)
+      }
+    })
+  }
   // Check a subtask off right on the timeline (commitments only). Writes back
   // the whole subtasks array; App auto-completes the parent when all are done.
   const toggleSubtask = (task, subId) => {
@@ -2085,10 +2135,10 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
           boxShadow:'0 4px 20px rgba(0,0,0,.25)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:100}}>
         +
       </button>
-      {/* Paste-an-event button, stacked above the + FAB. Only shown when the AI
+      {/* AI assistant button, stacked above the + FAB. Only shown when the AI
           function can be reached (Supabase configured). */}
       {aiScheduleAvailable && (
-        <button onClick={()=>setPasterOpen(true)} className="today-fab-ai" title="Paste an event to schedule" aria-label="Paste an event to schedule"
+        <button onClick={()=>setPasterOpen(true)} className="today-fab-ai" title="AI assistant" aria-label="AI assistant"
           style={{position:'fixed',width:44,height:44,borderRadius:'50%',border:'none',
             background:'linear-gradient(135deg,#7BBFD4,#C8BFDF)',color:'#17313f',fontSize:19,cursor:'pointer',
             boxShadow:'0 4px 16px rgba(0,0,0,.22)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:100}}>
@@ -2115,22 +2165,9 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
         onCancel={()=>setShiftPlan(null)}/>}
       {shiftResult&&<ShiftToast result={shiftResult} onClose={()=>setShiftResult(null)}/>}
       {addingTask&&<AddItemModal presetDate={dateKey} presetTime={addPreset?.time||''} presetDur={addPreset?.dur||null} presetCat={addPreset?.cat||''} categories={categories} routines={routines} templates={taskTemplates} labelModel={labelModel} onSave={handleAdd} onSaveRecurring={addRecurringTask} onClose={()=>{ setAddingTask(false); setAddPreset(null) }} title="Add to Today"/>}
-      {/* Paste-an-event → parse → open the Add sheet pre-filled for review. */}
-      {pasterOpen&&<EventPaster categories={categories}
-        onDraft={(draft)=>{ setPasterOpen(false); setSmartDraft(draft) }}
-        onClose={()=>setPasterOpen(false)} />}
-      {smartDraft&&<AddItemModal
-        presetText={smartDraft.title||''}
-        presetDate={smartDraft.date||''}
-        presetTime={smartDraft.time||''}
-        presetDur={smartDraft.durationMins||null}
-        presetCats={Array.isArray(smartDraft.categoryIds)?smartDraft.categoryIds:null}
-        presetDescription={smartDraft.description||''}
-        presetSubtasks={Array.isArray(smartDraft.subtasks)?smartDraft.subtasks:null}
-        presetReminders={Array.isArray(smartDraft.reminders)?smartDraft.reminders:null}
-        categories={categories} routines={routines} templates={taskTemplates} labelModel={labelModel}
-        onSave={handleAdd} onSaveRecurring={addRecurringTask}
-        onClose={()=>setSmartDraft(null)} title="Review & schedule"/>}
+      {/* AI assistant: command → plan → confirm → apply. */}
+      {pasterOpen&&<AiAssistant categories={categories} tasks={assistantTasks}
+        onApply={applyAssistantActions} onClose={()=>setPasterOpen(false)} />}
       {editing&&<AddItemModal existing={editing} categories={categories} routines={routines} onSave={handleSaveEdit}
         onSaveRecurring={addRecurringTask}
         onDelete={c=>deleteCommitment&&deleteCommitment(c.id)}
