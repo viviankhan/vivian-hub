@@ -24,8 +24,10 @@ const CORS = {
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { ...CORS, 'Content-Type': 'application/json' } })
 
-// Gemini's free-tier flash model. Fast and free for this small structured task.
-const MODEL = 'gemini-2.0-flash'
+// Gemini free-tier flash models, tried in order until one is available for this
+// key/endpoint (availability varies by key, region, and API version — a missing
+// model comes back as a 404, so we just fall through to the next).
+const MODELS = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-flash-latest', 'gemini-1.5-flash']
 const GEMINI_KEY = Deno.env.get('GEMINI_API_KEY') || ''
 
 // The exact shape we want back — Gemini fills these deterministically via its
@@ -87,33 +89,41 @@ TEXT:
 ${text}
 """`
 
-  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${encodeURIComponent(GEMINI_KEY)}`
-  let resp: Response
-  try {
-    resp = await fetch(endpoint, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: {
-          temperature: 0.2,
-          responseMimeType: 'application/json',
-          responseSchema: RESPONSE_SCHEMA,
-        },
-      }),
-    })
-  } catch (e) {
-    return json({ error: `Couldn't reach the AI service: ${(e as Error)?.message || e}` }, 502)
-  }
+  const reqBody = JSON.stringify({
+    contents: [{ parts: [{ text: prompt }] }],
+    generationConfig: { temperature: 0.2, responseMimeType: 'application/json', responseSchema: RESPONSE_SCHEMA },
+  })
 
-  if (!resp.ok) {
-    const detail = await resp.text().catch(() => '')
-    // Surface the most common misconfig plainly.
-    if (resp.status === 400 && /API key not valid/i.test(detail)) {
+  // Try each model until one answers. A 404 means "this model isn't available
+  // here" → move on; anything else (bad key, rate limit) is a real error to
+  // report, so we stop and surface it.
+  let resp: Response | null = null
+  let lastDetail = ''
+  for (const model of MODELS) {
+    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(GEMINI_KEY)}`
+    let r: Response
+    try {
+      r = await fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: reqBody })
+    } catch (e) {
+      return json({ error: `Couldn't reach the AI service: ${(e as Error)?.message || e}` }, 502)
+    }
+    if (r.ok) { resp = r; break }
+    lastDetail = await r.text().catch(() => '')
+    if (r.status === 400 && /API key not valid/i.test(lastDetail)) {
       return json({ error: 'The Gemini API key is invalid. Set a valid GEMINI_API_KEY secret and redeploy.' }, 502)
     }
-    if (resp.status === 429) return json({ error: 'The AI free tier is rate-limited right now — wait a moment and try again.' }, 429)
-    return json({ error: `AI service error (${resp.status}).`, detail: detail.slice(0, 400) }, 502)
+    if (r.status === 403) {
+      return json({ error: 'Gemini access is blocked for this key (403). In Google AI Studio make sure the Generative Language API is enabled for the key.', detail: lastDetail.slice(0, 300) }, 502)
+    }
+    if (r.status === 429) return json({ error: 'The AI free tier is rate-limited right now — wait a moment and try again.' }, 429)
+    if (r.status !== 404) {
+      // A non-404 error isn't about model availability — report it and stop.
+      return json({ error: `AI service error (${r.status}).`, detail: lastDetail.slice(0, 300) }, 502)
+    }
+    // 404 → this model isn't available for the key; try the next one.
+  }
+  if (!resp) {
+    return json({ error: 'None of the Gemini models were available for your key. Make sure your key is from Google AI Studio (aistudio.google.com/apikey) with the Generative Language API enabled.', detail: lastDetail.slice(0, 300) }, 502)
   }
 
   let data: any
