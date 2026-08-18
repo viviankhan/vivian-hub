@@ -40,11 +40,25 @@ export function normalizeIcsUrl(url) {
 // Public, no-auth CORS relays used as a fallback when your own Supabase proxy
 // isn't reachable/authorized. They fetch the (already-public) calendar and add
 // CORS headers. Reasonable for a calendar you've published, but they do see the
-// URL — the private Supabase proxy is preferred and tried first.
+// URL — the private Supabase proxy is preferred and tried first. Several are
+// listed because any one of them can be down or rate-limited on a given day; the
+// fetch tries each in turn until one returns the feed.
 const PUBLIC_RELAYS = [
   (u) => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
   (u) => `https://corsproxy.io/?url=${encodeURIComponent(u)}`,
+  (u) => `https://api.codetabs.com/v1/proxy/?quest=${encodeURIComponent(u)}`,
+  (u) => `https://thingproxy.freeboard.io/fetch/${u}`,
+  (u) => `https://cors.isomorphic-git.org/${u}`,
 ]
+
+// A fetch that gives up after `ms` so one hung/unreachable relay can't stall the
+// whole chain — on timeout we move on to the next relay instead of waiting.
+async function fetchWithTimeout(url, opts = {}, ms = 12000) {
+  const ctrl = new AbortController()
+  const timer = setTimeout(() => ctrl.abort(), ms)
+  try { return await fetch(url, { ...opts, signal: ctrl.signal }) }
+  finally { clearTimeout(timer) }
+}
 
 // Try Bloom's own Supabase Edge Function proxy. Returns .ics text, or throws
 // with a specific reason. Sends the project key the right way (apikey for the
@@ -59,7 +73,7 @@ async function viaSupabaseProxy(target) {
 
   let res, lastStatus = 0, lastBody = ''
   for (const headers of headerVariants) {
-    try { res = await fetch(endpoint, { headers }) }
+    try { res = await fetchWithTimeout(endpoint, { headers }) }
     catch (e) { console.warn('[Bloom] proxy fetch rejected:', e); throw new Error('proxy-unreachable') }
     if (res.ok) break
     lastStatus = res.status
@@ -75,7 +89,7 @@ async function viaSupabaseProxy(target) {
 }
 
 async function viaRelay(mk, target) {
-  const res = await fetch(mk(target))
+  const res = await fetchWithTimeout(mk(target))
   if (!res.ok) throw new Error(`relay-${res.status}`)
   const text = await res.text()
   if (/BEGIN:VCALENDAR/i.test(text)) return text
