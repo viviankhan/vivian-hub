@@ -23,7 +23,9 @@ const CORS = {
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { ...CORS, 'Content-Type': 'application/json' } })
 
-const MODELS = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-flash-latest', 'gemini-1.5-flash']
+// 2.0-flash first — it's the steadiest free model; 2.5-flash is popular and
+// more often overloaded. We fall through the list on any transient error.
+const MODELS = ['gemini-2.0-flash', 'gemini-2.5-flash', 'gemini-flash-latest', 'gemini-1.5-flash']
 const GEMINI_KEY = Deno.env.get('GEMINI_API_KEY') || ''
 
 // One flat action shape covers every kind (the app reads `kind` and uses the
@@ -123,6 +125,7 @@ ${command}
 
   let resp: Response | null = null
   let lastDetail = ''
+  let lastStatus = 0
   for (const model of MODELS) {
     const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(GEMINI_KEY)}`
     let r: Response
@@ -133,12 +136,22 @@ ${command}
     }
     if (r.ok) { resp = r; break }
     lastDetail = await r.text().catch(() => '')
+    lastStatus = r.status
+    // Hard stops — a different model won't help these:
     if (r.status === 400 && /API key not valid/i.test(lastDetail)) return json({ error: 'The Gemini API key is invalid. Set a valid GEMINI_API_KEY secret and redeploy.' }, 502)
     if (r.status === 403) return json({ error: 'Gemini access is blocked for this key (403). Enable the Generative Language API for the key.', detail: lastDetail.slice(0, 300) }, 502)
-    if (r.status === 429) return json({ error: 'The AI free tier is rate-limited right now — wait a moment and try again.' }, 429)
-    if (r.status !== 404) return json({ error: `AI service error (${r.status}).`, detail: lastDetail.slice(0, 300) }, 502)
+    // Everything else — 404 (model missing), 429 (rate limit), 500/502/503
+    // (overloaded/transient) — just try the next model in the list.
   }
-  if (!resp) return json({ error: 'None of the Gemini models were available for your key. Make sure your key is from Google AI Studio with the Generative Language API enabled.', detail: lastDetail.slice(0, 300) }, 502)
+  if (!resp) {
+    if ([429, 500, 502, 503].includes(lastStatus)) {
+      return json({ error: 'The free AI models are busy right now — please try again in a few seconds.', detail: lastDetail.slice(0, 300) }, 503)
+    }
+    if (lastStatus === 404) {
+      return json({ error: 'None of the Gemini models were available for your key. Make sure your key is from Google AI Studio with the Generative Language API enabled.', detail: lastDetail.slice(0, 300) }, 502)
+    }
+    return json({ error: `AI service error (${lastStatus}).`, detail: lastDetail.slice(0, 300) }, 502)
+  }
 
   let data: any
   try { data = await resp.json() } catch { return json({ error: 'AI returned a malformed response.' }, 502) }
