@@ -13,6 +13,9 @@ import FocusMode from './FocusMode.jsx'
 import DateField from './DateField.jsx'
 import TimeField from './TimeField.jsx'
 import { setItemReminders } from '../lib/notifications.js'
+import CalendarLegend from './CalendarLegend.jsx'
+import ImportedCalendarCard from './ImportedCalendarCard.jsx'
+import { importedOn, buildImportedRows, importedKey } from '../lib/importedTasks.js'
 
 // Concentric-circle "focus" target, for the Focus Now button.
 function TargetIcon({ size = 13 }) {
@@ -1038,7 +1041,7 @@ function WeekStrip({ viewDate, setViewDate, commitments, categories, doneCount, 
 }
 
 // ── Main ───────────────────────────────────────────────────────
-export default function Today({ todos, weekState, syncToggle, clearCompletion, pushUndo, commitments, addCommitment, updateCommitment, deleteCommitment, moveCommitmentToThoughts, appendLog, scheduled, categories, recurringTasks, recurringExceptions, occStarted = {}, skipRecurringOccurrence, deleteRecurringTask, addRecurringTask, updateRecurringTask, routines = [], taskTemplates = [], summary, labelModel = null }) {
+export default function Today({ todos, weekState, syncToggle, clearCompletion, pushUndo, commitments, addCommitment, updateCommitment, deleteCommitment, moveCommitmentToThoughts, appendLog, scheduled, categories, recurringTasks, recurringExceptions, occStarted = {}, skipRecurringOccurrence, deleteRecurringTask, addRecurringTask, updateRecurringTask, routines = [], taskTemplates = [], summary, labelModel = null, externalEvents = [], externalCalendars = [], toggleCalendar, importedAdoptions = {}, adoptImportedEvent }) {
   const [now,         setNow]         = useState(nowMins())
   // The day the timeline is showing. Defaults to today; the week strip up top
   // navigates to any day. "Now" logic (the progress marker, current/overdue,
@@ -1365,6 +1368,24 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
   const anytimeTasks = renderTasks.filter(t => t._mins === null)
   const renderTimed  = renderTasks.filter(t => t._mins !== null)
   const hasAnytime   = anytimeTasks.length > 0
+
+  // ── Subscribed ("imported") calendar events for this day ──────
+  // The events a subscribed calendar dropped on this day, surfaced as
+  // unscheduled tasks with a recommended time. A timed event keeps its own
+  // time; an all-day / untimed one is recommended into the first open gap,
+  // clear of everything already on the timeline (and of earlier recommendations).
+  const importedSpansForDay = importedOn(externalEvents, dateKey)
+  const dayOccupied = [
+    ...tasksWithStatus.filter(t => t._mins != null).map(t => ({ start: t._mins, end: t._mins + (t._dur || t.durationMins || 0) })),
+    ...importedSpansForDay.filter(s => !s.allDay && s.startTime).map(s => {
+      const st = hhmmToMins(s.startTime); const et = s.endTime ? hhmmToMins(s.endTime) : st + 30
+      return { start: st, end: Math.max(et, st + 15) }
+    }),
+  ]
+  const importedRows = buildImportedRows(importedSpansForDay, dateKey, dayOccupied, isToday ? now : null)
+  const isImportedDone = (row) => !!(todos[row.key] || weekState[row.key])
+  const onToggleImported = (row) => syncToggle(row.key, row.span.label || 'Busy', null, null, !isImportedDone(row))
+  const onAdoptImported  = (row) => adoptImportedEvent && adoptImportedEvent(row.span, dateKey, row.timeHHMM, row.dur)
 
   const doneCount = tasksWithStatus.filter(t=>t._status==='past').length
   // When a task is in progress, the "now" indicator is drawn inside that task's
@@ -1877,6 +1898,16 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
         dayProgress={dayProgress} isToday={isToday}
         summary={summary} todos={todos}
         recurringTasks={recurringTasks} recurringExceptions={recurringExceptions} />
+
+      {/* Subscribed-calendar visibility toggles — hide/show each imported feed
+          across the whole app right from the day view. */}
+      <CalendarLegend calendars={externalCalendars} onToggle={toggleCalendar} />
+
+      {/* Imported events for this day, as unscheduled tasks with recommended
+          times — tick them off, or add them into your own schedule. */}
+      <ImportedCalendarCard rows={importedRows} adoptions={importedAdoptions}
+        isDone={isImportedDone} onToggle={onToggleImported} onAdopt={onAdoptImported}
+        dayLabel={isToday ? 'today' : new Date(dateKey+'T12:00:00').toLocaleDateString('en-US',{weekday:'long',month:'short',day:'numeric'})} />
 
       <div className={hasAnytime ? 'today-split' : undefined}>
       {/* Unscheduled tasks — top of the day on mobile, sidebar on desktop. */}

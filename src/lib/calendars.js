@@ -142,6 +142,10 @@ export function clearCachedCalendar(id) {
 export function eventsToSpans(sub, events) {
   return (events || []).map((e, i) => ({
     id: `ext:${sub.id}:${e.uid}:${e.startDate}:${i}`,
+    // The event's own UID + start day give it a stable identity across re-parses
+    // (the array index in `id` is not stable) — Today/Week key a task's checked
+    // state and "added to my schedule" adoption off this. See lib/importedTasks.
+    uid: e.uid || '',
     label: e.summary,
     startDate: e.startDate,
     endDate: e.endDate,

@@ -8,6 +8,9 @@ import AddItemModal from './AddItemModal.jsx'
 import { setItemReminders } from '../lib/notifications.js'
 import RecurringFilter from './RecurringFilter.jsx'
 import { getRecurringFilter, RECURRING_FILTER_EVENT, visibleRecurring } from '../lib/viewFilter.js'
+import CalendarLegend from './CalendarLegend.jsx'
+import { DEFAULT_CAL_COLOR } from '../lib/calendars.js'
+import { importedOn, buildImportedRows, hhmmToMins, fmt12 as importedFmt12, minsToHHMM } from '../lib/importedTasks.js'
 
 const CAT_COLORS = {
   lab:     { dot:'#059669', bg:'#ECFDF5', text:'#065F46' },
@@ -97,7 +100,7 @@ function fmtRange(startDate, endDate) {
   return `${s} – ${e}`
 }
 
-export default function ThisWeek({ todos, weekState, syncToggle, commitments, addCommitment, deleteCommitment, categories, recurringTasks, recurringExceptions, skipRecurringOccurrence, addRecurringTask, routines = [], taskTemplates = [], labelModel = null }) {
+export default function ThisWeek({ todos, weekState, syncToggle, commitments, addCommitment, deleteCommitment, categories, recurringTasks, recurringExceptions, skipRecurringOccurrence, addRecurringTask, routines = [], taskTemplates = [], labelModel = null, externalEvents = [], externalCalendars = [], toggleCalendar, importedAdoptions = {}, adoptImportedEvent }) {
   const today = todayStr()
   const [weekOffset, setWeekOffset] = useState(0)
   // Just the 7-day Sun→Sat scaffold; recurring items are filled per-day below
@@ -200,6 +203,8 @@ export default function ThisWeek({ todos, weekState, syncToggle, commitments, ad
       </div>
       <div className="page-sub">{rangeLabel} · tap any circle to mark done</div>
 
+      <CalendarLegend calendars={externalCalendars} onToggle={toggleCalendar} />
+
       {weekPlan.map((day, i) => {
         const isToday = day.date === today
         const isPast  = day.date < today
@@ -242,6 +247,15 @@ export default function ThisWeek({ todos, weekState, syncToggle, commitments, ad
           ...customTasks.map(t=>({ ...t, _sortTime: (() => { const m=t.text?.match(/(\d{1,2}):(\d{2})\s*(AM|PM)/i); if(!m)return'50:00'; let h=parseInt(m[1]); if(m[3].toUpperCase()==='PM'&&h!==12)h+=12; if(m[3].toUpperCase()==='AM'&&h===12)h=0; return `${String(h).padStart(2,'0')}:${m[2]}`; })() })),
         ].sort((a,b) => (a._sortTime||'99:99').localeCompare(b._sortTime||'99:99'))
 
+        // Imported (subscribed-calendar) events landing on this day — read-only
+        // rows you can tick off or add into your own schedule. Untimed ones get
+        // a recommended time clear of the day's already-timed items.
+        const dayOccupied = [
+          ...dayCommitments.filter(c=>c.time).map(c=>({ start:hhmmToMins(c.time), end:hhmmToMins(c.time)+(c.durationMins||30) })),
+          ...recurringForDay.filter(t=>t._time).map(t=>({ start:hhmmToMins(t._time), end:hhmmToMins(t._time)+(t._dur||30) })),
+        ]
+        const importedRows = buildImportedRows(importedOn(externalEvents, day.date), day.date, dayOccupied, null)
+
         const doneCount = allTasks.filter(t=>effectiveDone(t, day.date, isToday, isPast, dayBlocks)).length
 
         return (
@@ -263,7 +277,7 @@ export default function ThisWeek({ todos, weekState, syncToggle, commitments, ad
             </div>
 
             <div style={{ padding:'4px 16px 12px' }}>
-              {allTasks.length===0&&addingDay!==day.date&&(
+              {allTasks.length===0&&importedRows.length===0&&addingDay!==day.date&&(
                 <div style={{ fontSize:12, color:'var(--muted)', padding:'8px 0', fontStyle:'italic' }}>
                   No tasks — {isPast?'nothing was scheduled':'use + Add or set up Recurring tasks'}
                 </div>
@@ -284,6 +298,38 @@ export default function ThisWeek({ todos, weekState, syncToggle, commitments, ad
                             : handleDeleteTemplate(day.date, t.id)}
                 />
               ))}
+
+              {importedRows.map(row => {
+                const { span, key } = row
+                const color = span.color || DEFAULT_CAL_COLOR
+                const done = !!(todos[key] || weekState[key])
+                const adopted = !!importedAdoptions[key]
+                const timeText = row.startMins != null
+                  ? `${importedFmt12(minsToHHMM(row.startMins))}${span.allDay ? ' (suggested)' : ''}`
+                  : (span.allDay ? 'all-day' : '')
+                return (
+                  <div key={key} style={{ display:'flex', gap:10, alignItems:'center', padding:'8px 0', borderBottom:'1px solid #F5F3EF', opacity:done?.5:1 }}>
+                    <div onClick={()=>syncToggle(key, span.label||'Busy', null, null, !done)}
+                      style={{ width:18, height:18, borderRadius:'50%', flexShrink:0, cursor:'pointer',
+                        border:done?'none':`2px solid ${color}`, background:done?color:'transparent',
+                        display:'flex', alignItems:'center', justifyContent:'center' }}>
+                      {done&&<span style={{ color:'white', fontSize:10, fontWeight:700 }}>✓</span>}
+                    </div>
+                    <div style={{ flex:1, minWidth:0, display:'flex', alignItems:'center', gap:6, flexWrap:'wrap' }}>
+                      <span style={{ fontSize:13, color:done?'var(--muted)':'var(--text)', textDecoration:done?'line-through':'none' }}>{span.label||'Busy'}</span>
+                      {timeText && <span style={{ fontSize:11, color:'var(--muted)' }}>{timeText}</span>}
+                      <span style={{ display:'inline-flex', alignItems:'center', gap:3, fontSize:9, letterSpacing:1, textTransform:'uppercase', padding:'1px 6px', borderRadius:10, background:`${color}20`, color }}>
+                        <span style={{ width:6, height:6, borderRadius:'50%', background:color }} />{span.calendarName||'Calendar'}
+                      </span>
+                    </div>
+                    {adopted
+                      ? <span style={{ fontSize:9, letterSpacing:.5, textTransform:'uppercase', color:'#5C8A5C', flexShrink:0, fontWeight:700 }}>✓ Added</span>
+                      : <button onClick={()=>adoptImportedEvent&&adoptImportedEvent(span, day.date, row.timeHHMM, row.dur)}
+                          title="Add to my schedule"
+                          style={{ fontSize:10, padding:'2px 8px', borderRadius:6, border:'1px solid var(--teal)', background:'#F0FDFB', color:'var(--teal)', cursor:'pointer', flexShrink:0, fontFamily:'DM Sans,sans-serif', fontWeight:600 }}>+ Schedule</button>}
+                  </div>
+                )
+              })}
 
               {addingDay===day.date&&(
                 <AddItemModal presetDate={day.date} categories={categories} routines={routines} templates={taskTemplates} labelModel={labelModel}

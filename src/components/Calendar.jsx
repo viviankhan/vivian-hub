@@ -6,6 +6,8 @@ import { recurringOccurrencesForDate } from '../lib/occurrences.js'
 import { iconColorOn } from '../lib/glyphs.jsx'
 import RecurringFilter from './RecurringFilter.jsx'
 import { getRecurringFilter, RECURRING_FILTER_EVENT, visibleRecurring } from '../lib/viewFilter.js'
+import CalendarLegend from './CalendarLegend.jsx'
+import { importedKey, assumedDuration, isTimed } from '../lib/importedTasks.js'
 
 // Shading for how busy a day is (number of events on it). Derived from the
 // active theme accent (var(--teal)) via color-mix — a light→accent wash — so it
@@ -39,7 +41,7 @@ function endTimeFrom(start, mins) {
   return `${String(Math.floor(total/60)).padStart(2,'0')}:${String(total%60).padStart(2,'0')}`
 }
 
-export default function Calendar({ commitments, vacations, events, log, categories, jumpTo, addCommitment, updateCommitment, deleteCommitment, moveCommitmentToThoughts, todos, recurringTasks, recurringExceptions, skipRecurringOccurrence, addRecurringTask, updateRecurringTask, deleteRecurringTask, routines = [], taskTemplates = [], labelModel = null }) {
+export default function Calendar({ commitments, vacations, events, log, categories, jumpTo, addCommitment, updateCommitment, deleteCommitment, moveCommitmentToThoughts, todos, weekState, syncToggle, recurringTasks, recurringExceptions, skipRecurringOccurrence, addRecurringTask, updateRecurringTask, deleteRecurringTask, routines = [], taskTemplates = [], labelModel = null, externalCalendars = [], toggleCalendar, importedAdoptions = {}, adoptImportedEvent }) {
   // monthOffset shifts by whole months from the current month: 0 = this month,
   // -1 = last month, +1 = next month, and so on — unbounded either way.
   const [monthOffset, setMonthOffset] = useState(0)
@@ -181,6 +183,8 @@ export default function Calendar({ commitments, vacations, events, log, categori
         </div>
       </div>
 
+      <CalendarLegend calendars={externalCalendars} onToggle={toggleCalendar} />
+
       <div className="cal-scroll">
         <div className="cal-grid">
           {['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map(d => (
@@ -251,22 +255,40 @@ export default function Calendar({ commitments, vacations, events, log, categori
           {selectedEvents.length === 0 && selectedSpans.length === 0 && selectedRecurring.length === 0 && !(doneByDate[selected]?.length > 0) && (
             <div style={{ fontSize:12, color:'var(--muted)', fontStyle:'italic', paddingBottom:2 }}>Nothing scheduled yet. Use “+ Add to this day.”</div>
           )}
-          {/* Multi-day events covering this day */}
-          {selectedSpans.map((ev, i) => (
-            <div key={'sp'+i} style={{ display:'flex', gap:10, alignItems:'center', padding:'9px 12px', borderRadius:8, marginBottom:6, background:`${ev.color}18`, borderLeft:`4px solid ${ev.color}`, border:`1px solid ${ev.color}44` }}>
+          {/* Multi-day events covering this day. Subscribed-calendar events can be
+              ticked off (a real completion, reflected everywhere) or added into
+              your own schedule as a commitment you can then move around. */}
+          {selectedSpans.map((ev, i) => {
+            const impKey = ev.external ? importedKey(ev) : null
+            const impDone = impKey ? !!(todos?.[impKey] || weekState?.[impKey]) : false
+            const impAdopted = impKey ? !!importedAdoptions[impKey] : false
+            return (
+            <div key={'sp'+i} style={{ display:'flex', gap:10, alignItems:'center', padding:'9px 12px', borderRadius:8, marginBottom:6, background:`${ev.color}18`, borderLeft:`4px solid ${ev.color}`, border:`1px solid ${ev.color}44`, opacity: impDone ? .6 : 1 }}>
+              {ev.external && syncToggle && (
+                <div onClick={() => syncToggle(impKey, ev.label || 'Busy', null, null, !impDone)} role="checkbox" aria-checked={impDone}
+                  style={{ width:18, height:18, borderRadius:5, flexShrink:0, cursor:'pointer', border: impDone ? 'none' : `2px solid ${ev.color}`, background: impDone ? ev.color : 'transparent', display:'flex', alignItems:'center', justifyContent:'center' }}>
+                  {impDone && <span style={{ color:'white', fontSize:10, fontWeight:700 }}>✓</span>}
+                </div>
+              )}
               {ev.icon && <Icon value={ev.icon} size={14} />}
               <div style={{ flex:1, minWidth:0 }}>
-                <div style={{ fontSize:13, color:'var(--text)', fontWeight:600 }}>{ev.label}</div>
+                <div style={{ fontSize:13, color:'var(--text)', fontWeight:600, textDecoration: impDone ? 'line-through' : 'none' }}>{ev.label}</div>
                 <div style={{ fontSize:10, color:ev.color, fontWeight:600, letterSpacing:.5 }}>
                   {(ev.external ? (ev.calendarName || 'Subscribed calendar') : 'Event')} · {ev.allDay || !ev.startTime ? 'all day' : `${fmt12(ev.startTime)}${ev.endTime ? '–'+fmt12(ev.endTime) : ''}`}
                   {ev.location ? ` · ${ev.location}` : ''}
                 </div>
               </div>
+              {ev.external && (impAdopted
+                ? <span style={{ fontSize:8.5, letterSpacing:.5, textTransform:'uppercase', color:'#5C8A5C', fontWeight:700, flexShrink:0 }}>✓ Added</span>
+                : adoptImportedEvent && (
+                  <button onClick={() => adoptImportedEvent(ev, selected, isTimed(ev) ? ev.startTime : null, assumedDuration(ev))} title="Add to my schedule"
+                    style={{ fontSize:10, padding:'3px 9px', borderRadius:14, border:`1px solid ${ev.color}`, background:'white', color:ev.color, cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:700, flexShrink:0, whiteSpace:'nowrap' }}>+ Schedule</button>
+                ))}
               {ev.external && (
                 <span title="From a subscribed calendar — read-only" style={{ fontSize:8.5, letterSpacing:.6, textTransform:'uppercase', color:ev.color, border:`1px solid ${ev.color}66`, borderRadius:20, padding:'2px 7px', fontWeight:700, flexShrink:0 }}>Synced</span>
               )}
             </div>
-          ))}
+          )})}
           {selectedEvents.map((e, i) => (
             <div key={i} style={{ padding:'9px 12px', borderRadius:8, marginBottom:6, background:`${e.color}14`, border:`1px solid ${e.color}44`, opacity: e.done ? .6 : 1 }}>
               <div style={{ display:'flex', gap:10, alignItems:'center' }}>

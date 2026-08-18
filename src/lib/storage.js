@@ -275,6 +275,13 @@ export const setRoutineGroups = v  => dbSet('routine_groups', v)
 export const getExternalCalendars = () => dbGet('external_calendars').then(v => Array.isArray(v) ? v : [])
 export const setExternalCalendars = v  => dbSet('external_calendars', v)
 
+// Imported-event adoptions: a map of importedKey → the id of the commitment it
+// was copied into when you tapped "Add to my schedule". Kept as its own synced
+// blob so an event you adopt on one device reads as adopted on the others (and
+// isn't offered for adoption twice).
+export const getImportedAdoptions = () => dbGet('imported_adoptions').then(v => (v && typeof v === 'object') ? v : {})
+export const setImportedAdoptions = v  => dbSet('imported_adoptions', v)
+
 // ── Manual time logs (Informatics) ─────────────────────────────
 // Time the user records by hand for something that didn't run as a timed task —
 // "3h on MCAT on Tuesday." Lets the Informatics page answer "how many hours did

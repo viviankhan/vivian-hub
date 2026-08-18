@@ -30,12 +30,18 @@ function Toggle({ on, onChange, label }) {
   )
 }
 
-export default function ExternalCalendars({ calendars = [], statuses = {}, onAdd, onToggle, onRemove, onRefresh }) {
+export default function ExternalCalendars({ calendars = [], statuses = {}, onAdd, onToggle, onRemove, onRefresh, onUpdate }) {
   const [open, setOpen] = useState(false)
   const [name, setName] = useState('')
   const [url, setUrl] = useState('')
   const [color, setColor] = useState(DEFAULT_CAL_COLOR)
   const [confirmId, setConfirmId] = useState(null)
+  // Inline "edit this calendar" state — rename it and recolor it after the fact.
+  const [editId, setEditId] = useState(null)
+  const [editName, setEditName] = useState('')
+  const [editColor, setEditColor] = useState(DEFAULT_CAL_COLOR)
+  const startEdit = (cal) => { setEditId(cal.id); setEditName(cal.name || ''); setEditColor(cal.color || DEFAULT_CAL_COLOR); setConfirmId(null) }
+  const saveEdit = () => { onUpdate && onUpdate(editId, { name: editName.trim() || 'Calendar', color: editColor }); setEditId(null) }
 
   const canSave = url.trim().length > 6
   const reset = () => { setName(''); setUrl(''); setColor(DEFAULT_CAL_COLOR); setOpen(false) }
@@ -64,6 +70,26 @@ export default function ExternalCalendars({ calendars = [], statuses = {}, onAdd
 
       {calendars.map(cal => {
         const st = statuses[cal.id] || {}
+        if (editId === cal.id) {
+          return (
+            <div key={cal.id} style={{ background:'var(--cream)', borderRadius:12, border:'1px solid var(--border)', padding:'14px 16px', marginBottom:8 }}>
+              <div style={{ marginBottom:10 }}>
+                <div style={fieldLabel}>Name</div>
+                <input value={editName} onChange={e => setEditName(e.target.value)} placeholder="Calendar name" style={{ ...inp }} />
+              </div>
+              <div style={fieldLabel}>Color</div>
+              <div style={{ marginBottom:12 }}>
+                <ColorSwatchRow value={editColor} onChange={setEditColor} size={26} />
+              </div>
+              <div style={{ display:'flex', gap:8 }}>
+                <button onClick={saveEdit}
+                  style={{ flex:1, background:'var(--forest)', color:'var(--green-light)', border:'none', borderRadius:10, padding:'9px', fontSize:13, fontWeight:600, cursor:'pointer', fontFamily:'DM Sans,sans-serif' }}>Save</button>
+                <button onClick={() => setEditId(null)}
+                  style={{ padding:'9px 16px', background:'white', color:'var(--muted)', border:'1px solid var(--border)', borderRadius:10, fontSize:13, cursor:'pointer', fontFamily:'DM Sans,sans-serif' }}>Cancel</button>
+              </div>
+            </div>
+          )
+        }
         return (
           <div key={cal.id} style={{ display:'flex', alignItems:'center', gap:11, padding:'11px 14px', background:'white', borderRadius:12, border:'1px solid var(--border)', marginBottom:8 }}>
             <span style={{ width:12, height:12, borderRadius:'50%', background:cal.color || DEFAULT_CAL_COLOR, flexShrink:0, opacity: cal.enabled ? 1 : .35 }} />
@@ -79,6 +105,8 @@ export default function ExternalCalendars({ calendars = [], statuses = {}, onAdd
             </div>
             <button onClick={() => onRefresh && onRefresh(cal.id)} title="Sync now" disabled={st.state === 'syncing'}
               style={{ background:'none', border:'none', cursor: st.state === 'syncing' ? 'default' : 'pointer', color:'var(--muted)', fontSize:15, padding:'2px 4px', flexShrink:0, opacity: st.state === 'syncing' ? .5 : 1 }}>⟳</button>
+            <button onClick={() => startEdit(cal)} title="Rename or recolor"
+              style={{ background:'none', border:'none', cursor:'pointer', color:'var(--muted)', fontSize:13, padding:'2px 4px', flexShrink:0 }}>✎</button>
             <Toggle on={!!cal.enabled} onChange={() => onToggle && onToggle(cal.id)} label={`Show ${cal.name}`} />
             {confirmId === cal.id ? (
               <span style={{ display:'inline-flex', alignItems:'center', gap:5, flexShrink:0 }}>
