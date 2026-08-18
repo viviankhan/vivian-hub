@@ -125,6 +125,31 @@ export default function ThisWeek({ todos, weekState, syncToggle, commitments, ad
     ? !!(todos[id] || weekState[id])
     : !!(todos[date+'_'+id] || weekState[date+'_'+id])
 
+  // ── Effective done, mirroring Today ──────────────────────────
+  // The Week view used to read only the stored check/uncheck record, so a
+  // routine / time-block / auto-complete task that Today shows ticked once its
+  // window has passed still looked un-done here — and tapping it flipped the
+  // wrong way. These helpers reproduce Today's effectiveDone so both screens
+  // agree on what's checked and a tap always flips what's actually shown.
+  const nowMins = (() => { const d = new Date(); return d.getHours() * 60 + d.getMinutes() })()
+  const routineIdSet = new Set((routines || []).map(r => r.id))
+  const hhmm = (t) => { if (!t) return null; const [h, m] = String(t).split(':').map(Number); return h * 60 + m }
+  const doneKey = (task, date) => task.isCommitment ? task.id : (date + '_' + task.id)
+  const hasRecord = (task, date) => doneKey(task, date) in (todos || {})
+  const recordDone = (task, date) => !!(todos[doneKey(task, date)] || weekState[doneKey(task, date)])
+  const effectiveDone = (task, date, isToday, isPast, dayBlocks) => {
+    // An explicit tap (check or uncheck) always wins over the time default.
+    if (hasRecord(task, date)) return recordDone(task, date)
+    const autoRoutine = task.routine && routineIdSet.has(task.routine)
+    const inBlock = task._mins != null && (dayBlocks || []).some(b => task._mins >= b.start && task._mins < b.end)
+    if ((task.autoComplete === true || autoRoutine || inBlock) && task._mins != null) {
+      // Today: done once the task's own window has passed. A past day is wholly
+      // over; a future day hasn't happened yet.
+      return isToday ? (nowMins >= task._mins + (task._dur || 0)) : isPast
+    }
+    return false
+  }
+
   const commitsByDate = {}
   ;(commitments||[]).forEach(c => {
     if (!c.date || c.block) return   // time blocks show only on the Today timeline
@@ -190,6 +215,17 @@ export default function ThisWeek({ todos, weekState, syncToggle, commitments, ad
         const recurringForDay = recurringOccurrencesForDate(weekRecurring, day.date, recurringExceptions)
           .filter(t => !deleted.includes(t.id) && !t.block)
 
+        // Repeating time blocks + block commitments for this day, so a task
+        // sitting inside one auto-completes here exactly as it does on Today.
+        const dayBlocks = [
+          ...recurringOccurrencesForDate(weekRecurring, day.date, recurringExceptions)
+            .filter(t => t.block && t._time && t._dur)
+            .map(t => ({ start: hhmm(t._time), end: hhmm(t._time) + t._dur })),
+          ...(commitments || [])
+            .filter(c => c.date === day.date && c.block && c.time && c.durationMins)
+            .map(c => ({ start: hhmm(c.time), end: hhmm(c.time) + c.durationMins })),
+        ]
+
         // Carry-forward: yesterday's carry-flagged recurring items left undone.
         const prevDate = i > 0 ? weekPlan[i-1].date : null
         const carriedFromPrev = prevDate
@@ -200,13 +236,13 @@ export default function ThisWeek({ todos, weekState, syncToggle, commitments, ad
         const customTasks = customByDay[day.date] || []
 
         const allTasks = [
-          ...dayCommitments.map(c=>({ id:c.id, text:c.time?`${fmt12(c.time)} — ${c.text}`:c.text, cat:c.cat||'personal', isCommitment:true, _sortTime:c.time||'99:99' })),
+          ...dayCommitments.map(c=>({ id:c.id, text:c.time?`${fmt12(c.time)} — ${c.text}`:c.text, cat:c.cat||'personal', isCommitment:true, _sortTime:c.time||'99:99', _mins:hhmm(c.time), _dur:c.durationMins||null, autoComplete:c.autoComplete, routine:c.routine })),
           ...carriedFromPrev.map(t=>({ id:t.id, text:t.text, cat:t.cat, isRecurring:true, carried:true, carriedFrom:weekPlan[i-1].dayLabel, _sortTime:'00:00' })),
-          ...recurringForDay.map(t=>({ id:t.id, text:t.label, cat:t.cat, isRecurring:true, _sortTime: t._time || '50:00' })),
+          ...recurringForDay.map(t=>({ id:t.id, text:t.label, cat:t.cat, isRecurring:true, _sortTime: t._time || '50:00', _mins:hhmm(t._time), _dur:t._dur||null, autoComplete:t.autoComplete, routine:t.routine })),
           ...customTasks.map(t=>({ ...t, _sortTime: (() => { const m=t.text?.match(/(\d{1,2}):(\d{2})\s*(AM|PM)/i); if(!m)return'50:00'; let h=parseInt(m[1]); if(m[3].toUpperCase()==='PM'&&h!==12)h+=12; if(m[3].toUpperCase()==='AM'&&h===12)h=0; return `${String(h).padStart(2,'0')}:${m[2]}`; })() })),
         ].sort((a,b) => (a._sortTime||'99:99').localeCompare(b._sortTime||'99:99'))
 
-        const doneCount = allTasks.filter(t=>isDone(t.id, day.date, t.isCommitment)).length
+        const doneCount = allTasks.filter(t=>effectiveDone(t, day.date, isToday, isPast, dayBlocks)).length
 
         return (
           <div key={day.date} className={`week-day-card ${isToday?'today':''}`}
@@ -235,9 +271,9 @@ export default function ThisWeek({ todos, weekState, syncToggle, commitments, ad
 
               {allTasks.map(t => (
                 <TaskRow key={t.id} id={t.id} text={t.text} cat={t.cat} categories={categories}
-                  done={isDone(t.id, day.date, t.isCommitment)}
+                  done={effectiveDone(t, day.date, isToday, isPast, dayBlocks)}
                   carried={t.carried} carriedFrom={t.carriedFrom}
-                  onToggle={()=>syncToggle(t.id, t.text, t.cat, t.isCommitment?null:day.date)}
+                  onToggle={()=>syncToggle(t.id, t.text, t.cat, t.isCommitment?null:day.date, !effectiveDone(t, day.date, isToday, isPast, dayBlocks))}
                   onDelete={t.carried ? null
                     : t.isCommitment
                       ? ()=>deleteCommitment&&deleteCommitment(t.id)

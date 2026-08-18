@@ -6,6 +6,7 @@ import {
   getNotes, setNotes, getFcProgress, setFcProgress, getFcStudied, setFcStudied,
   getScheduledTasks, setScheduledTasks,
   getCommitmentMeta, setCommitmentMeta,
+  addThought,
   getCommitments, addCommitment as dbAddCommitment, updateCommitment as dbUpdateCommitment, deleteCommitment as dbDeleteCommitment,
   getVacations, addVacation as dbAddVacation, deleteVacation as dbDeleteVacation,
   getEvents, addEvent as dbAddEvent, deleteEvent as dbDeleteEvent,
@@ -1194,6 +1195,15 @@ export default function App() {
     catch (e) { reportSaveError(e) }
   }, [])
 
+  // Pull a scheduled task off the calendar and pin it to the Thoughts board as
+  // a sticky note — the replacement for the old "Move to Inbox". The task's text
+  // becomes the note; the commitment itself is then deleted (which registers its
+  // own undo, so Ctrl+Z brings the task back).
+  const moveCommitmentToThoughts = useCallback(async c => {
+    try { await addThought(c?.text || '') } catch (e) { reportSaveError(e) }
+    deleteCommitment(c.id)
+  }, [deleteCommitment])
+
   // ── Vacations CRUD ──────────────────────────────────────────
   const addVacation = useCallback(async v => {
     try {
@@ -1338,7 +1348,7 @@ export default function App() {
     log, appendLog, notes, updateNotes,
     fcProgress, updateFcProgress, fcStudied, updateFcStudied,
     scheduled, addScheduledTask,
-    commitments: commitmentsView, addCommitment, updateCommitment, deleteCommitment,
+    commitments: commitmentsView, addCommitment, updateCommitment, deleteCommitment, moveCommitmentToThoughts,
     vacations, addVacation, deleteVacation,
     // The Calendar sees the user's own events plus the read-only spans from any
     // enabled subscribed calendars (Mom's family calendar, etc.). Editing/adding

@@ -4,6 +4,15 @@
 
 const EDIT_LOG = [
   {
+    date: '2026-08-18',
+    summary: 'Week tasks check off like Today, and "Move to Thoughts" replaces "Move to Inbox"',
+    changes: [
+      'This Week now checks tasks off exactly the way Today does: a routine, time-block or auto-complete task shows ticked once its window has passed, and tapping it always flips what you actually see — the two screens no longer disagree about what\'s done',
+      'The task editor\'s ⋯ menu drops the old "Move to Inbox" (unschedule) action; "Duplicate" stays',
+      'In its place: "Move to Thoughts" — pull a task off the calendar and it lands on the Thoughts board as a sticky note (Ctrl+Z brings the task back)',
+    ]
+  },
+  {
     date: '2026-08-11',
     summary: 'Shift a whole routine earlier/later, and a cleaner Recurring tab',
     changes: [

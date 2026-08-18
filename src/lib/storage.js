@@ -216,6 +216,31 @@ export const setCommitmentMeta = v  => dbSet('commitment_meta', v)
 export const getThoughts = () => dbGet('thoughts').then(v => v ?? [])
 export const setThoughts = v  => dbSet('thoughts', v)
 
+// Classic sticky-note pastels (kept in sync with ThoughtsBoard's own palette).
+const THOUGHT_COLORS = ['#FEF3B0', '#FBD1DE', '#C9E7F7', '#D2F0CE', '#F7DDB0', '#E7D6F5', '#FBC9A8']
+// Build a fresh sticky note in the exact shape the Thoughts board renders —
+// randomly placed + tilted, stamped now, unscheduled. Shared so a note pinned
+// from elsewhere (e.g. "Move to Thoughts" on a task) looks native on the board.
+export function makeThought(text) {
+  return {
+    id: 'th-' + Date.now(),
+    text: (text || '').trim(),
+    createdAt: new Date().toISOString(),
+    x: 3 + Math.random() * 66,
+    y: 3 + Math.random() * 80,
+    rot: -7 + Math.random() * 14,
+    color: THOUGHT_COLORS[Math.floor(Math.random() * THOUGHT_COLORS.length)],
+    scheduled: false,
+  }
+}
+// Pin a new thought to the board and persist it. Returns the created note.
+export async function addThought(text) {
+  const note = makeThought(text)
+  const cur = await getThoughts()
+  await setThoughts([note, ...(cur || [])])
+  return note
+}
+
 // Recurring occurrence exceptions — one shared, cloud-synced map marking which
 // individual instances of a recurring task have been skipped/removed on a given
 // date. Key: "<recurringId>@<YYYY-MM-DD>" → true. Replaces the old per-device,

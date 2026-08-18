@@ -177,7 +177,7 @@ function relativeDay(dateStr) {
   return null
 }
 
-// A row in the header ⋯ menu (Duplicate / Move to Inbox / Delete).
+// A row in the header ⋯ menu (Duplicate / Move to Thoughts / Delete).
 function MenuRow({ icon, label, danger, onClick }) {
   return (
     <button onClick={onClick}
@@ -188,11 +188,12 @@ function MenuRow({ icon, label, danger, onClick }) {
   )
 }
 const DupIcon = () => (<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h8"/></svg>)
-const InboxIcon2 = () => (<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 13h4l2 3h4l2-3h4"/><path d="M4 13 6 5.5A2 2 0 0 1 7.9 4h8.2A2 2 0 0 1 18 5.5L20 13v5a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2Z"/></svg>)
+// A sticky-note with a folded corner — for "Move to Thoughts".
+const NoteIcon2 = () => (<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4h16v11l-5 5H4Z"/><path d="M20 15h-5v5"/></svg>)
 const TrashIcon2 = () => (<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4.5 7h15M9 7V5.2A1.2 1.2 0 0 1 10.2 4h3.6A1.2 1.2 0 0 1 15 5.2V7M6.5 7l1 12.5h9L17.5 7"/></svg>)
 const TargetIcon = () => (<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4.5"/><circle cx="12" cy="12" r="1" fill="currentColor" stroke="none"/></svg>)
 
-export default function AddItemModal({ existing = null, existingRecurring = null, occurrenceDate = null, onSaveOccurrence = null, onDeleteOccurrence = null, onDeleteFuture = null, presetDate = null, presetText = '', presetTime = '', presetDur = null, presetCat = '', presetCats = null, presetDescription = '', presetSubtasks = null, presetReminders = null, lockDate = false, defaultRepeat = false, categories = [], routines = [], templates = [], labelModel = null, onSave, onSaveRecurring = null, onDelete = null, onDuplicate = null, onMoveToInbox = null, onClose, title = 'Add to calendar' }) {
+export default function AddItemModal({ existing = null, existingRecurring = null, occurrenceDate = null, onSaveOccurrence = null, onDeleteOccurrence = null, onDeleteFuture = null, presetDate = null, presetText = '', presetTime = '', presetDur = null, presetCat = '', presetCats = null, presetDescription = '', presetSubtasks = null, presetReminders = null, lockDate = false, defaultRepeat = false, categories = [], routines = [], templates = [], labelModel = null, onSave, onSaveRecurring = null, onDelete = null, onDuplicate = null, onMoveToThoughts = null, onClose, title = 'Add to calendar' }) {
   const cats = (categories && categories.length) ? categories : DEFAULT_CATEGORIES
   const isEdit = !!existing
   // Editing an existing recurring task: it comes in the Recurring-tab row shape
@@ -397,7 +398,7 @@ export default function AddItemModal({ existing = null, existingRecurring = null
   // recurring page the Repeat row opens by default so the days are right there.
   const [expanded, setExpanded] = useState((defaultRepeat || isRecEdit) ? 'repeat' : null)
   const toggleRow = (k) => setExpanded(e => (e === k ? null : k))
-  // Header ⋯ overflow menu (edit mode only) — Duplicate / Move to Inbox / Delete.
+  // Header ⋯ overflow menu (edit mode only) — Duplicate / Move to Thoughts / Delete.
   const [menuOpen, setMenuOpen] = useState(false)
   // ── Task Menu picker ─────────────────────────────────────────
   // When adding a brand-new task, you can pull from a saved "task menu" preset:
@@ -421,7 +422,7 @@ export default function AddItemModal({ existing = null, existingRecurring = null
     setSubtasks(Array.isArray(t.subtasks) ? t.subtasks.map((s, i) => ({ id: 'st-' + Date.now() + '-' + i, text: s.text, done: false })) : [])
     if (t.person !== undefined) setPerson(t.person || '')
   }
-  const hasMenu = (isEdit || isRecEdit) && (onDuplicate || onMoveToInbox || onDelete)
+  const hasMenu = (isEdit || isRecEdit) && (onDuplicate || onMoveToThoughts || onDelete)
   const runMenu = (fn) => { setMenuOpen(false); onClose(); fn(existing || rec) }
 
   // Live "happening now" state — re-tick so the remaining-time and shade update.
@@ -719,7 +720,7 @@ export default function AddItemModal({ existing = null, existingRecurring = null
                 <div onClick={() => setMenuOpen(false)} style={{ position:'fixed', inset:0, zIndex:5 }} />
                 <div style={{ position:'absolute', top:42, right:0, zIndex:6, background:'white', borderRadius:14, boxShadow:'0 12px 40px rgba(20,30,45,.28)', overflow:'hidden', minWidth:196, paddingTop:4, paddingBottom:4 }}>
                   {onDuplicate && <MenuRow icon={<DupIcon />} label="Duplicate" onClick={() => runMenu(onDuplicate)} />}
-                  {onMoveToInbox && <MenuRow icon={<InboxIcon2 />} label="Move to Inbox" onClick={() => runMenu(onMoveToInbox)} />}
+                  {onMoveToThoughts && <MenuRow icon={<NoteIcon2 />} label="Move to Thoughts" onClick={() => runMenu(onMoveToThoughts)} />}
                   {(onDelete || canScopedDelete) && <div style={{ height:1, background:'#EEEAF1', margin:'4px 0' }} />}
                   {/* For a recurring event the delete scope is chosen right here in
                       the menu — no intermediate popup. */}

@@ -7,6 +7,7 @@ import AddItemModal from './AddItemModal.jsx'
 import DateField from './DateField.jsx'
 import TimeField from './TimeField.jsx'
 import { setItemReminders } from '../lib/notifications.js'
+import { addThought } from '../lib/storage.js'
 
 const DAYS = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday']
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
@@ -670,7 +671,7 @@ export default function Commitments({ commitments, addCommitment, updateCommitme
           onSaveRecurring={addRecurringTask}
           onDelete={c => deleteCommitment(c.id)}
           onDuplicate={c => addCommitment({ ...c, id:'c-'+Date.now(), text:(c.text||'')+' (copy)', done:false, createdAt:new Date().toISOString() })}
-          onMoveToInbox={c => updateCommitment(c.id, { date:null, time:null, durationMins:null })}
+          onMoveToThoughts={c => { addThought(c.text || ''); deleteCommitment(c.id) }}
           onClose={() => setEditing(null)}
           title="Edit commitment" />
       )}
