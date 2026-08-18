@@ -23,6 +23,34 @@ async function lsSet(key, value) {
   try { localStorage.setItem('vivian_'+key, JSON.stringify(value)) } catch {}
 }
 
+// ── Value fingerprinting ────────────────────────────────────────
+// A fast, low-collision 53-bit string hash (cyrb53). We fingerprint a value's
+// serialized form so callers can cheaply tell whether a write would actually
+// change anything — storing the tiny signature instead of a full copy of a
+// (possibly multi-MB) blob. Prefixed with the length to make an accidental
+// collision astronomically unlikely.
+export function stableSignature(str) {
+  let h1 = 0xdeadbeef, h2 = 0x41c6ce57
+  for (let i = 0; i < str.length; i++) {
+    const ch = str.charCodeAt(i)
+    h1 = Math.imul(h1 ^ ch, 2654435761)
+    h2 = Math.imul(h2 ^ ch, 1597334677)
+  }
+  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909)
+  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909)
+  const hash = 4294967296 * (2097151 & h2) + (h1 >>> 0)
+  return str.length + ':' + hash.toString(36)
+}
+
+// Signature of the value we last *successfully* wrote for each kv_store key,
+// persisted so it survives reloads. This is what lets dbSet skip re-uploading a
+// blob that hasn't actually changed since the last write — including the
+// once-per-load pref re-push, which was writing the identical ui_prefs blob on
+// every single app open. See dbSet.
+const WSIG_PREFIX = 'vivian_wsig_'
+const wsigGet = (k) => { try { return localStorage.getItem(WSIG_PREFIX + k) } catch { return null } }
+const wsigSet = (k, v) => { try { localStorage.setItem(WSIG_PREFIX + k, v) } catch {} }
+
 // ── In-flight write tracking ────────────────────────────────────
 // Cloud writes are async — refreshing or closing the tab right after an edit
 // can cancel the request mid-flight, which looks exactly like "my delete
@@ -85,12 +113,28 @@ const writeQueues = new Map()
 
 export async function dbSet(key, value) {
   if (USE_SUPABASE) {
+    // Skip the upsert entirely when this exact value is already what we last
+    // wrote for this key. Re-uploading a byte-identical blob only burns Disk IO
+    // (a WAL write) and bumps updated_at — which then makes *other* devices
+    // re-read the unchanged blob on their next foreground too. The signature is
+    // persisted, so the once-per-load pref/blob re-pushes that don't actually
+    // change anything become no-ops across reloads.
+    //
+    // Recorded only after a write succeeds, so a failed (offline) write is
+    // retried next time; a different value always writes; flipping back to a
+    // prior value still writes (only the immediately previous identical value is
+    // skipped). Safe under last-write-wins: if the row was changed remotely, not
+    // re-asserting our identical-to-before value is exactly right — the newer
+    // remote value should win, and the next foreground read reconciles it.
+    const sig = stableSignature(JSON.stringify(value))
+    if (wsigGet(key) === sig) return
     const prevWrite = writeQueues.get(key) || Promise.resolve()
     const thisWrite = prevWrite.then(async () => {
       pendingWrites++
       try {
         const { error } = await supabase.from('kv_store').upsert({ key, value, updated_at: new Date().toISOString() })
         if (error) throw new Error(`Cloud save failed for "${key}": ${error.message}`)
+        wsigSet(key, sig)
       } finally {
         pendingWrites--
       }
