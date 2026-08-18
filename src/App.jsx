@@ -1144,7 +1144,10 @@ export default function App() {
       color: span.color || null,
       icon: span.icon || null,
       location: span.location || '',
-      note: span.calendarName ? `From ${span.calendarName}` : 'From a subscribed calendar',
+      // Note where it came from. This must be `description` (kept in the meta
+      // blob), NOT `note` — `commitments` has no `note` column, so passing one
+      // makes the cloud insert fail ("could not find the 'note' column").
+      description: span.calendarName ? `From ${span.calendarName}` : 'From a subscribed calendar',
       createdAt: new Date().toISOString(),
     })
     setImportedAdoptions_(prev => {
