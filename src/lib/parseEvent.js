@@ -1,9 +1,10 @@
 // src/lib/parseEvent.js
 // ─────────────────────────────────────────────────────────────
-// Client side of "paste an event → scheduled task". Posts the pasted text to
-// the parse-event Supabase Edge Function (which asks Gemini to structure it) and
-// returns a draft the Add sheet can pre-fill. The AI key lives only on the
-// server (see supabase/functions/parse-event) — never in this public bundle.
+// Client side of the AI assistant. Sends a natural-language command plus a
+// snapshot of the user's current tasks to the parse-event Supabase Edge
+// Function (which asks Gemini to plan actions) and returns { summary, actions }.
+// The app shows the plan for confirmation, then applies it. The AI key lives
+// only on the server — never in this public bundle.
 // ─────────────────────────────────────────────────────────────
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
@@ -19,14 +20,13 @@ function todayStr() {
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
 }
 
-// Send `text` (plus the user's categories, so the model can pick a matching
-// label by id) and get back a normalized draft:
-//   { title, date, time, durationMins, categoryIds, description, subtasks, reminders }
-// Throws an Error with a human-readable message on any failure.
-export async function parseEventText(text, categories = []) {
-  if (!ENDPOINT) throw new Error('AI scheduling needs your Supabase URL configured.')
+// Ask the assistant to plan actions for `command`, given the user's categories
+// and a snapshot of their current tasks (so it can act on existing ones).
+// Returns { summary, actions }. Throws an Error with a readable message on
+// failure. A valid-but-empty plan comes back as { summary, actions: [], error }.
+export async function runAssistant(command, { categories = [], tasks = [] } = {}) {
+  if (!ENDPOINT) throw new Error('The AI assistant needs your Supabase URL configured.')
   const headers = { 'Content-Type': 'application/json' }
-  // Send the project key the way Supabase expects (apikey + Bearer for a JWT).
   if (SUPABASE_KEY) { headers['apikey'] = SUPABASE_KEY; headers['Authorization'] = `Bearer ${SUPABASE_KEY}` }
 
   let res
@@ -35,9 +35,10 @@ export async function parseEventText(text, categories = []) {
       method: 'POST',
       headers,
       body: JSON.stringify({
-        text,
+        command,
         today: todayStr(),
         categories: (categories || []).map(c => ({ id: c.id, label: c.label })),
+        tasks: (tasks || []).slice(0, 150),
       }),
     })
   } catch {
@@ -45,11 +46,13 @@ export async function parseEventText(text, categories = []) {
   }
 
   let data = null
-  try { data = await res.json() } catch { /* fall through to status handling */ }
+  try { data = await res.json() } catch { /* handled below */ }
   if (!res.ok) {
     if (res.status === 404) throw new Error('The parse-event function isn’t deployed yet (see AI_SETUP.md).')
     throw new Error((data && data.error) || `AI service error (${res.status}).`)
   }
-  if (!data || !data.title) throw new Error('The AI couldn’t find an event in that text.')
-  return data
+  if (!data) throw new Error('The AI service returned an unexpected response.')
+  // A 200 with an error field + no actions = the model couldn't form a plan.
+  if ((!Array.isArray(data.actions) || data.actions.length === 0) && data.error) throw new Error(data.error)
+  return { summary: data.summary || '', actions: Array.isArray(data.actions) ? data.actions : [] }
 }

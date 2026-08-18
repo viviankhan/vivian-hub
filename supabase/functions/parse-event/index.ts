@@ -1,16 +1,15 @@
 // supabase/functions/parse-event/index.ts
 // ─────────────────────────────────────────────────────────────
-// "Paste an event, get a scheduled task." The app posts a blob of text (an
-// email, a flyer, a message — "Dentist Tue at 3, bring insurance card") and this
-// function asks Google Gemini to turn it into a structured task: title, date,
-// time, duration, a tidy write-up, subtasks, a matching label, and reminder
-// leads. The app then opens its normal Add sheet pre-filled for you to review.
+// The planner's AI assistant. The app posts a natural-language command plus a
+// snapshot of the user's current tasks; this asks Google Gemini to return a
+// PLAN of actions (create a task, add/check subtasks on an existing one, mark a
+// task done, reschedule). The app shows the plan for confirmation, then applies
+// it — nothing here ever writes to the database.
 //
-// Free to run: it uses the Gemini API's free tier. You supply your own key as a
-// secret (never in the app's code, which is public):
+// Free to run on Gemini's free tier. Supply your own key as a secret (never in
+// the app's public code):
 //     supabase secrets set GEMINI_API_KEY=your_key_here
 //     supabase functions deploy parse-event
-// See AI_SETUP.md for the 2-minute walkthrough.
 //
 // Runs on Supabase Edge Functions (Deno). verify_jwt is off (see config.toml)
 // so the browser's CORS preflight isn't rejected before the function runs.
@@ -24,69 +23,97 @@ const CORS = {
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { ...CORS, 'Content-Type': 'application/json' } })
 
-// Gemini free-tier flash models, tried in order until one is available for this
-// key/endpoint (availability varies by key, region, and API version — a missing
-// model comes back as a 404, so we just fall through to the next).
 const MODELS = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-flash-latest', 'gemini-1.5-flash']
 const GEMINI_KEY = Deno.env.get('GEMINI_API_KEY') || ''
 
-// The exact shape we want back — Gemini fills these deterministically via its
-// structured-output mode, so the app never has to guess-parse free text.
+// One flat action shape covers every kind (the app reads `kind` and uses the
+// fields that apply). Structured output keeps Gemini honest about the format.
 const RESPONSE_SCHEMA = {
   type: 'object',
   properties: {
-    title:        { type: 'string', description: 'Short task name, no date/time in it.' },
-    date:         { type: 'string', description: 'YYYY-MM-DD, or "" if none can be determined.' },
-    time:         { type: 'string', description: 'Start time as HH:MM 24-hour, or "" if none.' },
-    durationMins: { type: 'integer', description: 'Length in minutes, or 0 if unknown.' },
-    categoryIds:  { type: 'array', items: { type: 'string' }, description: 'Best-matching category ids from the provided list (may be empty).' },
-    description:  { type: 'string', description: 'A clear, thorough write-up of every useful detail from the text.' },
-    subtasks:     { type: 'array', items: { type: 'string' }, description: 'Concrete steps or things to bring/prepare.' },
-    reminders:    { type: 'array', items: { type: 'integer' }, description: 'Reminder lead times in minutes before the start (e.g. 1440 = 1 day, 60 = 1 hour). Empty for none.' },
+    summary: { type: 'string', description: 'One short sentence describing the whole plan in plain language.' },
+    actions: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          kind:         { type: 'string', enum: ['create', 'addSubtasks', 'setDone', 'reschedule'], description: 'Which action.' },
+          taskId:       { type: 'string', description: 'For addSubtasks/setDone/reschedule: the id of an existing task from the provided list. Never invent one.' },
+          title:        { type: 'string', description: 'For create: the new task name.' },
+          date:         { type: 'string', description: 'YYYY-MM-DD (create/reschedule), or "".' },
+          time:         { type: 'string', description: 'HH:MM 24h (create/reschedule), or "".' },
+          durationMins: { type: 'integer', description: 'Minutes for a create/reschedule, or 0.' },
+          categoryIds:  { type: 'array', items: { type: 'string' }, description: 'For create: matching category ids from the list.' },
+          description:  { type: 'string', description: 'For create: a tidy write-up. Else "".' },
+          subtasks: {
+            type: 'array',
+            description: 'For create/addSubtasks: the subtask items.',
+            items: { type: 'object', properties: { text: { type: 'string' }, done: { type: 'boolean' } }, required: ['text'] },
+          },
+          reminders:    { type: 'array', items: { type: 'integer' }, description: 'For create: reminder lead minutes before start.' },
+          done:         { type: 'boolean', description: 'For setDone: true to complete, false to un-complete.' },
+        },
+        required: ['kind'],
+      },
+    },
   },
-  required: ['title'],
+  required: ['summary', 'actions'],
 }
+
+type Task = { id: string; title: string; date?: string; time?: string; done?: boolean; subtasks?: { text: string; done: boolean }[] }
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS })
   if (req.method !== 'POST') return json({ error: 'Method not allowed' }, 405)
-  if (!GEMINI_KEY) return json({ error: 'The AI key is not set up. Run: supabase secrets set GEMINI_API_KEY=… then redeploy parse-event.' }, 503)
+  if (!GEMINI_KEY) return json({ error: 'The AI key is not set up. Add a GEMINI_API_KEY secret, then redeploy.' }, 503)
 
-  let body: { text?: string; today?: string; categories?: { id: string; label: string }[] }
+  let body: { command?: string; text?: string; today?: string; categories?: { id: string; label: string }[]; tasks?: Task[] }
   try { body = await req.json() } catch { return json({ error: 'Bad JSON body' }, 400) }
 
-  const text = (body.text || '').trim()
-  if (!text) return json({ error: 'Nothing to read — paste an event description.' }, 400)
-  if (text.length > 8000) return json({ error: 'That text is too long — trim it down a bit.' }, 400)
+  // `command` is the field; `text` is accepted for backward-compat.
+  const command = (body.command || body.text || '').trim()
+  if (!command) return json({ error: 'Nothing to do — type an instruction or paste an event.' }, 400)
+  if (command.length > 12000) return json({ error: 'That’s a lot of text — trim it down a bit.' }, 400)
 
-  // Today (the app sends its local date) anchors any relative dates like
-  // "tomorrow" or "next Friday".
   const today = (body.today || new Date().toISOString().slice(0, 10)).slice(0, 10)
   const cats = Array.isArray(body.categories) ? body.categories.slice(0, 40) : []
-  const catList = cats.length
-    ? cats.map(c => `- id "${c.id}": ${c.label}`).join('\n')
-    : '(no categories defined)'
+  const tasks = Array.isArray(body.tasks) ? body.tasks.slice(0, 150) : []
+
+  const catList = cats.length ? cats.map(c => `- id "${c.id}": ${c.label}`).join('\n') : '(none)'
+  const taskList = tasks.length
+    ? tasks.map(t => {
+        const subs = (t.subtasks || []).map(s => `${s.done ? '[x]' : '[ ]'} ${s.text}`).join('; ')
+        return `- id "${t.id}": "${t.title}"${t.date ? ` (${t.date}${t.time ? ' ' + t.time : ''})` : ''}${t.done ? ' [DONE]' : ''}${subs ? ` — subtasks: ${subs}` : ''}`
+      }).join('\n')
+    : '(the user has no existing tasks)'
 
   const prompt =
-`You convert a pasted event/description into ONE scheduled to-do for a personal planner.
-Today is ${today} (the user's local date). Resolve relative dates ("tomorrow", "next Tue") against it.
+`You are the assistant for a personal planner. Turn the user's instruction into a PLAN of concrete actions the app will carry out after they confirm.
 
-From the text below, produce:
-- title: a short, clean name (no date or time inside it).
-- date: YYYY-MM-DD if a specific day is stated or clearly implied, else "".
-- time: HH:MM 24-hour start time if stated/implied, else "".
-- durationMins: how long it runs if stated or reasonably implied, else 0.
-- categoryIds: pick the closest-matching id(s) from this list (or none). Do NOT invent ids.
+Today is ${today} (the user's local date). Resolve relative dates against it.
+
+CATEGORIES (use ids only where a category applies):
 ${catList}
-- description: a thorough, well-organized write-up capturing every useful detail (who, where, what to know, links, confirmation numbers, dress code, costs — whatever is present). Keep it factual; don't pad.
-- subtasks: concrete prep steps or things to bring, one per item. Empty if none apply.
-- reminders: sensible lead times in minutes before the start (e.g. an important appointment → [1440, 60]). Empty if a simple task.
 
-Only use information present or clearly implied by the text. Never fabricate specifics.
+THE USER'S CURRENT TASKS (only reference these ids; NEVER invent an id):
+${taskList}
 
-TEXT:
+Actions you can use:
+- create: make a new task. Fields: title, date, time, durationMins, categoryIds, description, subtasks (each {text, done}), reminders.
+- addSubtasks: add subtasks to an EXISTING task. Fields: taskId, subtasks (each {text, done} — set done:true to add it already checked off).
+- setDone: mark an existing task complete/incomplete. Fields: taskId, done.
+- reschedule: change an existing task's date/time. Fields: taskId, date, time, durationMins.
+
+Rules:
+- To act on an existing task, find the best match in the list by name and use its exact id. If nothing matches what the user names, prefer a create action or leave it out — do not guess a random id.
+- If the instruction is just an event description (no reference to existing tasks), produce a single create action.
+- Only use information present or clearly implied. Never fabricate specifics.
+- Keep the plan minimal — no redundant actions.
+- Write "summary" as one plain-language sentence a person can confirm at a glance.
+
+INSTRUCTION:
 """
-${text}
+${command}
 """`
 
   const reqBody = JSON.stringify({
@@ -94,9 +121,6 @@ ${text}
     generationConfig: { temperature: 0.2, responseMimeType: 'application/json', responseSchema: RESPONSE_SCHEMA },
   })
 
-  // Try each model until one answers. A 404 means "this model isn't available
-  // here" → move on; anything else (bad key, rate limit) is a real error to
-  // report, so we stop and surface it.
   let resp: Response | null = null
   let lastDetail = ''
   for (const model of MODELS) {
@@ -109,22 +133,12 @@ ${text}
     }
     if (r.ok) { resp = r; break }
     lastDetail = await r.text().catch(() => '')
-    if (r.status === 400 && /API key not valid/i.test(lastDetail)) {
-      return json({ error: 'The Gemini API key is invalid. Set a valid GEMINI_API_KEY secret and redeploy.' }, 502)
-    }
-    if (r.status === 403) {
-      return json({ error: 'Gemini access is blocked for this key (403). In Google AI Studio make sure the Generative Language API is enabled for the key.', detail: lastDetail.slice(0, 300) }, 502)
-    }
+    if (r.status === 400 && /API key not valid/i.test(lastDetail)) return json({ error: 'The Gemini API key is invalid. Set a valid GEMINI_API_KEY secret and redeploy.' }, 502)
+    if (r.status === 403) return json({ error: 'Gemini access is blocked for this key (403). Enable the Generative Language API for the key.', detail: lastDetail.slice(0, 300) }, 502)
     if (r.status === 429) return json({ error: 'The AI free tier is rate-limited right now — wait a moment and try again.' }, 429)
-    if (r.status !== 404) {
-      // A non-404 error isn't about model availability — report it and stop.
-      return json({ error: `AI service error (${r.status}).`, detail: lastDetail.slice(0, 300) }, 502)
-    }
-    // 404 → this model isn't available for the key; try the next one.
+    if (r.status !== 404) return json({ error: `AI service error (${r.status}).`, detail: lastDetail.slice(0, 300) }, 502)
   }
-  if (!resp) {
-    return json({ error: 'None of the Gemini models were available for your key. Make sure your key is from Google AI Studio (aistudio.google.com/apikey) with the Generative Language API enabled.', detail: lastDetail.slice(0, 300) }, 502)
-  }
+  if (!resp) return json({ error: 'None of the Gemini models were available for your key. Make sure your key is from Google AI Studio with the Generative Language API enabled.', detail: lastDetail.slice(0, 300) }, 502)
 
   let data: any
   try { data = await resp.json() } catch { return json({ error: 'AI returned a malformed response.' }, 502) }
@@ -137,19 +151,47 @@ ${text}
   let parsed: any
   try { parsed = JSON.parse(raw) } catch { return json({ error: 'AI returned unparseable JSON.' }, 502) }
 
-  // Normalize + clamp to exactly what the app expects, and only keep category
-  // ids that actually exist (the model is told not to invent, but trust nothing).
   const validCats = new Set(cats.map(c => c.id))
-  const out = {
-    title: String(parsed.title || '').trim().slice(0, 200),
-    date: /^\d{4}-\d{2}-\d{2}$/.test(parsed.date || '') ? parsed.date : '',
-    time: /^([01]?\d|2[0-3]):[0-5]\d$/.test(parsed.time || '') ? String(parsed.time).padStart(5, '0') : '',
-    durationMins: Number.isFinite(parsed.durationMins) ? Math.max(0, Math.min(1440, Math.round(parsed.durationMins))) : 0,
-    categoryIds: Array.isArray(parsed.categoryIds) ? parsed.categoryIds.filter((id: string) => validCats.has(id)).slice(0, 4) : [],
-    description: String(parsed.description || '').trim().slice(0, 4000),
-    subtasks: Array.isArray(parsed.subtasks) ? parsed.subtasks.map((s: unknown) => String(s).trim()).filter(Boolean).slice(0, 20) : [],
-    reminders: Array.isArray(parsed.reminders) ? parsed.reminders.map((n: unknown) => Math.round(Number(n))).filter((n: number) => Number.isFinite(n) && n >= 0 && n <= 40320).slice(0, 6) : [],
+  const validTaskIds = new Set(tasks.map(t => t.id))
+  const clampTime = (t: string) => /^([01]?\d|2[0-3]):[0-5]\d$/.test(t || '') ? String(t).padStart(5, '0') : ''
+  const clampDate = (d: string) => /^\d{4}-\d{2}-\d{2}$/.test(d || '') ? d : ''
+  const cleanSubs = (arr: any): { text: string; done: boolean }[] =>
+    Array.isArray(arr) ? arr.map((s: any) => ({ text: String(s?.text || '').trim(), done: !!s?.done })).filter(s => s.text).slice(0, 30) : []
+
+  // Normalize + drop anything referencing an unknown task id (the model is told
+  // never to invent ids, but we enforce it here so a bad guess can't act on a
+  // real task).
+  const actions: any[] = []
+  for (const a of Array.isArray(parsed.actions) ? parsed.actions : []) {
+    const kind = a?.kind
+    if (kind === 'create') {
+      const title = String(a.title || '').trim().slice(0, 200)
+      if (!title) continue
+      actions.push({
+        kind, title,
+        date: clampDate(a.date), time: clampTime(a.time),
+        durationMins: Number.isFinite(a.durationMins) ? Math.max(0, Math.min(1440, Math.round(a.durationMins))) : 0,
+        categoryIds: Array.isArray(a.categoryIds) ? a.categoryIds.filter((id: string) => validCats.has(id)).slice(0, 4) : [],
+        description: String(a.description || '').trim().slice(0, 4000),
+        subtasks: cleanSubs(a.subtasks),
+        reminders: Array.isArray(a.reminders) ? a.reminders.map((n: any) => Math.round(Number(n))).filter((n: number) => Number.isFinite(n) && n >= 0 && n <= 40320).slice(0, 6) : [],
+      })
+    } else if (kind === 'addSubtasks') {
+      const subs = cleanSubs(a.subtasks)
+      if (!validTaskIds.has(a.taskId) || !subs.length) continue
+      actions.push({ kind, taskId: a.taskId, subtasks: subs })
+    } else if (kind === 'setDone') {
+      if (!validTaskIds.has(a.taskId)) continue
+      actions.push({ kind, taskId: a.taskId, done: a.done !== false })
+    } else if (kind === 'reschedule') {
+      if (!validTaskIds.has(a.taskId)) continue
+      const date = clampDate(a.date), time = clampTime(a.time)
+      if (!date && !time) continue
+      actions.push({ kind, taskId: a.taskId, date, time, durationMins: Number.isFinite(a.durationMins) ? Math.max(0, Math.min(1440, Math.round(a.durationMins))) : 0 })
+    }
   }
-  if (!out.title) return json({ error: "Couldn't find a task in that text." }, 422)
-  return json(out)
+
+  const summary = String(parsed.summary || '').trim().slice(0, 300)
+  if (!actions.length) return json({ summary, actions: [], error: summary || "I couldn't work out an action from that." })
+  return json({ summary, actions })
 })
