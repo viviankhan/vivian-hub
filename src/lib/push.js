@@ -15,7 +15,7 @@
 // Supabase isn't configured, so the app is unchanged for anyone who skips setup.
 // ─────────────────────────────────────────────────────────────
 
-import { supabase, isUsingSupabase } from './storage.js'
+import { supabase, isUsingSupabase, stableSignature } from './storage.js'
 import { buildScheduledPushes } from './notifications.js'
 
 // The VAPID public key identifies our push sender. It is NOT a secret (it ships
@@ -147,11 +147,25 @@ export function syncScheduledPushesDebounced(events, commitments, recurring = []
   }, wait)
 }
 
+// Signature of the future queue we last successfully wrote this session, so a
+// rebuild that comes out identical can skip the delete+upsert entirely. Starts
+// null on each load, so the queue is still authoritatively re-asserted once per
+// session before dedup kicks in.
+let lastQueueSig = null
 export async function syncScheduledPushes(events, commitments, recurring = []) {
   if (!backgroundPushEnabled() || !pushSupported() || !supabase) return
   const id = deviceId()
   const rows = buildScheduledPushes(events, commitments, recurring)
     .map(r => ({ ...r, device_id: id, sent: false }))
+  // Skip the whole delete+upsert when the queue we'd write is identical to the
+  // one we last wrote. The App re-runs the reminder sync on every task/event/
+  // meta edit, but most edits don't change the timed-reminder set at all
+  // (checking off an un-timed task, editing notes, a foreground resync) —
+  // rewriting a byte-identical queue only burns write IO. The operation is
+  // idempotent (it always replaces the entire future queue), so skipping an
+  // identical rewrite leaves the DB in exactly the same state.
+  const sig = stableSignature(JSON.stringify(rows))
+  if (sig === lastQueueSig) return
   const nowISO = new Date().toISOString()
   try {
     // Clear the still-future queue for this device, then write the current set.
@@ -162,8 +176,10 @@ export async function syncScheduledPushes(events, commitments, recurring = []) {
     if (rows.length) {
       const { error } = await supabase.from('scheduled_pushes')
         .upsert(rows, { onConflict: 'device_id,tag' })
-      if (error) console.warn('[push] queue reminders failed:', error.message)
+      // Don't record the signature on a failed write, so the next sync retries.
+      if (error) { console.warn('[push] queue reminders failed:', error.message); return }
     }
+    lastQueueSig = sig
   } catch (e) {
     console.warn('[push] syncScheduledPushes failed:', e)
   }
