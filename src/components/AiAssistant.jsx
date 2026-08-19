@@ -6,25 +6,40 @@
 import { useState } from 'react'
 import { runAssistant } from '../lib/parseEvent.js'
 
-// A one-line, plain-language description of a planned action for the review list.
-function describe(a, titleOf) {
+function fmt12(t) {
+  if (!t) return ''
+  const [h, m] = t.split(':').map(Number)
+  return `${h % 12 || 12}:${String(m).padStart(2,'0')} ${h >= 12 ? 'PM' : 'AM'}`
+}
+function prettyDate(d) {
+  if (!d) return ''
+  const dt = new Date(d + 'T12:00:00')
+  return dt.toLocaleDateString('en-US', { weekday:'short', month:'short', day:'numeric' })
+}
+function prettyDur(mins) {
+  if (!mins) return ''
+  if (mins < 60) return `${mins} min`
+  return mins % 60 === 0 ? `${mins/60} h` : `${(mins/60).toFixed(1)} h`
+}
+function remindLabel(mins) {
+  if (mins === 0) return 'at start'
+  if (mins % 1440 === 0) return `${mins/1440}d before`
+  if (mins % 60 === 0) return `${mins/60}h before`
+  return `${mins}m before`
+}
+
+// The bold headline for a planned action.
+function headline(a, titleOf) {
   const t = a.taskId ? (titleOf(a.taskId) || 'that task') : ''
-  if (a.kind === 'create') {
-    const when = [a.date && `on ${a.date}`, a.time && `at ${a.time}`].filter(Boolean).join(' ')
-    const subs = a.subtasks?.length ? ` · ${a.subtasks.length} subtask${a.subtasks.length > 1 ? 's' : ''}` : ''
-    return `Create “${a.title}”${when ? ' ' + when : ''}${subs}`
-  }
+  if (a.kind === 'create')  return `Create “${a.title}”`
   if (a.kind === 'addSubtasks') {
     const allDone = a.subtasks.every(s => s.done)
     const someDone = a.subtasks.some(s => s.done)
-    const tag = allDone ? ' (all checked off)' : someDone ? ' (some checked)' : ''
+    const tag = allDone ? ' (checked off)' : someDone ? ' (some checked)' : ''
     return `Add ${a.subtasks.length} subtask${a.subtasks.length > 1 ? 's' : ''} to “${t}”${tag}`
   }
-  if (a.kind === 'setDone') return `Mark “${t}” ${a.done ? 'complete' : 'not complete'}`
-  if (a.kind === 'reschedule') {
-    const when = [a.date && `to ${a.date}`, a.time && `at ${a.time}`].filter(Boolean).join(' ')
-    return `Reschedule “${t}”${when ? ' ' + when : ''}`
-  }
+  if (a.kind === 'setDone')    return `Mark “${t}” ${a.done ? 'complete' : 'not complete'}`
+  if (a.kind === 'reschedule') return `Reschedule “${t}”`
   return 'Change'
 }
 
@@ -35,6 +50,9 @@ export default function AiAssistant({ categories = [], tasks = [], onApply, onCl
   const [plan, setPlan]       = useState(null)   // { summary, actions }
 
   const titleOf = (id) => (tasks.find(t => t.id === id) || {}).title
+  const labelsOf = (ids) => (Array.isArray(ids) ? ids : [])
+    .map(id => (categories.find(c => c.id === id) || {}).label)
+    .filter(Boolean)
 
   const plated = async () => {
     const c = command.trim()
@@ -91,21 +109,46 @@ export default function AiAssistant({ categories = [], tasks = [], onApply, onCl
             {plan.summary && <div style={{ fontSize:13, color:'var(--muted)', lineHeight:1.5, marginBottom:12 }}>{plan.summary}</div>}
             {plan.actions.length === 0 ? (
               <div style={{ ...card, color:'var(--muted)', fontSize:13 }}>No changes to make.</div>
-            ) : plan.actions.map((a, i) => (
+            ) : plan.actions.map((a, i) => {
+              const chips = []
+              if (a.date) chips.push(prettyDate(a.date))
+              if (a.time) chips.push(fmt12(a.time))
+              if (a.durationMins) chips.push(prettyDur(a.durationMins))
+              labelsOf(a.categoryIds).forEach(l => chips.push(l))
+              const reminders = Array.isArray(a.reminders) ? a.reminders : []
+              return (
               <div key={i} style={card}>
-                <div style={{ fontSize:13.5, fontWeight:600, color:'var(--text)', lineHeight:1.4 }}>{describe(a, titleOf)}</div>
+                <div style={{ fontSize:13.5, fontWeight:600, color:'var(--text)', lineHeight:1.4, overflowWrap:'anywhere' }}>{headline(a, titleOf)}</div>
+                {chips.length > 0 && (
+                  <div style={{ marginTop:7, display:'flex', flexWrap:'wrap', gap:6 }}>
+                    {chips.map((c, j) => (
+                      <span key={j} style={{ fontSize:11.5, fontWeight:600, color:'var(--forest)', background:'rgba(123,191,212,.16)', border:'1px solid rgba(123,191,212,.35)', borderRadius:8, padding:'2px 8px' }}>{c}</span>
+                    ))}
+                  </div>
+                )}
+                {a.description && (
+                  <div style={{ marginTop:8, fontSize:12.5, color:'var(--muted)', lineHeight:1.5, whiteSpace:'pre-wrap', overflowWrap:'anywhere' }}>{a.description}</div>
+                )}
                 {Array.isArray(a.subtasks) && a.subtasks.length > 0 && (
-                  <div style={{ marginTop:7, display:'flex', flexDirection:'column', gap:4 }}>
+                  <div style={{ marginTop:8, display:'flex', flexDirection:'column', gap:4 }}>
                     {a.subtasks.map((s, j) => (
                       <div key={j} style={{ display:'flex', alignItems:'flex-start', gap:7, fontSize:12.5, color:'var(--muted)' }}>
                         <span style={{ flexShrink:0, marginTop:1 }}>{s.done ? '☑' : '☐'}</span>
-                        <span style={{ minWidth:0 }}>{s.text}</span>
+                        <span style={{ minWidth:0, overflowWrap:'anywhere' }}>{s.text}</span>
                       </div>
                     ))}
                   </div>
                 )}
+                {reminders.length > 0 && (
+                  <div style={{ marginTop:8, fontSize:11.5, color:'var(--muted)', display:'flex', flexWrap:'wrap', gap:6, alignItems:'center' }}>
+                    <span style={{ opacity:.8 }}>🔔</span>
+                    {reminders.map((m, j) => (
+                      <span key={j} style={{ background:'#F3F2F6', border:'1px solid var(--border)', borderRadius:8, padding:'2px 7px' }}>{remindLabel(m)}</span>
+                    ))}
+                  </div>
+                )}
               </div>
-            ))}
+            )})}
             <div style={{ display:'flex', gap:8, marginTop:14 }}>
               <button onClick={()=>setPlan(null)}
                 style={{ padding:'13px 16px', borderRadius:12, border:'1px solid var(--border)', background:'white', color:'var(--muted)', cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:600, fontSize:14 }}>Back</button>
