@@ -251,6 +251,16 @@ export default function AddItemModal({ existing = null, existingRecurring = null
     })
   }
   const [description, setDescription] = useState(existing?.description ?? rec?.note ?? presetDescription ?? '')
+  // Grow the notes box to fit its text so a long description is fully visible
+  // instead of scrolling inside a fixed 3-row box. minHeight (in the style)
+  // keeps it at a comfortable size when empty/short.
+  const descRef = useRef(null)
+  useLayoutEffect(() => {
+    const el = descRef.current
+    if (!el) return
+    el.style.height = 'auto'
+    el.style.height = el.scrollHeight + 'px'
+  }, [description])
   const [subtasks, setSubtasks]   = useState(() =>
     Array.isArray(existing?.subtasks) ? existing.subtasks
     : Array.isArray(presetSubtasks) ? presetSubtasks.map((t, i) => ({ id: 'st-' + Date.now() + '-' + i, text: (typeof t === 'string' ? t : (t?.text || '')).trim(), done: false })).filter(s => s.text)
@@ -1366,9 +1376,9 @@ export default function AddItemModal({ existing = null, existingRecurring = null
               )}
             </div>
             <div style={{ height:1, background:'#F1EDF2', margin:'6px 0 4px' }} />
-            <textarea value={description} onChange={e => setDescription(e.target.value)}
+            <textarea ref={descRef} value={description} onChange={e => setDescription(e.target.value)}
               placeholder="Add notes, details, anything to remember…" rows={3}
-              style={{ width:'100%', minHeight:0, fontSize:14, padding:'8px 0 2px', border:'none', background:'transparent', resize:'vertical', lineHeight:1.5, fontFamily:'DM Sans,sans-serif', outline:'none', color:'var(--text)' }} />
+              style={{ width:'100%', minHeight:66, boxSizing:'border-box', fontSize:14, padding:'8px 0 2px', border:'none', background:'transparent', resize:'none', overflow:'hidden', lineHeight:1.5, fontFamily:'DM Sans,sans-serif', outline:'none', color:'var(--text)' }} />
           </div>
 
           {/* ── Save ──────────────────────────────────────────── */}
