@@ -32,6 +32,7 @@ function remindLabel(mins) {
 function headline(a, titleOf) {
   const t = a.taskId ? (titleOf(a.taskId) || 'that task') : ''
   if (a.kind === 'create')  return `Create “${a.title}”`
+  if (a.kind === 'event')   return `Add event “${a.title}”`
   if (a.kind === 'addSubtasks') {
     const allDone = a.subtasks.every(s => s.done)
     const someDone = a.subtasks.some(s => s.done)
@@ -111,9 +112,21 @@ export default function AiAssistant({ categories = [], tasks = [], onApply, onCl
               <div style={{ ...card, color:'var(--muted)', fontSize:13 }}>No changes to make.</div>
             ) : plan.actions.map((a, i) => {
               const chips = []
-              if (a.date) chips.push(prettyDate(a.date))
-              if (a.time) chips.push(fmt12(a.time))
-              if (a.durationMins) chips.push(prettyDur(a.durationMins))
+              if (a.kind === 'event') {
+                const span = a.endDate && a.endDate !== a.startDate
+                  ? `${prettyDate(a.startDate)} → ${prettyDate(a.endDate)}`
+                  : prettyDate(a.startDate)
+                if (span) chips.push(span)
+                if (a.allDay === false) {
+                  if (a.startTime) chips.push(fmt12(a.startTime) + (a.endTime ? '–' + fmt12(a.endTime) : ''))
+                } else {
+                  chips.push('all day')
+                }
+              } else {
+                if (a.date) chips.push(prettyDate(a.date))
+                if (a.time) chips.push(fmt12(a.time))
+                if (a.durationMins) chips.push(prettyDur(a.durationMins))
+              }
               labelsOf(a.categoryIds).forEach(l => chips.push(l))
               const reminders = Array.isArray(a.reminders) ? a.reminders : []
               return (

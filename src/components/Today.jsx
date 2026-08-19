@@ -1041,7 +1041,7 @@ function WeekStrip({ viewDate, setViewDate, commitments, categories, doneCount, 
 }
 
 // ── Main ───────────────────────────────────────────────────────
-export default function Today({ todos, weekState, syncToggle, clearCompletion, pushUndo, commitments, addCommitment, updateCommitment, deleteCommitment, moveCommitmentToThoughts, appendLog, scheduled, categories, recurringTasks, recurringExceptions, occStarted = {}, skipRecurringOccurrence, deleteRecurringTask, addRecurringTask, updateRecurringTask, routines = [], taskTemplates = [], summary, labelModel = null, externalEvents = [], externalCalendars = [], toggleCalendar, importedAdoptions = {}, adoptImportedEvent }) {
+export default function Today({ todos, weekState, syncToggle, clearCompletion, pushUndo, commitments, addCommitment, updateCommitment, deleteCommitment, moveCommitmentToThoughts, addEvent, appendLog, scheduled, categories, recurringTasks, recurringExceptions, occStarted = {}, skipRecurringOccurrence, deleteRecurringTask, addRecurringTask, updateRecurringTask, routines = [], taskTemplates = [], summary, labelModel = null, externalEvents = [], externalCalendars = [], toggleCalendar, importedAdoptions = {}, adoptImportedEvent }) {
   const [now,         setNow]         = useState(nowMins())
   // The day the timeline is showing. Defaults to today; the week strip up top
   // navigates to any day. "Now" logic (the progress marker, current/overdue,
@@ -1739,6 +1739,18 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
         }
         if (addCommitment) addCommitment(commitment)
         if (Array.isArray(a.reminders) && a.reminders.length) setItemReminders(id, a.reminders)
+      } else if (a.kind === 'event') {
+        if (!addEvent || !a.startDate) return
+        const allDay = a.allDay !== false
+        addEvent({
+          id: 'ev-' + (Date.now() + idx) + '-' + Math.random().toString(36).slice(2, 6),
+          label: a.title,
+          startDate: a.startDate,
+          endDate: a.endDate || a.startDate,
+          allDay,
+          startTime: allDay ? null : (a.startTime || null),
+          endTime: allDay ? null : (a.endTime || null),
+        })
       } else if (a.kind === 'addSubtasks') {
         const c = (commitments || []).find(x => x.id === a.taskId)
         if (!c || !updateCommitment) return
