@@ -132,23 +132,62 @@ ${command}
   let resp: Response | null = null
   let lastDetail = ''
   let lastStatus = 0
-  for (const model of MODELS) {
-    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(GEMINI_KEY)}`
-    let r: Response
-    try {
-      r = await fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: reqBody })
-    } catch (e) {
-      return json({ error: `Couldn't reach the AI service: ${(e as Error)?.message || e}` }, 502)
+  let hardStop: Response | null = null
+
+  // Try a generateContent call against each model in turn; stop at the first
+  // that works. Records status/detail so the caller can decide what to do when
+  // none work. Returns true on success (sets `resp`), false otherwise.
+  const tryModels = async (models: string[]): Promise<boolean> => {
+    for (const model of models) {
+      const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(GEMINI_KEY)}`
+      let r: Response
+      try {
+        r = await fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: reqBody })
+      } catch (e) {
+        hardStop = json({ error: `Couldn't reach the AI service: ${(e as Error)?.message || e}` }, 502)
+        return false
+      }
+      if (r.ok) { resp = r; return true }
+      lastDetail = await r.text().catch(() => '')
+      lastStatus = r.status
+      // Hard stops — a different model won't help these:
+      if (r.status === 400 && /API key not valid/i.test(lastDetail)) { hardStop = json({ error: 'The Gemini API key is invalid. Set a valid GEMINI_API_KEY secret and redeploy.' }, 502); return false }
+      if (r.status === 403) { hardStop = json({ error: 'Gemini access is blocked for this key (403). Enable the Generative Language API for the key.', detail: lastDetail.slice(0, 300) }, 502); return false }
+      // Everything else — 404 (model missing), 429 (rate limit), 500/502/503
+      // (overloaded/transient) — just try the next model in the list.
     }
-    if (r.ok) { resp = r; break }
-    lastDetail = await r.text().catch(() => '')
-    lastStatus = r.status
-    // Hard stops — a different model won't help these:
-    if (r.status === 400 && /API key not valid/i.test(lastDetail)) return json({ error: 'The Gemini API key is invalid. Set a valid GEMINI_API_KEY secret and redeploy.' }, 502)
-    if (r.status === 403) return json({ error: 'Gemini access is blocked for this key (403). Enable the Generative Language API for the key.', detail: lastDetail.slice(0, 300) }, 502)
-    // Everything else — 404 (model missing), 429 (rate limit), 500/502/503
-    // (overloaded/transient) — just try the next model in the list.
+    return false
   }
+
+  // Ask the key which models it can actually use, so we're not guessing at
+  // names. Different keys/projects expose different model sets, and Google
+  // retires names over time — a fixed list can go stale and 404 on everything.
+  // Returns free-tier flash/pro models that support generateContent, best
+  // first, or [] if the listing fails.
+  const discoverModels = async (): Promise<string[]> => {
+    try {
+      const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(GEMINI_KEY)}&pageSize=200`)
+      if (!r.ok) return []
+      const d: any = await r.json().catch(() => null)
+      const all: any[] = Array.isArray(d?.models) ? d.models : []
+      const usable = all
+        .filter(m => Array.isArray(m?.supportedGenerationMethods) && m.supportedGenerationMethods.includes('generateContent'))
+        .map(m => String(m?.name || '').replace(/^models\//, ''))
+        .filter(n => /gemini/i.test(n) && /flash|pro/i.test(n) && !/vision|embedding|aqa|thinking|exp|tts|image|audio/i.test(n))
+      // Prefer flash (fast + free) and newer versions; skip anything we already tried.
+      const rank = (n: string) => (/flash/i.test(n) ? 0 : 1) * 100 + (/2\.5/.test(n) ? 0 : /2\.0/.test(n) ? 1 : 2)
+      return usable.sort((a, b) => rank(a) - rank(b)).filter(n => !MODELS.includes(n)).slice(0, 6)
+    } catch { return [] }
+  }
+
+  await tryModels(MODELS)
+  // If the whole hardcoded list came back 404 (names the key doesn't recognize),
+  // discover the key's real model set and try those before giving up.
+  if (!resp && !hardStop && lastStatus === 404) {
+    const discovered = await discoverModels()
+    if (discovered.length) await tryModels(discovered)
+  }
+  if (hardStop) return hardStop
   if (!resp) {
     if ([429, 500, 502, 503].includes(lastStatus)) {
       return json({ error: 'The free AI models are busy right now — please try again in a few seconds.', detail: lastDetail.slice(0, 300) }, 503)
