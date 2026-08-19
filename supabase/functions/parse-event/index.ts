@@ -39,11 +39,15 @@ const RESPONSE_SCHEMA = {
       items: {
         type: 'object',
         properties: {
-          kind:         { type: 'string', enum: ['create', 'addSubtasks', 'setDone', 'reschedule'], description: 'Which action.' },
+          kind:         { type: 'string', enum: ['create', 'event', 'addSubtasks', 'setDone', 'reschedule'], description: 'Which action.' },
           taskId:       { type: 'string', description: 'For addSubtasks/setDone/reschedule: the id of an existing task from the provided list. Never invent one.' },
-          title:        { type: 'string', description: 'For create: the new task name.' },
-          date:         { type: 'string', description: 'YYYY-MM-DD (create/reschedule), or "".' },
+          title:        { type: 'string', description: 'For create/event: the new task or event name.' },
+          date:         { type: 'string', description: 'YYYY-MM-DD (create/reschedule), or for an event the START date, or "".' },
           time:         { type: 'string', description: 'HH:MM 24h (create/reschedule), or "".' },
+          endDate:      { type: 'string', description: 'For event: the END date YYYY-MM-DD (same as start for a single all-day event), or "".' },
+          allDay:       { type: 'boolean', description: 'For event: true when it spans whole days (a trip, an absence). Almost always true.' },
+          startTime:    { type: 'string', description: 'For a timed event: HH:MM 24h start, or "".' },
+          endTime:      { type: 'string', description: 'For a timed event: HH:MM 24h end, or "".' },
           durationMins: { type: 'integer', description: 'Minutes for a create/reschedule, or 0.' },
           categoryIds:  { type: 'array', items: { type: 'string' }, description: 'For create: matching category ids from the list.' },
           description:  { type: 'string', description: 'For create: a tidy write-up. Else "".' },
@@ -101,14 +105,16 @@ THE USER'S CURRENT TASKS (only reference these ids; NEVER invent an id):
 ${taskList}
 
 Actions you can use:
-- create: make a new task. Fields: title, date, time, durationMins, categoryIds, description, subtasks (each {text, done}), reminders.
+- create: make a new single-day TASK (something to do on one day). Fields: title, date, time, durationMins, categoryIds, description, subtasks (each {text, done}), reminders.
+- event: make a multi-day calendar EVENT spanning a range of days — a trip, a vacation, someone being away/out, a conference, anything that covers a stretch of dates rather than one to-do. Fields: title, date (START date), endDate (END date), allDay (almost always true), startTime, endTime (only for a timed event). Use this whenever the span covers more than one day, or is phrased as an absence/trip/period ("Aug 14–18", "out for 6 weeks", "in Mexico next week").
 - addSubtasks: add subtasks to an EXISTING task. Fields: taskId, subtasks (each {text, done} — set done:true to add it already checked off).
 - setDone: mark an existing task complete/incomplete. Fields: taskId, done.
 - reschedule: change an existing task's date/time. Fields: taskId, date, time, durationMins.
 
 Rules:
 - To act on an existing task, find the best match in the list by name and use its exact id. If nothing matches what the user names, prefer a create action or leave it out — do not guess a random id.
-- If the instruction is just an event description (no reference to existing tasks), produce a single create action.
+- Choosing create vs event: if it happens on ONE day, use create (a task). If it covers MORE THAN ONE day, or reads as a trip / vacation / absence / stretch of days, use event and set date=start, endDate=end. Resolve durations like "6 weeks" into an actual endDate from today. When only a start is given for a clearly multi-day thing and no end is stated, make a sensible endDate rather than collapsing it to one day.
+- If the instruction is just a description with no reference to existing tasks, produce a single create (one day) or event (multi-day) action.
 - Only use information present or clearly implied. Never fabricate specifics.
 - Keep the plan minimal — no redundant actions.
 - Write "summary" as one plain-language sentence a person can confirm at a glance.
@@ -188,6 +194,18 @@ ${command}
         description: String(a.description || '').trim().slice(0, 4000),
         subtasks: cleanSubs(a.subtasks),
         reminders: Array.isArray(a.reminders) ? a.reminders.map((n: any) => Math.round(Number(n))).filter((n: number) => Number.isFinite(n) && n >= 0 && n <= 40320).slice(0, 6) : [],
+      })
+    } else if (kind === 'event') {
+      const title = String(a.title || '').trim().slice(0, 200)
+      const start = clampDate(a.date)
+      if (!title || !start) continue
+      let end = clampDate(a.endDate) || start
+      if (end < start) end = start            // never let the range invert
+      const allDay = a.allDay !== false
+      actions.push({
+        kind, title, startDate: start, endDate: end, allDay,
+        startTime: allDay ? '' : clampTime(a.startTime),
+        endTime:   allDay ? '' : clampTime(a.endTime),
       })
     } else if (kind === 'addSubtasks') {
       const subs = cleanSubs(a.subtasks)
