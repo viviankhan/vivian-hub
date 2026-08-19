@@ -75,6 +75,7 @@ const RESPONSE_SCHEMA = {
 type Task = { id: string; title: string; date?: string; time?: string; done?: boolean; subtasks?: { text: string; done: boolean }[] }
 
 Deno.serve(async (req) => {
+ try {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS })
   if (req.method !== 'POST') return json({ error: 'Method not allowed' }, 405)
   if (!GEMINI_KEY) return json({ error: 'The AI key is not set up. Add a GEMINI_API_KEY secret, then redeploy.' }, 503)
@@ -305,4 +306,9 @@ ${command}
     return json({ summary, actions: [], error: `I understood it but couldn't turn it into an action. The AI returned: ${rawActions}` })
   }
   return json({ summary, actions })
+ } catch (e) {
+  // Anything we didn't foresee returns a readable message instead of an opaque
+  // 500, so a failure is never invisible again.
+  return json({ error: `The assistant hit an unexpected error: ${(e as Error)?.message || e}`, stack: String((e as Error)?.stack || '').slice(0, 600) }, 500)
+ }
 })
