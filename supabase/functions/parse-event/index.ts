@@ -118,12 +118,21 @@ Actions you can use:
 - reschedule: change an existing task's date/time. Fields: taskId, date, time, durationMins.
 
 Rules:
+- ALWAYS return at least one action whenever the instruction describes anything to schedule, add, or change. Never return an empty "actions" array in that case — the summary alone is not enough; the app can only act on the actions.
 - To act on an existing task, find the best match in the list by name and use its exact id. If nothing matches what the user names, prefer a create action or leave it out — do not guess a random id.
 - Choosing create vs event: if it happens on ONE day, use create (a task). If it covers MORE THAN ONE day, or reads as a trip / vacation / absence / stretch of days, use event and set date=start, endDate=end. Resolve durations like "6 weeks" into an actual endDate from today. When only a start is given for a clearly multi-day thing and no end is stated, make a sensible endDate rather than collapsing it to one day.
-- If the instruction is just a description with no reference to existing tasks, produce a single create (one day) or event (multi-day) action.
+- Every date MUST be a literal YYYY-MM-DD string (e.g. "2026-08-14"), never words like "August 14th".
+- The instruction may describe SEVERAL things at once — produce one action for each. Two people/plans mentioned means (at least) two actions.
 - Only use information present or clearly implied. Never fabricate specifics.
-- Keep the plan minimal — no redundant actions.
 - Write "summary" as one plain-language sentence a person can confirm at a glance.
+
+EXAMPLE (for a day where today is 2026-08-19):
+Instruction: "Danya 14–18th has a trip to Mexico. Kay is out 23rd and 6 weeks after for a hip replacement."
+Correct output:
+{"summary":"Add Danya's Mexico trip (Aug 14–18) and Kay's hip-replacement absence (Aug 23 – Oct 4).","actions":[
+  {"kind":"event","title":"Danya trip to Mexico","date":"2026-08-14","endDate":"2026-08-18","allDay":true},
+  {"kind":"event","title":"Kay out for hip replacement","date":"2026-08-23","endDate":"2026-10-04","allDay":true}
+]}
 
 INSTRUCTION:
 """
@@ -289,6 +298,11 @@ ${command}
   }
 
   const summary = String(parsed.summary || '').trim().slice(0, 300)
-  if (!actions.length) return json({ summary, actions: [], error: summary || "I couldn't work out an action from that." })
+  if (!actions.length) {
+    // The model gave a summary but no action we could use. Echo what it actually
+    // returned so the failure is diagnosable instead of a mystery empty plan.
+    const rawActions = JSON.stringify(parsed.actions ?? parsed).slice(0, 600)
+    return json({ summary, actions: [], error: `I understood it but couldn't turn it into an action. The AI returned: ${rawActions}` })
+  }
   return json({ summary, actions })
 })
