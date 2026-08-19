@@ -28,6 +28,12 @@ const json = (body: unknown, status = 200) =>
 const MODELS = ['gemini-2.0-flash', 'gemini-2.5-flash', 'gemini-flash-latest', 'gemini-1.5-flash']
 const GEMINI_KEY = Deno.env.get('GEMINI_API_KEY') || ''
 
+// The last model name that actually worked, remembered across invocations on a
+// warm instance. Without it, a key that doesn't have any of the hardcoded names
+// pays 4 failed 404 probes + a ListModels lookup on EVERY request; with it, we
+// jump straight to the known-good model and it's fast. Reset only on a cold start.
+let cachedModel = ''
+
 // One flat action shape covers every kind (the app reads `kind` and uses the
 // fields that apply). Structured output keeps Gemini honest about the format.
 const RESPONSE_SCHEMA = {
@@ -147,7 +153,7 @@ ${command}
         hardStop = json({ error: `Couldn't reach the AI service: ${(e as Error)?.message || e}` }, 502)
         return false
       }
-      if (r.ok) { resp = r; return true }
+      if (r.ok) { resp = r; cachedModel = model; return true }
       lastDetail = await r.text().catch(() => '')
       lastStatus = r.status
       // Hard stops — a different model won't help these:
@@ -180,7 +186,10 @@ ${command}
     } catch { return [] }
   }
 
-  await tryModels(MODELS)
+  // Fast path: on a warm instance we already know a model that works for this
+  // key — go straight to it and skip the failed-probe tax.
+  if (cachedModel) await tryModels([cachedModel])
+  if (!resp && !hardStop) await tryModels(MODELS.filter(m => m !== cachedModel))
   // If the whole hardcoded list came back 404 (names the key doesn't recognize),
   // discover the key's real model set and try those before giving up.
   if (!resp && !hardStop && lastStatus === 404) {
@@ -212,7 +221,25 @@ ${command}
   const validCats = new Set(cats.map(c => c.id))
   const validTaskIds = new Set(tasks.map(t => t.id))
   const clampTime = (t: string) => /^([01]?\d|2[0-3]):[0-5]\d$/.test(t || '') ? String(t).padStart(5, '0') : ''
-  const clampDate = (d: string) => /^\d{4}-\d{2}-\d{2}$/.test(d || '') ? d : ''
+  // Accept a date the model wrote strictly (2026-08-14) OR loosely (single
+  // digits, US M/D/Y, or plain "August 14, 2026") and normalize to YYYY-MM-DD.
+  // Structured output pins the field's TYPE to string but not its FORMAT, so the
+  // model sometimes hands back a human date — salvage it instead of dropping the
+  // whole action.
+  const clampDate = (d: any): string => {
+    if (!d) return ''
+    const s = String(d).trim()
+    let m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/)
+    if (m) return `${m[1]}-${m[2].padStart(2, '0')}-${m[3].padStart(2, '0')}`
+    m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/)          // US M/D/Y
+    if (m) return `${m[3]}-${m[1].padStart(2, '0')}-${m[2].padStart(2, '0')}`
+    const t = Date.parse(s)                                  // "August 14, 2026"
+    if (!Number.isNaN(t)) {
+      const dt = new Date(t)
+      return `${dt.getUTCFullYear()}-${String(dt.getUTCMonth() + 1).padStart(2, '0')}-${String(dt.getUTCDate()).padStart(2, '0')}`
+    }
+    return ''
+  }
   const cleanSubs = (arr: any): { text: string; done: boolean }[] =>
     Array.isArray(arr) ? arr.map((s: any) => ({ text: String(s?.text || '').trim(), done: !!s?.done })).filter(s => s.text).slice(0, 30) : []
 
