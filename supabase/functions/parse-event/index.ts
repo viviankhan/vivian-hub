@@ -111,12 +111,20 @@ ${catList}
 THE USER'S CURRENT TASKS (only reference these ids; NEVER invent an id):
 ${taskList}
 
-Actions you can use:
-- create: make a new single-day TASK (something to do on one day). Fields: title, date, time, durationMins, categoryIds, description, subtasks (each {text, done}), reminders.
-- event: make a multi-day calendar EVENT spanning a range of days — a trip, a vacation, someone being away/out, a conference, anything that covers a stretch of dates rather than one to-do. Fields: title, date (START date), endDate (END date), allDay (almost always true), startTime, endTime (only for a timed event). Use this whenever the span covers more than one day, or is phrased as an absence/trip/period ("Aug 14–18", "out for 6 weeks", "in Mexico next week").
-- addSubtasks: add subtasks to an EXISTING task. Fields: taskId, subtasks (each {text, done} — set done:true to add it already checked off).
-- setDone: mark an existing task complete/incomplete. Fields: taskId, done.
-- reschedule: change an existing task's date/time. Fields: taskId, date, time, durationMins.
+Respond with ONLY a JSON object (no prose, no markdown, no code fences) of this exact shape:
+{"summary": "one sentence", "actions": [ ...action objects... ]}
+
+Each action object is one of these shapes. COPY the shape and fill in EVERY field that applies — never leave out the dates on a create or event:
+- create — a new single-day TASK (something to do on one day):
+  {"kind":"create","title":"Dentist","date":"2026-08-25","time":"15:00","durationMins":60,"categoryIds":[],"description":"Bring insurance card","subtasks":[{"text":"call to confirm","done":false}],"reminders":[60]}
+- event — a multi-day calendar EVENT spanning a range of days (a trip, a vacation, someone away/out, a conference — anything covering more than one day or phrased as an absence/trip/period). date is the START day, endDate the END day:
+  {"kind":"event","title":"Danya trip to Mexico","date":"2026-08-14","endDate":"2026-08-18","allDay":true}
+- addSubtasks — add subtasks to an EXISTING task (use a taskId from the list above):
+  {"kind":"addSubtasks","taskId":"<existing id>","subtasks":[{"text":"read chapter 4","done":true}]}
+- setDone — mark an existing task complete/incomplete:
+  {"kind":"setDone","taskId":"<existing id>","done":true}
+- reschedule — change an existing task's date/time:
+  {"kind":"reschedule","taskId":"<existing id>","date":"2026-08-26","time":"09:00","durationMins":30}
 
 Rules:
 - ALWAYS return at least one action whenever the instruction describes anything to schedule, add, or change. Never return an empty "actions" array in that case — the summary alone is not enough; the app can only act on the actions.
@@ -142,7 +150,11 @@ ${command}
 
   const reqBody = JSON.stringify({
     contents: [{ parts: [{ text: prompt }] }],
-    generationConfig: { temperature: 0.2, responseMimeType: 'application/json', responseSchema: RESPONSE_SCHEMA },
+    // NB: no responseSchema. Gemini's structured-output mode reliably fills only
+    // required fields and drops the rest on a schema this size — it was omitting
+    // event dates entirely. Plain JSON mode + explicit per-kind templates in the
+    // prompt gets complete objects out of the free flash models.
+    generationConfig: { temperature: 0.2, responseMimeType: 'application/json' },
   })
 
   let resp: Response | null = null
@@ -225,8 +237,18 @@ ${command}
     return json({ error: blocked ? `The AI declined this text (${blocked}).` : 'The AI returned nothing usable.' }, 502)
   }
 
+  // Without responseSchema the model almost always returns bare JSON, but strip
+  // a stray ```json fence or leading prose just in case, and fall back to the
+  // first {...} block, so a tidy plan isn't lost to a formatting quirk.
   let parsed: any
-  try { parsed = JSON.parse(raw) } catch { return json({ error: 'AI returned unparseable JSON.' }, 502) }
+  const cleaned = String(raw).trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim()
+  try {
+    parsed = JSON.parse(cleaned)
+  } catch {
+    const m = cleaned.match(/\{[\s\S]*\}/)
+    try { parsed = m ? JSON.parse(m[0]) : null } catch { parsed = null }
+    if (!parsed) return json({ error: 'AI returned unparseable JSON.', detail: cleaned.slice(0, 300) }, 502)
+  }
 
   const validCats = new Set(cats.map(c => c.id))
   const validTaskIds = new Set(tasks.map(t => t.id))
