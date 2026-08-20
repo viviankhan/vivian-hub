@@ -1177,9 +1177,23 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
       .map(c => ({ id:c.id, label:(c.text||'').trim(), color: c.color || catColorOf(c.cat) || '#8AA0B8', icon: c.icon || null, cat: c.cat || null, isCommitment:true,
         start: hhmmToMins(c.time), end: hhmmToMins(c.time) + c.durationMins })),
     ...templateTodos.filter(o => o.block && o._time && o._dur)
-      .map(o => ({ id:o.id, label:(o.title||o.text||'').trim(), color: o.color || catColorOf(o.cat || o.tag) || '#8AA0B8', icon: o.icon || null, cat: o.cat || o.tag || null, isCommitment:false,
-        start: hhmmToMins(o._time), end: hhmmToMins(o._time) + o._dur })),
+      .map(o => {
+        // A recurring block can be pushed down for just today via the same
+        // day-local time override that recurring tasks use, so its window slides
+        // with the tasks it contains when you reschedule.
+        const start = timeOverrides[o.id] !== undefined ? timeOverrides[o.id] : hhmmToMins(o._time)
+        return { id:o.id, label:(o.title||o.text||'').trim(), color: o.color || catColorOf(o.cat || o.tag) || '#8AA0B8', icon: o.icon || null, cat: o.cat || o.tag || null, isCommitment:false,
+          start, end: start + o._dur }
+      }),
   ]
+  // Time blocks (containers like "Work") live outside tasksWithStatus, but they
+  // can be pushed down when you reschedule too. Shape each as a movable item the
+  // shift chooser and the apply routines understand; _isBlock makes the whole
+  // window slide (its start time) while keeping its duration.
+  const blockShiftItems = blocks.map(b => ({
+    id: b.id, _mins: b.start, _dur: b.end - b.start, title: b.label, label: b.label,
+    tag: b.cat || null, routine: null, isCommitment: b.isCommitment, _isBlock: true,
+  }))
   // A block whose window has fully passed today reads as "done" — and folds up
   // on its own (like a finished routine) unless the user has explicitly set it
   // open/closed. An explicit toggle (in collapsedBlocks) always wins.
@@ -1582,13 +1596,16 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
       if (t.isCommitment && updateCommitment) { commitReverts.push({ id: t.id, time: t._time || null }); updateCommitment(t.id, { time: minsToHHMM(mins) }) }
       else overrides[t.id] = mins
     }
-    tasksWithStatus
+    ;[...tasksWithStatus, ...blockShiftItems]
       .filter(t => sel.has(t.id) && t._mins !== null && !INFLEXIBLE_TAGS.has(t.tag))
       .sort((a, b) => a._mins - b._mins)
       .forEach(t => {
         const target = t._mins + delta
         if (target < 0) return
         if (target > END_OF_DAY_MINS) {
+          // A block is a container, not a to-do — never shove it into tomorrow;
+          // just leave it where it is when the shift would run it off the day.
+          if (t._isBlock) return
           // Ran off the end of the day → send it to tomorrow, like the other shifts.
           committed++
           const tm = new Date(); tm.setDate(tm.getDate() + 1)
@@ -1602,7 +1619,7 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
         }
         setStart(t, target)
         shifted++
-        if ((t.autoComplete || (t.routine && routineIds.has(t.routine)) || inAnyBlock(t)) && clearCompletion) {
+        if (!t._isBlock && (t.autoComplete || (t.routine && routineIds.has(t.routine)) || inAnyBlock(t)) && clearCompletion) {
           clearCompletion(t.id, t.isCommitment ? null : dateKey)
         }
       })
@@ -1628,10 +1645,13 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
     if (!pivot.routine) return                       // only routines cascade
     const delta = newMins - pivot._mins
     if (delta === 0) return
-    // Later movable tasks by their current position — candidates to slide.
-    const rest = tasksWithStatus
-      .filter(t => t.id !== pivotId && t._mins !== null && t._mins > pivot._mins && !INFLEXIBLE_TAGS.has(t.tag))
-      .sort((a, b) => a._mins - b._mins)
+    // Later movable tasks by their current position — candidates to slide. Time
+    // blocks that start after the pivot join the list so a container like "Work"
+    // can be pushed down along with the tasks.
+    const rest = [
+      ...tasksWithStatus.filter(t => t.id !== pivotId && t._mins !== null && t._mins > pivot._mins && !INFLEXIBLE_TAGS.has(t.tag)),
+      ...blockShiftItems.filter(b => b.id !== pivotId && b._mins > pivot._mins && !INFLEXIBLE_TAGS.has(b.tag)),
+    ].sort((a, b) => a._mins - b._mins)
     if (!rest.length) return
     const doneIds = new Set(rest.filter(t => isDoneCheck(t.id, t.isCommitment)).map(t => t.id))
     // Blend of "just this routine" + "pick your own": pre-check the rest of this
