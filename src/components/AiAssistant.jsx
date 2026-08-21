@@ -91,9 +91,15 @@ export default function AiAssistant({ categories = [], tasks = [], onApply, onCl
 
         <div style={{ padding:'16px 14px calc(20px + env(safe-area-inset-bottom))' }}>
           {!plan ? (<>
-            <textarea value={command} onChange={e => setCommand(e.target.value)} autoFocus
-              placeholder={"e.g. Add the Aug 17 assignments to my Orgo task’s subtasks and check them off. Or: Dentist next Tue 3pm, bring insurance card."}
-              style={{ width:'100%', fontSize:14, padding:'12px 14px', borderRadius:12, border:'1px solid var(--border)', fontFamily:'DM Sans,sans-serif', outline:'none', lineHeight:1.55, resize:'vertical', minHeight:140, background:'white', color:'var(--text)', boxSizing:'border-box' }} />
+            <div style={{ position:'relative' }}>
+              <textarea value={command} onChange={e => setCommand(e.target.value)} autoFocus
+                placeholder={"e.g. Add the Aug 17 assignments to my Orgo task’s subtasks and check them off. Or: Dentist next Tue 3pm, bring insurance card."}
+                style={{ width:'100%', fontSize:14, padding:'12px 14px', borderRadius:12, border:'1px solid var(--border)', fontFamily:'DM Sans,sans-serif', outline:'none', lineHeight:1.55, resize:'vertical', minHeight:140, background:'white', color:'var(--text)', boxSizing:'border-box' }} />
+              {command && (
+                <button type="button" onClick={() => { setCommand(''); setErr('') }} aria-label="Clear"
+                  style={{ position:'absolute', top:8, right:8, height:26, padding:'0 10px', borderRadius:13, border:'1px solid var(--border)', background:'rgba(255,255,255,.9)', color:'var(--muted)', fontSize:12, fontWeight:600, cursor:'pointer', fontFamily:'DM Sans,sans-serif' }}>Clear</button>
+              )}
+            </div>
             {err && <div style={{ fontSize:12, color:'#B42318', background:'#FEF3F2', border:'1px solid #FECDCA', borderRadius:10, padding:'9px 12px', marginTop:10, lineHeight:1.45 }}>{err}</div>}
             <button onClick={plated} disabled={!command.trim() || busy}
               style={{ width:'100%', marginTop:12, padding:'14px', borderRadius:14, border:'none',
