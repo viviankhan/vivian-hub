@@ -435,6 +435,86 @@ function spanHeight(mins) {
 // saturated slab. (Routine films stay at 0.5.)
 const BLOCK_FILM_OPACITY = 0.16
 
+// ── Overlapping + split-task helpers ───────────────────────────
+// A row's stable identity: split pieces carry their own key; everything else
+// is keyed by its task id.
+const rowKeyOf = (r) => (r && r._rowKey) || (r && r.id)
+
+// When two timed tasks share clock time, the day would otherwise read as two
+// back-to-back rows with no hint they actually overlap. Instead we nudge the
+// later-starting task into a right-hand "column" so the overlap is visible.
+// Greedy interval colouring: the earliest start (longest first on a tie) keeps
+// column 0; each still-running task holds its column until it ends, and a
+// newcomer takes the lowest column no running task is using. Two tasks that
+// merely touch (one ends exactly as the next begins) don't count as an overlap.
+function overlapColumns(rows) {
+  const cols = new Map()          // rowKey → column index (0 = normal position)
+  const active = []               // { end, col } for currently-running rows
+  const ordered = rows
+    .map((r, i) => ({ r, i, start: r._mins, end: (r._mins ?? 0) + (r._dur || 0) }))
+    .filter(x => x.start != null)
+    .sort((a, b) => a.start - b.start || (b.end - b.start) - (a.end - a.start) || a.i - b.i)
+  for (const x of ordered) {
+    for (let k = active.length - 1; k >= 0; k--) if (active[k].end <= x.start) active.splice(k, 1)
+    const taken = new Set(active.map(a => a.col))
+    let col = 0
+    while (taken.has(col)) col++
+    cols.set(rowKeyOf(x.r), col)
+    if (x.end > x.start) active.push({ end: x.end, col })
+  }
+  return cols
+}
+
+// The smallest slice of a carved-up long task worth keeping as its own piece.
+const MIN_SPLIT_PIECE = 5
+// With "split long tasks around shorter ones" on, a long task that a shorter
+// task falls inside of is carved into the pieces that sit before and after the
+// shorter one — so the day reads as a clean sequence instead of an overlap.
+// Each piece keeps the parent's identity (title, colour, icon, done-state); the
+// interrupting task renders untouched between the pieces. When `transition` is
+// on, a TRANSITION_MIN cushion is shaved off each side of the interrupter so
+// there's breathing room to switch tasks (it shows up as a short break row).
+function splitLongTasks(rows, transition) {
+  const timed = rows.filter(r => r._mins != null)
+  const out = []
+  for (const L of rows) {
+    const Ls = L._mins, Ldur = L._dur || 0, Le = (Ls ?? 0) + Ldur
+    // Only cut a genuinely long, not-yet-finished, standalone task — routines
+    // carry their own banding, and a completed task stays whole (crossed off).
+    if (Ls == null || Ldur <= MIN_SPLIT_PIECE || L.routine || L._status === 'past') { out.push(L); continue }
+    const pad = transition ? TRANSITION_MIN : 0
+    const cuts = timed
+      .filter(S => S !== L && S._mins > Ls && S._mins < Le && (S._dur || 0) < Ldur)
+      .map(S => ({ start: Math.max(Ls, S._mins - pad), end: Math.min(Le, S._mins + (S._dur || 0) + pad) }))
+      .sort((a, b) => a.start - b.start)
+    if (!cuts.length) { out.push(L); continue }
+    // Merge overlapping interruptions so back-to-back shorter tasks carve one
+    // hole, not a sliver between each.
+    const merged = []
+    for (const c of cuts) {
+      const last = merged[merged.length - 1]
+      if (last && c.start <= last.end) last.end = Math.max(last.end, c.end)
+      else merged.push({ ...c })
+    }
+    // The surviving stretches of L, before/after/between the interruptions.
+    const spans = []
+    let cursor = Ls
+    for (const m of merged) {
+      if (m.start - cursor >= MIN_SPLIT_PIECE) spans.push([cursor, m.start])
+      cursor = Math.max(cursor, m.end)
+    }
+    if (Le - cursor >= MIN_SPLIT_PIECE) spans.push([cursor, Le])
+    if (spans.length <= 1) { out.push(L); continue }   // nothing meaningful to carve
+    spans.forEach(([ps, pe], idx) => out.push({
+      ...L,
+      _mins: ps, _dur: pe - ps, _time: minsToHHMM(ps),
+      _rowKey: L.id + ':part' + idx,
+      _splitOf: L.id, _splitIndex: idx, _splitTotal: spans.length,
+    }))
+  }
+  return out.sort((a, b) => (a._mins ?? 99999) - (b._mins ?? 99999))
+}
+
 // A "free time" gap between two timed tasks, with a quick Add Task. Its height
 // grows with the length of the gap, so the day reads at relative scale.
 
@@ -696,7 +776,7 @@ function AnytimeCard({ tasks, categories, isDoneOf, onToggle, onOpen, onManage }
   )
 }
 
-function TimelineBlock({ task, categories, status, now, prevColor, nextColor, routineTint, tintOpacity = 0.5, filmTop = true, filmBottom = true, bandLabel = null, bandIcon = null, onBandLabel = null, onBandCollapse = null, isDone, elapsed, dateKey, pauseData = null, offerStartNow = false, onToggle, onManage, onShiftToNow, onOpen, onFocus, onToggleSub }) {
+function TimelineBlock({ task, categories, status, now, prevColor, nextColor, routineTint, tintOpacity = 0.5, filmTop = true, filmBottom = true, bandLabel = null, bandIcon = null, onBandLabel = null, onBandCollapse = null, isDone, elapsed, dateKey, pauseData = null, offerStartNow = false, overlapCol = 0, splitPart = null, onToggle, onManage, onShiftToNow, onOpen, onFocus, onToggleSub }) {
   const [subOpen, setSubOpen] = useState(false)
   const catFound = (categories || []).find(x => x.id === task.tag)
   const catColor = catFound?.color || TAG_COLORS[task.tag] || '#9CA3AF'
@@ -807,6 +887,8 @@ function TimelineBlock({ task, categories, status, now, prevColor, nextColor, ro
             <div style={{ fontSize:12, color:isCurrent?'var(--teal)':'var(--muted)', fontWeight:600, marginBottom:2, display:'flex', alignItems:'center', gap:6 }}>
               {timeLine}
               {task.isRecurring && <Icon value="glyph:repeat" size={12} color={isCurrent?'var(--teal)':'#9AA6B2'} />}
+              {splitPart && <span style={{ fontSize:9, fontWeight:800, letterSpacing:.5, padding:'1px 6px', borderRadius:6, background:`${color}1c`, color }}>PART {splitPart.index+1}/{splitPart.total}</span>}
+              {overlapCol>0 && <span style={{ fontSize:9, fontWeight:800, letterSpacing:.5, padding:'1px 6px', borderRadius:6, background:'#EEECF0', color:'var(--muted)', display:'inline-flex', alignItems:'center', gap:3 }}>⧉ OVERLAPS</span>}
               {isOverdue && <span style={{ fontSize:10, color:'#EF4444', fontWeight:700 }}>OVERDUE</span>}
             </div>
           )}
@@ -1091,6 +1173,19 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
     try { localStorage.setItem('vivian_collapsed_blocks', JSON.stringify(next)) } catch {}
     return next
   })
+  // "Split long tasks around shorter ones" — the checkmark that carves a long
+  // task into the pieces before/after any shorter task that lands inside it, so
+  // the day reads as a clean sequence instead of an overlap. `splitTransition`
+  // adds a short cushion on each side of the interrupting task. Both are
+  // device-local preferences (no DB column), like the collapse overrides above.
+  const [splitOverlaps, setSplitOverlaps] = useState(()=>{
+    try { return localStorage.getItem('vivian_split_overlaps') === '1' } catch { return false }
+  })
+  const [splitTransition, setSplitTransition] = useState(()=>{
+    try { return localStorage.getItem('vivian_split_transition') !== '0' } catch { return true }
+  })
+  const toggleSplitOverlaps = (v) => { setSplitOverlaps(v); try { localStorage.setItem('vivian_split_overlaps', v?'1':'0') } catch {} }
+  const toggleSplitTransition = (v) => { setSplitTransition(v); try { localStorage.setItem('vivian_split_transition', v?'1':'0') } catch {} }
   const [shiftResult, setShiftResult] = useState(null)
   const [customTasks, setCustomTasks] = useState(()=>{
     try { return JSON.parse(localStorage.getItem('vivian_custom_'+todayKey())||'[]') } catch { return [] }
@@ -1366,7 +1461,17 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
   // The timeline itself renders only the timed tasks. Timed tasks always sort
   // ahead of untimed ones, so a timed task's index is the same in either list.
   const anytimeTasks = renderTasks.filter(t => t._mins === null)
-  const renderTimed  = renderTasks.filter(t => t._mins !== null)
+  const renderTimedRaw = renderTasks.filter(t => t._mins !== null)
+  // With the split checkmark on, carve each long task into the pieces around any
+  // shorter task inside it (re-deriving each piece's status from its own window,
+  // so the piece you're currently in lights up). Off, the list is untouched and
+  // real overlaps are shown by shifting the later task right (overlapCols below).
+  const renderTimed = splitOverlaps
+    ? splitLongTasks(renderTimedRaw, splitTransition).map(t => t._splitOf ? { ...t, _status: getStatus(t) } : t)
+    : renderTimedRaw
+  // Which right-hand column each row sits in (0 = normal). Only genuine overlaps
+  // get a column > 0; split pieces are carved apart, so they stay at 0.
+  const overlapCols = overlapColumns(renderTimed)
   const hasAnytime   = anytimeTasks.length > 0
 
   // ── Subscribed ("imported") calendar events for this day ──────
@@ -1941,6 +2046,34 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
           routineDone={routineDone} toggleRoutine={toggleRoutine} />
       )}
 
+      {/* Split-tasks checkmark — carve long tasks around the shorter ones that
+          fall inside them, with an optional transition cushion. Only shown once
+          there's a timeline to act on. */}
+      {renderTimed.length>0 && (
+        <div style={{ display:'flex', alignItems:'center', gap:16, flexWrap:'wrap', margin:'0 4px 12px', paddingLeft:2 }}>
+          <div role="checkbox" aria-checked={splitOverlaps} tabIndex={0}
+            onClick={()=>toggleSplitOverlaps(!splitOverlaps)}
+            onKeyDown={e=>{ if(e.key===' '||e.key==='Enter'){ e.preventDefault(); toggleSplitOverlaps(!splitOverlaps) } }}
+            style={{ display:'inline-flex', alignItems:'center', gap:8, cursor:'pointer', userSelect:'none' }}>
+            <span style={{ width:19, height:19, borderRadius:6, flexShrink:0, border:splitOverlaps?'none':'2px solid #CDD3DA', background:splitOverlaps?'var(--teal)':'transparent', display:'flex', alignItems:'center', justifyContent:'center' }}>
+              {splitOverlaps && <span style={{ color:'white', fontSize:12, fontWeight:800 }}>✓</span>}
+            </span>
+            <span style={{ fontSize:12.5, fontWeight:600, color:splitOverlaps?'var(--text)':'var(--muted)' }}>Split long tasks around shorter ones</span>
+          </div>
+          {splitOverlaps && (
+            <div role="checkbox" aria-checked={splitTransition} tabIndex={0}
+              onClick={()=>toggleSplitTransition(!splitTransition)}
+              onKeyDown={e=>{ if(e.key===' '||e.key==='Enter'){ e.preventDefault(); toggleSplitTransition(!splitTransition) } }}
+              style={{ display:'inline-flex', alignItems:'center', gap:7, cursor:'pointer', userSelect:'none' }}>
+              <span style={{ width:17, height:17, borderRadius:5, flexShrink:0, border:splitTransition?'none':'2px solid #CDD3DA', background:splitTransition?'var(--teal)':'transparent', display:'flex', alignItems:'center', justifyContent:'center' }}>
+                {splitTransition && <span style={{ color:'white', fontSize:11, fontWeight:800 }}>✓</span>}
+              </span>
+              <span style={{ fontSize:11.5, color:'var(--muted)' }}>add transition time</span>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Timeline */}
       {renderTimed.length===0 && blockSegments.length===0 ? (
         hasAnytime ? null : (
@@ -2123,12 +2256,18 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
             // place it (that happens when "now" falls inside a block's gap).
             const emitNow = wantNow && !nowState.done && i===nowInsertIdx
             if (emitNow) nowState.done = true
+            // Overlap indent: a task that shares clock time with an earlier,
+            // still-running one is stepped to the right (capped at 3 steps so it
+            // never marches off a narrow screen) so the overlap reads at a glance.
+            const col = overlapCols.get(rowKeyOf(task)) || 0
+            const shift = Math.min(col, 3) * 22
             return [...before, (
-              <div key={task.id}>
+              <div key={rowKeyOf(task)} style={shift ? { marginLeft:shift, transition:'margin-left .2s' } : undefined}>
                 {emitNow&&<NowMarker now={now} bandTint={(myBand && (joinHead || prevSameRoutine)) ? myTint : null} bandOpacity={inBlockId ? BLOCK_FILM_OPACITY : 0.5}/>}
                 {gapEl}
                 <TimelineBlock
                   task={task} categories={categories} status={task._status} now={now}
+                  overlapCol={col} splitPart={task._splitOf ? { index:task._splitIndex, total:task._splitTotal } : null}
                   routineTint={myTint} tintOpacity={inBlockId ? BLOCK_FILM_OPACITY : 0.5}
                   filmTop={!prevSameRoutine && !joinHead} filmBottom={!nextSameRoutine && !joinTail}
                   bandLabel={(isFirstInBand && !joinHead) ? (myBand?.label || null) : null}
