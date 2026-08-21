@@ -13,6 +13,7 @@ import {
   getExternalCalendars, setExternalCalendars,
   getImportedAdoptions, setImportedAdoptions,
   getTimeLogs, setTimeLogs,
+  getChangeHistory, setChangeHistory,
   getTaskTemplates, setTaskTemplates,
   getRecurringTasks, addRecurringTask, updateRecurringTask, deleteRecurringTask, clearRecurringTasks,
   getRecurringExceptions, setRecurringExceptions,
@@ -29,6 +30,7 @@ import ThisWeek    from './components/ThisWeek.jsx'
 import Calendar    from './components/Calendar.jsx'
 import Notes       from './components/Notes.jsx'
 import Edits       from './components/Edits.jsx'
+import History     from './components/History.jsx'
 import RecurringTasksManager from './components/RecurringTasksManager.jsx'
 import CategoriesManager from './components/CategoriesManager.jsx'
 import EventsManager from './components/EventsManager.jsx'
@@ -124,7 +126,7 @@ function saveBottomBar(items) {
 }
 
 // ── Settings Drawer ────────────────────────────────────────────
-function SettingsDrawer({ open, onClose, settingsTab, setSettingsTab, notes, updateNotes, categories, addCategory, updateCategory, deleteCategory, events, commitments, recurring, locatedCount, externalCalendars, calendarStatuses, addCalendar, toggleCalendar, removeCalendar, refreshOneCalendar, updateCalendar, font, setFont, theme, setTheme, season, setSeason, customColor, setCustom, background, setBackground, customBg, setCustomBg, mobileBackground, setMobileBackground, mobileCustomBg, setMobileCustomBg, layout, setLayout, soundOn, setSound, summary, setSummary, effectsOn, setEffects }) {
+function SettingsDrawer({ open, onClose, settingsTab, setSettingsTab, notes, updateNotes, categories, addCategory, updateCategory, deleteCategory, events, commitments, recurring, locatedCount, changeHistory, undoChange, clearChangeHistory, externalCalendars, calendarStatuses, addCalendar, toggleCalendar, removeCalendar, refreshOneCalendar, updateCalendar, font, setFont, theme, setTheme, season, setSeason, customColor, setCustom, background, setBackground, customBg, setCustomBg, mobileBackground, setMobileBackground, mobileCustomBg, setMobileCustomBg, layout, setLayout, soundOn, setSound, summary, setSummary, effectsOn, setEffects }) {
   if (!open) return null
   const SECTIONS = [
     ['customize','Look','sun'],
@@ -132,6 +134,7 @@ function SettingsDrawer({ open, onClose, settingsTab, setSettingsTab, notes, upd
     ['calendars','Calendars','calendar'],
     ['categories','Categories','grid'],
     ['notes','Notes','book'],
+    ['history','History','clock'],
     ['edits','Edits','sparkle'],
   ]
   const activeLabel = (SECTIONS.find(s => s[0] === settingsTab) || SECTIONS[0])[1]
@@ -153,6 +156,7 @@ function SettingsDrawer({ open, onClose, settingsTab, setSettingsTab, notes, upd
             {settingsTab==='calendars'  && <ExternalCalendars calendars={externalCalendars} statuses={calendarStatuses} onAdd={addCalendar} onToggle={toggleCalendar} onRemove={removeCalendar} onRefresh={refreshOneCalendar} onUpdate={updateCalendar} />}
             {settingsTab==='categories' && <CategoriesManager categories={categories} addCategory={addCategory} updateCategory={updateCategory} deleteCategory={deleteCategory} />}
             {settingsTab==='notes'      && <Notes notes={notes} updateNotes={updateNotes} />}
+            {settingsTab==='history'    && <History history={changeHistory} onUndo={undoChange} onClear={clearChangeHistory} />}
             {settingsTab==='edits'      && <Edits />}
           </div>
           <div style={{ padding:'4px 24px 20px', textAlign:'center', fontSize:11, color:'var(--muted)' }}>
@@ -558,6 +562,7 @@ export default function App() {
   const [recurringMeta,    setRecurringMeta_]   = useState({})
   const [vacations,        setVacations_]       = useState([])
   const [events,           setEvents_]          = useState([])
+  const [changeHistory,    setChangeHistory_]   = useState([])
   // Subscribed (external, read-only) calendars — config + their fetched spans +
   // per-calendar sync status. See src/lib/calendars.js.
   const [extCalendars,     setExtCalendars_]    = useState([])
@@ -573,12 +578,12 @@ export default function App() {
   useEffect(() => {
     async function load() {
       await runMigrationIfNeeded()
-      const [comp, l, n, fcp, fcs, sch, com, rt, vac, evs, cats, cmeta, rexc, rmeta, rout, tlogs, tpls] = await Promise.all([
+      const [comp, l, n, fcp, fcs, sch, com, rt, vac, evs, cats, cmeta, rexc, rmeta, rout, tlogs, tpls, chist] = await Promise.all([
         getCompletions(), getLogEntries(), getNotes(),
         getFcProgress(), getFcStudied(), getScheduledTasks(),
         getCommitments(), getRecurringTasks(), getVacations(), getEvents(),
         seedCategoriesIfNeeded(), getCommitmentMeta(), getRecurringExceptions(), getRecurringMeta(),
-        getRoutineGroups(), getTimeLogs(), getTaskTemplates(),
+        getRoutineGroups(), getTimeLogs(), getTaskTemplates(), getChangeHistory(),
       ])
       setCompletions_(comp); setLog_(l); setNotes_(n)
       setFcProgress_(fcp); setFcStudied_(fcs); setScheduled_(sch)
@@ -586,6 +591,7 @@ export default function App() {
       setCategories_(cats); setCommitmentMeta_(cmeta); setRecurringExceptions_(rexc); setRecurringMeta_(rmeta)
       setTimeLogs_(Array.isArray(tlogs) ? tlogs : [])
       setTaskTemplates_(Array.isArray(tpls) ? tpls : [])
+      setChangeHistory_(Array.isArray(chist) ? chist : [])
       // Routine groups: use what's saved, or seed the Morning/Night defaults.
       if (rout) {
         // One-time tint upgrade: bump any routine still on an old seed tint to
@@ -1108,12 +1114,35 @@ export default function App() {
   // Extra category labels beyond the primary live in the meta blob too (the
   // commitments table has a single `cat` column). Only stored when there's more
   // than one — a single label is fully covered by the `cat` column.
-  const addCommitment = useCallback(async c => {
+  // ── Change history (a reversible "recent edits" list, shown in Settings) ──
+  // Live mirrors of state so the (dep-stable) CRUD callbacks can read the value
+  // BEFORE a change to build an inverse, without re-creating on every edit.
+  const commitmentsRef    = useRef([])
+  const commitmentMetaRef = useRef({})
+  const eventsRef         = useRef([])
+  const changeHistoryRef  = useRef([])
+  useEffect(() => { commitmentsRef.current = commitments },       [commitments])
+  useEffect(() => { commitmentMetaRef.current = commitmentMeta }, [commitmentMeta])
+  useEffect(() => { eventsRef.current = events },                 [events])
+  useEffect(() => { changeHistoryRef.current = changeHistory },   [changeHistory])
+
+  // Append one reversible entry (newest first, capped). CRUD ops call this
+  // unless invoked with { silent:true } (which the undo path uses so reversing a
+  // change doesn't itself land in the history).
+  const recordChange = useCallback(entry => {
+    try {
+      const row = { id: 'h-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), ts: new Date().toISOString(), undone: false, ...entry }
+      setChangeHistory_(prev => { const next = [row, ...prev].slice(0, 120); setChangeHistory(next).catch(() => {}); return next })
+    } catch {}
+  }, [])
+
+  const addCommitment = useCallback(async (c, opts = {}) => {
     const { description, subtasks, cats, color, icon, location, startedAt, block, routine, autoComplete, ...core } = c
     try {
       const created = await dbAddCommitment(core)
       setCommitments_(prev => [created, ...prev])
       pushUndo('added “' + (created.text || 'task') + '”', () => deleteCommitment(created.id))
+      if (!opts.silent) recordChange({ kind: 'add', entity: 'task', label: 'Added “' + (created.text || 'task') + '”', inverse: { op: 'delete', entity: 'task', id: created.id } })
       const hasCats = Array.isArray(cats) && cats.length > 1
       const extra = { ...(hasCats ? { cats } : {}), ...(color ? { color } : {}), ...(icon ? { icon } : {}), ...(location ? { location } : {}), ...(startedAt ? { startedAt } : {}), ...(block ? { block: true } : {}), ...(routine ? { routine } : {}), ...(autoComplete ? { autoComplete: true } : {}) }
       if ((description && description.trim()) || (subtasks && subtasks.length) || hasCats || color || icon || location || startedAt || block || routine || autoComplete) {
@@ -1156,8 +1185,29 @@ export default function App() {
       return next
     })
   }, [importedAdoptions, addCommitment])
-  const updateCommitment = useCallback(async (id, changes) => {
+  const updateCommitment = useCallback(async (id, changes, opts = {}) => {
     const { description, subtasks, cats, color, icon, location, startedAt, block, routine, autoComplete, ...core } = changes
+    // Snapshot the prior values of exactly the fields being changed, so this
+    // edit can be reversed later. Pure check-offs (only `done`) and pure subtask
+    // check-offs (same subtask count) are skipped — they're not "edits".
+    const beforeC = commitmentsRef.current.find(x => x.id === id) || {}
+    const beforeMeta = commitmentMetaRef.current[id] || {}
+    const coreKeys = Object.keys(core)
+    const before = {}
+    for (const k of coreKeys) if (k !== 'done') before[k] = beforeC[k] ?? null
+    if (description !== undefined) before.description = beforeMeta.description ?? ''
+    if (subtasks !== undefined)   before.subtasks = Array.isArray(beforeMeta.subtasks) ? beforeMeta.subtasks : []
+    if (cats !== undefined)       before.cats = beforeMeta.cats
+    if (color !== undefined)      before.color = beforeMeta.color ?? ''
+    if (icon !== undefined)       before.icon = beforeMeta.icon ?? ''
+    if (location !== undefined)   before.location = beforeMeta.location ?? ''
+    const subLen = Array.isArray(subtasks) ? subtasks.length : null
+    const beforeSubLen = Array.isArray(beforeMeta.subtasks) ? beforeMeta.subtasks.length : 0
+    const meaningful =
+      coreKeys.some(k => k !== 'done') ||
+      (description !== undefined && (beforeMeta.description || '') !== (description || '')) ||
+      (subLen !== null && subLen !== beforeSubLen) ||
+      cats !== undefined || color !== undefined || icon !== undefined || location !== undefined
     try {
       if (Object.keys(core).length) {
         const updated = await dbUpdateCommitment(id, core)
@@ -1218,9 +1268,10 @@ export default function App() {
           return prev.map(x => x.id === id ? { ...x, done: allDone } : x)
         })
       }
+      if (!opts.silent && meaningful) recordChange({ kind: 'edit', entity: 'task', label: 'Edited “' + (beforeC.text || 'task') + '”', inverse: { op: 'update', entity: 'task', id, before } })
     } catch (e) { reportSaveError(e) }
   }, [])
-  const deleteCommitment = useCallback(async id => {
+  const deleteCommitment = useCallback(async (id, opts = {}) => {
     // Snapshot what we're removing so Ctrl+Z can put it back exactly.
     let snapC = null, snapMeta = null
     setCommitments_(prev => { snapC = prev.find(c => c.id === id) || null; return prev.filter(c => c.id !== id) })
@@ -1234,6 +1285,7 @@ export default function App() {
     })
     if (snapC) {
       const c = snapC, meta = snapMeta
+      if (!opts.silent) recordChange({ kind: 'delete', entity: 'task', label: 'Deleted “' + (c.text || 'task') + '”', inverse: { op: 'restore', entity: 'task', snapshot: { core: c, meta } } })
       pushUndo('deleted “' + (c.text || 'task') + '”', async () => {
         try {
           const created = await dbAddCommitment(c)   // c keeps its id → same row back
@@ -1268,15 +1320,48 @@ export default function App() {
   }, [])
 
   // ── Events CRUD (multi-day spans, non-blocking) ─────────────
-  const addEvent = useCallback(async e => {
+  const addEvent = useCallback(async (e, opts = {}) => {
     try {
       const created = await dbAddEvent(e)
       setEvents_(prev => [...prev, created])
+      if (!opts.silent) recordChange({ kind: 'add', entity: 'event', label: 'Added event “' + (created.label || 'event') + '”', inverse: { op: 'delete', entity: 'event', id: created.id } })
     } catch (err) { reportSaveError(err) }
   }, [])
-  const deleteEvent = useCallback(async id => {
+  const deleteEvent = useCallback(async (id, opts = {}) => {
+    const snap = eventsRef.current.find(e => e.id === id) || null
     setEvents_(prev => prev.filter(e => e.id !== id))
+    if (snap && !opts.silent) recordChange({ kind: 'delete', entity: 'event', label: 'Deleted event “' + (snap.label || 'event') + '”', inverse: { op: 'restore', entity: 'event', snapshot: snap } })
     try { await dbDeleteEvent(id) } catch (e) { reportSaveError(e) }
+  }, [])
+
+  // Reverse one recorded change (the "delete an edit" action in Settings). Reads
+  // the entry from the live mirror, applies its inverse with { silent:true } so
+  // the reversal isn't itself logged, then marks the entry undone.
+  const undoChange = useCallback(id => {
+    const entry = changeHistoryRef.current.find(h => h.id === id)
+    if (!entry || entry.undone) return
+    const inv = entry.inverse || {}
+    try {
+      if (inv.op === 'delete') {
+        if (inv.entity === 'event') deleteEvent(inv.id, { silent: true })
+        else deleteCommitment(inv.id, { silent: true })
+      } else if (inv.op === 'restore') {
+        if (inv.entity === 'event') { if (inv.snapshot) addEvent(inv.snapshot, { silent: true }) }
+        else { const s = inv.snapshot || {}; addCommitment({ ...(s.core || {}), ...(s.meta || {}) }, { silent: true }) }
+      } else if (inv.op === 'update') {
+        if (inv.entity === 'task') updateCommitment(inv.id, inv.before || {}, { silent: true })
+      }
+    } catch (e) { reportSaveError(e) }
+    setChangeHistory_(prev => {
+      const next = prev.map(h => h.id === id ? { ...h, undone: true, undoneAt: new Date().toISOString() } : h)
+      setChangeHistory(next).catch(() => {})
+      return next
+    })
+  }, [addCommitment, updateCommitment, deleteCommitment, addEvent, deleteEvent])
+
+  // Wipe the history list (does not touch any tasks/events — just clears the log).
+  const clearChangeHistory = useCallback(() => {
+    setChangeHistory_(() => { setChangeHistory([]).catch(() => {}); return [] })
   }, [])
 
   // ── Manual time logs (Informatics) ──────────────────────────
@@ -1523,6 +1608,7 @@ export default function App() {
       <SettingsDrawer
         open={settingsOpen} onClose={() => setSettingsOpen(false)}
         settingsTab={settingsTab} setSettingsTab={setSettingsTab}
+        changeHistory={changeHistory} undoChange={undoChange} clearChangeHistory={clearChangeHistory}
         notes={notes} updateNotes={updateNotes}
         categories={categories} addCategory={addCategoryFn}
         updateCategory={updateCategoryFn} deleteCategory={deleteCategoryFn}

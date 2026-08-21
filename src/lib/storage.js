@@ -334,6 +334,15 @@ export const setImportedAdoptions = v  => dbSet('imported_adoptions', v)
 export const getTimeLogs = () => dbGet('time_logs').then(v => Array.isArray(v) ? v : [])
 export const setTimeLogs = v  => dbSet('time_logs', v)
 
+// ── Change history (reversible "recent edits" list, shown in Settings) ──────
+// A running list of the user's own add/edit/delete actions on tasks and events,
+// each carrying a serializable inverse so a single edit can be undone later —
+// long after the transient Ctrl+Z stack is gone. One synced kv_store blob
+// (array, newest-first, capped in the app). Each: { id, ts, kind, entity,
+// label, undone, inverse }.
+export const getChangeHistory = () => dbGet('change_history').then(v => Array.isArray(v) ? v : [])
+export const setChangeHistory = v  => dbSet('change_history', v)
+
 // ── Task Menu templates ─────────────────────────────────────────
 // Reusable, date-less task presets — a "task menu" you pick from when creating
 // a task so all the preset details (duration, tags, color/icon, description,
