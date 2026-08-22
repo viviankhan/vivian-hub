@@ -352,6 +352,23 @@ export const setChangeHistory = v  => dbSet('change_history', v)
 export const getTaskTemplates = () => dbGet('task_templates').then(v => Array.isArray(v) ? v : [])
 export const setTaskTemplates = v  => dbSet('task_templates', v)
 
+// ── Wellness (mood check-ins, status effects, companion game) ───
+// The gamified mental-health + physical-condition tab. Four synced kv_store
+// blobs, so the whole feature needs no schema migration and rides the same
+// cross-device sync as everything else:
+//   • wellness_checkins — [{ date:'YYYY-MM-DD', mood:1..5, energy:1..5, note, ts }]
+//   • wellness_effects  — the user's DnD-style condition definitions (null → seed)
+//   • wellness_episodes — [{ id, effectId, start:ISO, end:ISO|null }] on/off spans
+//   • wellness_game     — { xp, petals, streak, best, lastCheckIn, companionName, … }
+export const getWellnessCheckins = () => dbGet('wellness_checkins').then(v => Array.isArray(v) ? v : [])
+export const setWellnessCheckins = v  => dbSet('wellness_checkins', v)
+export const getWellnessEffects  = () => dbGet('wellness_effects').then(v => Array.isArray(v) ? v : null)
+export const setWellnessEffects  = v  => dbSet('wellness_effects', v)
+export const getWellnessEpisodes = () => dbGet('wellness_episodes').then(v => Array.isArray(v) ? v : [])
+export const setWellnessEpisodes = v  => dbSet('wellness_episodes', v)
+export const getWellnessGame     = () => dbGet('wellness_game').then(v => (v && typeof v === 'object') ? v : null)
+export const setWellnessGame     = v  => dbSet('wellness_game', v)
+
 // ── Classes ────────────────────────────────────────────────────
 export async function getClasses() {
   if (USE_SUPABASE) {

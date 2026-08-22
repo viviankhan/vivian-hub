@@ -19,6 +19,10 @@ import {
   getRecurringExceptions, setRecurringExceptions,
   getRecurringMeta, setRecurringMeta,
   getRoutineGroups, setRoutineGroups,
+  getWellnessCheckins, setWellnessCheckins,
+  getWellnessEffects, setWellnessEffects,
+  getWellnessEpisodes, setWellnessEpisodes,
+  getWellnessGame, setWellnessGame,
   addCategory as dbAddCategory, updateCategory as dbUpdateCategory, deleteCategory as dbDeleteCategory,
 } from './lib/storage.js'
 import { occKey, recurringOccurrencesForDate } from './lib/occurrences.js'
@@ -36,6 +40,7 @@ import CategoriesManager from './components/CategoriesManager.jsx'
 import EventsManager from './components/EventsManager.jsx'
 import ExternalCalendars from './components/ExternalCalendars.jsx'
 import Informatics from './components/Informatics.jsx'
+import BloomWellness from './components/BloomWellness.jsx'
 import TaskMenu from './components/TaskMenu.jsx'
 import { refreshCalendar, loadCachedCalendar, clearCachedCalendar, eventsToSpans } from './lib/calendars.js'
 import { importedKey } from './lib/importedTasks.js'
@@ -82,6 +87,7 @@ const TABS = [
   { id:'week',        label:'Week',        glyph:'calendar' },
   { id:'taskmenu',    label:'Task Menu',    glyph:'clipboard' },
   { id:'calendar',    label:'Calendar',    glyph:'grid' },
+  { id:'wellness',    label:'Wellness',    glyph:'flower' },
   { id:'thoughts',    label:'Thoughts',    glyph:'bulb' },
   { id:'events',      label:'Events',      glyph:'ticket' },
   { id:'recurring',   label:'Recurring',   glyph:'repeat' },
@@ -573,17 +579,23 @@ export default function App() {
   const [timeLogs,         setTimeLogs_]        = useState([])   // manual hours logged on the Informatics page
   const [taskTemplates,    setTaskTemplates_]   = useState([])   // reusable date-less task presets (the Task Menu)
   const [routines,         setRoutines_]         = useState(DEFAULT_ROUTINES)
+  // ── Wellness (mood check-ins, DnD-style status effects, companion game) ──
+  const [wlCheckins,       setWlCheckins_]       = useState([])
+  const [wlEffects,        setWlEffects_]        = useState(null)   // null → seed defaults in the tab
+  const [wlEpisodes,       setWlEpisodes_]       = useState([])
+  const [wlGame,           setWlGame_]           = useState(null)
   const [loading,          setLoading]          = useState(true)
 
   useEffect(() => {
     async function load() {
       await runMigrationIfNeeded()
-      const [comp, l, n, fcp, fcs, sch, com, rt, vac, evs, cats, cmeta, rexc, rmeta, rout, tlogs, tpls, chist] = await Promise.all([
+      const [comp, l, n, fcp, fcs, sch, com, rt, vac, evs, cats, cmeta, rexc, rmeta, rout, tlogs, tpls, chist, wlc, wlfx, wlep, wlg] = await Promise.all([
         getCompletions(), getLogEntries(), getNotes(),
         getFcProgress(), getFcStudied(), getScheduledTasks(),
         getCommitments(), getRecurringTasks(), getVacations(), getEvents(),
         seedCategoriesIfNeeded(), getCommitmentMeta(), getRecurringExceptions(), getRecurringMeta(),
         getRoutineGroups(), getTimeLogs(), getTaskTemplates(), getChangeHistory(),
+        getWellnessCheckins(), getWellnessEffects(), getWellnessEpisodes(), getWellnessGame(),
       ])
       setCompletions_(comp); setLog_(l); setNotes_(n)
       setFcProgress_(fcp); setFcStudied_(fcs); setScheduled_(sch)
@@ -592,6 +604,10 @@ export default function App() {
       setTimeLogs_(Array.isArray(tlogs) ? tlogs : [])
       setTaskTemplates_(Array.isArray(tpls) ? tpls : [])
       setChangeHistory_(Array.isArray(chist) ? chist : [])
+      setWlCheckins_(Array.isArray(wlc) ? wlc : [])
+      setWlEffects_(Array.isArray(wlfx) ? wlfx : null)
+      setWlEpisodes_(Array.isArray(wlep) ? wlep : [])
+      setWlGame_(wlg && typeof wlg === 'object' ? wlg : null)
       // Routine groups: use what's saved, or seed the Morning/Night defaults.
       if (rout) {
         // One-time tint upgrade: bump any routine still on an old seed tint to
@@ -1387,6 +1403,15 @@ export default function App() {
     setTaskTemplates_(prev => { const next = prev.filter(t => t.id !== id); setTaskTemplates(next).catch(reportSaveError); return next })
   }, [])
 
+  // ── Wellness persist helpers (each one synced kv blob) ───────
+  // The wellness tab composes the pure game/analysis logic in lib/wellness.js
+  // and hands us the whole next value to save — mirroring the routine-group /
+  // time-log pattern above (local state first, cloud write best-effort).
+  const persistWlCheckins = useCallback(next => { setWlCheckins_(next); setWellnessCheckins(next).catch(reportSaveError) }, [])
+  const persistWlEffects  = useCallback(next => { setWlEffects_(next);  setWellnessEffects(next).catch(reportSaveError) }, [])
+  const persistWlEpisodes = useCallback(next => { setWlEpisodes_(next); setWellnessEpisodes(next).catch(reportSaveError) }, [])
+  const persistWlGame     = useCallback(next => { setWlGame_(next);     setWellnessGame(next).catch(reportSaveError) }, [])
+
   // ── Unified toggle ───────────────────────────────────────────
   const syncToggle = useCallback(async (id, label, tag, date, explicitNext) => {
     const storageKey = date ? `${date}_${id}` : id
@@ -1602,6 +1627,12 @@ export default function App() {
           categories={categories} taskTemplates={taskTemplates} labelModel={labelModel}
           routines={routines} addRoutine={addRoutineFn} updateRoutine={updateRoutineFn} deleteRoutine={deleteRoutineFn}
           defaultWeekTasks={DEFAULT_RECURRING_TASKS} defaultDailyTodos={DEFAULT_DAILY_TODOS} />}
+        {tab==='wellness'    && <BloomWellness
+          checkins={wlCheckins} persistCheckins={persistWlCheckins}
+          effects={wlEffects} persistEffects={persistWlEffects}
+          episodes={wlEpisodes} persistEpisodes={persistWlEpisodes}
+          game={wlGame} persistGame={persistWlGame}
+          log={log} />}
         {tab==='informatics' && <Informatics commitments={commitmentsView} recurringTasks={recurringTasksEnriched} completions={completions} log={log} categories={categories} timeLogs={timeLogs} addTimeLog={addTimeLog} deleteTimeLog={deleteTimeLog} />}
       </main>
 
