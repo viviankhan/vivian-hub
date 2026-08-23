@@ -946,6 +946,43 @@ textarea { resize: vertical; min-height: 160px; line-height: 1.6; }
   0%, 100% { transform: scale(1); }
   50%      { transform: scale(1.035); }
 }
-@media (prefers-reduced-motion: reduce) {
-  .crit-sway, .crit-eye, .crit-twinkle, .crit-breathe { animation: none; }
+/* The complex-emotion lining shimmer around a mood cloud. */
+.crit-shimmer { animation: crit-shimmer 3s ease-in-out infinite; }
+@keyframes crit-shimmer {
+  0%, 100% { opacity: .4; }
+  50%      { opacity: .85; }
 }
+@media (prefers-reduced-motion: reduce) {
+  .crit-sway, .crit-eye, .crit-twinkle, .crit-breathe, .crit-shimmer { animation: none; }
+}
+
+/* ── Complex-emotion linings + day cloud (Wellness) ──────────── */
+.wl-emotions { display: flex; flex-wrap: wrap; gap: 7px; }
+.wl-emo { display: inline-flex; align-items: center; gap: 6px; border: 1.5px solid var(--border); background: var(--cream); border-radius: 999px; padding: 6px 12px 6px 10px; font-size: 12.5px; font-weight: 600; color: var(--text); cursor: pointer; font-family: inherit; transition: box-shadow .15s, background .15s, border-color .15s; }
+.wl-emo-dot { width: 11px; height: 11px; border-radius: 50%; flex-shrink: 0; }
+
+/* Live cloud preview while checking in */
+.wl-preview { display: flex; flex-direction: column; align-items: center; gap: 4px; margin: 16px 0 4px; }
+.wl-preview-cap { font-size: 12.5px; font-weight: 600; color: var(--muted); text-align: center; max-width: 90%; }
+
+/* End-of-day cloud + proportional legend */
+.wl-day { display: flex; gap: 16px; align-items: center; padding: 4px 0 6px; }
+.wl-day-cloud { flex-shrink: 0; }
+.wl-day-body { min-width: 0; flex: 1; }
+.wl-day-title { font-size: 16px; font-weight: 700; color: var(--forest); }
+.wl-day-legend { display: flex; flex-wrap: wrap; gap: 6px 12px; margin-top: 8px; }
+.wl-legend-item { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text); font-weight: 600; }
+.wl-legend-dot { width: 10px; height: 10px; border-radius: 50%; }
+.wl-day-linings { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.wl-lining-chip { display: inline-flex; align-items: center; gap: 5px; border: 1.5px solid; border-radius: 999px; padding: 3px 9px 3px 7px; font-size: 11px; font-weight: 600; background: #fff; }
+
+/* Today's moments list */
+.wl-moments { display: flex; flex-direction: column; gap: 8px; margin-top: 14px; border-top: 1px dashed var(--border); padding-top: 12px; }
+.wl-moment { display: flex; gap: 11px; align-items: flex-start; }
+.wl-moment > svg { flex-shrink: 0; }
+.wl-moment-body { min-width: 0; flex: 1; }
+.wl-moment-top { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.wl-moment-mood { font-size: 13.5px; font-weight: 700; color: var(--forest); }
+.wl-moment-time { font-size: 11.5px; color: var(--muted); flex-shrink: 0; }
+.wl-moment-emos { font-size: 11.5px; color: var(--teal); font-weight: 600; margin-top: 1px; }
+.wl-moment-note { font-size: 12.5px; color: var(--text); font-style: italic; margin-top: 2px; }

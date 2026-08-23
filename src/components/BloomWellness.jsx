@@ -1,14 +1,20 @@
 import { useState, useMemo, useRef, useEffect } from 'react'
 import { Glyph, iconColorOn } from '../lib/glyphs.jsx'
-import { Companion, MoodFace } from '../lib/critters.jsx'
+import { Companion, MoodCloud, DayCloud } from '../lib/critters.jsx'
 import { bloomBurst } from '../lib/bloom.js'
 import {
   dayKey, MOODS, ENERGY, moodMeta, promptForDay,
+  COMPLEX_EMOTIONS, emotionMeta, checkinsForDay, daySegments,
   stageForLevel, nextStage, levelFromXp, liveStreak, applyCheckIn, awardPetals, REWARDS,
   DEFAULT_EFFECTS, POSITIVE_EFFECTS, makeEffect,
   activeEpisode, isActive, toggleEpisode, episodeMinutes, fmtDuration, effectTotals,
   buildDailyRecords, computeInsights, moodTrend, shareText,
 } from '../lib/wellness.js'
+
+// Short "h:mm am" time for a check-in moment.
+function clockTime(ts) {
+  try { return new Date(ts).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) } catch { return '' }
+}
 
 // A soft swatch palette for custom conditions — muted, on-brand, all legible
 // with white or dark text (iconColorOn picks per swatch).
@@ -190,42 +196,56 @@ export default function BloomWellness({
   log = [],
 }) {
   const today = dayKey()
-  const todayCheckin = useMemo(() => (checkins || []).find(c => c.date === today) || null, [checkins, today])
 
-  // Live "now" tick so active-effect timers count up while the tab is open.
+  // Live "now" tick so active-effect timers (and the day cloud's proportions)
+  // stay current while the tab is open.
   const [, setTick] = useState(0)
   useEffect(() => {
-    if (!(episodes || []).some(e => !e.end)) return
     const t = setInterval(() => setTick(n => n + 1), 30000)
     return () => clearInterval(t)
-  }, [episodes])
+  }, [])
 
-  // ── Check-in draft ───────────────────────────────────────────
-  const [mood, setMood] = useState(todayCheckin?.mood || null)
-  const [energy, setEnergy] = useState(todayCheckin?.energy || null)
-  const [note, setNote] = useState(todayCheckin?.note || '')
-  const [editing, setEditing] = useState(!todayCheckin)
-  useEffect(() => {
-    setMood(todayCheckin?.mood || null); setEnergy(todayCheckin?.energy || null)
-    setNote(todayCheckin?.note || ''); setEditing(!todayCheckin)
-  }, [todayCheckin])
+  // A day can hold several timestamped moments; this is today's, and the
+  // time-proportional blend that drives the end-of-day cloud.
+  const todayMoments = useMemo(() => checkinsForDay(checkins, today), [checkins, today])
+  const daySeg = useMemo(() => daySegments(checkins, today), [checkins, today])
+
+  // ── Check-in draft (a new moment each time) ──────────────────
+  const [mood, setMood] = useState(null)
+  const [energy, setEnergy] = useState(null)
+  const [emotionsSel, setEmotionsSel] = useState([])
+  const [note, setNote] = useState('')
+  // Start in the picker when nothing's logged yet today; otherwise show the day
+  // cloud and let the user add another moment.
+  const [editing, setEditing] = useState(todayMoments.length === 0)
+  useEffect(() => { if (todayMoments.length === 0) setEditing(true) }, [todayMoments.length])
+
+  const toggleEmotion = (id) => setEmotionsSel(prev => prev.includes(id) ? prev.filter(x => x !== id) : (prev.length < 4 ? [...prev, id] : prev))
 
   const [reward, setReward] = useState(null)   // { earned, leveledTo } toast
   const checkInBtn = useRef(null)
 
   const submitCheckIn = () => {
     if (!mood) return
-    const entry = { date: today, mood, energy: energy || 3, note: note.trim(), ts: new Date().toISOString() }
-    const already = !!todayCheckin
-    const next = [entry, ...(checkins || []).filter(c => c.date !== today)]
-    persistCheckins(next)
-    if (!already) {
+    const entry = {
+      id: 'ci-' + Date.now().toString(36),
+      date: today, mood, energy: energy || 3,
+      emotions: emotionsSel, note: note.trim(), ts: new Date().toISOString(),
+    }
+    persistCheckins([...(checkins || []), entry])
+    // First moment of the day pays the full check-in (streak + reflection);
+    // later moments give a small "extra moment" nudge, lightly capped.
+    if (todayMoments.length === 0) {
       const res = applyCheckIn(game, { key: today, hasReflection: entry.note.length > 0 })
       persistGame(res.game)
       setReward({ earned: res.earned, leveledTo: res.leveledTo })
-      if (checkInBtn.current) bloomBurst(checkInBtn.current)
-      setTimeout(() => setReward(null), 4200)
+    } else if (todayMoments.length < 5) {
+      persistGame(awardPetals(game, 3))
+      setReward({ earned: 3, leveledTo: null })
     }
+    if (checkInBtn.current) bloomBurst(checkInBtn.current)
+    setTimeout(() => setReward(null), 4200)
+    setMood(null); setEnergy(null); setEmotionsSel([]); setNote('')
     setEditing(false)
   }
 
@@ -267,7 +287,7 @@ export default function BloomWellness({
   const next = nextStage(lv.level)
   const streak = liveStreak(game)
   const trend = useMemo(() => moodTrend(checkins, 14), [checkins])
-  const trackedDays = (checkins || []).length
+  const trackedDays = useMemo(() => new Set((checkins || []).map(c => c.date)).size, [checkins])
 
   // ── Insights ─────────────────────────────────────────────────
   const { insights } = useMemo(
@@ -288,7 +308,7 @@ export default function BloomWellness({
       <section className="wl-hero">
         <ProgressRing pct={lv.pct}>
           <div className="wl-companion" title={`${stage.name} · level ${lv.level}`}>
-            <Companion level={lv.level} mood={todayCheckin?.mood} size={104} />
+            <Companion level={lv.level} mood={daySeg.dominant} size={104} />
           </div>
         </ProgressRing>
         <div className="wl-hero-body">
@@ -313,22 +333,48 @@ export default function BloomWellness({
       {/* ── Today's check-in ── */}
       <section className="wl-card">
         <div className="wl-card-head">
-          <h3 className="serif">{editing ? 'Daily check-in' : 'Today'}</h3>
-          {!editing && <button className="wl-link" onClick={() => setEditing(true)}>Edit</button>}
+          <h3 className="serif">{editing ? (todayMoments.length ? 'Another moment' : 'How are you?') : 'Today'}</h3>
+          {!editing && <button className="wl-link" onClick={() => setEditing(true)}>+ Check in</button>}
+          {editing && todayMoments.length > 0 && <button className="wl-link" onClick={() => setEditing(false)}>Cancel</button>}
         </div>
 
         {editing ? (
           <>
-            <div className="wl-ask">How's your mood?</div>
+            <div className="wl-ask">Which cloud are you?</div>
             <div className="wl-moods">
               {MOODS.map(m => (
                 <button key={m.v} className={`wl-mood ${mood === m.v ? 'on' : ''}`}
                   onClick={() => setMood(m.v)} style={mood === m.v ? { borderColor: m.color, background: m.color + '1A' } : {}}>
-                  <span className="wl-mood-face"><MoodFace v={m.v} size={34} animate={mood === m.v} /></span>
+                  <span className="wl-mood-face"><MoodCloud v={m.v} size={38} animate={mood === m.v} /></span>
                   <span className="wl-mood-label">{m.label}</span>
                 </button>
               ))}
             </div>
+
+            <div className="wl-ask">Any complex feelings? <span className="wl-optional">the cloud's lining · up to 4</span></div>
+            <div className="wl-emotions">
+              {COMPLEX_EMOTIONS.map(e => {
+                const on = emotionsSel.includes(e.id)
+                return (
+                  <button key={e.id} className={`wl-emo ${on ? 'on' : ''}`} onClick={() => toggleEmotion(e.id)}
+                    style={on ? { borderColor: e.color, background: e.color + '26', boxShadow: `0 0 0 3px ${e.color}33` } : {}}>
+                    <span className="wl-emo-dot" style={{ background: e.color }} />
+                    {e.name}
+                  </button>
+                )
+              })}
+            </div>
+
+            {/* Live preview — your cloud forming, with its emotion lining shimmering. */}
+            {mood && (
+              <div className="wl-preview">
+                <MoodCloud v={mood} emotions={emotionsSel} size={92} animate />
+                <div className="wl-preview-cap">
+                  {moodMeta(mood).label}
+                  {emotionsSel.length ? ' · ' + emotionsSel.map(id => emotionMeta(id)?.name).filter(Boolean).join(', ') : ''}
+                </div>
+              </div>
+            )}
 
             <div className="wl-ask">Energy?</div>
             <div className="wl-energy">
@@ -344,18 +390,63 @@ export default function BloomWellness({
               placeholder="A line for future-you…" />
 
             <button ref={checkInBtn} className="wl-btn primary block" disabled={!mood} onClick={submitCheckIn}>
-              {todayCheckin ? 'Save' : 'Check in'}{!todayCheckin && mood ? ` · +${REWARDS.checkIn + (note.trim() ? REWARDS.reflection : 0)} petals` : ''}
+              {todayMoments.length ? 'Add this moment' : 'Check in'}
+              {mood ? ` · +${todayMoments.length ? 3 : REWARDS.checkIn + (note.trim() ? REWARDS.reflection : 0)} petals` : ''}
             </button>
           </>
         ) : (
-          <div className="wl-today-done">
-            <div className="wl-today-face"><MoodFace v={todayCheckin.mood} size={54} animate /></div>
-            <div className="wl-today-body">
-              <div className="wl-today-mood">{moodMeta(todayCheckin.mood).label} · {ENERGY[(todayCheckin.energy || 3) - 1].label}</div>
-              {todayCheckin.note && <div className="wl-today-note">“{todayCheckin.note}”</div>}
-              <div className="wl-today-hint">Checked in for today — see you tomorrow <Glyph id="sprout" size={13} style={{ display: 'inline', verticalAlign: '-2px' }} /></div>
+          <>
+            <div className="wl-day">
+              <div className="wl-day-cloud">
+                <DayCloud segments={daySeg.segments} emotions={daySeg.emotions} dominant={daySeg.dominant} size={116} animate />
+              </div>
+              <div className="wl-day-body">
+                <div className="wl-day-title">
+                  {daySeg.count > 1
+                    ? `${daySeg.count} moments today`
+                    : `Feeling ${moodMeta(daySeg.dominant).label.toLowerCase()}`}
+                </div>
+                {/* Proportional legend: how much of the day each mood coloured. */}
+                <div className="wl-day-legend">
+                  {daySeg.props.map(p => (
+                    <span key={p.v} className="wl-legend-item">
+                      <span className="wl-legend-dot" style={{ background: moodMeta(p.v).color }} />
+                      {moodMeta(p.v).label} {Math.round(p.pct * 100)}%
+                    </span>
+                  ))}
+                </div>
+                {daySeg.emotions.length > 0 && (
+                  <div className="wl-day-linings">
+                    {daySeg.emotions.map(id => {
+                      const e = emotionMeta(id); if (!e) return null
+                      return <span key={id} className="wl-lining-chip" style={{ borderColor: e.color, color: '#4A5560' }}>
+                        <span className="wl-emo-dot" style={{ background: e.color }} />{e.name}
+                      </span>
+                    })}
+                  </div>
+                )}
+              </div>
             </div>
-          </div>
+
+            {/* Each moment logged today. */}
+            <div className="wl-moments">
+              {todayMoments.map(m => (
+                <div key={m.id || m.ts} className="wl-moment">
+                  <MoodCloud v={m.mood} emotions={m.emotions} size={40} />
+                  <div className="wl-moment-body">
+                    <div className="wl-moment-top">
+                      <span className="wl-moment-mood">{moodMeta(m.mood).label}</span>
+                      <span className="wl-moment-time">{clockTime(m.ts)}</span>
+                    </div>
+                    {(m.emotions && m.emotions.length > 0) && (
+                      <div className="wl-moment-emos">{m.emotions.map(id => emotionMeta(id)?.name).filter(Boolean).join(' · ')}</div>
+                    )}
+                    {m.note && <div className="wl-moment-note">“{m.note}”</div>}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </>
         )}
 
         {trend.some(t => t.mood != null) && (

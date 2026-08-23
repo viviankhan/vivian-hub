@@ -37,13 +37,14 @@ export function daysBetween(aKey, bKey) {
 }
 
 // ── Mood & energy scales ───────────────────────────────────────
-// Five steps each, warm and legible — the faces double as the reward's flavor.
+// Five steps, warm and legible. `color` is the watercolor pigment of that mood's
+// cloud — reused for legends and the sparkline so everything reads as one palette.
 export const MOODS = [
-  { v: 1, emoji: '😞', label: 'Rough',   color: '#B5838D' },
-  { v: 2, emoji: '😕', label: 'Low',     color: '#C99AA0' },
-  { v: 3, emoji: '😐', label: 'Okay',    color: '#D9B48F' },
-  { v: 4, emoji: '🙂', label: 'Good',    color: '#89B0AE' },
-  { v: 5, emoji: '😄', label: 'Great',   color: '#6F9F8B' },
+  { v: 1, label: 'Rough', color: '#A9CFEE' },   // blue
+  { v: 2, label: 'Low',   color: '#B9A6E2' },   // purple
+  { v: 3, label: 'Okay',  color: '#EFCB8C' },   // cream
+  { v: 4, label: 'Good',  color: '#F2A7C1' },   // pink
+  { v: 5, label: 'Great', color: '#A9D68C' },   // green
 ]
 export const ENERGY = [
   { v: 1, label: 'Drained' },
@@ -53,6 +54,26 @@ export const ENERGY = [
   { v: 5, label: 'Buzzing' },
 ]
 export function moodMeta(v) { return MOODS.find(m => m.v === v) || MOODS[2] }
+
+// ── Complex emotions (the cloud "linings") ─────────────────────
+// A mood (the cloud's body color) answers "how good/bad"; a complex emotion is
+// the nuance layered on top — the shimmering lining around the cloud. A check-in
+// can carry several. Each has its own watercolor pigment.
+export const COMPLEX_EMOTIONS = [
+  { id: 'anxiety',     name: 'Anxiety',     color: '#8E9BC4' },
+  { id: 'excitement',  name: 'Excitement',  color: '#F4B24C' },
+  { id: 'regret',      name: 'Regret',      color: '#9E8AA6' },
+  { id: 'disgust',     name: 'Disgust',     color: '#8FB27A' },
+  { id: 'anger',       name: 'Anger',       color: '#DB8A73' },
+  { id: 'sadness',     name: 'Sadness',     color: '#7FA8C9' },
+  { id: 'hope',        name: 'Hope',        color: '#9FD3C2' },
+  { id: 'gratitude',   name: 'Gratitude',   color: '#EAD79A' },
+  { id: 'overwhelm',   name: 'Overwhelm',   color: '#B0A0C8' },
+  { id: 'loneliness',  name: 'Loneliness',  color: '#97A9B8' },
+  { id: 'contentment', name: 'Contentment', color: '#F2B7CB' },
+  { id: 'pride',       name: 'Pride',       color: '#F0C06A' },
+]
+export function emotionMeta(id) { return COMPLEX_EMOTIONS.find(e => e.id === id) || null }
 
 // A rotating set of gentle reflection prompts — the "story"/therapist nudge that
 // gives a check-in something to answer beyond a number. Seeded by day so the
@@ -256,29 +277,72 @@ export function effectTotals(episodes) {
   return by
 }
 
+// ── Check-in helpers (many per day) ────────────────────────────
+// A day can hold several timestamped mood check-ins. This returns one day's,
+// oldest first.
+export function checkinsForDay(checkins, key = dayKey()) {
+  return (checkins || []).filter(c => c.date === key)
+    .sort((a, b) => String(a.ts).localeCompare(String(b.ts)))
+}
+
+// Turn a day's check-ins into time-proportional mood segments: each check-in's
+// mood is treated as lasting from its timestamp until the next one (the last
+// extends to `nowMs`, clamped to the day's end). This is what lets the end-of-
+// day cloud blend the mood colors in proportion to how long each was present.
+// Returns { segments:[{v,pct}], props:[{v,pct}] (by mood, desc), emotions:[id],
+//           dominant, count }.
+export function daySegments(checkins, key = dayKey(), nowMs = Date.now()) {
+  const list = checkinsForDay(checkins, key)
+  if (!list.length) return { segments: [], props: [], emotions: [], dominant: null, count: 0 }
+  const dayStart = keyToDate(key).getTime()
+  const dayEnd = dayStart + 86400000
+  const first = Date.parse(list[0].ts)
+  const end = Math.min(dayEnd, Math.max(nowMs, first + 60000))
+  const raw = list.map((c, i) => {
+    const t = Date.parse(c.ts)
+    const tNext = i + 1 < list.length ? Date.parse(list[i + 1].ts) : end
+    return { v: c.mood, weight: Math.max(60000, tNext - t) }   // ≥1min each
+  })
+  const total = raw.reduce((a, s) => a + s.weight, 0) || 1
+  const segments = raw.map(s => ({ v: s.v, pct: s.weight / total }))
+  const byMood = new Map()
+  segments.forEach(s => byMood.set(s.v, (byMood.get(s.v) || 0) + s.pct))
+  const props = [...byMood.entries()].map(([v, pct]) => ({ v, pct })).sort((a, b) => b.pct - a.pct)
+  const emotions = [...new Set(list.flatMap(c => c.emotions || []))]
+  return { segments, props, emotions, dominant: props[0]?.v ?? null, count: list.length }
+}
+
 // ── Per-day records + pattern analysis ─────────────────────────
-// Fold everything the app knows into one row per day over a window: the mood &
-// energy from that day's check-in, which effects were active, and how many
-// tasks were finished (from the completion log). This is the table every
-// insight is computed from.
-//   checkins: [{ date, mood, energy, note }]
-//   log:      [{ date, ... }]  (one entry per finished task, from storage.getLogEntries)
+// Fold everything the app knows into one row per day over a window: that day's
+// mood & energy (averaged across all its check-ins), the complex emotions
+// tagged, which effects were active, and how many tasks were finished. This is
+// the table every insight is computed from.
 export function buildDailyRecords({ checkins = [], episodes = [], log = [], effects = [], windowDays = 60 }) {
   const keys = recentDayKeys(windowDays)
-  const ci = new Map((checkins || []).map(c => [c.date, c]))
+  const byDay = new Map()
+  for (const c of checkins || []) {
+    if (c.mood == null) continue
+    const a = byDay.get(c.date) || { mood: [], energy: [], emotions: new Set(), note: '' }
+    a.mood.push(c.mood)
+    if (c.energy) a.energy.push(c.energy)
+    ;(c.emotions || []).forEach(e => a.emotions.add(e))
+    if (c.note && !a.note) a.note = c.note
+    byDay.set(c.date, a)
+  }
   const tasksByDay = new Map()
   for (const e of log || []) {
     const d = e.date || (e.ts ? String(e.ts).slice(0, 10) : '')
     if (d) tasksByDay.set(d, (tasksByDay.get(d) || 0) + 1)
   }
   return keys.map(key => {
-    const c = ci.get(key)
+    const a = byDay.get(key)
     const active = (effects || []).filter(fx => effectOnDay(episodes, fx.id, key)).map(fx => fx.id)
     return {
       date: key,
-      mood: c ? c.mood : null,
-      energy: c ? c.energy : null,
-      note: c ? (c.note || '') : '',
+      mood: a && a.mood.length ? mean(a.mood) : null,
+      energy: a && a.energy.length ? mean(a.energy) : null,
+      emotions: a ? [...a.emotions] : [],
+      note: a ? a.note : '',
       effects: active,
       tasks: tasksByDay.get(key) || 0,
     }
@@ -403,10 +467,19 @@ function pearson(xs, ys) {
 function lc(s) { return (s || '').charAt(0).toLowerCase() + (s || '').slice(1) }
 function cap(s) { return (s || '').charAt(0).toUpperCase() + (s || '').slice(1) }
 
-// A tiny 14-day mood trend for the sparkline: [{ date, mood|null }].
+// A tiny 14-day mood trend for the sparkline: [{ date, mood|null }], where a
+// day's mood is the average across all its check-ins.
 export function moodTrend(checkins, n = 14) {
-  const ci = new Map((checkins || []).map(c => [c.date, c]))
-  return recentDayKeys(n).map(key => ({ date: key, mood: ci.get(key) ? ci.get(key).mood : null }))
+  const byDay = new Map()
+  ;(checkins || []).forEach(c => {
+    if (c.mood == null) return
+    const a = byDay.get(c.date) || []
+    a.push(c.mood); byDay.set(c.date, a)
+  })
+  return recentDayKeys(n).map(key => {
+    const a = byDay.get(key)
+    return { date: key, mood: a && a.length ? Math.round((a.reduce((x, y) => x + y, 0) / a.length) * 10) / 10 : null }
+  })
 }
 
 // The shareable progress summary (plain text) — used by the Web Share sheet and

@@ -18,7 +18,7 @@
 // drawing kit is what the alien flora/fauna of the "world" will reuse.
 // ─────────────────────────────────────────────────────────────
 import { useId } from 'react'
-import { COMPANION_STAGES } from './wellness.js'
+import { COMPANION_STAGES, emotionMeta } from './wellness.js'
 
 const prefersReduced = () =>
   typeof window !== 'undefined' &&
@@ -207,11 +207,12 @@ export function Companion({ level = 1, mood, size = 96, className = '' }) {
   )
 }
 
-// ── Watercolor mood blobs (the check-in picker) ────────────────
-// Soft Quabble-style jelly blobs — no hard outline, a pastel fill that pools
-// darker toward the bottom, rosy cheeks, and simple ink features. Each mood
-// gets its own slightly-different squishy silhouette so they read as five
-// little characters, not one shape recolored.
+// ── Watercolor mood clouds (the check-in picker + day summary) ──
+// Soft Quabble-style clouds — no hard outline, a pastel fill that pools darker
+// toward the bottom, rosy cheeks, and simple ink features. A single MoodCloud is
+// one mood; the DayCloud blends a whole day's moods in proportion to time. Both
+// can carry "linings": a translucent shimmer of complex-emotion colors around
+// the cloud's edge.
 const FEAT = '#37332C'   // the soft-black ink for features
 
 // A tiny seeded RNG so each blob's wobble is fixed (same face every render).
@@ -231,15 +232,22 @@ function smoothClosed(p) {
   }
   return d + 'Z'
 }
-// An organic blob silhouette on a 100×100 canvas, squished vertically by `sq`.
-function blobPath(seed, sq = 1) {
-  const cx = 50, cy = 53, base = 35, n = 11
-  const rnd = seeded(seed)
+// A puffy cloud silhouette on a 100×100 canvas: a few rounded bumps across the
+// top, smooth shoulders, and a wide flat-ish base — so it reads as a Quabble
+// cloud rather than a ball or a star.
+function cloudPath(seed) {
+  const cx = 50, cy = 52, base = 30, n = 22
+  const rnd = seeded(seed), ph = rnd() * Math.PI * 2
   const pts = []
   for (let i = 0; i < n; i++) {
     const ang = (i / n) * Math.PI * 2 - Math.PI / 2
-    const r = base * (0.9 + rnd() * 0.2)
-    pts.push([cx + Math.cos(ang) * r, cy + Math.sin(ang) * r * sq])
+    const s = Math.sin(ang), c = Math.cos(ang)
+    // Rounded bumps only across the upper half (convex puffs, gentle valleys).
+    const bump = s < -0.02 ? 0.17 * Math.max(0, Math.cos(3 * ang + ph)) : 0
+    const r = base * (1 + bump) * (0.99 + rnd() * 0.03)
+    let y = cy + s * r * 0.92
+    if (s > 0.15) y = cy + s * r * 0.55 + 11    // flatten & widen the base
+    pts.push([cx + c * r * 1.04, y])
   }
   return smoothClosed(pts)
 }
@@ -280,31 +288,96 @@ function Mouth({ kind }) {
   return <path d="M45,63 Q50,66 55,63" strokeWidth="2.6" {...s} />
 }
 
-// A soft mood blob. `v` is the mood (1..5); `size` is the rendered px.
-export function MoodFace({ v = 3, size = 30, animate = false }) {
+// The shimmering emotion "lining": one blurred, translucent colored ring per
+// complex emotion, nested slightly outward, gently pulsing. Drawn behind the
+// cloud body so it reads as an aura around the edge.
+function Linings({ emotions, d, blurId }) {
+  if (!emotions || !emotions.length) return null
+  return (
+    <g>
+      {emotions.slice(0, 4).map((id, i) => {
+        const e = emotionMeta(id)
+        if (!e) return null
+        const s = 1.06 + i * 0.055
+        return (
+          <g key={id} className="crit-shimmer" style={{ transformOrigin: '50px 54px', animationDelay: `${i * 0.5}s` }}>
+            <path d={d} fill="none" stroke={e.color} strokeWidth="7" strokeLinejoin="round"
+              opacity="0.5" filter={`url(#${blurId})`}
+              transform={`translate(50 54) scale(${s}) translate(-50 -54)`} />
+          </g>
+        )
+      })}
+    </g>
+  )
+}
+
+// A single mood cloud. `v` is the mood (1..5); `emotions` are complex-emotion
+// ids drawn as the shimmer lining; `size` is the rendered px.
+export function MoodCloud({ v = 3, size = 40, emotions = [], animate = false }) {
   const uid = useId().replace(/:/g, '')
   const b = BLOBS[v] || BLOBS[3]
-  const d = blobPath(b.seed, b.sq)
+  const d = cloudPath(b.seed)
   const reduced = prefersReduced()
+  const blurId = `bs-${uid}`
   return (
     <svg viewBox="0 0 100 100" width={size} height={size} aria-hidden="true" style={{ display: 'block', overflow: 'visible' }}>
       <defs>
         <clipPath id={`bc-${uid}`}><path d={d} /></clipPath>
-        <filter id={`bs-${uid}`} x="-30%" y="-30%" width="160%" height="160%">
-          <feGaussianBlur stdDeviation="3.4" />
-        </filter>
+        <filter id={blurId} x="-45%" y="-45%" width="190%" height="190%"><feGaussianBlur stdDeviation="3.2" /></filter>
       </defs>
       <g className={animate && !reduced ? 'crit-breathe' : ''} style={{ transformOrigin: '50px 82px' }}>
-        {/* soft pastel body — no outline, just fill */}
+        <Linings emotions={emotions} d={d} blurId={blurId} />
         <path d={d} fill={b.fill} />
-        {/* watercolor pooling + cheeks, clipped inside the body and blurred */}
         <g clipPath={`url(#bc-${uid})`}>
-          <ellipse cx="50" cy="92" rx="42" ry="26" fill={b.pool} opacity="0.75" filter={`url(#bs-${uid})`} />
-          <ellipse cx="30" cy="60" rx="12" ry="9" fill={b.cheek} opacity={b.cheekO} filter={`url(#bs-${uid})`} />
-          <ellipse cx="70" cy="60" rx="12" ry="9" fill={b.cheek} opacity={b.cheekO} filter={`url(#bs-${uid})`} />
+          <ellipse cx="50" cy="92" rx="42" ry="26" fill={b.pool} opacity="0.7" filter={`url(#${blurId})`} />
+          <ellipse cx="30" cy="60" rx="12" ry="9" fill={b.cheek} opacity={b.cheekO} filter={`url(#${blurId})`} />
+          <ellipse cx="70" cy="60" rx="12" ry="9" fill={b.cheek} opacity={b.cheekO} filter={`url(#${blurId})`} />
         </g>
         <Eyes kind={b.eyes} />
         <Mouth kind={b.mouth} />
+      </g>
+    </svg>
+  )
+}
+// Back-compat alias — earlier code imported this as MoodFace.
+export { MoodCloud as MoodFace }
+
+// The end-of-day cloud: the day's moods blended left→right in proportion to how
+// long each was present (a smooth watercolor gradient), wearing the dominant
+// mood's face and the day's complex-emotion linings.
+//   segments: [{ v, pct }] ordered through the day (pct sums to ~1)
+export function DayCloud({ segments = [], emotions = [], dominant = 3, size = 120, animate = true, face = true }) {
+  const uid = useId().replace(/:/g, '')
+  const dom = dominant || 3
+  const b = BLOBS[dom] || BLOBS[3]
+  const d = cloudPath(dom * 17 + 3)
+  const reduced = prefersReduced()
+  const blurId = `bs-${uid}`, gradId = `bg-${uid}`
+  // A stop at each segment's cumulative center, so the gradient interpolates a
+  // soft watercolor blend between moods instead of hard bands.
+  let acc = 0
+  const stops = segments.map(s => { const center = acc + s.pct / 2; acc += s.pct; return { o: center, c: (BLOBS[s.v] || BLOBS[3]).fill } })
+  const fill = stops.length ? `url(#${gradId})` : b.fill
+  return (
+    <svg viewBox="0 0 100 100" width={size} height={size} aria-hidden="true" style={{ display: 'block', overflow: 'visible' }}>
+      <defs>
+        <clipPath id={`bc-${uid}`}><path d={d} /></clipPath>
+        <filter id={blurId} x="-45%" y="-45%" width="190%" height="190%"><feGaussianBlur stdDeviation="3.2" /></filter>
+        {stops.length > 0 && (
+          <linearGradient id={gradId} x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0" stopColor={stops[0].c} />
+            {stops.map((s, i) => <stop key={i} offset={s.o} stopColor={s.c} />)}
+            <stop offset="1" stopColor={stops[stops.length - 1].c} />
+          </linearGradient>
+        )}
+      </defs>
+      <g className={animate && !reduced ? 'crit-breathe' : ''} style={{ transformOrigin: '50px 82px' }}>
+        <Linings emotions={emotions} d={d} blurId={blurId} />
+        <path d={d} fill={fill} />
+        <g clipPath={`url(#bc-${uid})`}>
+          <ellipse cx="50" cy="94" rx="44" ry="24" fill={b.pool} opacity="0.32" filter={`url(#${blurId})`} />
+        </g>
+        {face && <><Eyes kind={b.eyes} /><Mouth kind={b.mouth} /></>}
       </g>
     </svg>
   )
