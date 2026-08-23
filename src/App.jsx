@@ -24,6 +24,7 @@ import {
   getWellnessEpisodes, setWellnessEpisodes,
   getWellnessGame, setWellnessGame,
   getWellnessTreasures, setWellnessTreasures,
+  getWellnessSpace, setWellnessSpace,
   addCategory as dbAddCategory, updateCategory as dbUpdateCategory, deleteCategory as dbDeleteCategory,
 } from './lib/storage.js'
 import { occKey, recurringOccurrencesForDate } from './lib/occurrences.js'
@@ -42,6 +43,7 @@ import EventsManager from './components/EventsManager.jsx'
 import ExternalCalendars from './components/ExternalCalendars.jsx'
 import Informatics from './components/Informatics.jsx'
 import BloomWellness from './components/BloomWellness.jsx'
+import Voyage from './components/Voyage.jsx'
 import TaskMenu from './components/TaskMenu.jsx'
 import { refreshCalendar, loadCachedCalendar, clearCachedCalendar, eventsToSpans } from './lib/calendars.js'
 import { importedKey } from './lib/importedTasks.js'
@@ -89,6 +91,7 @@ const TABS = [
   { id:'taskmenu',    label:'Task Menu',    glyph:'clipboard' },
   { id:'calendar',    label:'Calendar',    glyph:'grid' },
   { id:'wellness',    label:'Wellness',    glyph:'flower' },
+  { id:'voyage',      label:'Voyage',      glyph:'rocket' },
   { id:'thoughts',    label:'Thoughts',    glyph:'bulb' },
   { id:'events',      label:'Events',      glyph:'ticket' },
   { id:'recurring',   label:'Recurring',   glyph:'repeat' },
@@ -586,19 +589,20 @@ export default function App() {
   const [wlEpisodes,       setWlEpisodes_]       = useState([])
   const [wlGame,           setWlGame_]           = useState(null)
   const [wlTreasures,      setWlTreasures_]      = useState([])
+  const [wlSpace,          setWlSpace_]          = useState(null)
   const [loading,          setLoading]          = useState(true)
 
   useEffect(() => {
     async function load() {
       await runMigrationIfNeeded()
-      const [comp, l, n, fcp, fcs, sch, com, rt, vac, evs, cats, cmeta, rexc, rmeta, rout, tlogs, tpls, chist, wlc, wlfx, wlep, wlg, wltr] = await Promise.all([
+      const [comp, l, n, fcp, fcs, sch, com, rt, vac, evs, cats, cmeta, rexc, rmeta, rout, tlogs, tpls, chist, wlc, wlfx, wlep, wlg, wltr, wlsp] = await Promise.all([
         getCompletions(), getLogEntries(), getNotes(),
         getFcProgress(), getFcStudied(), getScheduledTasks(),
         getCommitments(), getRecurringTasks(), getVacations(), getEvents(),
         seedCategoriesIfNeeded(), getCommitmentMeta(), getRecurringExceptions(), getRecurringMeta(),
         getRoutineGroups(), getTimeLogs(), getTaskTemplates(), getChangeHistory(),
         getWellnessCheckins(), getWellnessEffects(), getWellnessEpisodes(), getWellnessGame(),
-        getWellnessTreasures(),
+        getWellnessTreasures(), getWellnessSpace(),
       ])
       setCompletions_(comp); setLog_(l); setNotes_(n)
       setFcProgress_(fcp); setFcStudied_(fcs); setScheduled_(sch)
@@ -612,6 +616,7 @@ export default function App() {
       setWlEpisodes_(Array.isArray(wlep) ? wlep : [])
       setWlGame_(wlg && typeof wlg === 'object' ? wlg : null)
       setWlTreasures_(Array.isArray(wltr) ? wltr : [])
+      setWlSpace_(wlsp && typeof wlsp === 'object' ? wlsp : null)
       // Routine groups: use what's saved, or seed the Morning/Night defaults.
       if (rout) {
         // One-time tint upgrade: bump any routine still on an old seed tint to
@@ -1416,6 +1421,7 @@ export default function App() {
   const persistWlEpisodes = useCallback(next => { setWlEpisodes_(next); setWellnessEpisodes(next).catch(reportSaveError) }, [])
   const persistWlGame     = useCallback(next => { setWlGame_(next);     setWellnessGame(next).catch(reportSaveError) }, [])
   const persistWlTreasures = useCallback(next => { setWlTreasures_(next); setWellnessTreasures(next).catch(reportSaveError) }, [])
+  const persistWlSpace     = useCallback(next => { setWlSpace_(next);     setWellnessSpace(next).catch(reportSaveError) }, [])
 
   // ── Unified toggle ───────────────────────────────────────────
   const syncToggle = useCallback(async (id, label, tag, date, explicitNext) => {
@@ -1639,6 +1645,8 @@ export default function App() {
           game={wlGame} persistGame={persistWlGame}
           treasures={wlTreasures} persistTreasures={persistWlTreasures}
           log={log} />}
+        {tab==='voyage'      && <Voyage game={wlGame} persistGame={persistWlGame}
+          space={wlSpace} persistSpace={persistWlSpace} />}
         {tab==='informatics' && <Informatics commitments={commitmentsView} recurringTasks={recurringTasksEnriched} completions={completions} log={log} categories={categories} timeLogs={timeLogs} addTimeLog={addTimeLog} deleteTimeLog={deleteTimeLog} />}
       </main>
 

@@ -373,6 +373,10 @@ export const setWellnessGame     = v  => dbSet('wellness_game', v)
 // downscaled as data URLs. Each: { id, date, image, desc, ts }.
 export const getWellnessTreasures = () => dbGet('wellness_treasures').then(v => Array.isArray(v) ? v : [])
 export const setWellnessTreasures = v  => dbSet('wellness_treasures', v)
+// The Voyage meta-game state (unlocked planets, collected specimens, ship). One
+// synced kv_store blob; see src/lib/space.js. `null` → seed a fresh voyage.
+export const getWellnessSpace = () => dbGet('wellness_space').then(v => (v && typeof v === 'object') ? v : null)
+export const setWellnessSpace = v  => dbSet('wellness_space', v)
 
 // ── Classes ────────────────────────────────────────────────────
 export async function getClasses() {

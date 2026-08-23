@@ -958,8 +958,14 @@ textarea { resize: vertical; min-height: 160px; line-height: 1.6; }
   from { stroke-dashoffset: 0; }
   to   { stroke-dashoffset: -100; }
 }
+/* Rocket exhaust flicker. */
+.vy-flame { animation: vy-flame .28s ease-in-out infinite; }
+@keyframes vy-flame {
+  0%, 100% { transform: scaleY(1) scaleX(1); opacity: .95; }
+  50%      { transform: scaleY(0.7) scaleX(1.1); opacity: .8; }
+}
 @media (prefers-reduced-motion: reduce) {
-  .crit-sway, .crit-eye, .crit-twinkle, .crit-breathe, .crit-shimmer, .crit-glint { animation: none; }
+  .crit-sway, .crit-eye, .crit-twinkle, .crit-breathe, .crit-shimmer, .crit-glint, .vy-flame { animation: none; }
 }
 
 /* ── Complex-emotion linings + day cloud (Wellness) ──────────── */
@@ -1037,3 +1043,80 @@ textarea { resize: vertical; min-height: 160px; line-height: 1.6; }
 .wl-treasure-add:hover { border-color: var(--teal); color: var(--teal); }
 .wl-treasure-draft { margin-top: 12px; padding: 12px; background: var(--cream); border-radius: 14px; }
 .wl-treasure-draft img { width: 100%; max-height: 220px; object-fit: contain; border-radius: 10px; margin-bottom: 8px; background: #fff; }
+
+/* ── VOYAGE (rocket + planets + specimens) ───────────────────── */
+.vy-wrap { max-width: 760px; margin: 0 auto; display: flex; flex-direction: column; gap: 16px; padding-bottom: 90px; }
+
+/* Space scene banner */
+.vy-scene { position: relative; border-radius: 20px; overflow: hidden; height: 230px; box-shadow: inset 0 0 50px rgba(20,10,40,.45); }
+.vy-scene-bg { position: absolute; inset: 0; }
+.vy-stars-chip { position: absolute; top: 12px; right: 14px; z-index: 3; display: inline-flex; align-items: center; gap: 6px; background: rgba(0,0,0,.28); color: #fff; font-weight: 800; font-size: 15px; padding: 6px 12px; border-radius: 999px; }
+.vy-planet-stage { position: absolute; inset: 0; z-index: 2; }
+.vy-planet-float { position: absolute; left: 50%; top: 44%; transform: translate(-50%, -50%); animation: vy-spin-bob 12s ease-in-out infinite; }
+.vy-rocket-float { position: absolute; left: 66%; top: 34%; animation: wl-bob 5s ease-in-out infinite; }
+@keyframes vy-spin-bob { 0%,100% { transform: translate(-50%,-52%); } 50% { transform: translate(-50%,-46%); } }
+.vy-scene-caption { position: absolute; left: 16px; bottom: 12px; z-index: 3; color: #fff; text-shadow: 0 1px 8px rgba(0,0,0,.5); max-width: 70%; }
+.vy-planet-name { font-size: 22px; font-weight: 600; }
+.vy-planet-blurb { font-size: 12.5px; opacity: .9; line-height: 1.35; margin-top: 2px; }
+
+/* Cards */
+.vy-card { background: #fff; border: 1px solid var(--border); border-radius: 18px; padding: 16px 18px 18px; box-shadow: 0 4px 18px rgba(60,72,88,.05); }
+.vy-card-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+.vy-card-head h3 { font-size: 18px; color: var(--forest); font-weight: 600; }
+.vy-count { font-size: 12px; color: var(--muted); font-weight: 600; }
+
+/* Buttons */
+.vy-btn { border: none; cursor: pointer; border-radius: 999px; padding: 10px 16px; font-size: 13.5px; font-weight: 700; font-family: inherit; display: inline-flex; align-items: center; gap: 7px; transition: opacity .12s, background .12s; }
+.vy-btn.primary { background: var(--forest); color: #fff; }
+.vy-btn.primary:hover { background: var(--deep-forest); }
+.vy-btn.primary:disabled { opacity: .4; cursor: not-allowed; }
+.vy-btn.block { display: flex; width: 100%; justify-content: center; margin-top: 16px; }
+.vy-btn svg { display: block; }
+
+/* Expedition */
+.vy-explore-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+.vy-explore-title { font-size: 17px; color: var(--forest); font-weight: 600; }
+.vy-explore-sub { font-size: 12.5px; color: var(--muted); margin-top: 2px; }
+
+/* Specimen collection */
+.vy-collection { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.vy-spec { margin: 0; display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 10px 4px; border-radius: 14px; background: var(--cream); }
+.vy-spec.got { background: var(--green-light); }
+.vy-spec figcaption { font-size: 11px; font-weight: 600; color: var(--muted); }
+.vy-spec.got figcaption { color: var(--teal); }
+
+/* Planet picker */
+.vy-planets { display: flex; gap: 10px; overflow-x: auto; padding-bottom: 6px; }
+.vy-planet-pick { flex: 0 0 auto; width: 84px; background: var(--cream); border: 2px solid transparent; border-radius: 16px; cursor: pointer; padding: 10px 4px 8px; display: flex; flex-direction: column; align-items: center; gap: 3px; font-family: inherit; }
+.vy-planet-pick.active { border-color: var(--teal); background: var(--green-light); }
+.vy-planet-pick.locked { opacity: .85; }
+.vy-pick-disc { display: block; }
+.vy-pick-name { font-size: 12.5px; font-weight: 700; color: var(--forest); }
+.vy-pick-meta { font-size: 11px; color: var(--muted); font-weight: 600; display: inline-flex; align-items: center; gap: 3px; }
+.vy-pick-meta.locked { color: #B08A3E; }
+
+/* Ship */
+.vy-ship-row { display: flex; gap: 16px; align-items: center; }
+.vy-ship-preview { flex-shrink: 0; }
+.vy-skins { flex: 1; display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+.vy-skin { display: flex; align-items: center; gap: 8px; border: 1.5px solid var(--border); background: var(--cream); border-radius: 12px; padding: 8px 10px; cursor: pointer; font-family: inherit; }
+.vy-skin.on { border-color: var(--teal); background: var(--green-light); }
+.vy-skin-dot { width: 16px; height: 16px; border-radius: 50%; border: 1px solid rgba(0,0,0,.15); flex-shrink: 0; }
+.vy-skin-name { font-size: 12.5px; font-weight: 600; color: var(--text); flex: 1; text-align: left; }
+.vy-skin-tag { font-size: 10.5px; font-weight: 700; color: var(--teal); display: inline-flex; align-items: center; gap: 2px; }
+.vy-skin-tag.muted { color: var(--muted); }
+
+.vy-footer { font-size: 11px; color: var(--muted); text-align: center; line-height: 1.5; padding: 0 8px; }
+.vy-toast { background: var(--forest); }
+
+/* Specimen reveal */
+.vy-reveal { text-align: center; max-width: 340px; }
+.vy-reveal-burst { display: flex; justify-content: center; animation: wl-pop .4s cubic-bezier(.2,.9,.3,1.4); }
+.vy-reveal-tag { font-size: 12px; font-weight: 700; color: var(--teal); text-transform: uppercase; letter-spacing: .6px; margin-top: 6px; }
+.vy-reveal-name { font-size: 24px; color: var(--forest); font-weight: 600; }
+.vy-reveal-sub { font-size: 12.5px; color: var(--muted); margin-bottom: 4px; }
+
+@media (max-width: 480px) {
+  .vy-collection { grid-template-columns: repeat(3, 1fr); }
+  .vy-skins { grid-template-columns: 1fr; }
+}

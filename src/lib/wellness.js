@@ -144,7 +144,10 @@ export const REWARDS = {
 
 // The default, freshly-seeded game state.
 export function freshGame() {
-  return { xp: 0, petals: 0, streak: 0, best: 0, lastCheckIn: null, companionName: 'Sprout', totalCheckIns: 0 }
+  // `stars` is the spendable Voyage currency: it rises exactly like petals (both
+  // are earned together) but, unlike petals/xp, it is spent to unlock planets
+  // and fund expeditions.
+  return { xp: 0, petals: 0, stars: 0, streak: 0, best: 0, lastCheckIn: null, companionName: 'Sprout', totalCheckIns: 0 }
 }
 
 // Apply a daily check-in to the game state and return { game, earned, leveledTo }.
@@ -163,6 +166,7 @@ export function applyCheckIn(game, { key = dayKey(), hasReflection = false } = {
   const earned = REWARDS.checkIn + (hasReflection ? REWARDS.reflection : 0) + streakBonus
   g.xp = (g.xp || 0) + earned
   g.petals = (g.petals || 0) + earned
+  g.stars = (g.stars || 0) + earned
   g.lastCheckIn = key
   g.totalCheckIns = (g.totalCheckIns || 0) + 1
   const afterLevel = levelFromXp(g.xp).level
@@ -173,6 +177,15 @@ export function awardPetals(game, amount) {
   const g = { ...freshGame(), ...(game || {}) }
   g.xp = (g.xp || 0) + amount
   g.petals = (g.petals || 0) + amount
+  g.stars = (g.stars || 0) + amount
+  return g
+}
+// Spend stars (planet unlock / expedition). Returns the new game, or null when
+// there aren't enough — the caller uses null to refuse the action.
+export function spendStars(game, amount) {
+  const g = { ...freshGame(), ...(game || {}) }
+  if ((g.stars || 0) < amount) return null
+  g.stars = g.stars - amount
   return g
 }
 // If today has passed with no check-in for 2+ days, the visible streak is stale;
