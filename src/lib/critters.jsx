@@ -288,25 +288,31 @@ function Mouth({ kind }) {
   return <path d="M45,63 Q50,66 55,63" strokeWidth="2.6" {...s} />
 }
 
-// The shimmering emotion "lining": one blurred, translucent colored ring per
-// complex emotion, nested slightly outward, gently pulsing. Drawn behind the
-// cloud body so it reads as an aura around the edge.
-function Linings({ emotions, d, blurId }) {
+// The emotion "lining": a soft translucent aura that hugs the cloud's outline,
+// tinted by the day's complex emotions (blended along a gradient when there are
+// several), with a gentle glint of light travelling around the rim. Drawn
+// behind the cloud body so only the outer halo shows — no hard, lumpy ring.
+function Linings({ emotions, d, uid, blurId }) {
   if (!emotions || !emotions.length) return null
+  const cols = emotions.slice(0, 4).map(id => emotionMeta(id)?.color).filter(Boolean)
+  if (!cols.length) return null
+  const gradId = `lg-${uid}`
+  const stops = cols.length === 1 ? [cols[0], cols[0]] : cols
   return (
     <g>
-      {emotions.slice(0, 4).map((id, i) => {
-        const e = emotionMeta(id)
-        if (!e) return null
-        const s = 1.06 + i * 0.055
-        return (
-          <g key={id} className="crit-shimmer" style={{ transformOrigin: '50px 54px', animationDelay: `${i * 0.5}s` }}>
-            <path d={d} fill="none" stroke={e.color} strokeWidth="7" strokeLinejoin="round"
-              opacity="0.5" filter={`url(#${blurId})`}
-              transform={`translate(50 54) scale(${s}) translate(-50 -54)`} />
-          </g>
-        )
-      })}
+      <defs>
+        <linearGradient id={gradId} x1="0" y1="0" x2="1" y2="1">
+          {stops.map((c, i) => <stop key={i} offset={stops.length === 1 ? i : i / (stops.length - 1)} stopColor={c} />)}
+        </linearGradient>
+      </defs>
+      {/* soft outer glow (breathing) + a tighter inner halo for depth */}
+      <path d={d} fill="none" stroke={`url(#${gradId})`} strokeWidth="9" strokeLinejoin="round"
+        opacity="0.42" filter={`url(#${blurId})`} className="crit-shimmer" />
+      <path d={d} fill="none" stroke={`url(#${gradId})`} strokeWidth="4.5" strokeLinejoin="round"
+        opacity="0.55" filter={`url(#${blurId})`} />
+      {/* a single soft glint that travels around the rim */}
+      <path d={d} fill="none" stroke="#ffffff" strokeWidth="3" strokeLinecap="round"
+        pathLength="100" strokeDasharray="7 93" opacity="0.7" filter={`url(#${blurId})`} className="crit-glint" />
     </g>
   )
 }
@@ -326,7 +332,7 @@ export function MoodCloud({ v = 3, size = 40, emotions = [], animate = false }) 
         <filter id={blurId} x="-45%" y="-45%" width="190%" height="190%"><feGaussianBlur stdDeviation="3.2" /></filter>
       </defs>
       <g className={animate && !reduced ? 'crit-breathe' : ''} style={{ transformOrigin: '50px 82px' }}>
-        <Linings emotions={emotions} d={d} blurId={blurId} />
+        <Linings emotions={emotions} d={d} uid={uid} blurId={blurId} />
         <path d={d} fill={b.fill} />
         <g clipPath={`url(#bc-${uid})`}>
           <ellipse cx="50" cy="92" rx="42" ry="26" fill={b.pool} opacity="0.7" filter={`url(#${blurId})`} />
@@ -372,7 +378,7 @@ export function DayCloud({ segments = [], emotions = [], dominant = 3, size = 12
         )}
       </defs>
       <g className={animate && !reduced ? 'crit-breathe' : ''} style={{ transformOrigin: '50px 82px' }}>
-        <Linings emotions={emotions} d={d} blurId={blurId} />
+        <Linings emotions={emotions} d={d} uid={uid} blurId={blurId} />
         <path d={d} fill={fill} />
         <g clipPath={`url(#bc-${uid})`}>
           <ellipse cx="50" cy="94" rx="44" ry="24" fill={b.pool} opacity="0.32" filter={`url(#${blurId})`} />

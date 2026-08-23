@@ -946,14 +946,20 @@ textarea { resize: vertical; min-height: 160px; line-height: 1.6; }
   0%, 100% { transform: scale(1); }
   50%      { transform: scale(1.035); }
 }
-/* The complex-emotion lining shimmer around a mood cloud. */
-.crit-shimmer { animation: crit-shimmer 3s ease-in-out infinite; }
+/* The complex-emotion lining: a soft aura that breathes, plus a glint of light
+   that travels around the cloud's rim. */
+.crit-shimmer { animation: crit-shimmer 3.6s ease-in-out infinite; }
 @keyframes crit-shimmer {
-  0%, 100% { opacity: .4; }
-  50%      { opacity: .85; }
+  0%, 100% { opacity: .32; }
+  50%      { opacity: .6; }
+}
+.crit-glint { animation: crit-glint 3.4s linear infinite; }
+@keyframes crit-glint {
+  from { stroke-dashoffset: 0; }
+  to   { stroke-dashoffset: -100; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .crit-sway, .crit-eye, .crit-twinkle, .crit-breathe, .crit-shimmer { animation: none; }
+  .crit-sway, .crit-eye, .crit-twinkle, .crit-breathe, .crit-shimmer, .crit-glint { animation: none; }
 }
 
 /* ── Complex-emotion linings + day cloud (Wellness) ──────────── */
