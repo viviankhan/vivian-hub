@@ -220,53 +220,45 @@ function seeded(seed) {
   let s = (seed >>> 0) || 1
   return () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296 }
 }
-// A smooth closed path through points (Catmull-Rom → cubic bezier).
-function smoothClosed(p) {
-  const n = p.length
-  let d = `M${p[0][0].toFixed(1)},${p[0][1].toFixed(1)}`
-  for (let i = 0; i < n; i++) {
-    const a = p[(i - 1 + n) % n], b = p[i], c = p[(i + 1) % n], e = p[(i + 2) % n]
-    const c1x = b[0] + (c[0] - a[0]) / 6, c1y = b[1] + (c[1] - a[1]) / 6
-    const c2x = c[0] - (e[0] - b[0]) / 6, c2y = c[1] - (e[1] - b[1]) / 6
-    d += `C${c1x.toFixed(1)},${c1y.toFixed(1)} ${c2x.toFixed(1)},${c2y.toFixed(1)} ${c[0].toFixed(1)},${c[1].toFixed(1)}`
-  }
-  return d + 'Z'
-}
-// Each mood is a genuinely different cloud, not one shape recolored: the number
-// of top puffs, the amplitude, the width/height and how flat the base sits all
-// change. A drooping wide cloud for a rough day; a big, tall, many-puffed one
-// for a great day.
-//   bumps: how many rounded puffs across the top
-//   amp:   how pronounced the puffs are
-//   w/h:   horizontal / vertical scale
-//   base:  how much the bottom flattens · lift: how far it drops
+// Each mood is a genuinely different cloud, built as a cluster of overlapping
+// puffs (a wide flat base + a row of round bumps on top) — which reads as a real
+// fluffy cloud. The mood sets how wide/tall it sits and how many puffs it has,
+// so a rough day is a low wide cloud and a great day is a big, tall, many-puffed
+// one — echoing the mood-blob shapes.
+//   lobes: number of top puffs · w/h: horizontal / vertical scale
 const SHAPES = {
-  1: { bumps: 2, amp: 0.12, w: 1.10, h: 0.78, base: 0.48, lift: 13, seed: 7 },  // rough — low, wide, drooping
-  2: { bumps: 3, amp: 0.18, w: 1.05, h: 0.90, base: 0.55, lift: 11, seed: 23 }, // low — lumpy, uneven
-  3: { bumps: 3, amp: 0.14, w: 1.00, h: 0.96, base: 0.55, lift: 11, seed: 41 }, // okay — plain, balanced
-  4: { bumps: 4, amp: 0.15, w: 1.06, h: 1.00, base: 0.60, lift: 10, seed: 5 },  // good — full and round
-  5: { bumps: 5, amp: 0.16, w: 1.10, h: 1.06, base: 0.62, lift: 9,  seed: 63 }, // great — big, tall, fluffy
+  1: { lobes: 3, w: 1.14, h: 0.80, seed: 7 },   // rough — low, wide, sagging
+  2: { lobes: 3, w: 1.06, h: 0.90, seed: 23 },  // low — lumpy, uneven
+  3: { lobes: 3, w: 1.00, h: 0.98, seed: 41 },  // okay — plain, balanced
+  4: { lobes: 4, w: 1.06, h: 1.02, seed: 5 },   // good — full and round
+  5: { lobes: 5, w: 1.10, h: 1.08, seed: 63 },  // great — big, tall, fluffy
 }
 
-// A puffy cloud silhouette on a 100×100 canvas from one of the SHAPES above:
-// rounded bumps across the top, smooth shoulders, a flat-ish base. Returns both
-// the smoothed path `d` and the raw boundary points `pts` (used to place the
-// twinkling sparkles right on the rim).
-function cloudGeom(shape) {
-  const { bumps, amp, w, h, base, lift, seed } = shape
-  const cx = 50, cy = 52, br = 30, n = 24
-  const rnd = seeded(seed), ph = rnd() * Math.PI * 2
-  const pts = []
-  for (let i = 0; i < n; i++) {
-    const ang = (i / n) * Math.PI * 2 - Math.PI / 2
-    const s = Math.sin(ang), c = Math.cos(ang)
-    const bump = s < -0.02 ? amp * Math.max(0, Math.cos(bumps * ang + ph)) : 0
-    const r = br * (1 + bump) * (0.99 + rnd() * 0.03)
-    let y = cy + s * r * h
-    if (s > 0.15) y = cy + s * r * base + lift
-    pts.push([cx + c * r * w, y])
+// Build a cloud as a list of overlapping ellipses ("puffs"). Filled with one
+// colour they merge into a single soft cloud silhouette; the same list also
+// serves as the clip region for the watercolor washes.
+function cloudPuffs(shape) {
+  const { lobes, w, h, seed } = shape
+  const rnd = seeded(seed)
+  const cx = 50
+  const halfW = 25 * w
+  const puffs = [
+    { cx, cy: 60, rx: halfW * 1.02, ry: 13 * h },                       // wide base
+    { cx: cx - halfW * 0.62, cy: 57, rx: 12 * w, ry: 12 * h },          // left shoulder
+    { cx: cx + halfW * 0.62, cy: 57, rx: 12 * w, ry: 12 * h },          // right shoulder
+  ]
+  for (let i = 0; i < lobes; i++) {
+    const t = lobes === 1 ? 0.5 : i / (lobes - 1)
+    const mid = Math.sin(Math.PI * t)                                   // fatter in the middle
+    const x = cx - halfW * 0.82 + t * halfW * 1.64
+    const r = (8.5 + 6.5 * mid) * h * (0.9 + rnd() * 0.2)
+    const y = 49 - mid * 8 * h + (rnd() - 0.5) * 3
+    puffs.push({ cx: x, cy: y, rx: r, ry: r * 0.96 })
   }
-  return { d: smoothClosed(pts), pts }
+  return puffs
+}
+function Puffs({ puffs, fill, fillOpacity }) {
+  return <>{puffs.map((p, i) => <ellipse key={i} cx={p.cx} cy={p.cy} rx={p.rx} ry={p.ry} fill={fill} fillOpacity={fillOpacity} />)}</>
 }
 
 // Mix a hex color toward white by t (0..1) — for the pale, glimmering lining
@@ -323,71 +315,86 @@ function Mouth({ kind }) {
 // on the cloud's rim. Each is a light tint of a complex-emotion colour (lighter
 // than the cloud), with a white core for the glimmer; they twinkle out of sync.
 // Rendered in FRONT of the cloud so the sparkle reads on the border.
-function Linings({ emotions, pts }) {
-  if (!emotions || !emotions.length || !pts || !pts.length) return null
+// The emotion "lining": a fine, dispersed star-mist enveloping the cloud like a
+// little milky way. Many tiny points — mostly white, some light tints of the
+// day's complex-emotion colours — scattered in a halo around (and softly over)
+// the cloud, biased toward a band near its edge, twinkling out of sync. A few
+// get four-point glints. The face zone is kept clear.
+function StarMist({ emotions, count = 44, seed = 1 }) {
+  if (!emotions || !emotions.length) return null
   const cols = emotions.slice(0, 4).map(id => emotionMeta(id)?.color).filter(Boolean)
   if (!cols.length) return null
-  const light = cols.map(c => lighten(c, 0.55))
-  const cx = 50, cy = 52
-  const step = Math.max(1, Math.round(pts.length / 13))
+  const light = cols.map(c => lighten(c, 0.62))
+  const rnd = seeded(seed * 131 + count)
+  const cx = 50, cy = 52, TAU = Math.PI * 2
   const marks = []
-  for (let i = 0; i < pts.length; i += step) {
-    const [px, py] = pts[i]
-    marks.push([cx + (px - cx) * 1.05, cy + (py - cy) * 1.05, i])   // nudge onto the rim
+  let tries = 0
+  while (marks.length < count && tries < count * 4) {
+    tries++
+    const ang = rnd() * TAU
+    const rr = 20 + rnd() * rnd() * 34                 // biased inward, misty tail outward
+    const x = cx + Math.cos(ang) * rr * 1.1
+    const y = cy + Math.sin(ang) * rr * 0.9 - 2
+    if (Math.abs(x - 50) < 15 && y > 42 && y < 66) continue   // keep the face clear
+    const size = 0.3 + rnd() * rnd() * 1.5             // mostly tiny, a few bigger
+    marks.push({
+      x, y, size,
+      op: 0.3 + rnd() * 0.6,
+      col: rnd() < 0.62 ? '#ffffff' : light[Math.floor(rnd() * light.length)],
+      star: rnd() < 0.22,
+      tw: rnd() < 0.85,
+      delay: (rnd() * 3.4).toFixed(2),
+    })
   }
   return (
     <g>
-      {marks.map(([x, y, i], k) => {
-        const col = light[k % light.length]
-        const r = 2.3 + (i % 3) * 0.6
-        return (
-          <g key={k} className="crit-twinkle" style={{ transformOrigin: `${x}px ${y}px`, animationDelay: `${((k * 0.31) % 2.4).toFixed(2)}s` }}>
-            <path d={starPath(x, y, r)} fill={col} opacity="0.9" />
-            <circle cx={x} cy={y} r={r * 0.32} fill="#ffffff" opacity="0.95" />
-          </g>
-        )
-      })}
+      {marks.map((m, k) => (
+        <g key={k} className={m.tw ? 'crit-twinkle' : ''}
+          style={m.tw ? { transformOrigin: `${m.x}px ${m.y}px`, animationDelay: `${m.delay}s` } : undefined}>
+          {m.star
+            ? <path d={starPath(m.x, m.y, m.size * 1.9)} fill={m.col} opacity={m.op} />
+            : <circle cx={m.x} cy={m.y} r={m.size} fill={m.col} opacity={m.op} />}
+        </g>
+      ))}
     </g>
   )
 }
 
-// The soft, translucent watercolor interior of a cloud: a lighter wash up top, a
-// darker pool at the base, and pigment settling along the rim — all clipped
-// inside the body and blurred. Shared by MoodCloud and DayCloud.
-function Watercolor({ d, clipId, blurId, top, pool, cheek, cheekO }) {
+// The soft, translucent watercolor interior of a cloud: a lighter wash up top
+// and a darker pool at the base (plus cheeks), clipped inside the puffs.
+function Watercolor({ clipId, blurId, top, pool, cheek, cheekO }) {
   return (
     <g clipPath={`url(#${clipId})`}>
-      <ellipse cx="50" cy="36" rx="40" ry="26" fill={top} opacity="0.55" filter={`url(#${blurId})`} />
-      <ellipse cx="50" cy="95" rx="44" ry="26" fill={pool} opacity="0.5" filter={`url(#${blurId})`} />
-      <path d={d} fill="none" stroke={pool} strokeWidth="7" opacity="0.4" filter={`url(#${blurId})`} />
+      <ellipse cx="50" cy="40" rx="44" ry="24" fill={top} opacity="0.5" filter={`url(#${blurId})`} />
+      <ellipse cx="50" cy="72" rx="46" ry="20" fill={pool} opacity="0.5" filter={`url(#${blurId})`} />
       {cheek && (<>
-        <ellipse cx="30" cy="60" rx="12" ry="9" fill={cheek} opacity={cheekO} filter={`url(#${blurId})`} />
-        <ellipse cx="70" cy="60" rx="12" ry="9" fill={cheek} opacity={cheekO} filter={`url(#${blurId})`} />
+        <ellipse cx="32" cy="58" rx="11" ry="8" fill={cheek} opacity={cheekO} filter={`url(#${blurId})`} />
+        <ellipse cx="68" cy="58" rx="11" ry="8" fill={cheek} opacity={cheekO} filter={`url(#${blurId})`} />
       </>)}
     </g>
   )
 }
 
-// A single mood cloud. `v` is the mood (1..5); `emotions` are complex-emotion
-// ids drawn as the sparkling lining; `size` is the rendered px.
+// A single mood cloud. `v` is the mood (1..5); `emotions` add the star-mist
+// lining; `size` is the rendered px.
 export function MoodCloud({ v = 3, size = 40, emotions = [], animate = false }) {
   const uid = useId().replace(/:/g, '')
   const b = BLOBS[v] || BLOBS[3]
-  const { d, pts } = cloudGeom(SHAPES[v] || SHAPES[3])
+  const puffs = cloudPuffs(SHAPES[v] || SHAPES[3])
   const reduced = prefersReduced()
-  const blurId = `bs-${uid}`
+  const blurId = `bs-${uid}`, clipId = `bc-${uid}`
   return (
     <svg viewBox="0 0 100 100" width={size} height={size} aria-hidden="true" style={{ display: 'block', overflow: 'visible' }}>
       <defs>
-        <clipPath id={`bc-${uid}`}><path d={d} /></clipPath>
-        <filter id={blurId} x="-45%" y="-45%" width="190%" height="190%"><feGaussianBlur stdDeviation="3.2" /></filter>
+        <clipPath id={clipId}>{puffs.map((p, i) => <ellipse key={i} cx={p.cx} cy={p.cy} rx={p.rx} ry={p.ry} />)}</clipPath>
+        <filter id={blurId} x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="3" /></filter>
       </defs>
       <g className={animate && !reduced ? 'crit-breathe' : ''} style={{ transformOrigin: '50px 82px' }}>
-        <path d={d} fill={b.fill} fillOpacity="0.8" />
-        <Watercolor d={d} clipId={`bc-${uid}`} blurId={blurId} top={lighten(b.fill, 0.3)} pool={b.pool} cheek={b.cheek} cheekO={b.cheekO} />
+        <Puffs puffs={puffs} fill={b.fill} fillOpacity="0.82" />
+        <Watercolor clipId={clipId} blurId={blurId} top={lighten(b.fill, 0.32)} pool={b.pool} cheek={b.cheek} cheekO={b.cheekO} />
         <Eyes kind={b.eyes} />
         <Mouth kind={b.mouth} />
-        <Linings emotions={emotions} pts={pts} />
+        <StarMist emotions={emotions} count={16} seed={v * 7 + 1} />
       </g>
     </svg>
   )
@@ -398,26 +405,27 @@ export { MoodCloud as MoodFace }
 // The end-of-day cloud: the day's moods blended left→right in proportion to how
 // long each was present (a soft watercolor gradient). Its shape and pigments
 // follow the dominant mood, its FACE reflects the overall (time-weighted) mood,
-// and its rim carries the day's sparkling emotion lining.
+// and it's enveloped in the day's sparkling star-mist.
 //   segments: [{ v, pct }] ordered through the day (pct sums to ~1)
 export function DayCloud({ segments = [], emotions = [], dominant = 3, faceMood = null, size = 120, animate = true, face = true }) {
   const uid = useId().replace(/:/g, '')
   const dom = dominant || 3
   const b = BLOBS[dom] || BLOBS[3]
   const fb = BLOBS[faceMood || dom] || b       // whose expression the face wears
-  const { d, pts } = cloudGeom(SHAPES[dom] || SHAPES[3])
+  const puffs = cloudPuffs(SHAPES[dom] || SHAPES[3])
   const reduced = prefersReduced()
-  const blurId = `bs-${uid}`, gradId = `bg-${uid}`
+  const blurId = `bs-${uid}`, gradId = `bg-${uid}`, clipId = `bc-${uid}`
   let acc = 0
   const stops = segments.map(s => { const center = acc + s.pct / 2; acc += s.pct; return { o: center, c: (BLOBS[s.v] || BLOBS[3]).fill } })
   const fill = stops.length ? `url(#${gradId})` : b.fill
   return (
     <svg viewBox="0 0 100 100" width={size} height={size} aria-hidden="true" style={{ display: 'block', overflow: 'visible' }}>
       <defs>
-        <clipPath id={`bc-${uid}`}><path d={d} /></clipPath>
-        <filter id={blurId} x="-45%" y="-45%" width="190%" height="190%"><feGaussianBlur stdDeviation="3.2" /></filter>
+        <clipPath id={clipId}>{puffs.map((p, i) => <ellipse key={i} cx={p.cx} cy={p.cy} rx={p.rx} ry={p.ry} />)}</clipPath>
+        <filter id={blurId} x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="3" /></filter>
         {stops.length > 0 && (
-          <linearGradient id={gradId} x1="0" y1="0" x2="1" y2="0">
+          // userSpaceOnUse so one continuous blend spans all the puffs.
+          <linearGradient id={gradId} gradientUnits="userSpaceOnUse" x1="22" y1="0" x2="78" y2="0">
             <stop offset="0" stopColor={stops[0].c} />
             {stops.map((s, i) => <stop key={i} offset={s.o} stopColor={s.c} />)}
             <stop offset="1" stopColor={stops[stops.length - 1].c} />
@@ -425,10 +433,10 @@ export function DayCloud({ segments = [], emotions = [], dominant = 3, faceMood 
         )}
       </defs>
       <g className={animate && !reduced ? 'crit-breathe' : ''} style={{ transformOrigin: '50px 82px' }}>
-        <path d={d} fill={fill} fillOpacity="0.78" />
-        <Watercolor d={d} clipId={`bc-${uid}`} blurId={blurId} top={lighten(b.fill, 0.32)} pool={b.pool} />
+        <Puffs puffs={puffs} fill={fill} fillOpacity="0.8" />
+        <Watercolor clipId={clipId} blurId={blurId} top={lighten(b.fill, 0.34)} pool={b.pool} />
         {face && <><Eyes kind={fb.eyes} /><Mouth kind={fb.mouth} /></>}
-        <Linings emotions={emotions} pts={pts} />
+        <StarMist emotions={emotions} count={46} seed={dom * 13 + 3} />
       </g>
     </svg>
   )

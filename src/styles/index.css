@@ -1000,9 +1000,9 @@ textarea { resize: vertical; min-height: 160px; line-height: 1.6; }
 .wl-sky-cloud { position: absolute; left: 50%; top: 54%; z-index: 2; }
 .wl-float { animation: wl-float 7s ease-in-out infinite; }
 @keyframes wl-float {
-  0%   { transform: translate(-50%, -50%) rotate(-1.6deg); }
-  50%  { transform: translate(-50%, -60%) rotate(1.6deg); }
-  100% { transform: translate(-50%, -50%) rotate(-1.6deg); }
+  0%   { transform: translate(-54%, -50%) rotate(-1.8deg); }
+  50%  { transform: translate(-46%, -60%) rotate(1.8deg); }
+  100% { transform: translate(-54%, -50%) rotate(-1.8deg); }
 }
 .wl-bob { display: inline-block; animation: wl-bob 6s ease-in-out infinite; }
 @keyframes wl-bob {
