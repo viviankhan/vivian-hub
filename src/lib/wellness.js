@@ -315,6 +315,25 @@ export function daySegments(checkins, key = dayKey(), nowMs = Date.now()) {
   return { segments, props, emotions, dominant: props[0]?.v ?? null, overall, count: list.length }
 }
 
+// How present each complex emotion was across a day, normalized to sum ≈ 1
+// (by how many of the day's moments carried it). Drives the proportion of each
+// emotion's colour in the cloud's star-mist. Sorted most-present first.
+export function emotionWeights(checkins, key = dayKey()) {
+  const list = checkinsForDay(checkins, key)
+  const counts = new Map()
+  for (const c of list) for (const e of (c.emotions || [])) counts.set(e, (counts.get(e) || 0) + 1)
+  const total = [...counts.values()].reduce((a, b) => a + b, 0)
+  if (!total) return []
+  return [...counts.entries()]
+    .map(([id, n]) => ({ id, weight: n / total }))
+    .sort((a, b) => b.weight - a.weight)
+}
+
+// The dates that have any check-in, newest first (the "past skies" journal).
+export function pastDayKeys(checkins, n = 21) {
+  return [...new Set((checkins || []).map(c => c.date))].sort().reverse().slice(0, n)
+}
+
 // ── Per-day records + pattern analysis ─────────────────────────
 // Fold everything the app knows into one row per day over a window: that day's
 // mood & energy (averaged across all its check-ins), the complex emotions

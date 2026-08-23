@@ -3,8 +3,8 @@ import { Glyph, iconColorOn } from '../lib/glyphs.jsx'
 import { Companion, MoodCloud, DayCloud, AlienSky } from '../lib/critters.jsx'
 import { bloomBurst } from '../lib/bloom.js'
 import {
-  dayKey, MOODS, ENERGY, moodMeta, promptForDay,
-  COMPLEX_EMOTIONS, emotionMeta, checkinsForDay, daySegments,
+  dayKey, keyToDate, MOODS, ENERGY, moodMeta, promptForDay,
+  COMPLEX_EMOTIONS, emotionMeta, checkinsForDay, daySegments, emotionWeights, pastDayKeys, effectOnDay,
   stageForLevel, nextStage, levelFromXp, liveStreak, applyCheckIn, awardPetals, REWARDS,
   DEFAULT_EFFECTS, POSITIVE_EFFECTS, makeEffect,
   activeEpisode, isActive, toggleEpisode, episodeMinutes, fmtDuration, effectTotals,
@@ -14,6 +14,31 @@ import {
 // Short "h:mm am" time for a check-in moment.
 function clockTime(ts) {
   try { return new Date(ts).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) } catch { return '' }
+}
+// "Mon Aug 21" for a day-key.
+function dayLabel(key) {
+  try { return keyToDate(key).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }) } catch { return key }
+}
+// Read an image file and downscale it to a small JPEG data URL so treasures can
+// live in the synced kv blob without bloating it.
+function fileToTreasure(file, max = 720) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onerror = reject
+    reader.onload = () => {
+      const img = new Image()
+      img.onerror = reject
+      img.onload = () => {
+        const scale = Math.min(1, max / Math.max(img.width, img.height))
+        const w = Math.round(img.width * scale), h = Math.round(img.height * scale)
+        const cv = document.createElement('canvas'); cv.width = w; cv.height = h
+        cv.getContext('2d').drawImage(img, 0, 0, w, h)
+        try { resolve(cv.toDataURL('image/jpeg', 0.62)) } catch (e) { reject(e) }
+      }
+      img.src = reader.result
+    }
+    reader.readAsDataURL(file)
+  })
 }
 
 // A soft swatch palette for custom conditions — muted, on-brand, all legible
@@ -187,12 +212,142 @@ function ShareSheet({ game, tracked, stage, onClose }) {
   )
 }
 
+// A day's detail sheet — opened by tapping a cloud. Shows the day's cloud, the
+// times of its moods/emotions, what happened that day (finished tasks +
+// conditions), and its treasures, with a way to add a new treasure.
+function DayDetail({ date, checkins, episodes, effects, log, treasures, onAddTreasure, onDeleteTreasure, onClose }) {
+  const seg = daySegments(checkins, date)
+  const weights = emotionWeights(checkins, date)
+  const moments = checkinsForDay(checkins, date)
+  const dayTreasures = treasures.filter(t => t.date === date)
+  const tasks = (log || []).filter(e => (e.date || (e.ts ? String(e.ts).slice(0, 10) : '')) === date)
+  const conditions = (effects || []).filter(fx => effectOnDay(episodes, fx.id, date))
+  const fileRef = useRef(null)
+  const [draft, setDraft] = useState(null)   // { image, desc } while adding
+  const [busy, setBusy] = useState(false)
+
+  const pickFile = () => fileRef.current && fileRef.current.click()
+  const onFile = async (e) => {
+    const f = e.target.files && e.target.files[0]
+    e.target.value = ''
+    if (!f) return
+    setBusy(true)
+    try { const image = await fileToTreasure(f); setDraft({ image, desc: '' }) }
+    catch { alert('Could not read that image.') }
+    setBusy(false)
+  }
+  const saveTreasure = () => {
+    if (!draft) return
+    onAddTreasure({ id: 't-' + Date.now().toString(36), date, image: draft.image, desc: draft.desc.trim(), ts: new Date().toISOString() })
+    setDraft(null)
+  }
+
+  return (
+    <div className="wl-modal-scrim" onClick={onClose}>
+      <div className="wl-modal" onClick={(e) => e.stopPropagation()}>
+        <div className="wl-day-detail-head">
+          <div className="wl-detail-cloud">
+            <DayCloud segments={seg.segments} emotions={seg.emotions} weights={weights} dominant={seg.dominant}
+              faceMood={date === dayKey() ? seg.overall : null} face={date === dayKey()} size={104} />
+          </div>
+          <div>
+            <div className="wl-modal-title serif" style={{ marginBottom: 2 }}>{dayLabel(date)}</div>
+            <div className="wl-day-legend" style={{ marginTop: 4 }}>
+              {seg.props.map(p => (
+                <span key={p.v} className="wl-legend-item">
+                  <span className="wl-legend-dot" style={{ background: moodMeta(p.v).color }} />
+                  {moodMeta(p.v).label} {Math.round(p.pct * 100)}%
+                </span>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Times of each mood / emotion through the day */}
+        <label className="wl-field-label">Moments</label>
+        <div className="wl-moments" style={{ marginTop: 0, borderTop: 'none', paddingTop: 0 }}>
+          {moments.map(m => (
+            <div key={m.id || m.ts} className="wl-moment">
+              <MoodCloud v={m.mood} emotions={m.emotions} size={38} />
+              <div className="wl-moment-body">
+                <div className="wl-moment-top">
+                  <span className="wl-moment-mood">{moodMeta(m.mood).label}</span>
+                  <span className="wl-moment-time">{clockTime(m.ts)}</span>
+                </div>
+                {(m.emotions && m.emotions.length > 0) && (
+                  <div className="wl-moment-emos">{m.emotions.map(id => emotionMeta(id)?.name).filter(Boolean).join(' · ')}</div>
+                )}
+                {m.note && <div className="wl-moment-note">“{m.note}”</div>}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* What else happened that day — the correlated events */}
+        {(tasks.length > 0 || conditions.length > 0) && (
+          <>
+            <label className="wl-field-label">That day</label>
+            <div className="wl-day-events">
+              {conditions.map(fx => (
+                <span key={fx.id} className="wl-lining-chip" style={{ borderColor: fx.color, color: '#4A5560' }}>
+                  <span className="wl-emo-dot" style={{ background: fx.color }} /> {fx.name}
+                </span>
+              ))}
+              {tasks.slice(0, 12).map((t, i) => (
+                <span key={i} className="wl-event-chip"><Glyph id="check" size={12} color="var(--teal)" /> {t.label}</span>
+              ))}
+            </div>
+          </>
+        )}
+
+        {/* Treasures */}
+        <label className="wl-field-label">Treasures</label>
+        <div className="wl-treasures">
+          {dayTreasures.map(t => (
+            <figure key={t.id} className="wl-treasure">
+              <img src={t.image} alt={t.desc || 'treasure'} />
+              {t.desc && <figcaption>{t.desc}</figcaption>}
+              <button className="wl-treasure-x" title="Remove" onClick={() => onDeleteTreasure(t.id)}>✕</button>
+            </figure>
+          ))}
+          {!draft && (
+            <button className="wl-treasure-add" onClick={pickFile} disabled={busy}>
+              <Glyph id="camera" size={22} />
+              <span>{busy ? 'Reading…' : 'Add treasure'}</span>
+            </button>
+          )}
+        </div>
+        <input ref={fileRef} type="file" accept="image/*" onChange={onFile} style={{ display: 'none' }} />
+
+        {draft && (
+          <div className="wl-treasure-draft">
+            <img src={draft.image} alt="new treasure" />
+            <textarea className="wl-note" rows={2} value={draft.desc} placeholder="What is this? Why does it matter?"
+              onChange={(e) => setDraft({ ...draft, desc: e.target.value })} />
+            <div className="wl-modal-actions">
+              <button className="wl-btn ghost" onClick={() => setDraft(null)}>Discard</button>
+              <div style={{ flex: 1 }} />
+              <button className="wl-btn primary" onClick={saveTreasure}>Save treasure</button>
+            </div>
+          </div>
+        )}
+
+        <div className="wl-modal-actions" style={{ marginTop: 18 }}>
+          <div style={{ flex: 1 }} />
+          <button className="wl-btn ghost" onClick={onClose}>Close</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── The tab ────────────────────────────────────────────────────
 export default function BloomWellness({
   checkins, persistCheckins,
   effects, persistEffects,
   episodes, persistEpisodes,
   game, persistGame,
+  treasures = [], persistTreasures,
   log = [],
 }) {
   const today = dayKey()
@@ -209,6 +364,10 @@ export default function BloomWellness({
   // time-proportional blend that drives the end-of-day cloud.
   const todayMoments = useMemo(() => checkinsForDay(checkins, today), [checkins, today])
   const daySeg = useMemo(() => daySegments(checkins, today), [checkins, today])
+  const todayWeights = useMemo(() => emotionWeights(checkins, today), [checkins, today])
+  // Past days that have any check-in (the "sky journal"), newest first.
+  const journal = useMemo(() => pastDayKeys(checkins, 21).filter(k => k !== today), [checkins, today])
+  const [openDate, setOpenDate] = useState(null)   // day whose detail sheet is open
 
   // ── Check-in draft (a new moment each time) ──────────────────
   const [mood, setMood] = useState(null)
@@ -404,9 +563,9 @@ export default function BloomWellness({
                   ? `${daySeg.count} moments today`
                   : `Feeling ${moodMeta(daySeg.dominant).label.toLowerCase()}`}
               </div>
-              <div className="wl-sky-cloud wl-float">
-                <DayCloud segments={daySeg.segments} emotions={daySeg.emotions} dominant={daySeg.dominant} faceMood={daySeg.overall} size={128} animate />
-              </div>
+              <button className="wl-sky-cloud wl-float" onClick={() => setOpenDate(today)} title="See today's details" aria-label="Open today's cloud details">
+                <DayCloud segments={daySeg.segments} emotions={daySeg.emotions} weights={todayWeights} dominant={daySeg.dominant} faceMood={daySeg.overall} size={128} animate />
+              </button>
             </div>
 
             {/* Proportional legend: how much of the day each mood coloured. */}
@@ -457,6 +616,31 @@ export default function BloomWellness({
           </div>
         )}
       </section>
+
+      {/* ── Past skies (the cloud journal) ── */}
+      {journal.length > 0 && (
+        <section className="wl-card">
+          <div className="wl-card-head"><h3 className="serif">Past skies</h3></div>
+          <p className="wl-card-sub">Every day becomes a cloud. Tap one to revisit its moments, feelings and treasures.</p>
+          <div className="wl-journal">
+            {journal.map(key => {
+              const seg = daySegments(checkins, key)
+              const w = emotionWeights(checkins, key)
+              const hasTreasure = treasures.some(t => t.date === key)
+              return (
+                <button key={key} className="wl-journal-day" onClick={() => setOpenDate(key)}>
+                  <span className="wl-journal-cloud">
+                    <DayCloud segments={seg.segments} emotions={seg.emotions} weights={w} dominant={seg.dominant}
+                      face={false} size={74} animate={false} twinkle={false} mist={20} />
+                    {hasTreasure && <span className="wl-journal-gem"><Glyph id="camera" size={11} color="#fff" /></span>}
+                  </span>
+                  <span className="wl-journal-date">{keyToDate(key).toLocaleDateString('en-US', { weekday: 'short' })}<b>{keyToDate(key).getDate()}</b></span>
+                </button>
+              )
+            })}
+          </div>
+        </section>
+      )}
 
       {/* ── Active now ── */}
       {activeNow.length > 0 && (
@@ -553,6 +737,13 @@ export default function BloomWellness({
           onDelete={deleteEditor} onClose={() => setEditor(null)} />
       )}
       {share && <ShareSheet game={game} tracked={trackedDays} stage={stage} onClose={() => setShare(false)} />}
+      {openDate && (
+        <DayDetail date={openDate} checkins={checkins} episodes={episodes} effects={effectList} log={log}
+          treasures={treasures}
+          onAddTreasure={(t) => persistTreasures([t, ...treasures])}
+          onDeleteTreasure={(id) => persistTreasures(treasures.filter(x => x.id !== id))}
+          onClose={() => setOpenDate(null)} />
+      )}
     </div>
   )
 }

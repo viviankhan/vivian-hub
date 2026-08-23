@@ -312,19 +312,23 @@ function Mouth({ kind }) {
 }
 
 // The emotion "lining": a ring of pale, glimmering sparkles that twinkle right
-// on the cloud's rim. Each is a light tint of a complex-emotion colour (lighter
-// than the cloud), with a white core for the glimmer; they twinkle out of sync.
-// Rendered in FRONT of the cloud so the sparkle reads on the border.
 // The emotion "lining": a fine, dispersed star-mist enveloping the cloud like a
 // little milky way. Many tiny points — mostly white, some light tints of the
 // day's complex-emotion colours — scattered in a halo around (and softly over)
 // the cloud, biased toward a band near its edge, twinkling out of sync. A few
 // get four-point glints. The face zone is kept clear.
-function StarMist({ emotions, count = 44, seed = 1 }) {
-  if (!emotions || !emotions.length) return null
-  const cols = emotions.slice(0, 4).map(id => emotionMeta(id)?.color).filter(Boolean)
-  if (!cols.length) return null
-  const light = cols.map(c => lighten(c, 0.62))
+//   colors: [{ color, weight }] — the emotion tints and how often each appears,
+//           so the PROPORTION of each coloured particle matches that emotion's
+//           presence over the day. Weights are treated as relative.
+function StarMist({ colors = [], count = 44, seed = 1, twinkle = true }) {
+  if (!colors.length) return null
+  const light = colors.map(c => ({ color: lighten(c.color, 0.6), weight: Math.max(0.0001, c.weight || 1) }))
+  const totalW = light.reduce((a, c) => a + c.weight, 0)
+  const pickColor = (r) => {                    // weighted pick among emotion tints
+    let x = r * totalW
+    for (const c of light) { if ((x -= c.weight) <= 0) return c.color }
+    return light[light.length - 1].color
+  }
   const rnd = seeded(seed * 131 + count)
   const cx = 50, cy = 52, TAU = Math.PI * 2
   const marks = []
@@ -340,9 +344,9 @@ function StarMist({ emotions, count = 44, seed = 1 }) {
     marks.push({
       x, y, size,
       op: 0.3 + rnd() * 0.6,
-      col: rnd() < 0.62 ? '#ffffff' : light[Math.floor(rnd() * light.length)],
+      col: rnd() < 0.42 ? '#ffffff' : pickColor(rnd()),   // ~58% coloured, by weight
       star: rnd() < 0.22,
-      tw: rnd() < 0.85,
+      tw: twinkle && rnd() < 0.85,
       delay: (rnd() * 3.4).toFixed(2),
     })
   }
@@ -358,6 +362,14 @@ function StarMist({ emotions, count = 44, seed = 1 }) {
       ))}
     </g>
   )
+}
+// Resolve emotion ids (+ optional weights) into the {color, weight} list StarMist
+// wants. `weights` is an optional [{ id, weight }] from emotionWeights().
+function mistColors(emotions, weights) {
+  if (weights && weights.length) {
+    return weights.map(w => ({ color: emotionMeta(w.id)?.color, weight: w.weight })).filter(c => c.color)
+  }
+  return (emotions || []).slice(0, 6).map(id => ({ color: emotionMeta(id)?.color, weight: 1 })).filter(c => c.color)
 }
 
 // The soft, translucent watercolor interior of a cloud: a lighter wash up top
@@ -394,7 +406,7 @@ export function MoodCloud({ v = 3, size = 40, emotions = [], animate = false }) 
         <Watercolor clipId={clipId} blurId={blurId} top={lighten(b.fill, 0.32)} pool={b.pool} cheek={b.cheek} cheekO={b.cheekO} />
         <Eyes kind={b.eyes} />
         <Mouth kind={b.mouth} />
-        <StarMist emotions={emotions} count={16} seed={v * 7 + 1} />
+        <StarMist colors={mistColors(emotions)} count={16} seed={v * 7 + 1} />
       </g>
     </svg>
   )
@@ -407,7 +419,7 @@ export { MoodCloud as MoodFace }
 // follow the dominant mood, its FACE reflects the overall (time-weighted) mood,
 // and it's enveloped in the day's sparkling star-mist.
 //   segments: [{ v, pct }] ordered through the day (pct sums to ~1)
-export function DayCloud({ segments = [], emotions = [], dominant = 3, faceMood = null, size = 120, animate = true, face = true }) {
+export function DayCloud({ segments = [], emotions = [], weights = null, dominant = 3, faceMood = null, size = 120, animate = true, face = true, mist = 46, twinkle = true }) {
   const uid = useId().replace(/:/g, '')
   const dom = dominant || 3
   const b = BLOBS[dom] || BLOBS[3]
@@ -436,7 +448,7 @@ export function DayCloud({ segments = [], emotions = [], dominant = 3, faceMood 
         <Puffs puffs={puffs} fill={fill} fillOpacity="0.8" />
         <Watercolor clipId={clipId} blurId={blurId} top={lighten(b.fill, 0.34)} pool={b.pool} />
         {face && <><Eyes kind={fb.eyes} /><Mouth kind={fb.mouth} /></>}
-        <StarMist emotions={emotions} count={46} seed={dom * 13 + 3} />
+        <StarMist colors={mistColors(emotions, weights)} count={mist} seed={dom * 13 + 3} twinkle={twinkle} />
       </g>
     </svg>
   )

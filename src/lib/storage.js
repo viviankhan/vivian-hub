@@ -368,6 +368,11 @@ export const getWellnessEpisodes = () => dbGet('wellness_episodes').then(v => Ar
 export const setWellnessEpisodes = v  => dbSet('wellness_episodes', v)
 export const getWellnessGame     = () => dbGet('wellness_game').then(v => (v && typeof v === 'object') ? v : null)
 export const setWellnessGame     = v  => dbSet('wellness_game', v)
+// "Treasures" — a keepsake photo + description the user pins to a day, shown
+// with that day's cloud. One synced kv_store blob (array); images are stored
+// downscaled as data URLs. Each: { id, date, image, desc, ts }.
+export const getWellnessTreasures = () => dbGet('wellness_treasures').then(v => Array.isArray(v) ? v : [])
+export const setWellnessTreasures = v  => dbSet('wellness_treasures', v)
 
 // ── Classes ────────────────────────────────────────────────────
 export async function getClasses() {

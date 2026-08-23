@@ -23,6 +23,7 @@ import {
   getWellnessEffects, setWellnessEffects,
   getWellnessEpisodes, setWellnessEpisodes,
   getWellnessGame, setWellnessGame,
+  getWellnessTreasures, setWellnessTreasures,
   addCategory as dbAddCategory, updateCategory as dbUpdateCategory, deleteCategory as dbDeleteCategory,
 } from './lib/storage.js'
 import { occKey, recurringOccurrencesForDate } from './lib/occurrences.js'
@@ -584,18 +585,20 @@ export default function App() {
   const [wlEffects,        setWlEffects_]        = useState(null)   // null → seed defaults in the tab
   const [wlEpisodes,       setWlEpisodes_]       = useState([])
   const [wlGame,           setWlGame_]           = useState(null)
+  const [wlTreasures,      setWlTreasures_]      = useState([])
   const [loading,          setLoading]          = useState(true)
 
   useEffect(() => {
     async function load() {
       await runMigrationIfNeeded()
-      const [comp, l, n, fcp, fcs, sch, com, rt, vac, evs, cats, cmeta, rexc, rmeta, rout, tlogs, tpls, chist, wlc, wlfx, wlep, wlg] = await Promise.all([
+      const [comp, l, n, fcp, fcs, sch, com, rt, vac, evs, cats, cmeta, rexc, rmeta, rout, tlogs, tpls, chist, wlc, wlfx, wlep, wlg, wltr] = await Promise.all([
         getCompletions(), getLogEntries(), getNotes(),
         getFcProgress(), getFcStudied(), getScheduledTasks(),
         getCommitments(), getRecurringTasks(), getVacations(), getEvents(),
         seedCategoriesIfNeeded(), getCommitmentMeta(), getRecurringExceptions(), getRecurringMeta(),
         getRoutineGroups(), getTimeLogs(), getTaskTemplates(), getChangeHistory(),
         getWellnessCheckins(), getWellnessEffects(), getWellnessEpisodes(), getWellnessGame(),
+        getWellnessTreasures(),
       ])
       setCompletions_(comp); setLog_(l); setNotes_(n)
       setFcProgress_(fcp); setFcStudied_(fcs); setScheduled_(sch)
@@ -608,6 +611,7 @@ export default function App() {
       setWlEffects_(Array.isArray(wlfx) ? wlfx : null)
       setWlEpisodes_(Array.isArray(wlep) ? wlep : [])
       setWlGame_(wlg && typeof wlg === 'object' ? wlg : null)
+      setWlTreasures_(Array.isArray(wltr) ? wltr : [])
       // Routine groups: use what's saved, or seed the Morning/Night defaults.
       if (rout) {
         // One-time tint upgrade: bump any routine still on an old seed tint to
@@ -1411,6 +1415,7 @@ export default function App() {
   const persistWlEffects  = useCallback(next => { setWlEffects_(next);  setWellnessEffects(next).catch(reportSaveError) }, [])
   const persistWlEpisodes = useCallback(next => { setWlEpisodes_(next); setWellnessEpisodes(next).catch(reportSaveError) }, [])
   const persistWlGame     = useCallback(next => { setWlGame_(next);     setWellnessGame(next).catch(reportSaveError) }, [])
+  const persistWlTreasures = useCallback(next => { setWlTreasures_(next); setWellnessTreasures(next).catch(reportSaveError) }, [])
 
   // ── Unified toggle ───────────────────────────────────────────
   const syncToggle = useCallback(async (id, label, tag, date, explicitNext) => {
@@ -1632,6 +1637,7 @@ export default function App() {
           effects={wlEffects} persistEffects={persistWlEffects}
           episodes={wlEpisodes} persistEpisodes={persistWlEpisodes}
           game={wlGame} persistGame={persistWlGame}
+          treasures={wlTreasures} persistTreasures={persistWlTreasures}
           log={log} />}
         {tab==='informatics' && <Informatics commitments={commitmentsView} recurringTasks={recurringTasksEnriched} completions={completions} log={log} categories={categories} timeLogs={timeLogs} addTimeLog={addTimeLog} deleteTimeLog={deleteTimeLog} />}
       </main>
