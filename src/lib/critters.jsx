@@ -232,22 +232,37 @@ function smoothClosed(p) {
   }
   return d + 'Z'
 }
-// A puffy cloud silhouette on a 100×100 canvas: a few rounded bumps across the
-// top, smooth shoulders, and a wide flat-ish base — so it reads as a Quabble
-// cloud rather than a ball or a star.
-function cloudPath(seed) {
-  const cx = 50, cy = 52, base = 30, n = 22
+// Each mood is a genuinely different cloud, not one shape recolored: the number
+// of top puffs, the amplitude, the width/height and how flat the base sits all
+// change. A drooping wide cloud for a rough day; a big, tall, many-puffed one
+// for a great day.
+//   bumps: how many rounded puffs across the top
+//   amp:   how pronounced the puffs are
+//   w/h:   horizontal / vertical scale
+//   base:  how much the bottom flattens · lift: how far it drops
+const SHAPES = {
+  1: { bumps: 2, amp: 0.12, w: 1.10, h: 0.78, base: 0.48, lift: 13, seed: 7 },  // rough — low, wide, drooping
+  2: { bumps: 3, amp: 0.18, w: 1.05, h: 0.90, base: 0.55, lift: 11, seed: 23 }, // low — lumpy, uneven
+  3: { bumps: 3, amp: 0.14, w: 1.00, h: 0.96, base: 0.55, lift: 11, seed: 41 }, // okay — plain, balanced
+  4: { bumps: 4, amp: 0.15, w: 1.06, h: 1.00, base: 0.60, lift: 10, seed: 5 },  // good — full and round
+  5: { bumps: 5, amp: 0.16, w: 1.10, h: 1.06, base: 0.62, lift: 9,  seed: 63 }, // great — big, tall, fluffy
+}
+
+// A puffy cloud silhouette on a 100×100 canvas from one of the SHAPES above:
+// rounded bumps across the top, smooth shoulders, a flat-ish base.
+function cloudPath(shape) {
+  const { bumps, amp, w, h, base, lift, seed } = shape
+  const cx = 50, cy = 52, br = 30, n = 24
   const rnd = seeded(seed), ph = rnd() * Math.PI * 2
   const pts = []
   for (let i = 0; i < n; i++) {
     const ang = (i / n) * Math.PI * 2 - Math.PI / 2
     const s = Math.sin(ang), c = Math.cos(ang)
-    // Rounded bumps only across the upper half (convex puffs, gentle valleys).
-    const bump = s < -0.02 ? 0.17 * Math.max(0, Math.cos(3 * ang + ph)) : 0
-    const r = base * (1 + bump) * (0.99 + rnd() * 0.03)
-    let y = cy + s * r * 0.92
-    if (s > 0.15) y = cy + s * r * 0.55 + 11    // flatten & widen the base
-    pts.push([cx + c * r * 1.04, y])
+    const bump = s < -0.02 ? amp * Math.max(0, Math.cos(bumps * ang + ph)) : 0
+    const r = br * (1 + bump) * (0.99 + rnd() * 0.03)
+    let y = cy + s * r * h
+    if (s > 0.15) y = cy + s * r * base + lift
+    pts.push([cx + c * r * w, y])
   }
   return smoothClosed(pts)
 }
@@ -322,7 +337,7 @@ function Linings({ emotions, d, uid, blurId }) {
 export function MoodCloud({ v = 3, size = 40, emotions = [], animate = false }) {
   const uid = useId().replace(/:/g, '')
   const b = BLOBS[v] || BLOBS[3]
-  const d = cloudPath(b.seed)
+  const d = cloudPath(SHAPES[v] || SHAPES[3])
   const reduced = prefersReduced()
   const blurId = `bs-${uid}`
   return (
@@ -356,7 +371,7 @@ export function DayCloud({ segments = [], emotions = [], dominant = 3, size = 12
   const uid = useId().replace(/:/g, '')
   const dom = dominant || 3
   const b = BLOBS[dom] || BLOBS[3]
-  const d = cloudPath(dom * 17 + 3)
+  const d = cloudPath(SHAPES[dom] || SHAPES[3])
   const reduced = prefersReduced()
   const blurId = `bs-${uid}`, gradId = `bg-${uid}`
   // A stop at each segment's cumulative center, so the gradient interpolates a
@@ -385,6 +400,58 @@ export function DayCloud({ segments = [], emotions = [], dominant = 3, size = 12
         </g>
         {face && <><Eyes kind={b.eyes} /><Mouth kind={b.mouth} /></>}
       </g>
+    </svg>
+  )
+}
+
+// ── The alien sky ──────────────────────────────────────────────
+// A dusky backdrop the mood cloud floats in — a violet gradient, a scatter of
+// twinkling stars, a distant ringed planet, a little moon and a soft alien
+// horizon. Fills its container (slice-scaled). The first piece of the "world".
+const SKY_STARS = [
+  [24, 26, 1.1, 0], [58, 18, 0.8, 0.6], [96, 34, 1.0, 1.2], [140, 22, 0.7, 0.3],
+  [182, 40, 0.9, 0.9], [214, 20, 1.1, 1.6], [40, 60, 0.7, 0.4], [120, 62, 0.8, 1.1],
+  [166, 74, 0.7, 0.2], [270, 92, 0.9, 0.7], [300, 60, 0.8, 1.4], [86, 96, 0.7, 0.5],
+]
+export function AlienSky({ className = '' }) {
+  const uid = useId().replace(/:/g, '')
+  const reduced = prefersReduced()
+  return (
+    <svg className={className} viewBox="0 0 320 170" preserveAspectRatio="xMidYMid slice"
+      aria-hidden="true" style={{ display: 'block', width: '100%', height: '100%' }}>
+      <defs>
+        <linearGradient id={`sky-${uid}`} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stopColor="#241A47" />
+          <stop offset="0.55" stopColor="#3B2A63" />
+          <stop offset="1" stopColor="#5A3F72" />
+        </linearGradient>
+        <radialGradient id={`plan-${uid}`} cx="0.4" cy="0.35" r="0.75">
+          <stop offset="0" stopColor="#F0A9C9" />
+          <stop offset="1" stopColor="#B25C93" />
+        </radialGradient>
+        <radialGradient id={`glow-${uid}`} cx="0.5" cy="0.5" r="0.5">
+          <stop offset="0" stopColor="#8E6FB8" stopOpacity="0.55" />
+          <stop offset="1" stopColor="#8E6FB8" stopOpacity="0" />
+        </radialGradient>
+      </defs>
+      <rect x="0" y="0" width="320" height="170" fill={`url(#sky-${uid})`} />
+      {/* stars */}
+      {SKY_STARS.map(([x, y, r, d], i) => (
+        <circle key={i} cx={x} cy={y} r={r} fill="#F3ECFB"
+          className={reduced ? '' : 'crit-twinkle'} style={{ transformOrigin: `${x}px ${y}px`, animationDelay: `${d}s` }} />
+      ))}
+      {/* distant ringed planet */}
+      <g>
+        <circle cx="264" cy="44" r="34" fill={`url(#glow-${uid})`} />
+        <circle cx="264" cy="44" r="20" fill={`url(#plan-${uid})`} />
+        <ellipse cx="264" cy="44" rx="32" ry="9" fill="none" stroke="#E9BFD8" strokeWidth="2.4" opacity="0.7" transform="rotate(-18 264 44)" />
+      </g>
+      {/* little moon */}
+      <circle cx="46" cy="34" r="8" fill="#EDE6D2" />
+      <circle cx="49" cy="31" r="2" fill="#D9CFB4" opacity="0.7" />
+      {/* soft alien horizon */}
+      <path d="M0,150 C60,132 110,148 170,140 C230,132 280,150 320,138 L320,170 L0,170 Z" fill="#3A2A58" opacity="0.85" />
+      <path d="M0,158 C70,146 120,160 190,152 C250,146 290,160 320,152 L320,170 L0,170 Z" fill="#2C2047" />
     </svg>
   )
 }

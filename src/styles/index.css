@@ -992,3 +992,24 @@ textarea { resize: vertical; min-height: 160px; line-height: 1.6; }
 .wl-moment-time { font-size: 11.5px; color: var(--muted); flex-shrink: 0; }
 .wl-moment-emos { font-size: 11.5px; color: var(--teal); font-weight: 600; margin-top: 1px; }
 .wl-moment-note { font-size: 12.5px; color: var(--text); font-style: italic; margin-top: 2px; }
+
+/* ── Alien sky (the day cloud floats here) ───────────────────── */
+.wl-sky { position: relative; border-radius: 18px; overflow: hidden; height: 176px; margin-bottom: 14px; box-shadow: inset 0 0 44px rgba(20,10,40,.4); }
+.wl-sky-bg { position: absolute; inset: 0; }
+.wl-sky-title { position: absolute; top: 13px; left: 16px; z-index: 2; color: #fff; font-weight: 700; font-size: 15px; letter-spacing: .2px; text-shadow: 0 1px 8px rgba(0,0,0,.45); }
+.wl-sky-cloud { position: absolute; left: 50%; top: 54%; z-index: 2; }
+.wl-float { animation: wl-float 7s ease-in-out infinite; }
+@keyframes wl-float {
+  0%   { transform: translate(-50%, -50%) rotate(-1.6deg); }
+  50%  { transform: translate(-50%, -60%) rotate(1.6deg); }
+  100% { transform: translate(-50%, -50%) rotate(-1.6deg); }
+}
+.wl-bob { display: inline-block; animation: wl-bob 6s ease-in-out infinite; }
+@keyframes wl-bob {
+  0%, 100% { transform: translateY(0) rotate(-1.2deg); }
+  50%      { transform: translateY(-6px) rotate(1.2deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .wl-float { animation: none; transform: translate(-50%, -54%); }
+  .wl-bob { animation: none; }
+}

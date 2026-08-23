@@ -1,6 +1,6 @@
 import { useState, useMemo, useRef, useEffect } from 'react'
 import { Glyph, iconColorOn } from '../lib/glyphs.jsx'
-import { Companion, MoodCloud, DayCloud } from '../lib/critters.jsx'
+import { Companion, MoodCloud, DayCloud, AlienSky } from '../lib/critters.jsx'
 import { bloomBurst } from '../lib/bloom.js'
 import {
   dayKey, MOODS, ENERGY, moodMeta, promptForDay,
@@ -368,7 +368,7 @@ export default function BloomWellness({
             {/* Live preview — your cloud forming, with its emotion lining shimmering. */}
             {mood && (
               <div className="wl-preview">
-                <MoodCloud v={mood} emotions={emotionsSel} size={92} animate />
+                <span className="wl-bob"><MoodCloud v={mood} emotions={emotionsSel} size={92} animate /></span>
                 <div className="wl-preview-cap">
                   {moodMeta(mood).label}
                   {emotionsSel.length ? ' · ' + emotionsSel.map(id => emotionMeta(id)?.name).filter(Boolean).join(', ') : ''}
@@ -396,37 +396,38 @@ export default function BloomWellness({
           </>
         ) : (
           <>
-            <div className="wl-day">
-              <div className="wl-day-cloud">
-                <DayCloud segments={daySeg.segments} emotions={daySeg.emotions} dominant={daySeg.dominant} size={116} animate />
+            {/* The day cloud floating in an alien sky. */}
+            <div className="wl-sky">
+              <AlienSky className="wl-sky-bg" />
+              <div className="wl-sky-title">
+                {daySeg.count > 1
+                  ? `${daySeg.count} moments today`
+                  : `Feeling ${moodMeta(daySeg.dominant).label.toLowerCase()}`}
               </div>
-              <div className="wl-day-body">
-                <div className="wl-day-title">
-                  {daySeg.count > 1
-                    ? `${daySeg.count} moments today`
-                    : `Feeling ${moodMeta(daySeg.dominant).label.toLowerCase()}`}
-                </div>
-                {/* Proportional legend: how much of the day each mood coloured. */}
-                <div className="wl-day-legend">
-                  {daySeg.props.map(p => (
-                    <span key={p.v} className="wl-legend-item">
-                      <span className="wl-legend-dot" style={{ background: moodMeta(p.v).color }} />
-                      {moodMeta(p.v).label} {Math.round(p.pct * 100)}%
-                    </span>
-                  ))}
-                </div>
-                {daySeg.emotions.length > 0 && (
-                  <div className="wl-day-linings">
-                    {daySeg.emotions.map(id => {
-                      const e = emotionMeta(id); if (!e) return null
-                      return <span key={id} className="wl-lining-chip" style={{ borderColor: e.color, color: '#4A5560' }}>
-                        <span className="wl-emo-dot" style={{ background: e.color }} />{e.name}
-                      </span>
-                    })}
-                  </div>
-                )}
+              <div className="wl-sky-cloud wl-float">
+                <DayCloud segments={daySeg.segments} emotions={daySeg.emotions} dominant={daySeg.dominant} size={128} animate />
               </div>
             </div>
+
+            {/* Proportional legend: how much of the day each mood coloured. */}
+            <div className="wl-day-legend">
+              {daySeg.props.map(p => (
+                <span key={p.v} className="wl-legend-item">
+                  <span className="wl-legend-dot" style={{ background: moodMeta(p.v).color }} />
+                  {moodMeta(p.v).label} {Math.round(p.pct * 100)}%
+                </span>
+              ))}
+            </div>
+            {daySeg.emotions.length > 0 && (
+              <div className="wl-day-linings">
+                {daySeg.emotions.map(id => {
+                  const e = emotionMeta(id); if (!e) return null
+                  return <span key={id} className="wl-lining-chip" style={{ borderColor: e.color, color: '#4A5560' }}>
+                    <span className="wl-emo-dot" style={{ background: e.color }} />{e.name}
+                  </span>
+                })}
+              </div>
+            )}
 
             {/* Each moment logged today. */}
             <div className="wl-moments">
