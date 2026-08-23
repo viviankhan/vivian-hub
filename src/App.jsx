@@ -1646,7 +1646,7 @@ export default function App() {
           treasures={wlTreasures} persistTreasures={persistWlTreasures}
           log={log} />}
         {tab==='voyage'      && <Voyage game={wlGame} persistGame={persistWlGame}
-          space={wlSpace} persistSpace={persistWlSpace} />}
+          space={wlSpace} persistSpace={persistWlSpace} checkins={wlCheckins} />}
         {tab==='informatics' && <Informatics commitments={commitmentsView} recurringTasks={recurringTasksEnriched} completions={completions} log={log} categories={categories} timeLogs={timeLogs} addTimeLog={addTimeLog} deleteTimeLog={deleteTimeLog} />}
       </main>
 

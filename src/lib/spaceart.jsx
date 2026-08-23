@@ -156,3 +156,72 @@ export function Planet({ color = '#77C598', ring = false, size = 120, id = 'p', 
     </svg>
   )
 }
+
+// A little face shared by the specimens.
+function SpecFace({ cx, cy }) {
+  return (
+    <>
+      <circle cx={cx - 4} cy={cy} r="1.7" fill={INK} />
+      <circle cx={cx + 4} cy={cy} r="1.7" fill={INK} />
+      <path d={`M${cx - 3},${cy + 4} Q${cx},${cy + 7} ${cx + 3},${cy + 4}`} fill="none" stroke={INK} strokeWidth="1.6" strokeLinecap="round" />
+    </>
+  )
+}
+
+// A collectible alien specimen: a plant (flora) or creature (fauna). `form`
+// picks the silhouette; it gently bobs via the caller's wrapper.
+export function Specimen({ form = 'blob', color = '#8FD08A', size = 64, className = '' }) {
+  const c = color, lc = lighten(color, 0.25)
+  const body = (() => {
+    switch (form) {
+      case 'sprout':
+        return (
+          <g>
+            <path d="M50,84 C50,70 50,58 50,50" stroke={INK} strokeWidth="3" fill="none" strokeLinecap="round" />
+            <path d="M50,60 C40,58 33,50 34,42 C44,42 51,50 50,60 Z" fill={lc} stroke={INK} strokeWidth="2" />
+            <path d="M50,64 C60,62 67,54 66,46 C56,46 49,54 50,64 Z" fill={c} stroke={INK} strokeWidth="2" />
+            <ellipse cx="50" cy="40" rx="12" ry="13" fill={c} stroke={INK} strokeWidth="2.4" />
+            <SpecFace cx={50} cy={40} />
+          </g>
+        )
+      case 'frond':
+        return (
+          <g>
+            <path d="M50,86 C50,66 50,46 50,30" stroke={INK} strokeWidth="3" fill="none" strokeLinecap="round" />
+            {[0, 1, 2, 3].map(i => {
+              const y = 40 + i * 12
+              return <g key={i}>
+                <path d={`M50,${y} C40,${y - 4} 32,${y} 30,${y + 6} C40,${y + 6} 48,${y + 4} 50,${y}`} fill={i % 2 ? lc : c} stroke={INK} strokeWidth="1.6" />
+                <path d={`M50,${y} C60,${y - 4} 68,${y} 70,${y + 6} C60,${y + 6} 52,${y + 4} 50,${y}`} fill={i % 2 ? c : lc} stroke={INK} strokeWidth="1.6" />
+              </g>
+            })}
+            <SpecFace cx={50} cy={32} />
+          </g>
+        )
+      case 'critter':
+        return (
+          <g>
+            <path d="M40,74 L37,86 M50,76 L50,88 M60,74 L63,86" stroke={INK} strokeWidth="3" strokeLinecap="round" />
+            <ellipse cx="50" cy="60" rx="20" ry="17" fill={c} stroke={INK} strokeWidth="2.4" />
+            <path d="M38,46 C34,36 40,34 44,42 Z" fill={lc} stroke={INK} strokeWidth="2" />
+            <path d="M62,46 C66,36 60,34 56,42 Z" fill={lc} stroke={INK} strokeWidth="2" />
+            <SpecFace cx={50} cy={58} />
+          </g>
+        )
+      default: // blob
+        return (
+          <g>
+            <path d="M30,66 C26,50 36,38 50,38 C64,38 74,50 70,66 C68,78 60,84 50,84 C40,84 32,78 30,66 Z" fill={c} stroke={INK} strokeWidth="2.4" />
+            <path d="M50,30 C49,24 53,22 55,26" stroke={INK} strokeWidth="2" fill="none" strokeLinecap="round" />
+            <circle cx="55.5" cy="25" r="2.4" fill="#F6D96B" stroke={INK} strokeWidth="1.4" />
+            <SpecFace cx={50} cy={58} />
+          </g>
+        )
+    }
+  })()
+  return (
+    <svg viewBox="0 0 100 100" width={size} height={size} className={className} aria-hidden="true" style={{ display: 'block', overflow: 'visible' }}>
+      {body}
+    </svg>
+  )
+}
