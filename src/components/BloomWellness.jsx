@@ -1,5 +1,6 @@
 import { useState, useMemo, useRef, useEffect } from 'react'
 import { Glyph, iconColorOn } from '../lib/glyphs.jsx'
+import { Companion, MoodFace } from '../lib/critters.jsx'
 import { bloomBurst } from '../lib/bloom.js'
 import {
   dayKey, MOODS, ENERGY, moodMeta, promptForDay,
@@ -159,12 +160,12 @@ function ShareSheet({ game, tracked, stage, onClose }) {
     <div className="wl-modal-scrim" onClick={onClose}>
       <div className="wl-modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 380 }}>
         <div className="wl-share-card">
-          <div className="wl-share-emoji">{stage.emoji}</div>
+          <div className="wl-share-emoji"><Companion level={lv.level} size={104} /></div>
           <div className="wl-share-name serif">Level {lv.level} · {stage.name}</div>
           <div className="wl-share-stats">
-            <div><b>🔥 {liveStreak(game)}</b><span>day streak</span></div>
-            <div><b>🌸 {game?.petals || 0}</b><span>petals</span></div>
-            <div><b>📈 {tracked}</b><span>days tracked</span></div>
+            <div><b><Glyph id="flame" size={16} /> {liveStreak(game)}</b><span>day streak</span></div>
+            <div><b><Glyph id="flower" size={16} /> {game?.petals || 0}</b><span>petals</span></div>
+            <div><b><Glyph id="chart" size={16} /> {tracked}</b><span>days tracked</span></div>
           </div>
           <div className="wl-share-tag">Growing a calmer week, one check-in at a time.</div>
         </div>
@@ -287,7 +288,7 @@ export default function BloomWellness({
       <section className="wl-hero">
         <ProgressRing pct={lv.pct}>
           <div className="wl-companion" title={`${stage.name} · level ${lv.level}`}>
-            <div className="wl-companion-emoji">{stage.emoji}</div>
+            <Companion level={lv.level} mood={todayCheckin?.mood} size={104} />
           </div>
         </ProgressRing>
         <div className="wl-hero-body">
@@ -301,11 +302,11 @@ export default function BloomWellness({
             </button>
           </div>
           <div className="wl-chips">
-            <span className="wl-stat"><span className="wl-stat-em">🔥</span> {streak}<i>streak</i></span>
-            <span className="wl-stat"><span className="wl-stat-em">🌸</span> {game?.petals || 0}<i>petals</i></span>
-            <span className="wl-stat"><span className="wl-stat-em">📅</span> {trackedDays}<i>days</i></span>
+            <span className="wl-stat"><Glyph id="flame" size={15} /> {streak}<i>streak</i></span>
+            <span className="wl-stat"><Glyph id="flower" size={15} /> {game?.petals || 0}<i>petals</i></span>
+            <span className="wl-stat"><Glyph id="calendar" size={15} /> {trackedDays}<i>days</i></span>
           </div>
-          <div className="wl-story">{story}{next && !editing ? ` ${next.level - lv.level} level${next.level - lv.level > 1 ? 's' : ''} to ${next.emoji}.` : ''}</div>
+          <div className="wl-story">{story}{next && !editing ? ` ${next.level - lv.level} level${next.level - lv.level > 1 ? 's' : ''} to ${next.name}.` : ''}</div>
         </div>
       </section>
 
@@ -323,7 +324,7 @@ export default function BloomWellness({
               {MOODS.map(m => (
                 <button key={m.v} className={`wl-mood ${mood === m.v ? 'on' : ''}`}
                   onClick={() => setMood(m.v)} style={mood === m.v ? { borderColor: m.color, background: m.color + '1A' } : {}}>
-                  <span className="wl-mood-face">{m.emoji}</span>
+                  <span className="wl-mood-face"><MoodFace v={m.v} size={32} /></span>
                   <span className="wl-mood-label">{m.label}</span>
                 </button>
               ))}
@@ -343,16 +344,16 @@ export default function BloomWellness({
               placeholder="A line for future-you…" />
 
             <button ref={checkInBtn} className="wl-btn primary block" disabled={!mood} onClick={submitCheckIn}>
-              {todayCheckin ? 'Save' : 'Check in'} {!todayCheckin && mood ? `· +${REWARDS.checkIn + (note.trim() ? REWARDS.reflection : 0)} 🌸` : ''}
+              {todayCheckin ? 'Save' : 'Check in'}{!todayCheckin && mood ? ` · +${REWARDS.checkIn + (note.trim() ? REWARDS.reflection : 0)} petals` : ''}
             </button>
           </>
         ) : (
           <div className="wl-today-done">
-            <div className="wl-today-face">{moodMeta(todayCheckin.mood).emoji}</div>
+            <div className="wl-today-face"><MoodFace v={todayCheckin.mood} size={48} /></div>
             <div className="wl-today-body">
               <div className="wl-today-mood">{moodMeta(todayCheckin.mood).label} · {ENERGY[(todayCheckin.energy || 3) - 1].label}</div>
               {todayCheckin.note && <div className="wl-today-note">“{todayCheckin.note}”</div>}
-              <div className="wl-today-hint">Checked in for today — see you tomorrow 🌱</div>
+              <div className="wl-today-hint">Checked in for today — see you tomorrow <Glyph id="sprout" size={13} style={{ display: 'inline', verticalAlign: '-2px' }} /></div>
             </div>
           </div>
         )}
@@ -450,7 +451,8 @@ export default function BloomWellness({
       {/* ── Reward toast ── */}
       {reward && (
         <div className="wl-reward">
-          {reward.leveledTo ? `🎉 Level ${reward.leveledTo}! ` : ''}+{reward.earned} 🌸 petals
+          <Glyph id="flower" size={16} color="#FBE79E" />
+          {reward.leveledTo ? ` Level ${reward.leveledTo}! ` : ' '}+{reward.earned} petals
         </div>
       )}
 
