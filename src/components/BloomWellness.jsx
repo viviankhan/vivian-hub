@@ -324,7 +324,7 @@ export default function BloomWellness({
               {MOODS.map(m => (
                 <button key={m.v} className={`wl-mood ${mood === m.v ? 'on' : ''}`}
                   onClick={() => setMood(m.v)} style={mood === m.v ? { borderColor: m.color, background: m.color + '1A' } : {}}>
-                  <span className="wl-mood-face"><MoodFace v={m.v} size={32} /></span>
+                  <span className="wl-mood-face"><MoodFace v={m.v} size={34} animate={mood === m.v} /></span>
                   <span className="wl-mood-label">{m.label}</span>
                 </button>
               ))}
@@ -349,7 +349,7 @@ export default function BloomWellness({
           </>
         ) : (
           <div className="wl-today-done">
-            <div className="wl-today-face"><MoodFace v={todayCheckin.mood} size={48} /></div>
+            <div className="wl-today-face"><MoodFace v={todayCheckin.mood} size={54} animate /></div>
             <div className="wl-today-body">
               <div className="wl-today-mood">{moodMeta(todayCheckin.mood).label} · {ENERGY[(todayCheckin.energy || 3) - 1].label}</div>
               {todayCheckin.note && <div className="wl-today-note">“{todayCheckin.note}”</div>}

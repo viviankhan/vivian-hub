@@ -941,6 +941,11 @@ textarea { resize: vertical; min-height: 160px; line-height: 1.6; }
   0%, 100% { opacity: .35; transform: scale(.7); }
   50%      { opacity: 1;   transform: scale(1.15); }
 }
+.crit-breathe { animation: crit-breathe 4.5s ease-in-out infinite; }
+@keyframes crit-breathe {
+  0%, 100% { transform: scale(1); }
+  50%      { transform: scale(1.035); }
+}
 @media (prefers-reduced-motion: reduce) {
-  .crit-sway, .crit-eye, .crit-twinkle { animation: none; }
+  .crit-sway, .crit-eye, .crit-twinkle, .crit-breathe { animation: none; }
 }

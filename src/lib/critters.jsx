@@ -207,38 +207,105 @@ export function Companion({ level = 1, mood, size = 96, className = '' }) {
   )
 }
 
-// ── Hand-drawn mood faces (the check-in picker) ────────────────
-// Small static ink faces so the whole tab drops emoji, not just the companion.
-const MOOD_FACE = {
-  1: { fill: '#E7C3C7', curve: -6, brow: true },
-  2: { fill: '#EAD0CE', curve: -3, brow: false },
-  3: { fill: '#EFE0C4', curve: 0.5, brow: false },
-  4: { fill: '#CFE3D6', curve: 5, brow: false },
-  5: { fill: '#BFE0CB', curve: 8, brow: false, happyEyes: true },
+// ── Watercolor mood blobs (the check-in picker) ────────────────
+// Soft Quabble-style jelly blobs — no hard outline, a pastel fill that pools
+// darker toward the bottom, rosy cheeks, and simple ink features. Each mood
+// gets its own slightly-different squishy silhouette so they read as five
+// little characters, not one shape recolored.
+const FEAT = '#37332C'   // the soft-black ink for features
+
+// A tiny seeded RNG so each blob's wobble is fixed (same face every render).
+function seeded(seed) {
+  let s = (seed >>> 0) || 1
+  return () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296 }
 }
-export function MoodFace({ v = 3, size = 30 }) {
-  const f = MOOD_FACE[v] || MOOD_FACE[3]
+// A smooth closed path through points (Catmull-Rom → cubic bezier).
+function smoothClosed(p) {
+  const n = p.length
+  let d = `M${p[0][0].toFixed(1)},${p[0][1].toFixed(1)}`
+  for (let i = 0; i < n; i++) {
+    const a = p[(i - 1 + n) % n], b = p[i], c = p[(i + 1) % n], e = p[(i + 2) % n]
+    const c1x = b[0] + (c[0] - a[0]) / 6, c1y = b[1] + (c[1] - a[1]) / 6
+    const c2x = c[0] - (e[0] - b[0]) / 6, c2y = c[1] - (e[1] - b[1]) / 6
+    d += `C${c1x.toFixed(1)},${c1y.toFixed(1)} ${c2x.toFixed(1)},${c2y.toFixed(1)} ${c[0].toFixed(1)},${c[1].toFixed(1)}`
+  }
+  return d + 'Z'
+}
+// An organic blob silhouette on a 100×100 canvas, squished vertically by `sq`.
+function blobPath(seed, sq = 1) {
+  const cx = 50, cy = 53, base = 35, n = 11
+  const rnd = seeded(seed)
+  const pts = []
+  for (let i = 0; i < n; i++) {
+    const ang = (i / n) * Math.PI * 2 - Math.PI / 2
+    const r = base * (0.9 + rnd() * 0.2)
+    pts.push([cx + Math.cos(ang) * r, cy + Math.sin(ang) * r * sq])
+  }
+  return smoothClosed(pts)
+}
+
+// Per-mood pigment + which features to draw. Colors follow the Quabble palette,
+// mapped onto Bloom's 1..5 scale (rough→great).
+const BLOBS = {
+  1: { seed: 7,  sq: 1.08, fill: '#BFDDF3', pool: '#A4CBEA', cheek: '#A9CFEE', cheekO: 0.0, eyes: 'dots',    mouth: 'worry' },
+  2: { seed: 23, sq: 0.94, fill: '#CBB9EC', pool: '#B29BE1', cheek: '#B29BE1', cheekO: 0.5, eyes: 'annoyed', mouth: 'frown' },
+  3: { seed: 41, sq: 1.00, fill: '#F5D9A6', pool: '#EECB8B', cheek: '#EFC98A', cheekO: 0.0, eyes: 'dots',    mouth: 'flat'  },
+  4: { seed: 5,  sq: 0.98, fill: '#F6BAD0', pool: '#EFA3BD', cheek: '#EE97B6', cheekO: 0.85, eyes: 'happy',  mouth: 'smile' },
+  5: { seed: 63, sq: 0.95, fill: '#BEE0A2', pool: '#A6D188', cheek: '#A6D188', cheekO: 0.3, eyes: 'squish',  mouth: 'grin'  },
+}
+
+function Eyes({ kind }) {
+  const s = { fill: 'none', stroke: FEAT, strokeWidth: 3, strokeLinecap: 'round', strokeLinejoin: 'round' }
+  if (kind === 'dots') return <>
+    <circle cx="38" cy="49" r="2.9" fill={FEAT} /><circle cx="62" cy="49" r="2.9" fill={FEAT} />
+  </>
+  if (kind === 'annoyed') return <>
+    <path d="M33,47 L44,50" {...s} /><path d="M67,47 L56,50" {...s} />
+  </>
+  if (kind === 'happy') return <>
+    <path d="M33,50 Q38.5,45 44,50" {...s} /><path d="M56,50 Q61.5,45 67,50" {...s} />
+  </>
+  if (kind === 'squish') return <>
+    <path d="M34,45 L41,49 L34,53" {...s} /><path d="M66,45 L59,49 L66,53" {...s} />
+  </>
+  return <><circle cx="38" cy="49" r="2.9" fill={FEAT} /><circle cx="62" cy="49" r="2.9" fill={FEAT} /></>
+}
+function Mouth({ kind }) {
+  const s = { fill: 'none', stroke: FEAT, strokeLinecap: 'round', strokeLinejoin: 'round' }
+  if (kind === 'worry') return <path d="M41,63 q3,-4 6,0 q3,4 6,0 q3,-4 6,0" strokeWidth="2.6" {...s} />
+  if (kind === 'frown') return <path d="M40,66 Q50,59 60,66" strokeWidth="2.8" {...s} />
+  if (kind === 'flat')  return <path d="M45,63 Q50,66 55,63" strokeWidth="2.6" {...s} />
+  if (kind === 'smile') return <path d="M42,62 Q50,69 58,62" strokeWidth="2.8" {...s} />
+  if (kind === 'grin')  return <path d="M39,60 Q50,74 61,60" strokeWidth="3.4" {...s} />
+  return <path d="M45,63 Q50,66 55,63" strokeWidth="2.6" {...s} />
+}
+
+// A soft mood blob. `v` is the mood (1..5); `size` is the rendered px.
+export function MoodFace({ v = 3, size = 30, animate = false }) {
+  const uid = useId().replace(/:/g, '')
+  const b = BLOBS[v] || BLOBS[3]
+  const d = blobPath(b.seed, b.sq)
+  const reduced = prefersReduced()
   return (
-    <svg viewBox="0 0 40 40" width={size} height={size} aria-hidden="true" style={{ display: 'block' }}>
-      <circle cx="20" cy="20" r="15" fill={f.fill} stroke={INK} strokeWidth="2.2" />
-      {f.happyEyes ? (
-        <>
-          <path d="M12,19 Q15,15 18,19" fill="none" stroke={INK} strokeWidth="2.1" strokeLinecap="round" />
-          <path d="M22,19 Q25,15 28,19" fill="none" stroke={INK} strokeWidth="2.1" strokeLinecap="round" />
-        </>
-      ) : (
-        <>
-          <circle cx="15" cy="18" r="1.9" fill={INK} />
-          <circle cx="25" cy="18" r="1.9" fill={INK} />
-        </>
-      )}
-      {f.brow && (
-        <>
-          <path d="M12,14 L18,16" stroke={INK} strokeWidth="1.8" strokeLinecap="round" />
-          <path d="M28,14 L22,16" stroke={INK} strokeWidth="1.8" strokeLinecap="round" />
-        </>
-      )}
-      <path d={`M13,26 Q20,${26 + f.curve} 27,26`} fill="none" stroke={INK} strokeWidth="2.2" strokeLinecap="round" />
+    <svg viewBox="0 0 100 100" width={size} height={size} aria-hidden="true" style={{ display: 'block', overflow: 'visible' }}>
+      <defs>
+        <clipPath id={`bc-${uid}`}><path d={d} /></clipPath>
+        <filter id={`bs-${uid}`} x="-30%" y="-30%" width="160%" height="160%">
+          <feGaussianBlur stdDeviation="3.4" />
+        </filter>
+      </defs>
+      <g className={animate && !reduced ? 'crit-breathe' : ''} style={{ transformOrigin: '50px 82px' }}>
+        {/* soft pastel body — no outline, just fill */}
+        <path d={d} fill={b.fill} />
+        {/* watercolor pooling + cheeks, clipped inside the body and blurred */}
+        <g clipPath={`url(#bc-${uid})`}>
+          <ellipse cx="50" cy="92" rx="42" ry="26" fill={b.pool} opacity="0.75" filter={`url(#bs-${uid})`} />
+          <ellipse cx="30" cy="60" rx="12" ry="9" fill={b.cheek} opacity={b.cheekO} filter={`url(#bs-${uid})`} />
+          <ellipse cx="70" cy="60" rx="12" ry="9" fill={b.cheek} opacity={b.cheekO} filter={`url(#bs-${uid})`} />
+        </g>
+        <Eyes kind={b.eyes} />
+        <Mouth kind={b.mouth} />
+      </g>
     </svg>
   )
 }
