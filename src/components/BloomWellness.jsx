@@ -308,7 +308,7 @@ export default function BloomWellness({
       <section className="wl-hero">
         <ProgressRing pct={lv.pct}>
           <div className="wl-companion" title={`${stage.name} · level ${lv.level}`}>
-            <Companion level={lv.level} mood={daySeg.dominant} size={104} />
+            <Companion level={lv.level} mood={daySeg.overall} size={104} />
           </div>
         </ProgressRing>
         <div className="wl-hero-body">
@@ -405,7 +405,7 @@ export default function BloomWellness({
                   : `Feeling ${moodMeta(daySeg.dominant).label.toLowerCase()}`}
               </div>
               <div className="wl-sky-cloud wl-float">
-                <DayCloud segments={daySeg.segments} emotions={daySeg.emotions} dominant={daySeg.dominant} size={128} animate />
+                <DayCloud segments={daySeg.segments} emotions={daySeg.emotions} dominant={daySeg.dominant} faceMood={daySeg.overall} size={128} animate />
               </div>
             </div>
 

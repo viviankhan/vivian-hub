@@ -309,7 +309,10 @@ export function daySegments(checkins, key = dayKey(), nowMs = Date.now()) {
   segments.forEach(s => byMood.set(s.v, (byMood.get(s.v) || 0) + s.pct))
   const props = [...byMood.entries()].map(([v, pct]) => ({ v, pct })).sort((a, b) => b.pct - a.pct)
   const emotions = [...new Set(list.flatMap(c => c.emotions || []))]
-  return { segments, props, emotions, dominant: props[0]?.v ?? null, count: list.length }
+  // The overall mood is the time-weighted average across the day (rounded to a
+  // 1..5 face), which can differ from the single most-present (dominant) mood.
+  const overall = Math.max(1, Math.min(5, Math.round(segments.reduce((a, s) => a + s.v * s.pct, 0))))
+  return { segments, props, emotions, dominant: props[0]?.v ?? null, overall, count: list.length }
 }
 
 // ── Per-day records + pattern analysis ─────────────────────────
