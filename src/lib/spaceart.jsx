@@ -598,3 +598,89 @@ export function Biome({ planet, className = '' }) {
     </svg>
   )
 }
+
+// The biome type behind a given planet id — shared by the greenhouse backdrop
+// and the per-specimen microhabitats so a species' patch always matches its
+// home world.
+export function biomeType(planetId) { return BIOME_TYPE[planetId] || 'forest' }
+
+// A little patch of a species' home world that it stands on in the greenhouse —
+// mossy soil, a reef tide-pool, warm ember sand, a crystal shard bed, or an ice
+// floe — echoing that planet's biome in miniature. `kind` adds a small flora vs.
+// fauna cue on top of the shared biome ground.
+export function MicroBiome({ planetId, kind = 'flora', width = 60, className = '' }) {
+  const type = biomeType(planetId)
+  const uid = useId().replace(/:/g, '')
+  const g = `mb-${uid}`
+  const W = 64, H = 30
+  const wrap = (defs, kids) => (
+    <svg viewBox={`0 0 ${W} ${H}`} width={width} height={width * H / W} className={className} aria-hidden="true" style={{ display: 'block', overflow: 'visible' }}>
+      <defs>{defs}</defs>{kids}
+    </svg>
+  )
+  if (type === 'forest') {
+    return wrap(
+      <radialGradient id={g} cx="0.5" cy="0.15" r="0.95"><stop offset="0" stopColor="#82CD98" /><stop offset="1" stopColor="#4C976C" /></radialGradient>,
+      <g>
+        <ellipse cx="32" cy="21" rx="29" ry="8" fill={`url(#${g})`} />
+        {[9, 16, 49, 55].map((x, i) => <path key={i} d={`M${x},22 q-1,-9 2,-13 q3,5 1,13 Z`} fill="#3C7A50" />)}
+        {kind === 'flora'
+          ? <g><path d="M32,21 q-1,-8 1,-12" stroke="#3C7A50" strokeWidth="1.6" fill="none" /><circle cx="33" cy="8" r="2.6" fill="#F5C86A" /></g>
+          : <ellipse cx="41" cy="20" rx="5" ry="3" fill="#8FA286" />}
+      </g>,
+    )
+  }
+  if (type === 'ocean') {
+    return wrap(
+      <radialGradient id={g} cx="0.5" cy="0.3" r="0.9"><stop offset="0" stopColor="#9AC4EE" /><stop offset="1" stopColor="#4C77BC" /></radialGradient>,
+      <g>
+        <ellipse cx="32" cy="21" rx="29" ry="8" fill={`url(#${g})`} />
+        <ellipse cx="32" cy="19" rx="20" ry="4.4" fill="#CBE1F7" opacity="0.65" className="bio-wave" style={{ transformOrigin: '32px 19px' }} />
+        <ellipse cx="13" cy="23" rx="3.4" ry="2" fill="#7C93AE" /><ellipse cx="52" cy="23" rx="3" ry="1.8" fill="#8AA0B8" />
+        {kind === 'flora'
+          ? <path d="M44,22 q-2,-9 1,-13 M44,22 q2,-8 5,-10" stroke="#5FBFA6" strokeWidth="1.8" fill="none" strokeLinecap="round" />
+          : <g><path d="M20,22 q1,-6 4,-7 q3,1 3,7 Z" fill="#E79AB4" /><path d="M23,15 v-3" stroke="#E79AB4" strokeWidth="1.6" strokeLinecap="round" /></g>}
+      </g>,
+    )
+  }
+  if (type === 'desert') {
+    return wrap(
+      <radialGradient id={g} cx="0.5" cy="0.15" r="0.95"><stop offset="0" stopColor="#E6B277" /><stop offset="1" stopColor="#B0703E" /></radialGradient>,
+      <g>
+        <ellipse cx="32" cy="24" rx="27" ry="8" fill="#F4A65E" opacity="0.32" />
+        <ellipse cx="32" cy="21" rx="29" ry="8" fill={`url(#${g})`} />
+        {[[18, 24], [40, 22], [30, 26]].map(([x, y], i) => <path key={i} d={`M${x - 5},${y} q5,-3 10,0`} stroke="#EF8B3C" strokeWidth="1.3" fill="none" opacity="0.7" strokeLinecap="round" className="bio-twinkle" style={{ animationDelay: `${i * 0.5}s`, transformOrigin: `${x}px ${y}px` }} />)}
+        {kind === 'flora'
+          ? <g><rect x="31" y="10" width="3.2" height="11" rx="1.6" fill="#C98A4E" /><ellipse cx="32.6" cy="9" rx="3" ry="4" fill="#7FB27A" /></g>
+          : <path d="M46,22 q1,-5 4,-6 q3,1 3,6 Z" fill="#9A6B4A" />}
+      </g>,
+    )
+  }
+  if (type === 'crystal') {
+    return wrap(
+      <radialGradient id={g} cx="0.5" cy="0.2" r="0.95"><stop offset="0" stopColor="#4A386F" /><stop offset="1" stopColor="#2A2050" /></radialGradient>,
+      <g>
+        <ellipse cx="32" cy="22" rx="26" ry="7" fill="#8E74C0" opacity="0.3" />
+        <ellipse cx="32" cy="21" rx="29" ry="8" fill={`url(#${g})`} />
+        {[[14, 20, '#8B70C2'], [50, 18, '#B79AD8'], [44, 22, '#9A80CC']].map(([x, top, c], i) => (
+          <path key={i} d={`M${x},22 L${x - 4},18 L${x - 1},${top} L${x + 4},18 Z`} fill={c} stroke={lighten(c, 0.35)} strokeWidth="0.8" />
+        ))}
+        {kind === 'flora'
+          ? <path d="M32,21 L28,15 L31,6 L36,15 Z" fill="#C3ABE8" stroke={lighten('#C3ABE8', 0.3)} strokeWidth="0.8" />
+          : <circle cx="22" cy="19" r="2.4" fill="#D9C7F0" className="bio-twinkle" style={{ transformOrigin: '22px 19px' }} />}
+      </g>,
+    )
+  }
+  // ice / aurora
+  return wrap(
+    <radialGradient id={g} cx="0.5" cy="0.2" r="0.95"><stop offset="0" stopColor="#E2F4F1" /><stop offset="1" stopColor="#8FC6C4" /></radialGradient>,
+    <g>
+      <ellipse cx="32" cy="21" rx="29" ry="8" fill={`url(#${g})`} />
+      <ellipse cx="32" cy="19" rx="19" ry="4" fill="#F4FBFA" opacity="0.7" />
+      {[[16, '#BFE4E0'], [48, '#D2EEEA']].map(([x, c], i) => <path key={i} d={`M${x},22 L${x - 4},15 L${x + 4},15 Z`} fill={c} stroke="#EAF6F4" strokeWidth="0.8" />)}
+      {kind === 'flora'
+        ? <path d="M32,21 L29,13 L32,6 L35,13 Z" fill="#CDEBE6" stroke="#EAF6F4" strokeWidth="0.8" />
+        : <ellipse cx="44" cy="21" rx="4" ry="2.4" fill="#EAF6F4" />}
+    </g>,
+  )
+}

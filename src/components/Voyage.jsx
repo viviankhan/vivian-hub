@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react'
 import { Glyph } from '../lib/glyphs.jsx'
 import { AlienSky, DayCloud } from '../lib/critters.jsx'
-import { Rocket, Planet, Specimen, FurnArt, Biome } from '../lib/spaceart.jsx'
+import { Rocket, Planet, Specimen, FurnArt, Biome, MicroBiome } from '../lib/spaceart.jsx'
 import { spendStars, grantStars, daySegments, emotionWeights } from '../lib/wellness.js'
 import {
   PART_CATS, PARTS, SEARCH_COST, FIND_CHANCE, PLANETS, freshShip, freshSpace,
@@ -215,7 +215,7 @@ export default function Voyage({ game, persistGame, space, persistSpace, checkin
                     <span className={`gh-spec ${s.kind === 'fauna' ? 'hop' : 'sway'}`} style={{ animationDelay: `${(i % 6) * 0.4}s` }}>
                       <Specimen form={s.form} color={s.color} size={58} alive assetId={`creature:${s.id}`} />
                     </span>
-                    <span className="gh-micro-ground" aria-hidden="true" />
+                    <MicroBiome planetId={s.planetId} kind={s.kind} width={62} className="gh-micro-ground" />
                   </div>
                 ))}
               </div>}
