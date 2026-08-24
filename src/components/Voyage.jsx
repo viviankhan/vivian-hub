@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react'
 import { Glyph } from '../lib/glyphs.jsx'
 import { AlienSky, DayCloud } from '../lib/critters.jsx'
-import { Rocket, Planet, Specimen, FurnArt } from '../lib/spaceart.jsx'
+import { Rocket, Planet, Specimen, FurnArt, Biome } from '../lib/spaceart.jsx'
 import { spendStars, grantStars, daySegments, emotionWeights } from '../lib/wellness.js'
 import {
   PART_CATS, PARTS, SEARCH_COST, FIND_CHANCE, PLANETS, freshShip, freshSpace,
@@ -188,8 +188,8 @@ export default function Voyage({ game, persistGame, space, persistSpace, checkin
       {/* ══ GREENHOUSE ══ */}
       {view === 'greenhouse' && <>
         <section className="gh" style={{ '--gh-tint': planet.color, '--gh-soil': mix(planet.color, 0.2) }}>
-          {/* the planet's own environment, seen through the glass walls */}
-          <div className="gh-env" aria-hidden="true"><AlienSky className="gh-env-sky" tint={planet.color} /></div>
+          {/* the planet's own biome, seen through the glass walls */}
+          <div className="gh-env" aria-hidden="true"><Biome planet={planet} className="gh-env-sky" /></div>
           {/* translucent glazing over the environment (peaked glass-house shape) */}
           <div className="gh-glass" aria-hidden="true" />
           {/* mood cloud drifting up under the glass ceiling */}

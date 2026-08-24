@@ -478,3 +478,123 @@ export function FurnArt({ item, size = 64, assetId }) {
   </g>)
   return null
 }
+
+// ── Planet biomes ──────────────────────────────────────────────
+// The landscape of each world, seen through the greenhouse glass. Every planet
+// gets its own biome type — forest / ocean / desert / crystal / ice — with a
+// distinct sky palette and silhouette so no two feel alike. Type is derived
+// from the planet id (see space.js blurbs); unknown ids fall back to forest.
+const BIOME_TYPE = { verda: 'forest', cobalt: 'ocean', ember: 'desert', viola: 'crystal', aurora: 'ice' }
+const B_STARS = [[24, 26], [58, 16], [118, 30], [176, 20], [248, 34], [292, 18], [206, 46], [150, 52], [88, 42], [300, 56], [40, 60], [270, 66]]
+
+export function Biome({ planet, className = '' }) {
+  const type = BIOME_TYPE[planet?.id] || 'forest'
+  const uid = useId().replace(/:/g, '')
+  const sky = `sky-${uid}`, sea = `sea-${uid}`, sun = `sun-${uid}`
+  const Sky = (a, b, c) => (
+    <linearGradient id={sky} x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stopColor={a} /><stop offset="0.55" stopColor={b} /><stop offset="1" stopColor={c} />
+    </linearGradient>
+  )
+  const stars = (n = 12) => B_STARS.slice(0, n).map(([x, y], i) => (
+    <circle key={i} cx={x} cy={y} r={i % 3 ? 1 : 1.5} fill="#F3ECFB" className="bio-twinkle" style={{ transformOrigin: `${x}px ${y}px`, animationDelay: `${(i % 5) * 0.4}s` }} />
+  ))
+
+  let defs = null, body = null
+  if (type === 'forest') {
+    defs = Sky('#CFEDD9', '#A9DEC2', '#83CBA6')
+    body = <g>
+      <circle cx="252" cy="46" r="30" fill="#F4F8EC" opacity="0.4" />
+      <circle cx="252" cy="46" r="20" fill="#F7FAEF" opacity="0.9" />
+      <path d="M0,138 C80,118 165,138 245,122 C282,115 320,126 320,124 L320,200 L0,200 Z" fill="#66BE92" />
+      <path d="M0,158 C70,143 150,162 222,150 C270,142 320,155 320,155 L320,200 L0,200 Z" fill="#4EA97C" />
+      <path d="M0,176 C60,166 140,182 210,172 C262,165 320,178 320,178 L320,200 L0,200 Z" fill="#3A8A63" />
+      {/* foreground fronds */}
+      {[[18, 200, 1], [300, 200, -1]].map(([x, y, d], i) => (
+        <g key={i} fill="#2C6B4E">
+          <path d={`M${x},${y} q${d * -6},-40 ${d * 4},-70 q${d * 10},26 ${d * 2},70 Z`} />
+          <path d={`M${x + d * 22},${y} q${d * -4},-30 ${d * 6},-52 q${d * 8},20 ${d * 1},52 Z`} opacity="0.85" />
+        </g>
+      ))}
+      {/* drifting spores */}
+      {[[120, 150], [190, 120], [80, 110], [230, 140]].map(([x, y], i) => (
+        <circle key={i} cx={x} cy={y} r="2" fill="#EEF9E8" opacity="0.7" className="bio-twinkle" style={{ transformOrigin: `${x}px ${y}px`, animationDelay: `${i * 0.5}s` }} />
+      ))}
+    </g>
+  } else if (type === 'ocean') {
+    defs = <>
+      {Sky('#D2E2F6', '#AEC9EF', '#92B8E8')}
+      <linearGradient id={sea} x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#6E97D8" /><stop offset="1" stopColor="#3F6DB2" /></linearGradient>
+    </>
+    body = <g>
+      <circle cx="58" cy="40" r="15" fill="#EFEBDC" /><circle cx="62" cy="36" r="4" fill="#DAD2BC" opacity="0.6" />
+      <circle cx="108" cy="56" r="9" fill="#D6DFEE" opacity="0.9" />
+      {/* far island */}
+      <path d="M214,124 C232,104 258,108 272,124 Z" fill="#47648B" opacity="0.8" />
+      {/* sea */}
+      <rect x="0" y="122" width="320" height="78" fill={`url(#${sea})`} />
+      {/* wave reflections */}
+      {[[136, 30], [150, 90], [162, 210], [172, 150], [182, 60], [190, 250]].map(([y, x], i) => (
+        <path key={i} d={`M${x - 26},${y} q26,-6 52,0`} stroke="#BAD2F0" strokeWidth="2.4" fill="none" opacity="0.55" strokeLinecap="round" className="bio-wave" style={{ animationDelay: `${(i % 4) * 0.6}s` }} />
+      ))}
+    </g>
+  } else if (type === 'desert') {
+    defs = <>
+      {Sky('#6E4E7A', '#E7885A', '#F6B45E')}
+      <radialGradient id={sun} cx="0.5" cy="0.5" r="0.5"><stop offset="0" stopColor="#FCE9B0" /><stop offset="1" stopColor="#F6B45E" stopOpacity="0" /></radialGradient>
+    </>
+    body = <g>
+      {planet?.ring && <g transform="translate(72,44)"><ellipse rx="26" ry="7" fill="none" stroke="#F0C79A" strokeWidth="2" opacity="0.6" transform="rotate(-18)" /><circle r="12" fill="#E8B07C" /></g>}
+      <circle cx="160" cy="140" r="60" fill={`url(#${sun})`} />
+      <circle cx="160" cy="140" r="34" fill="#FBE3A6" opacity="0.95" />
+      {/* dunes */}
+      <path d="M0,140 C80,126 150,146 230,132 C280,124 320,138 320,138 L320,200 L0,200 Z" fill="#DA9057" />
+      <path d="M0,160 C70,148 160,166 240,152 C285,145 320,158 320,158 L320,200 L0,200 Z" fill="#C1733E" />
+      <path d="M0,180 C60,172 150,186 230,176 C280,170 320,182 320,182 L320,200 L0,200 Z" fill="#96552E" />
+    </g>
+  } else if (type === 'crystal') {
+    defs = Sky('#2C2258', '#452F6C', '#634784')
+    body = <g>
+      {stars(12)}
+      {planet?.ring && <g transform="translate(244,42)"><ellipse rx="26" ry="7" fill="none" stroke="#CBB4E6" strokeWidth="2" opacity="0.6" transform="rotate(-18)" /><circle r="13" fill="#B79AD8" /></g>}
+      {/* glow behind crystals */}
+      <ellipse cx="160" cy="150" rx="150" ry="46" fill="#8E74C0" opacity="0.35" />
+      {/* crystal spires */}
+      {[[40, 120, 60, '#7C61B4'], [96, 96, 84, '#9A80CC'], [150, 78, 108, '#B79AD8'], [210, 104, 76, '#8B70C2'], [268, 130, 52, '#a98bd6']].map(([x, top, base, c], i) => (
+        <path key={i} d={`M${x},200 L${x - 16},${200 - base * 0.9} L${x},${top} L${x + 16},${200 - base * 0.9} Z`} fill={c} stroke={lighten(c, 0.3)} strokeWidth="1.4" opacity="0.95" />
+      ))}
+      <path d="M0,182 C80,176 240,188 320,180 L320,200 L0,200 Z" fill="#2A2050" />
+    </g>
+  } else { // ice / aurora
+    defs = <>
+      {Sky('#1E3350', '#2C5670', '#3E7C84')}
+      <linearGradient id={sea} x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#C6E8E4" /><stop offset="1" stopColor="#8CC6C4" /></linearGradient>
+    </>
+    body = <g>
+      {stars(10)}
+      {/* aurora ribbons */}
+      {[['#7FE6C0', 40, 0], ['#8FCFE8', 58, 0.8], ['#A8E6D0', 30, 1.6]].map(([c, y, d], i) => (
+        <path key={i} d={`M-10,${y} C70,${y - 22} 150,${y + 20} 230,${y - 14} C280,${y - 26} 330,${y} 330,${y}`}
+          stroke={c} strokeWidth="14" fill="none" opacity="0.32" strokeLinecap="round"
+          className="bio-aurora" style={{ animationDelay: `${d}s` }} />
+      ))}
+      {/* ice peaks */}
+      <path d="M0,128 L48,96 L92,128 Z" fill="#5F9C9E" /><path d="M64,132 L120,90 L182,132 Z" fill="#6FA9AA" />
+      <path d="M150,130 L210,98 L268,130 Z" fill="#5F9C9E" /><path d="M232,132 L286,100 L320,132 L320,132 Z" fill="#6FA9AA" />
+      {/* snow caps */}
+      <path d="M112,98 l8,8 -16,0 Z" fill="#EAF6F4" opacity="0.9" /><path d="M204,106 l6,6 -12,0 Z" fill="#EAF6F4" opacity="0.9" />
+      {/* frozen plain */}
+      <rect x="0" y="128" width="320" height="72" fill={`url(#${sea})`} />
+      <path d="M40,150 q40,-4 80,2 M180,168 q40,-4 80,2" stroke="#EAF6F4" strokeWidth="2" fill="none" opacity="0.5" strokeLinecap="round" />
+    </g>
+  }
+
+  return (
+    <svg className={className} viewBox="0 0 320 200" preserveAspectRatio="xMidYMid slice"
+      aria-hidden="true" style={{ display: 'block', width: '100%', height: '100%' }}>
+      <defs>{defs}</defs>
+      <rect x="0" y="0" width="320" height="200" fill={`url(#${sky})`} />
+      {body}
+    </svg>
+  )
+}
