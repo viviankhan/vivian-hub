@@ -181,15 +181,20 @@ export default function Voyage({ game, persistGame, space, persistSpace, checkin
       {/* ══ GREENHOUSE ══ */}
       {view === 'greenhouse' && <>
         <section className="gh">
-          <div className="gh-roof" aria-hidden="true" />
           <div className="gh-panes" aria-hidden="true" />
+          <div className="gh-window"><AlienSky className="gh-window-sky" /></div>
+          <div className="gh-shelf" aria-hidden="true">
+            <span className="gh-shelf-pot" style={{ background: '#C9A27A' }} />
+            <span className="gh-shelf-pot" style={{ background: '#A9C4A0' }} />
+          </div>
           <div className="gh-cloud wl-bob"><DayCloud segments={daySeg.segments} emotions={daySeg.emotions} weights={weights} dominant={daySeg.dominant} faceMood={daySeg.overall} size={96} /></div>
+          <div className="gh-floor" aria-hidden="true" />
           {garden.length === 0
             ? <div className="gh-empty">Your greenhouse is waiting.<br />Discover specimens on your voyages to fill it.</div>
             : <div className="gh-ground">
                 {garden.map((s, i) => (
                   <span key={s.planetId + s.id} className="gh-spec" style={{ animationDelay: `${(i % 6) * 0.4}s` }} title={`${s.name} · from ${s.planetName}`}>
-                    <Specimen form={s.form} color={s.color} size={62} />
+                    <Specimen form={s.form} color={s.color} size={68} />
                   </span>
                 ))}
               </div>}

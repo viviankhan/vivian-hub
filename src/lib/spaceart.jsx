@@ -157,71 +157,201 @@ export function Planet({ color = '#77C598', ring = false, size = 120, id = 'p', 
   )
 }
 
-// A little face shared by the specimens.
-function SpecFace({ cx, cy }) {
-  return (
-    <>
-      <circle cx={cx - 4} cy={cy} r="1.7" fill={INK} />
-      <circle cx={cx + 4} cy={cy} r="1.7" fill={INK} />
-      <path d={`M${cx - 3},${cy + 4} Q${cx},${cy + 7} ${cx + 3},${cy + 4}`} fill="none" stroke={INK} strokeWidth="1.6" strokeLinecap="round" />
-    </>
-  )
+// ── Specimen building blocks ───────────────────────────────────
+const EYE = INK
+function TwoEyes({ y = 54, sp = 7, r = 5.6 }) {
+  return <>
+    <circle cx={50 - sp} cy={y} r={r} fill="#fff" stroke={EYE} strokeWidth="1.5" />
+    <circle cx={50 + sp} cy={y} r={r} fill="#fff" stroke={EYE} strokeWidth="1.5" />
+    <circle cx={50 - sp + 0.6} cy={y + 1} r={r * 0.46} fill={EYE} />
+    <circle cx={50 + sp + 0.6} cy={y + 1} r={r * 0.46} fill={EYE} />
+    <circle cx={50 - sp - 1} cy={y - 1.4} r="1.1" fill="#fff" />
+    <circle cx={50 + sp - 1} cy={y - 1.4} r="1.1" fill="#fff" />
+  </>
+}
+function OneEye({ y = 54, r = 9 }) {
+  return <>
+    <circle cx="50" cy={y} r={r} fill="#fff" stroke={EYE} strokeWidth="1.6" />
+    <circle cx="51" cy={y + 1} r={r * 0.42} fill={EYE} />
+    <circle cx="48" cy={y - 2} r="1.6" fill="#fff" />
+  </>
+}
+function Cheeks({ y = 62, sp = 15 }) {
+  return <>
+    <ellipse cx={50 - sp} cy={y} rx="4.2" ry="2.7" fill="#F2A0A0" opacity="0.4" />
+    <ellipse cx={50 + sp} cy={y} rx="4.2" ry="2.7" fill="#F2A0A0" opacity="0.4" />
+  </>
+}
+function Smile({ y = 64, w = 5 }) {
+  return <path d={`M${50 - w},${y} Q50,${y + 4} ${50 + w},${y}`} fill="none" stroke={EYE} strokeWidth="1.7" strokeLinecap="round" />
+}
+function Feet({ y = 87, sp = 9, color }) {
+  return <>
+    <ellipse cx={50 - sp} cy={y} rx="6" ry="4.2" fill={color} stroke={EYE} strokeWidth="2" />
+    <ellipse cx={50 + sp} cy={y} rx="6" ry="4.2" fill={color} stroke={EYE} strokeWidth="2" />
+  </>
+}
+function Pot() {
+  return <>
+    <path d="M38,80 L62,80 L58.5,95 L41.5,95 Z" fill="#D98A5E" stroke={INK} strokeWidth="2.2" strokeLinejoin="round" />
+    <path d="M41.5,95 L58.5,95" stroke={INK} strokeWidth="0" />
+    <rect x="35.5" y="75.5" width="29" height="6.5" rx="2.4" fill="#E39B6B" stroke={INK} strokeWidth="2.2" />
+    <path d="M45,88 L55,88" stroke={darken('#D98A5E', 0.12)} strokeWidth="2" strokeLinecap="round" opacity="0.6" />
+  </>
 }
 
-// A collectible alien specimen: a plant (flora) or creature (fauna). `form`
-// picks the silhouette; it gently bobs via the caller's wrapper.
+// A collectible alien specimen — a chunky, shaded little creature (fauna) or a
+// potted plant (flora). `form` picks the species silhouette; `color` its pigment.
 export function Specimen({ form = 'blob', color = '#8FD08A', size = 64, className = '' }) {
-  const c = color, lc = lighten(color, 0.25)
-  const body = (() => {
+  const uid = useId().replace(/:/g, '')
+  const gid = `sg-${uid}`
+  const grad = `url(#${gid})`
+  const belly = lighten(color, 0.5)
+  const spot = darken(color, 0.14)
+  const leaf = color, leaf2 = lighten(color, 0.22), stem = darken(color, 0.28)
+
+  const shape = (() => {
     switch (form) {
-      case 'sprout':
+      case 'bear': // chunky upright monster
         return (
           <g>
-            <path d="M50,84 C50,70 50,58 50,50" stroke={INK} strokeWidth="3" fill="none" strokeLinecap="round" />
-            <path d="M50,60 C40,58 33,50 34,42 C44,42 51,50 50,60 Z" fill={lc} stroke={INK} strokeWidth="2" />
-            <path d="M50,64 C60,62 67,54 66,46 C56,46 49,54 50,64 Z" fill={c} stroke={INK} strokeWidth="2" />
-            <ellipse cx="50" cy="40" rx="12" ry="13" fill={c} stroke={INK} strokeWidth="2.4" />
-            <SpecFace cx={50} cy={40} />
+            <path d="M36,36 C31,25 41,22 44,33 Z" fill={grad} stroke={INK} strokeWidth="2.2" strokeLinejoin="round" />
+            <path d="M64,36 C69,25 59,22 56,33 Z" fill={grad} stroke={INK} strokeWidth="2.2" strokeLinejoin="round" />
+            <Feet color={color} />
+            <path d="M28,54 C28,38 40,32 50,32 C60,32 72,38 72,54 L72,74 C72,84 62,88 50,88 C38,88 28,84 28,74 Z" fill={grad} stroke={INK} strokeWidth="2.6" strokeLinejoin="round" />
+            <ellipse cx="50" cy="70" rx="13" ry="14" fill={belly} />
+            <TwoEyes y={54} sp={8} r={6} />
+            <Cheeks y={64} sp={17} />
+            <Smile y={66} w={5} />
+          </g>
+        )
+      case 'cyclops':
+        return (
+          <g>
+            <path d="M50,30 C49,23 53,22 55,26" stroke={INK} strokeWidth="2" fill="none" strokeLinecap="round" />
+            <circle cx="55.5" cy="24" r="2.6" fill="#F6D96B" stroke={INK} strokeWidth="1.4" />
+            <path d="M42,82 L40,90 M58,82 L60,90" stroke={INK} strokeWidth="3.4" strokeLinecap="round" />
+            <path d="M30,58 C30,42 40,38 50,38 C60,38 70,42 70,58 C70,74 62,82 50,82 C38,82 30,74 30,58 Z" fill={grad} stroke={INK} strokeWidth="2.6" strokeLinejoin="round" />
+            <OneEye y={56} r={11} />
+            <Cheeks y={70} sp={17} />
+            <Smile y={74} w={4} />
+          </g>
+        )
+      case 'slime':
+        return (
+          <g>
+            <path d="M22,80 C20,58 34,48 50,48 C66,48 80,60 78,80 C77,86 72,88 68,84 C66,88 61,88 58,84 C56,88 51,89 48,84 C45,88 40,88 37,84 C34,88 28,87 26,83 C24,85 22,84 22,80 Z" fill={grad} stroke={INK} strokeWidth="2.6" strokeLinejoin="round" />
+            <ellipse cx="42" cy="60" rx="8" ry="10" fill="#fff" opacity="0.25" />
+            <TwoEyes y={62} sp={8} r={6} />
+            <Cheeks y={72} sp={16} />
+            <Smile y={74} w={6} />
+          </g>
+        )
+      case 'critter': // four-legged
+        return (
+          <g>
+            <path d="M38,74 L34,88 M47,77 L45,90 M53,77 L55,90 M62,74 L66,88" stroke={INK} strokeWidth="3.4" strokeLinecap="round" />
+            <path d="M70,66 C80,64 80,74 72,74" fill={grad} stroke={INK} strokeWidth="2.2" />
+            <path d="M34,44 C30,34 38,32 42,40 Z" fill={grad} stroke={INK} strokeWidth="2.2" strokeLinejoin="round" />
+            <path d="M66,44 C70,34 62,32 58,40 Z" fill={grad} stroke={INK} strokeWidth="2.2" strokeLinejoin="round" />
+            <ellipse cx="50" cy="60" rx="22" ry="17" fill={grad} stroke={INK} strokeWidth="2.6" />
+            <ellipse cx="50" cy="66" rx="12" ry="9" fill={belly} />
+            <circle cx="40" cy="54" r="2.4" fill={spot} opacity="0.5" /><circle cx="62" cy="58" r="3" fill={spot} opacity="0.5" />
+            <TwoEyes y={56} sp={7} r={5.4} />
+            <Cheeks y={64} sp={16} />
+            <Smile y={65} w={4} />
+          </g>
+        )
+      case 'floaty': // floating jelly
+        return (
+          <g>
+            {[38, 46, 54, 62].map((x, i) => <path key={i} d={`M${x},64 q-2,8 0,14`} stroke={color} strokeWidth="3" fill="none" strokeLinecap="round" opacity="0.85" />)}
+            <path d="M30,58 C30,40 40,34 50,34 C60,34 70,40 70,58 C70,64 66,66 60,66 L40,66 C34,66 30,64 30,58 Z" fill={grad} stroke={INK} strokeWidth="2.6" strokeLinejoin="round" opacity="0.96" />
+            <ellipse cx="43" cy="46" rx="7" ry="8" fill="#fff" opacity="0.3" />
+            <TwoEyes y={52} sp={7} r={5.4} />
+            <Smile y={60} w={4} />
+          </g>
+        )
+      case 'shroom':
+        return (
+          <g>
+            <path d="M44,88 C42,74 42,68 44,66 L56,66 C58,68 58,74 56,88 Z" fill={belly} stroke={INK} strokeWidth="2.4" strokeLinejoin="round" />
+            <path d="M26,54 C26,38 38,32 50,32 C62,32 74,38 74,54 C74,60 62,64 50,64 C38,64 26,60 26,54 Z" fill={grad} stroke={INK} strokeWidth="2.6" strokeLinejoin="round" />
+            <circle cx="40" cy="48" r="4" fill="#fff" opacity="0.7" /><circle cx="58" cy="45" r="5" fill="#fff" opacity="0.7" /><circle cx="52" cy="54" r="3" fill="#fff" opacity="0.7" />
+            <TwoEyes y={76} sp={5} r={3.6} />
+            <Smile y={82} w={3} />
+          </g>
+        )
+      case 'cactus':
+        return (
+          <g>
+            <Pot />
+            <path d="M40,76 C34,74 32,64 34,58 C36,54 41,55 41,60" fill={grad} stroke={INK} strokeWidth="2.2" strokeLinejoin="round" />
+            <path d="M60,76 C66,74 68,66 66,60 C64,56 59,57 59,62" fill={grad} stroke={INK} strokeWidth="2.2" strokeLinejoin="round" />
+            <path d="M43,78 C41,58 43,40 50,40 C57,40 59,58 57,78 Z" fill={grad} stroke={INK} strokeWidth="2.6" strokeLinejoin="round" />
+            {[46, 54].map((x, i) => [48, 58, 68].map((yy, j) => <path key={i + '' + j} d={`M${x},${yy} l${x < 50 ? -3 : 3},-1.5`} stroke={stem} strokeWidth="1.3" strokeLinecap="round" opacity="0.6" />))}
+            <circle cx="50" cy="38" r="4.5" fill="#F5B8CE" stroke={INK} strokeWidth="1.6" />
+            <TwoEyes y={56} sp={5} r={4.2} />
+            <Smile y={62} w={3.4} />
+          </g>
+        )
+      case 'bloom':
+        return (
+          <g>
+            <Pot />
+            <path d="M50,78 C50,66 50,58 50,52" stroke={stem} strokeWidth="3" fill="none" strokeLinecap="round" />
+            <path d="M50,66 C42,64 38,58 40,54 C46,54 51,60 50,66 Z" fill={leaf2} stroke={INK} strokeWidth="1.8" />
+            {Array.from({ length: 6 }).map((_, i) => {
+              const a = (i / 6) * Math.PI * 2, px = 50 + Math.cos(a) * 11, py = 44 + Math.sin(a) * 11
+              return <ellipse key={i} cx={px} cy={py} rx="5.5" ry="8" transform={`rotate(${a * 180 / Math.PI + 90} ${px} ${py})`} fill={leaf} stroke={INK} strokeWidth="1.6" />
+            })}
+            <circle cx="50" cy="44" r="8.5" fill={belly} stroke={INK} strokeWidth="1.8" />
+            <TwoEyes y={43} sp={4} r={3.4} />
+            <Smile y={48} w={3} />
           </g>
         )
       case 'frond':
         return (
           <g>
-            <path d="M50,86 C50,66 50,46 50,30" stroke={INK} strokeWidth="3" fill="none" strokeLinecap="round" />
+            <Pot />
+            <path d="M50,80 C50,62 50,44 50,30" stroke={stem} strokeWidth="3" fill="none" strokeLinecap="round" />
             {[0, 1, 2, 3].map(i => {
-              const y = 40 + i * 12
+              const y = 38 + i * 11
               return <g key={i}>
-                <path d={`M50,${y} C40,${y - 4} 32,${y} 30,${y + 6} C40,${y + 6} 48,${y + 4} 50,${y}`} fill={i % 2 ? lc : c} stroke={INK} strokeWidth="1.6" />
-                <path d={`M50,${y} C60,${y - 4} 68,${y} 70,${y + 6} C60,${y + 6} 52,${y + 4} 50,${y}`} fill={i % 2 ? c : lc} stroke={INK} strokeWidth="1.6" />
+                <path d={`M50,${y} C40,${y - 4} 32,${y} 30,${y + 6} C40,${y + 6} 48,${y + 4} 50,${y}`} fill={i % 2 ? leaf2 : leaf} stroke={INK} strokeWidth="1.5" />
+                <path d={`M50,${y} C60,${y - 4} 68,${y} 70,${y + 6} C60,${y + 6} 52,${y + 4} 50,${y}`} fill={i % 2 ? leaf : leaf2} stroke={INK} strokeWidth="1.5" />
               </g>
             })}
-            <SpecFace cx={50} cy={32} />
+            <circle cx="50" cy="30" r="6" fill={belly} stroke={INK} strokeWidth="1.6" />
+            <TwoEyes y={29} sp={3.4} r={2.8} />
           </g>
         )
-      case 'critter':
+      default: // sprout
         return (
           <g>
-            <path d="M40,74 L37,86 M50,76 L50,88 M60,74 L63,86" stroke={INK} strokeWidth="3" strokeLinecap="round" />
-            <ellipse cx="50" cy="60" rx="20" ry="17" fill={c} stroke={INK} strokeWidth="2.4" />
-            <path d="M38,46 C34,36 40,34 44,42 Z" fill={lc} stroke={INK} strokeWidth="2" />
-            <path d="M62,46 C66,36 60,34 56,42 Z" fill={lc} stroke={INK} strokeWidth="2" />
-            <SpecFace cx={50} cy={58} />
-          </g>
-        )
-      default: // blob
-        return (
-          <g>
-            <path d="M30,66 C26,50 36,38 50,38 C64,38 74,50 70,66 C68,78 60,84 50,84 C40,84 32,78 30,66 Z" fill={c} stroke={INK} strokeWidth="2.4" />
-            <path d="M50,30 C49,24 53,22 55,26" stroke={INK} strokeWidth="2" fill="none" strokeLinecap="round" />
-            <circle cx="55.5" cy="25" r="2.4" fill="#F6D96B" stroke={INK} strokeWidth="1.4" />
-            <SpecFace cx={50} cy={58} />
+            <Pot />
+            <path d="M50,78 C50,66 50,56 50,50" stroke={stem} strokeWidth="3" fill="none" strokeLinecap="round" />
+            <path d="M50,58 C40,56 34,49 35,43 C45,43 51,50 50,58 Z" fill={leaf2} stroke={INK} strokeWidth="1.8" />
+            <path d="M50,62 C60,60 66,53 65,47 C55,47 49,54 50,62 Z" fill={leaf} stroke={INK} strokeWidth="1.8" />
+            <ellipse cx="50" cy="42" rx="11" ry="12" fill={grad} stroke={INK} strokeWidth="2.4" />
+            <TwoEyes y={42} sp={5} r={3.8} />
+            <Cheeks y={48} sp={9} />
+            <Smile y={47} w={3} />
           </g>
         )
     }
   })()
+
   return (
     <svg viewBox="0 0 100 100" width={size} height={size} className={className} aria-hidden="true" style={{ display: 'block', overflow: 'visible' }}>
-      {body}
+      <defs>
+        <radialGradient id={gid} cx="0.4" cy="0.3" r="0.85">
+          <stop offset="0" stopColor={lighten(color, 0.4)} />
+          <stop offset="0.62" stopColor={color} />
+          <stop offset="1" stopColor={darken(color, 0.1)} />
+        </radialGradient>
+      </defs>
+      {shape}
     </svg>
   )
 }
