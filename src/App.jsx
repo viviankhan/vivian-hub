@@ -25,6 +25,7 @@ import {
   getWellnessGame, setWellnessGame,
   getWellnessTreasures, setWellnessTreasures,
   getWellnessSpace, setWellnessSpace,
+  getArtOverrides, setArtOverrides,
   addCategory as dbAddCategory, updateCategory as dbUpdateCategory, deleteCategory as dbDeleteCategory,
 } from './lib/storage.js'
 import { occKey, recurringOccurrencesForDate } from './lib/occurrences.js'
@@ -44,6 +45,8 @@ import ExternalCalendars from './components/ExternalCalendars.jsx'
 import Informatics from './components/Informatics.jsx'
 import BloomWellness from './components/BloomWellness.jsx'
 import Voyage from './components/Voyage.jsx'
+import ArtStudio from './components/ArtStudio.jsx'
+import { loadOverrides, isAdmin } from './lib/art.js'
 import TaskMenu from './components/TaskMenu.jsx'
 import { refreshCalendar, loadCachedCalendar, clearCachedCalendar, eventsToSpans } from './lib/calendars.js'
 import { importedKey } from './lib/importedTasks.js'
@@ -136,7 +139,7 @@ function saveBottomBar(items) {
 }
 
 // ── Settings Drawer ────────────────────────────────────────────
-function SettingsDrawer({ open, onClose, settingsTab, setSettingsTab, notes, updateNotes, categories, addCategory, updateCategory, deleteCategory, events, commitments, recurring, locatedCount, changeHistory, undoChange, clearChangeHistory, externalCalendars, calendarStatuses, addCalendar, toggleCalendar, removeCalendar, refreshOneCalendar, updateCalendar, font, setFont, theme, setTheme, season, setSeason, customColor, setCustom, background, setBackground, customBg, setCustomBg, mobileBackground, setMobileBackground, mobileCustomBg, setMobileCustomBg, layout, setLayout, soundOn, setSound, summary, setSummary, effectsOn, setEffects }) {
+function SettingsDrawer({ open, onClose, settingsTab, setSettingsTab, notes, updateNotes, categories, addCategory, updateCategory, deleteCategory, events, commitments, recurring, locatedCount, changeHistory, undoChange, clearChangeHistory, externalCalendars, calendarStatuses, addCalendar, toggleCalendar, removeCalendar, refreshOneCalendar, updateCalendar, font, setFont, theme, setTheme, season, setSeason, customColor, setCustom, background, setBackground, customBg, setCustomBg, mobileBackground, setMobileBackground, mobileCustomBg, setMobileCustomBg, layout, setLayout, soundOn, setSound, summary, setSummary, effectsOn, setEffects, admin, persistArt }) {
   if (!open) return null
   const SECTIONS = [
     ['customize','Look','sun'],
@@ -146,6 +149,8 @@ function SettingsDrawer({ open, onClose, settingsTab, setSettingsTab, notes, upd
     ['notes','Notes','book'],
     ['history','History','clock'],
     ['edits','Edits','sparkle'],
+    // Owner-only: upload custom art to replace the code-drawn creatures/props.
+    ...(admin ? [['artstudio','Art','rocket']] : []),
   ]
   const activeLabel = (SECTIONS.find(s => s[0] === settingsTab) || SECTIONS[0])[1]
   return (
@@ -168,6 +173,7 @@ function SettingsDrawer({ open, onClose, settingsTab, setSettingsTab, notes, upd
             {settingsTab==='notes'      && <Notes notes={notes} updateNotes={updateNotes} />}
             {settingsTab==='history'    && <History history={changeHistory} onUndo={undoChange} onClear={clearChangeHistory} />}
             {settingsTab==='edits'      && <Edits />}
+            {settingsTab==='artstudio' && admin && <ArtStudio persistArt={persistArt} />}
           </div>
           <div style={{ padding:'4px 24px 20px', textAlign:'center', fontSize:11, color:'var(--muted)' }}>
             Bloom · build {BUILD_ID}
@@ -301,6 +307,10 @@ export default function App() {
   }, [tab])
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [settingsTab,  setSettingsTab]  = useState('customize')
+  // Owner-only art-upload gate (see lib/art.js). `?admin=1` in the URL turns it
+  // on for this device; read once at mount so the Art Studio section only shows
+  // for the owner. Read-only for everyone else — the rendering path is identical.
+  const [admin] = useState(isAdmin)
   // Appearance — device-local font + accent theme. main.jsx applies the saved
   // values before first paint; these setters keep the live app in step.
   const [font,   setFontState]   = useState(getFontPref)
@@ -595,14 +605,14 @@ export default function App() {
   useEffect(() => {
     async function load() {
       await runMigrationIfNeeded()
-      const [comp, l, n, fcp, fcs, sch, com, rt, vac, evs, cats, cmeta, rexc, rmeta, rout, tlogs, tpls, chist, wlc, wlfx, wlep, wlg, wltr, wlsp] = await Promise.all([
+      const [comp, l, n, fcp, fcs, sch, com, rt, vac, evs, cats, cmeta, rexc, rmeta, rout, tlogs, tpls, chist, wlc, wlfx, wlep, wlg, wltr, wlsp, artov] = await Promise.all([
         getCompletions(), getLogEntries(), getNotes(),
         getFcProgress(), getFcStudied(), getScheduledTasks(),
         getCommitments(), getRecurringTasks(), getVacations(), getEvents(),
         seedCategoriesIfNeeded(), getCommitmentMeta(), getRecurringExceptions(), getRecurringMeta(),
         getRoutineGroups(), getTimeLogs(), getTaskTemplates(), getChangeHistory(),
         getWellnessCheckins(), getWellnessEffects(), getWellnessEpisodes(), getWellnessGame(),
-        getWellnessTreasures(), getWellnessSpace(),
+        getWellnessTreasures(), getWellnessSpace(), getArtOverrides(),
       ])
       setCompletions_(comp); setLog_(l); setNotes_(n)
       setFcProgress_(fcp); setFcStudied_(fcs); setScheduled_(sch)
@@ -617,6 +627,9 @@ export default function App() {
       setWlGame_(wlg && typeof wlg === 'object' ? wlg : null)
       setWlTreasures_(Array.isArray(wltr) ? wltr : [])
       setWlSpace_(wlsp && typeof wlsp === 'object' ? wlsp : null)
+      // Seed the custom-art override store from the synced blob so any uploaded
+      // images replace their code-drawn defaults on first paint.
+      loadOverrides(artov)
       // Routine groups: use what's saved, or seed the Morning/Night defaults.
       if (rout) {
         // One-time tint upgrade: bump any routine still on an old seed tint to
@@ -1422,6 +1435,9 @@ export default function App() {
   const persistWlGame     = useCallback(next => { setWlGame_(next);     setWellnessGame(next).catch(reportSaveError) }, [])
   const persistWlTreasures = useCallback(next => { setWlTreasures_(next); setWellnessTreasures(next).catch(reportSaveError) }, [])
   const persistWlSpace     = useCallback(next => { setWlSpace_(next);     setWellnessSpace(next).catch(reportSaveError) }, [])
+  // Custom-art uploads: the Art Studio mutates the in-memory override store
+  // (lib/art.js) for an instant re-render, then hands us the whole map to sync.
+  const persistArt         = useCallback(map  => { setArtOverrides(map).catch(reportSaveError) }, [])
 
   // ── Unified toggle ───────────────────────────────────────────
   const syncToggle = useCallback(async (id, label, tag, date, explicitNext) => {
@@ -1671,7 +1687,8 @@ export default function App() {
         mobileCustomBg={mobileCustomBg} setMobileCustomBg={setMobileCustomBg}
         layout={layout} setLayout={setLayout} soundOn={soundOn} setSound={setSound}
         summary={summary} setSummary={setSummary}
-        effectsOn={effectsOn} setEffects={setEffects} />
+        effectsOn={effectsOn} setEffects={setEffects}
+        admin={admin} persistArt={persistArt} />
 
       <SearchOverlay
         open={searchOpen} onClose={() => setSearchOpen(false)}

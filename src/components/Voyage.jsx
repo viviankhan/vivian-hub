@@ -163,7 +163,7 @@ export default function Voyage({ game, persistGame, space, persistSpace, checkin
             </button>
           </div>
           <div className="vy-collection">
-            {disc.found.map(s => <figure key={s.id} className="vy-spec got"><Specimen form={s.form} color={s.color} size={58} alive /><figcaption>{s.name}</figcaption></figure>)}
+            {disc.found.map(s => <figure key={s.id} className="vy-spec got"><Specimen form={s.form} color={s.color} size={58} alive assetId={`creature:${s.id}`} /><figcaption>{s.name}</figcaption></figure>)}
             {Array.from({ length: disc.remaining }).map((_, i) => <figure key={'h' + i} className="vy-spec hidden"><span className="vy-spec-q">?</span><figcaption>undiscovered</figcaption></figure>)}
           </div>
         </section>
@@ -201,7 +201,7 @@ export default function Voyage({ game, persistGame, space, persistSpace, checkin
             : <div className="gh-ground">
                 {garden.map((s, i) => (
                   <span key={s.planetId + s.id} className={`gh-spec ${s.kind === 'fauna' ? 'hop' : 'sway'}`} style={{ animationDelay: `${(i % 6) * 0.4}s` }} title={`${s.name} · from ${s.planetName}`}>
-                    <Specimen form={s.form} color={s.color} size={66} alive />
+                    <Specimen form={s.form} color={s.color} size={66} alive assetId={`creature:${s.id}`} />
                   </span>
                 ))}
               </div>}
@@ -218,10 +218,10 @@ export default function Voyage({ game, persistGame, space, persistSpace, checkin
           <div className="cab-floorband" aria-hidden="true" />
           {placedFurniture(cabin).map(it => (
             <div key={it.id} className="cab-item" style={{ left: it.style.left, bottom: it.style.bottom, top: it.style.top, zIndex: it.style.z }}>
-              <FurnArt item={it} size={ROOM_SIZES[it.art] || 90} />
+              <FurnArt item={it} size={ROOM_SIZES[it.art] || 90} assetId={`furniture:${it.id}`} />
             </div>
           ))}
-          {pet && <div className="cab-pet"><span className="gh-spec hop"><Specimen form={pet.form} color={pet.color} size={70} alive /></span></div>}
+          {pet && <div className="cab-pet"><span className="gh-spec hop"><Specimen form={pet.form} color={pet.color} size={70} alive assetId={`creature:${pet.id}`} /></span></div>}
         </section>
 
         <section className="vy-card">
@@ -242,7 +242,7 @@ export default function Voyage({ game, persistGame, space, persistSpace, checkin
                 return (
                   <button key={item.id} className={`vy-tile ${placed ? 'placed' : ''} ${(!owned && stars < item.cost) ? 'cant' : ''}`} onClick={() => clickFurn(item)}>
                     {placed && <span className="vy-check">✓</span>}
-                    <span className="vy-tile-art"><FurnArt item={item} size={TILE_SIZES[item.art] || 54} /></span>
+                    <span className="vy-tile-art"><FurnArt item={item} size={TILE_SIZES[item.art] || 54} assetId={`furniture:${item.id}`} /></span>
                     <span className="vy-tile-name">{item.name}</span>
                     {owned ? <span className="vy-tile-tag">{placed ? 'Placed' : 'Place'}</span> : <span className="vy-tile-tag buy"><Star size={11} /> {item.cost}</span>}
                   </button>
@@ -282,7 +282,7 @@ export default function Voyage({ game, persistGame, space, persistSpace, checkin
                 return (
                   <button key={key} className={`vy-tile ${on ? 'placed' : ''}`} onClick={() => setPet(key)}>
                     {on && <span className="vy-check">✓</span>}
-                    <span className="vy-tile-art"><Specimen form={s.form} color={s.color} size={50} /></span>
+                    <span className="vy-tile-art"><Specimen form={s.form} color={s.color} size={50} assetId={`creature:${s.id}`} /></span>
                     <span className="vy-tile-name">{s.name}</span>
                   </button>
                 )
@@ -298,7 +298,7 @@ export default function Voyage({ game, persistGame, space, persistSpace, checkin
       {reveal && (
         <div className="wl-modal-scrim" onClick={() => setReveal(null)}>
           <div className="wl-modal vy-reveal" onClick={(e) => e.stopPropagation()}>
-            <div className="vy-reveal-burst"><Specimen form={reveal.form} color={reveal.color} size={140} alive /></div>
+            <div className="vy-reveal-burst"><Specimen form={reveal.form} color={reveal.color} size={140} alive assetId={`creature:${reveal.id}`} /></div>
             <div className="vy-reveal-tag">New {reveal.kind} discovered!</div>
             <div className="serif vy-reveal-name">{reveal.name}</div>
             <div className="vy-reveal-sub">now growing in your greenhouse</div>

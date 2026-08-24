@@ -377,6 +377,10 @@ export const setWellnessTreasures = v  => dbSet('wellness_treasures', v)
 // synced kv_store blob; see src/lib/space.js. `null` → seed a fresh voyage.
 export const getWellnessSpace = () => dbGet('wellness_space').then(v => (v && typeof v === 'object') ? v : null)
 export const setWellnessSpace = v  => dbSet('wellness_space', v)
+// Custom-art overrides — { assetId: dataURL } uploaded by the owner (see
+// src/lib/art.js). One synced kv_store blob.
+export const getArtOverrides = () => dbGet('art_overrides').then(v => (v && typeof v === 'object') ? v : {})
+export const setArtOverrides = v  => dbSet('art_overrides', v)
 
 // ── Classes ────────────────────────────────────────────────────
 export async function getClasses() {

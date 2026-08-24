@@ -6,8 +6,10 @@
 // the app; animated with CSS and guarded by prefers-reduced-motion.
 // ─────────────────────────────────────────────────────────────
 import { useId } from 'react'
+import { useOverride } from './art.js'
 
 const INK = '#33313E'
+const imgStyle = (size) => ({ display: 'block', width: size, height: size, objectFit: 'contain' })
 
 function lighten(hex, t) {
   const n = (hex || '#ffffff').replace('#', '')
@@ -187,6 +189,30 @@ function Cheeks({ y = 62, sp = 15 }) {
 function Smile({ y = 64, w = 5 }) {
   return <path d={`M${50 - w},${y} Q50,${y + 4} ${50 + w},${y}`} fill="none" stroke={EYE} strokeWidth="1.7" strokeLinecap="round" />
 }
+// ── Alien features ─────────────────────────────────────────────
+// A single vertical-pupil eye (reptilian/alien).
+function VertEye({ cx = 50, cy = 54, rx = 6, ry = 9, blink = false, delay = 0 }) {
+  const e = <>
+    <ellipse cx={cx} cy={cy} rx={rx} ry={ry} fill="#fff" stroke={EYE} strokeWidth="1.6" />
+    <ellipse cx={cx} cy={cy + 0.5} rx={rx * 0.32} ry={ry * 0.62} fill={EYE} />
+    <circle cx={cx - rx * 0.3} cy={cy - ry * 0.35} r="1.2" fill="#fff" />
+  </>
+  return blink ? <g className="crit-eye" style={{ transformOrigin: `${cx}px ${cy}px`, animationDelay: `${delay}s` }}>{e}</g> : e
+}
+// A row of small eyes (three by default) — insect/alien cluster.
+function ManyEyes({ y = 54, n = 3, sp = 8, r = 4, blink = false, delay = 0 }) {
+  const xs = Array.from({ length: n }, (_, i) => 50 + (i - (n - 1) / 2) * sp)
+  const e = <>{xs.map((x, i) => <g key={i}><circle cx={x} cy={y} r={r} fill="#fff" stroke={EYE} strokeWidth="1.3" /><circle cx={x} cy={y + 0.6} r={r * 0.5} fill={EYE} /></g>)}</>
+  return blink ? <g className="crit-eye" style={{ transformOrigin: `50px ${y}px`, animationDelay: `${delay}s` }}>{e}</g> : e
+}
+// Non-human alien mouths (or nothing).
+function Maw({ kind = 'none', y = 66 }) {
+  if (kind === 'fangs') return <><path d={`M44,${y} L56,${y}`} stroke={EYE} strokeWidth="1.7" strokeLinecap="round" /><path d={`M46.5,${y} l0,3 M53.5,${y} l0,3`} stroke={EYE} strokeWidth="1.7" strokeLinecap="round" /></>
+  if (kind === 'slit') return <path d={`M45,${y} Q50,${y + 1.5} 55,${y}`} fill="none" stroke={EYE} strokeWidth="1.8" strokeLinecap="round" />
+  if (kind === 'o') return <ellipse cx="50" cy={y} rx="2.4" ry="3.2" fill="none" stroke={EYE} strokeWidth="1.6" />
+  if (kind === 'beak') return <path d={`M46,${y} L54,${y} L50,${y + 4.5} Z`} fill="#E8B24E" stroke={EYE} strokeWidth="1.4" strokeLinejoin="round" />
+  return null
+}
 function Feet({ y = 87, sp = 9, color }) {
   return <>
     <ellipse cx={50 - sp} cy={y} rx="6" ry="4.2" fill={color} stroke={EYE} strokeWidth="2" />
@@ -204,8 +230,9 @@ function Pot() {
 
 // A collectible alien specimen — a chunky, shaded little creature (fauna) or a
 // potted plant (flora). `form` picks the species silhouette; `color` its pigment.
-export function Specimen({ form = 'blob', color = '#8FD08A', size = 64, alive = false, className = '' }) {
+export function Specimen({ form = 'blob', color = '#8FD08A', size = 64, alive = false, assetId, className = '' }) {
   const uid = useId().replace(/:/g, '')
+  const override = useOverride(assetId)
   const bd = (parseInt(uid.replace(/\D/g,'').slice(-2) || '0', 10) % 30) / 10   // per-instance blink delay
   const gid = `sg-${uid}`
   const grad = `url(#${gid})`
@@ -223,9 +250,10 @@ export function Specimen({ form = 'blob', color = '#8FD08A', size = 64, alive = 
             <Feet color={color} />
             <path d="M28,54 C28,38 40,32 50,32 C60,32 72,38 72,54 L72,74 C72,84 62,88 50,88 C38,88 28,84 28,74 Z" fill={grad} stroke={INK} strokeWidth="2.6" strokeLinejoin="round" />
             <ellipse cx="50" cy="70" rx="13" ry="14" fill={belly} />
-            <TwoEyes blink={alive} delay={bd} y={54} sp={8} r={6} />
-            <Cheeks y={64} sp={17} />
-            <Smile y={66} w={5} />
+            <TwoEyes blink={alive} delay={bd} y={54} sp={9} r={5.4} />
+            <VertEye blink={alive} delay={bd} cx={50} cy={43} rx={2.8} ry={3.6} />
+            <circle cx="42" cy="72" r="2.2" fill={spot} opacity="0.5" /><circle cx="58" cy="74" r="2.6" fill={spot} opacity="0.5" />
+            <Maw kind="fangs" y={66} />
           </g>
         )
       case 'cyclops':
@@ -235,9 +263,8 @@ export function Specimen({ form = 'blob', color = '#8FD08A', size = 64, alive = 
             <circle cx="55.5" cy="24" r="2.6" fill="#F6D96B" stroke={INK} strokeWidth="1.4" />
             <path d="M42,82 L40,90 M58,82 L60,90" stroke={INK} strokeWidth="3.4" strokeLinecap="round" />
             <path d="M30,58 C30,42 40,38 50,38 C60,38 70,42 70,58 C70,74 62,82 50,82 C38,82 30,74 30,58 Z" fill={grad} stroke={INK} strokeWidth="2.6" strokeLinejoin="round" />
-            <OneEye blink={alive} delay={bd} y={56} r={11} />
-            <Cheeks y={70} sp={17} />
-            <Smile y={74} w={4} />
+            <VertEye blink={alive} delay={bd} cx={50} cy={55} rx={7} ry={10.5} />
+            <Maw kind="slit" y={74} />
           </g>
         )
       case 'slime':
@@ -245,9 +272,8 @@ export function Specimen({ form = 'blob', color = '#8FD08A', size = 64, alive = 
           <g>
             <path d="M22,80 C20,58 34,48 50,48 C66,48 80,60 78,80 C77,86 72,88 68,84 C66,88 61,88 58,84 C56,88 51,89 48,84 C45,88 40,88 37,84 C34,88 28,87 26,83 C24,85 22,84 22,80 Z" fill={grad} stroke={INK} strokeWidth="2.6" strokeLinejoin="round" />
             <ellipse cx="42" cy="60" rx="8" ry="10" fill="#fff" opacity="0.25" />
-            <TwoEyes blink={alive} delay={bd} y={62} sp={8} r={6} />
-            <Cheeks y={72} sp={16} />
-            <Smile y={74} w={6} />
+            <ManyEyes blink={alive} delay={bd} y={62} n={3} sp={9} r={4.4} />
+            <ellipse cx="62" cy="72" rx="3.6" ry="4.6" fill="#fff" opacity="0.2" />
           </g>
         )
       case 'critter': // four-legged
@@ -260,9 +286,8 @@ export function Specimen({ form = 'blob', color = '#8FD08A', size = 64, alive = 
             <ellipse cx="50" cy="60" rx="22" ry="17" fill={grad} stroke={INK} strokeWidth="2.6" />
             <ellipse cx="50" cy="66" rx="12" ry="9" fill={belly} />
             <circle cx="40" cy="54" r="2.4" fill={spot} opacity="0.5" /><circle cx="62" cy="58" r="3" fill={spot} opacity="0.5" />
-            <TwoEyes blink={alive} delay={bd} y={56} sp={7} r={5.4} />
-            <Cheeks y={64} sp={16} />
-            <Smile y={65} w={4} />
+            <TwoEyes blink={alive} delay={bd} y={55} sp={7.5} r={5} />
+            <Maw kind="beak" y={64} />
           </g>
         )
       case 'floaty': // floating jelly
@@ -271,8 +296,7 @@ export function Specimen({ form = 'blob', color = '#8FD08A', size = 64, alive = 
             {[38, 46, 54, 62].map((x, i) => <path key={i} d={`M${x},64 q-2,8 0,14`} stroke={color} strokeWidth="3" fill="none" strokeLinecap="round" opacity="0.85" />)}
             <path d="M30,58 C30,40 40,34 50,34 C60,34 70,40 70,58 C70,64 66,66 60,66 L40,66 C34,66 30,64 30,58 Z" fill={grad} stroke={INK} strokeWidth="2.6" strokeLinejoin="round" opacity="0.96" />
             <ellipse cx="43" cy="46" rx="7" ry="8" fill="#fff" opacity="0.3" />
-            <TwoEyes blink={alive} delay={bd} y={52} sp={7} r={5.4} />
-            <Smile y={60} w={4} />
+            <ManyEyes blink={alive} delay={bd} y={50} n={4} sp={7} r={3.4} />
           </g>
         )
       case 'shroom':
@@ -281,8 +305,8 @@ export function Specimen({ form = 'blob', color = '#8FD08A', size = 64, alive = 
             <path d="M44,88 C42,74 42,68 44,66 L56,66 C58,68 58,74 56,88 Z" fill={belly} stroke={INK} strokeWidth="2.4" strokeLinejoin="round" />
             <path d="M26,54 C26,38 38,32 50,32 C62,32 74,38 74,54 C74,60 62,64 50,64 C38,64 26,60 26,54 Z" fill={grad} stroke={INK} strokeWidth="2.6" strokeLinejoin="round" />
             <circle cx="40" cy="48" r="4" fill="#fff" opacity="0.7" /><circle cx="58" cy="45" r="5" fill="#fff" opacity="0.7" /><circle cx="52" cy="54" r="3" fill="#fff" opacity="0.7" />
-            <TwoEyes blink={alive} delay={bd} y={76} sp={5} r={3.6} />
-            <Smile y={82} w={3} />
+            <ManyEyes blink={alive} delay={bd} y={76} n={2} sp={7} r={3.2} />
+            <Maw kind="slit" y={82} />
           </g>
         )
       case 'cactus':
@@ -294,8 +318,7 @@ export function Specimen({ form = 'blob', color = '#8FD08A', size = 64, alive = 
             <path d="M43,78 C41,58 43,40 50,40 C57,40 59,58 57,78 Z" fill={grad} stroke={INK} strokeWidth="2.6" strokeLinejoin="round" />
             {[46, 54].map((x, i) => [48, 58, 68].map((yy, j) => <path key={i + '' + j} d={`M${x},${yy} l${x < 50 ? -3 : 3},-1.5`} stroke={stem} strokeWidth="1.3" strokeLinecap="round" opacity="0.6" />))}
             <circle cx="50" cy="38" r="4.5" fill="#F5B8CE" stroke={INK} strokeWidth="1.6" />
-            <TwoEyes blink={alive} delay={bd} y={56} sp={5} r={4.2} />
-            <Smile y={62} w={3.4} />
+            <VertEye blink={alive} delay={bd} cx={50} cy={55} rx={4.2} ry={6} />
           </g>
         )
       case 'bloom':
@@ -309,8 +332,7 @@ export function Specimen({ form = 'blob', color = '#8FD08A', size = 64, alive = 
               return <ellipse key={i} cx={px} cy={py} rx="5.5" ry="8" transform={`rotate(${a * 180 / Math.PI + 90} ${px} ${py})`} fill={leaf} stroke={INK} strokeWidth="1.6" />
             })}
             <circle cx="50" cy="44" r="8.5" fill={belly} stroke={INK} strokeWidth="1.8" />
-            <TwoEyes blink={alive} delay={bd} y={43} sp={4} r={3.4} />
-            <Smile y={48} w={3} />
+            <TwoEyes blink={alive} delay={bd} y={43} sp={4} r={3} />
           </g>
         )
       case 'frond':
@@ -337,14 +359,13 @@ export function Specimen({ form = 'blob', color = '#8FD08A', size = 64, alive = 
             <path d="M50,58 C40,56 34,49 35,43 C45,43 51,50 50,58 Z" fill={leaf2} stroke={INK} strokeWidth="1.8" />
             <path d="M50,62 C60,60 66,53 65,47 C55,47 49,54 50,62 Z" fill={leaf} stroke={INK} strokeWidth="1.8" />
             <ellipse cx="50" cy="42" rx="11" ry="12" fill={grad} stroke={INK} strokeWidth="2.4" />
-            <TwoEyes blink={alive} delay={bd} y={42} sp={5} r={3.8} />
-            <Cheeks y={48} sp={9} />
-            <Smile y={47} w={3} />
+            <ManyEyes blink={alive} delay={bd} y={42} n={3} sp={5} r={2.8} />
           </g>
         )
     }
   })()
 
+  if (override) return <img src={override} width={size} height={size} alt="" aria-hidden="true" className={className} style={imgStyle(size)} />
   return (
     <svg viewBox="0 0 100 100" width={size} height={size} className={`spec-svg ${className}`} aria-hidden="true" style={{ display: 'block', overflow: 'visible' }}>
       <defs>
@@ -365,8 +386,10 @@ export function Specimen({ form = 'blob', color = '#8FD08A', size = 64, alive = 
 
 // ── Cabin furniture art ────────────────────────────────────────
 // One illustrated piece per furniture `art` key. `size` is the rendered width.
-export function FurnArt({ item, size = 64 }) {
+export function FurnArt({ item, size = 64, assetId }) {
   const a = item?.art
+  const override = useOverride(assetId)
+  if (override) return <img src={override} alt="" aria-hidden="true" style={{ display: 'block', width: size, height: 'auto', objectFit: 'contain' }} />
   const S = (w, h, kids) => <svg viewBox={`0 0 ${w} ${h}`} width={size} height={size * h / w} aria-hidden="true" style={{ display: 'block', overflow: 'visible' }}>{kids}</svg>
   if (a === 'bed') {
     const c = item.color || '#C98A6A', q = item.quilt || '#8FB27A'
