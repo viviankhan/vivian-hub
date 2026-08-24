@@ -63,7 +63,7 @@ export function freshShip() {
   return { equipped, owned: Object.values(equipped) }
 }
 export function freshSpace() {
-  return { ship: freshShip(), unlocked: [], current: 'verda', discovered: [] }
+  return { ship: freshShip(), unlocked: [], current: 'verda', discovered: [], cabin: null }
 }
 
 // ── Planets & specimens ────────────────────────────────────────
@@ -162,6 +162,76 @@ export function allDiscovered(space) {
     if (s) out.push({ ...s, planetId: d.planetId, planetName: p.name })
   }
   return out
+}
+
+// Chance an expedition actually turns something up (otherwise it comes back with
+// only a scouting consolation). Discovery on this planet is still bounded by
+// what's left to find.
+export const FIND_CHANCE = 0.72
+
+// ── Explorer's cabin (a decoratable room in the ship) ──────────
+// Everything is bought with stars; the first option in each category is free.
+export const CABIN_CATS = [
+  { key: 'wall',  name: 'Walls' },
+  { key: 'floor', name: 'Floor' },
+  { key: 'rug',   name: 'Rug' },
+  { key: 'bed',   name: 'Bed' },
+  { key: 'decor', name: 'Wall art' },
+]
+export const CABIN = {
+  wall: [
+    { id: 'wall-mint',  name: 'Mint',   cost: 0,  color: '#CFE6D6' },
+    { id: 'wall-blue',  name: 'Sky',    cost: 30, color: '#CBDDF2' },
+    { id: 'wall-blush', name: 'Blush',  cost: 30, color: '#F0D6DD' },
+    { id: 'wall-lilac', name: 'Lilac',  cost: 45, color: '#DCD1EE', motif: 'stars' },
+  ],
+  floor: [
+    { id: 'floor-oak',  name: 'Oak',    cost: 0,  color: '#D8C6A6' },
+    { id: 'floor-ash',  name: 'Ash',    cost: 25, color: '#C4CAD2' },
+    { id: 'floor-rose', name: 'Rose',   cost: 25, color: '#E3C6C2' },
+    { id: 'floor-moss', name: 'Moss',   cost: 40, color: '#B6CBA6' },
+  ],
+  rug: [
+    { id: 'rug-none',  name: 'None',   cost: 0,  color: null },
+    { id: 'rug-round', name: 'Round',  cost: 30, color: '#8FB0D8' },
+    { id: 'rug-star',  name: 'Star',   cost: 45, color: '#E8907A', motif: 'star' },
+    { id: 'rug-moon',  name: 'Moon',   cost: 45, color: '#B7A0E0', motif: 'moon' },
+  ],
+  bed: [
+    { id: 'bed-cozy',  name: 'Cozy',   cost: 0,  color: '#E9A9C6' },
+    { id: 'bed-cloud', name: 'Cloud',  cost: 70, color: '#DCEBF6' },
+    { id: 'bed-moss',  name: 'Nest',   cost: 60, color: '#A9C99A' },
+  ],
+  decor: [
+    { id: 'decor-none',   name: 'Bare',     cost: 0,  motif: 'none' },
+    { id: 'decor-map',    name: 'Star map', cost: 40, motif: 'map' },
+    { id: 'decor-window', name: 'Porthole', cost: 55, motif: 'window' },
+    { id: 'decor-plant',  name: 'Hanging',  cost: 35, motif: 'plant' },
+  ],
+}
+export function freshCabin() {
+  const equipped = { wall: 'wall-mint', floor: 'floor-oak', rug: 'rug-none', bed: 'bed-cozy', decor: 'decor-none', pet: null }
+  return { equipped, owned: Object.values(equipped).filter(Boolean) }
+}
+export function cabinPart(cat, id) { const list = CABIN[cat] || []; return list.find(p => p.id === id) || list[0] }
+export function cabinEquipped(cabin, cat) { return cabinPart(cat, (cabin || freshCabin()).equipped?.[cat]) }
+export function cabinOwns(cabin, id) { return (cabin?.owned || []).includes(id) }
+export function withCabinEquip(space, cat, id) {
+  const s = { ...freshSpace(), ...(space || {}) }
+  const cabin = { ...(s.cabin || freshCabin()) }
+  cabin.equipped = { ...cabin.equipped, [cat]: id }
+  return { ...s, cabin }
+}
+export function withCabinOwned(space, id) {
+  const s = { ...freshSpace(), ...(space || {}) }
+  const cabin = { ...(s.cabin || freshCabin()) }
+  if ((cabin.owned || []).includes(id)) return s
+  cabin.owned = [...(cabin.owned || []), id]
+  return { ...s, cabin }
+}
+export function cabinCompletion(cabin) {
+  const total = Object.values(CABIN).reduce((n, a) => n + a.length, 0)
+  return { owned: (cabin?.owned || []).length, total }
 }
 
 export function withUnlocked(space, planetId) {

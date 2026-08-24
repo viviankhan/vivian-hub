@@ -180,6 +180,13 @@ export function awardPetals(game, amount) {
   g.stars = (g.stars || 0) + amount
   return g
 }
+// Grant stars only (no petals/xp) — e.g. a small consolation when an expedition
+// comes back empty-handed.
+export function grantStars(game, amount) {
+  const g = { ...freshGame(), ...(game || {}) }
+  g.stars = (g.stars || 0) + amount
+  return g
+}
 // Spend stars (planet unlock / expedition). Returns the new game, or null when
 // there aren't enough — the caller uses null to refuse the action.
 export function spendStars(game, amount) {

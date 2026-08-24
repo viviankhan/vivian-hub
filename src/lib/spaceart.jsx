@@ -159,8 +159,8 @@ export function Planet({ color = '#77C598', ring = false, size = 120, id = 'p', 
 
 // ── Specimen building blocks ───────────────────────────────────
 const EYE = INK
-function TwoEyes({ y = 54, sp = 7, r = 5.6 }) {
-  return <>
+function TwoEyes({ y = 54, sp = 7, r = 5.6, blink = false, delay = 0 }) {
+  const eyes = <>
     <circle cx={50 - sp} cy={y} r={r} fill="#fff" stroke={EYE} strokeWidth="1.5" />
     <circle cx={50 + sp} cy={y} r={r} fill="#fff" stroke={EYE} strokeWidth="1.5" />
     <circle cx={50 - sp + 0.6} cy={y + 1} r={r * 0.46} fill={EYE} />
@@ -168,13 +168,15 @@ function TwoEyes({ y = 54, sp = 7, r = 5.6 }) {
     <circle cx={50 - sp - 1} cy={y - 1.4} r="1.1" fill="#fff" />
     <circle cx={50 + sp - 1} cy={y - 1.4} r="1.1" fill="#fff" />
   </>
+  return blink ? <g className="crit-eye" style={{ transformOrigin: `50px ${y}px`, animationDelay: `${delay}s` }}>{eyes}</g> : eyes
 }
-function OneEye({ y = 54, r = 9 }) {
-  return <>
+function OneEye({ y = 54, r = 9, blink = false, delay = 0 }) {
+  const eye = <>
     <circle cx="50" cy={y} r={r} fill="#fff" stroke={EYE} strokeWidth="1.6" />
     <circle cx="51" cy={y + 1} r={r * 0.42} fill={EYE} />
     <circle cx="48" cy={y - 2} r="1.6" fill="#fff" />
   </>
+  return blink ? <g className="crit-eye" style={{ transformOrigin: `50px ${y}px`, animationDelay: `${delay}s` }}>{eye}</g> : eye
 }
 function Cheeks({ y = 62, sp = 15 }) {
   return <>
@@ -202,8 +204,9 @@ function Pot() {
 
 // A collectible alien specimen — a chunky, shaded little creature (fauna) or a
 // potted plant (flora). `form` picks the species silhouette; `color` its pigment.
-export function Specimen({ form = 'blob', color = '#8FD08A', size = 64, className = '' }) {
+export function Specimen({ form = 'blob', color = '#8FD08A', size = 64, alive = false, className = '' }) {
   const uid = useId().replace(/:/g, '')
+  const bd = (parseInt(uid.replace(/\D/g,'').slice(-2) || '0', 10) % 30) / 10   // per-instance blink delay
   const gid = `sg-${uid}`
   const grad = `url(#${gid})`
   const belly = lighten(color, 0.5)
@@ -220,7 +223,7 @@ export function Specimen({ form = 'blob', color = '#8FD08A', size = 64, classNam
             <Feet color={color} />
             <path d="M28,54 C28,38 40,32 50,32 C60,32 72,38 72,54 L72,74 C72,84 62,88 50,88 C38,88 28,84 28,74 Z" fill={grad} stroke={INK} strokeWidth="2.6" strokeLinejoin="round" />
             <ellipse cx="50" cy="70" rx="13" ry="14" fill={belly} />
-            <TwoEyes y={54} sp={8} r={6} />
+            <TwoEyes blink={alive} delay={bd} y={54} sp={8} r={6} />
             <Cheeks y={64} sp={17} />
             <Smile y={66} w={5} />
           </g>
@@ -232,7 +235,7 @@ export function Specimen({ form = 'blob', color = '#8FD08A', size = 64, classNam
             <circle cx="55.5" cy="24" r="2.6" fill="#F6D96B" stroke={INK} strokeWidth="1.4" />
             <path d="M42,82 L40,90 M58,82 L60,90" stroke={INK} strokeWidth="3.4" strokeLinecap="round" />
             <path d="M30,58 C30,42 40,38 50,38 C60,38 70,42 70,58 C70,74 62,82 50,82 C38,82 30,74 30,58 Z" fill={grad} stroke={INK} strokeWidth="2.6" strokeLinejoin="round" />
-            <OneEye y={56} r={11} />
+            <OneEye blink={alive} delay={bd} y={56} r={11} />
             <Cheeks y={70} sp={17} />
             <Smile y={74} w={4} />
           </g>
@@ -242,7 +245,7 @@ export function Specimen({ form = 'blob', color = '#8FD08A', size = 64, classNam
           <g>
             <path d="M22,80 C20,58 34,48 50,48 C66,48 80,60 78,80 C77,86 72,88 68,84 C66,88 61,88 58,84 C56,88 51,89 48,84 C45,88 40,88 37,84 C34,88 28,87 26,83 C24,85 22,84 22,80 Z" fill={grad} stroke={INK} strokeWidth="2.6" strokeLinejoin="round" />
             <ellipse cx="42" cy="60" rx="8" ry="10" fill="#fff" opacity="0.25" />
-            <TwoEyes y={62} sp={8} r={6} />
+            <TwoEyes blink={alive} delay={bd} y={62} sp={8} r={6} />
             <Cheeks y={72} sp={16} />
             <Smile y={74} w={6} />
           </g>
@@ -257,7 +260,7 @@ export function Specimen({ form = 'blob', color = '#8FD08A', size = 64, classNam
             <ellipse cx="50" cy="60" rx="22" ry="17" fill={grad} stroke={INK} strokeWidth="2.6" />
             <ellipse cx="50" cy="66" rx="12" ry="9" fill={belly} />
             <circle cx="40" cy="54" r="2.4" fill={spot} opacity="0.5" /><circle cx="62" cy="58" r="3" fill={spot} opacity="0.5" />
-            <TwoEyes y={56} sp={7} r={5.4} />
+            <TwoEyes blink={alive} delay={bd} y={56} sp={7} r={5.4} />
             <Cheeks y={64} sp={16} />
             <Smile y={65} w={4} />
           </g>
@@ -268,7 +271,7 @@ export function Specimen({ form = 'blob', color = '#8FD08A', size = 64, classNam
             {[38, 46, 54, 62].map((x, i) => <path key={i} d={`M${x},64 q-2,8 0,14`} stroke={color} strokeWidth="3" fill="none" strokeLinecap="round" opacity="0.85" />)}
             <path d="M30,58 C30,40 40,34 50,34 C60,34 70,40 70,58 C70,64 66,66 60,66 L40,66 C34,66 30,64 30,58 Z" fill={grad} stroke={INK} strokeWidth="2.6" strokeLinejoin="round" opacity="0.96" />
             <ellipse cx="43" cy="46" rx="7" ry="8" fill="#fff" opacity="0.3" />
-            <TwoEyes y={52} sp={7} r={5.4} />
+            <TwoEyes blink={alive} delay={bd} y={52} sp={7} r={5.4} />
             <Smile y={60} w={4} />
           </g>
         )
@@ -278,7 +281,7 @@ export function Specimen({ form = 'blob', color = '#8FD08A', size = 64, classNam
             <path d="M44,88 C42,74 42,68 44,66 L56,66 C58,68 58,74 56,88 Z" fill={belly} stroke={INK} strokeWidth="2.4" strokeLinejoin="round" />
             <path d="M26,54 C26,38 38,32 50,32 C62,32 74,38 74,54 C74,60 62,64 50,64 C38,64 26,60 26,54 Z" fill={grad} stroke={INK} strokeWidth="2.6" strokeLinejoin="round" />
             <circle cx="40" cy="48" r="4" fill="#fff" opacity="0.7" /><circle cx="58" cy="45" r="5" fill="#fff" opacity="0.7" /><circle cx="52" cy="54" r="3" fill="#fff" opacity="0.7" />
-            <TwoEyes y={76} sp={5} r={3.6} />
+            <TwoEyes blink={alive} delay={bd} y={76} sp={5} r={3.6} />
             <Smile y={82} w={3} />
           </g>
         )
@@ -291,7 +294,7 @@ export function Specimen({ form = 'blob', color = '#8FD08A', size = 64, classNam
             <path d="M43,78 C41,58 43,40 50,40 C57,40 59,58 57,78 Z" fill={grad} stroke={INK} strokeWidth="2.6" strokeLinejoin="round" />
             {[46, 54].map((x, i) => [48, 58, 68].map((yy, j) => <path key={i + '' + j} d={`M${x},${yy} l${x < 50 ? -3 : 3},-1.5`} stroke={stem} strokeWidth="1.3" strokeLinecap="round" opacity="0.6" />))}
             <circle cx="50" cy="38" r="4.5" fill="#F5B8CE" stroke={INK} strokeWidth="1.6" />
-            <TwoEyes y={56} sp={5} r={4.2} />
+            <TwoEyes blink={alive} delay={bd} y={56} sp={5} r={4.2} />
             <Smile y={62} w={3.4} />
           </g>
         )
@@ -306,7 +309,7 @@ export function Specimen({ form = 'blob', color = '#8FD08A', size = 64, classNam
               return <ellipse key={i} cx={px} cy={py} rx="5.5" ry="8" transform={`rotate(${a * 180 / Math.PI + 90} ${px} ${py})`} fill={leaf} stroke={INK} strokeWidth="1.6" />
             })}
             <circle cx="50" cy="44" r="8.5" fill={belly} stroke={INK} strokeWidth="1.8" />
-            <TwoEyes y={43} sp={4} r={3.4} />
+            <TwoEyes blink={alive} delay={bd} y={43} sp={4} r={3.4} />
             <Smile y={48} w={3} />
           </g>
         )
@@ -323,7 +326,7 @@ export function Specimen({ form = 'blob', color = '#8FD08A', size = 64, classNam
               </g>
             })}
             <circle cx="50" cy="30" r="6" fill={belly} stroke={INK} strokeWidth="1.6" />
-            <TwoEyes y={29} sp={3.4} r={2.8} />
+            <TwoEyes blink={alive} delay={bd} y={29} sp={3.4} r={2.8} />
           </g>
         )
       default: // sprout
@@ -334,7 +337,7 @@ export function Specimen({ form = 'blob', color = '#8FD08A', size = 64, classNam
             <path d="M50,58 C40,56 34,49 35,43 C45,43 51,50 50,58 Z" fill={leaf2} stroke={INK} strokeWidth="1.8" />
             <path d="M50,62 C60,60 66,53 65,47 C55,47 49,54 50,62 Z" fill={leaf} stroke={INK} strokeWidth="1.8" />
             <ellipse cx="50" cy="42" rx="11" ry="12" fill={grad} stroke={INK} strokeWidth="2.4" />
-            <TwoEyes y={42} sp={5} r={3.8} />
+            <TwoEyes blink={alive} delay={bd} y={42} sp={5} r={3.8} />
             <Cheeks y={48} sp={9} />
             <Smile y={47} w={3} />
           </g>
