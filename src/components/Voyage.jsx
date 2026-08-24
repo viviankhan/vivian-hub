@@ -349,6 +349,8 @@ export default function Voyage({ game, persistGame, space, persistSpace, checkin
             <div className="wl-modal gh-detail" onClick={(e) => e.stopPropagation()}>
               <div className={`gh-detail-hero gh-${bt}`}>
                 <Biome planet={home} tod={tod} className="gh-detail-sky" />
+                {/* the pane we view it through — the home world is always seen behind glass, never bare */}
+                <div className="gh-detail-glass" aria-hidden="true" />
                 <div className="gh-detail-spec"><Specimen form={detail.form} color={detail.color} size={104} alive assetId={`creature:${detail.id}`} /></div>
                 <div className="gh-detail-soil"><MicroBiome planetId={detail.planetId} kind={detail.kind} width={92} /></div>
               </div>
