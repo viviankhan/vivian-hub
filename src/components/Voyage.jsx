@@ -1,14 +1,15 @@
 import { useState, useMemo } from 'react'
 import { Glyph } from '../lib/glyphs.jsx'
 import { AlienSky, DayCloud } from '../lib/critters.jsx'
-import { Rocket, Planet, Specimen } from '../lib/spaceart.jsx'
+import { Rocket, Planet, Specimen, FurnArt } from '../lib/spaceart.jsx'
 import { spendStars, grantStars, daySegments, emotionWeights } from '../lib/wellness.js'
 import {
   PART_CATS, PARTS, SEARCH_COST, FIND_CHANCE, PLANETS, freshShip, freshSpace,
   equippedPart, equippedParts, isOwned, withEquip, withOwned, shipCompletion,
   planetById, isUnlocked, planetDiscovery, collectionCounts, pickUndiscovered,
   withUnlocked, withCurrent, withDiscovered, allDiscovered,
-  CABIN_CATS, CABIN, freshCabin, cabinPart, cabinEquipped, cabinOwns, withCabinEquip, withCabinOwned, cabinCompletion,
+  CABIN_COLORS, FURNITURE, FURN_GROUPS, furnitureById, freshCabin, cabinColor,
+  cabOwns, cabPlaced, placedFurniture, withCabColor, withCabPlace, withCabRemove, withCabPet, cabinCompletion,
 } from '../lib/space.js'
 
 function Star({ size = 15 }) {
@@ -23,22 +24,10 @@ function mix(hex, t) {
   const m = v => Math.round(v + (255 - v) * t).toString(16).padStart(2, '0')
   return `#${m(r)}${m(g)}${m(b)}`
 }
-// A small bed for the cabin.
-function BedArt({ color = '#E9A9C6' }) {
-  const INK = '#33313E'
-  return (
-    <svg viewBox="0 0 120 70" width="140" aria-hidden="true" style={{ display: 'block' }}>
-      <rect x="8" y="16" width="12" height="40" rx="4" fill="#B98A6A" stroke={INK} strokeWidth="2.4" />
-      <rect x="10" y="50" width="102" height="9" rx="3" fill="#C79A78" stroke={INK} strokeWidth="2.4" />
-      <rect x="16" y="58" width="6" height="10" fill="#A9805E" /><rect x="100" y="58" width="6" height="10" fill="#A9805E" />
-      <rect x="18" y="36" width="92" height="18" rx="8" fill="#F7F1E8" stroke={INK} strokeWidth="2.4" />
-      <path d="M54,36 h56 a8,8 0 0 1 8,8 v6 a4,4 0 0 1-4,4 H54 Z" fill={color} stroke={INK} strokeWidth="2.4" strokeLinejoin="round" />
-      <rect x="24" y="32" width="26" height="16" rx="7" fill="#fff" stroke={INK} strokeWidth="2.4" />
-    </svg>
-  )
-}
-
 const VIEWS = [['build', 'Rocket'], ['explore', 'Explore'], ['greenhouse', 'Greenhouse'], ['cabin', 'Cabin']]
+// Per-art render sizes in the room vs. the shop tile.
+const ROOM_SIZES = { bed: 150, rug: 172, window: 96, door: 80, hanglamp: 52, sidelamp: 74, nightstand: 98, vase: 66, fan: 66, clock: 58, art: 60 }
+const TILE_SIZES = { bed: 66, rug: 62, window: 46, door: 40, hanglamp: 34, sidelamp: 46, nightstand: 62, vase: 42, fan: 46, clock: 42, art: 42 }
 
 export default function Voyage({ game, persistGame, space, persistSpace, checkins = [] }) {
   const sp = space && typeof space === 'object' && space.ship ? space : freshSpace()
@@ -50,7 +39,8 @@ export default function Voyage({ game, persistGame, space, persistSpace, checkin
 
   const [view, setView] = useState('build')
   const [cat, setCat] = useState('nose')
-  const [cabCat, setCabCat] = useState('wall')
+  const [cabTab, setCabTab] = useState('furniture')
+  const [furnGroup, setFurnGroup] = useState('All')
   const [launching, setLaunching] = useState(false)
   const [reveal, setReveal] = useState(null)
   const [msg, setMsg] = useState(null)
@@ -99,18 +89,24 @@ export default function Voyage({ game, persistGame, space, persistSpace, checkin
     }
   }
 
-  // ── Cabin ──
-  const buyCabin = (part) => {
-    if (cabinOwns(cabin, part.id)) { persistSpace(withCabinEquip(sp, cabCat, part.id)); return }
-    const g = spendStars(game, part.cost)
-    if (!g) { flash(`${part.cost - stars} more stars for ${part.name}.`); return }
-    persistGame(g); persistSpace(withCabinEquip(withCabinOwned(sp, part.id), cabCat, part.id))
-    flash(`${part.name} added to your cabin!`)
+  // ── Cabin ── buy (if needed) then toggle a piece in/out of the room
+  const clickFurn = (item) => {
+    if (cabPlaced(cabin, item.id)) { persistSpace(withCabRemove(sp, item.id)); return }
+    if (cabOwns(cabin, item.id)) { persistSpace(withCabPlace(sp, item)); return }
+    const g = spendStars(game, item.cost)
+    if (!g) { flash(`${item.cost - stars} more stars for ${item.name}.`); return }
+    persistGame(g); persistSpace(withCabPlace(sp, item)); flash(`${item.name} added to your cabin!`)
   }
-  const setPet = (key) => persistSpace(withCabinEquip(sp, 'pet', key))
-  const wall = cabinEquipped(cabin, 'wall'), floor = cabinEquipped(cabin, 'floor')
-  const rug = cabinEquipped(cabin, 'rug'), bed = cabinEquipped(cabin, 'bed'), decor = cabinEquipped(cabin, 'decor')
-  const petKey = cabin.equipped?.pet
+  const clickColor = (kind, c) => {
+    if (cabOwns(cabin, c.id)) { persistSpace(withCabColor(sp, kind, c.id)); return }
+    const g = spendStars(game, c.cost)
+    if (!g) { flash(`${c.cost - stars} more stars for ${c.name}.`); return }
+    persistGame(g); persistSpace(withCabColor(sp, kind, c.id))
+  }
+  const setPet = (key) => persistSpace(withCabPet(sp, key))
+  const wallColor = cabinColor('wall', cabin.colors?.wall).color
+  const floorColor = cabinColor('floor', cabin.colors?.floor).color
+  const petKey = cabin.pet
   const pet = petKey ? garden.find(s => `${s.planetId}:${s.id}` === petKey) : null
 
   return (
@@ -218,67 +214,82 @@ export default function Voyage({ game, persistGame, space, persistSpace, checkin
 
       {/* ══ CABIN ══ */}
       {view === 'cabin' && <>
-        <section className="cab" style={{ '--cab-wall': wall.color, '--cab-floor': floor.color }}>
-          {wall.motif === 'stars' && <div className="cab-wall-stars" aria-hidden="true" />}
-          <div className={`cab-art ${decor.motif}`} aria-hidden="true">
-            {decor.motif === 'window' && <AlienSky className="cab-art-sky" />}
-            {decor.motif === 'map' && <span className="cab-art-map">✦ ✧ ✦</span>}
-            {decor.motif === 'plant' && <span className="cab-art-plant" />}
-          </div>
-          <div className="cab-shelf" aria-hidden="true"><span /><span /></div>
+        <section className="cab" style={{ '--cab-wall': wallColor, '--cab-floor': floorColor }}>
           <div className="cab-floorband" aria-hidden="true" />
-          {rug.color && <div className="cab-rug" style={{ background: rug.color }}>{rug.motif === 'star' && <span className="cab-rug-motif">★</span>}{rug.motif === 'moon' && <span className="cab-rug-motif">☾</span>}</div>}
-          <div className="cab-bed"><BedArt color={bed.color} /></div>
-          <div className="cab-pet">
-            {pet ? <span className="gh-spec hop"><Specimen form={pet.form} color={pet.color} size={72} alive /></span>
-                 : <span className="cab-pet-empty">No pet yet</span>}
-          </div>
+          {placedFurniture(cabin).map(it => (
+            <div key={it.id} className="cab-item" style={{ left: it.style.left, bottom: it.style.bottom, top: it.style.top, zIndex: it.style.z }}>
+              <FurnArt item={it} size={ROOM_SIZES[it.art] || 90} />
+            </div>
+          ))}
+          {pet && <div className="cab-pet"><span className="gh-spec hop"><Specimen form={pet.form} color={pet.color} size={70} alive /></span></div>}
         </section>
 
         <section className="vy-card">
-          <div className="vy-card-head"><h3 className="serif">Decorate</h3><span className="vy-count">{cabinCompletion(cabin).owned}/{cabinCompletion(cabin).total} items</span></div>
-          <div className="vy-cats">
-            {CABIN_CATS.map(c => <button key={c.key} className={`vy-cat ${cabCat === c.key ? 'on' : ''}`} onClick={() => setCabCat(c.key)}>{c.name}</button>)}
-            <button className={`vy-cat ${cabCat === 'pet' ? 'on' : ''}`} onClick={() => setCabCat('pet')}>Pet</button>
+          <div className="vy-card-head"><h3 className="serif">Explorer's cabin</h3><span className="vy-count">{cabinCompletion(cabin).owned}/{cabinCompletion(cabin).total} unlocked</span></div>
+          <div className="vy-seg vy-seg-sub">
+            {[['furniture', 'Furniture'], ['colors', 'Colors'], ['pet', 'Pet']].map(([id, l]) => (
+              <button key={id} className={`vy-seg-btn ${cabTab === id ? 'on' : ''}`} onClick={() => setCabTab(id)}>{l}</button>
+            ))}
           </div>
 
-          {cabCat !== 'pet' ? (
-            <div className="vy-opts">
-              {CABIN[cabCat].map(part => {
-                const owned = cabinOwns(cabin, part.id), on = cabinEquipped(cabin, cabCat).id === part.id
+          {cabTab === 'furniture' && <>
+            <div className="vy-cats">
+              {FURN_GROUPS.map(g => <button key={g} className={`vy-cat ${furnGroup === g ? 'on' : ''}`} onClick={() => setFurnGroup(g)}>{g}</button>)}
+            </div>
+            <div className="vy-grid">
+              {FURNITURE.filter(f => furnGroup === 'All' || f.group === furnGroup).map(item => {
+                const placed = cabPlaced(cabin, item.id), owned = cabOwns(cabin, item.id)
                 return (
-                  <button key={part.id} className={`vy-opt ${on ? 'on' : ''} ${(!owned && stars < part.cost) ? 'cant' : ''}`} onClick={() => buyCabin(part)}>
-                    <span className="vy-opt-swatch" style={{ background: part.color || 'repeating-linear-gradient(45deg,#Eee,#EEE 5px,#DDD 5px,#DDD 10px)' }}>
-                      {part.motif === 'star' && '★'}{part.motif === 'moon' && '☾'}{part.motif === 'map' && '✦'}{part.motif === 'window' && '◍'}{part.motif === 'plant' && '🌿'}
-                    </span>
-                    <span className="vy-part-name">{part.name}</span>
-                    {owned ? <span className={`vy-part-tag ${on ? 'worn' : ''}`}>{on ? 'In use' : 'Owned'}</span> : <span className="vy-part-tag buy"><Star size={11} /> {part.cost}</span>}
+                  <button key={item.id} className={`vy-tile ${placed ? 'placed' : ''} ${(!owned && stars < item.cost) ? 'cant' : ''}`} onClick={() => clickFurn(item)}>
+                    {placed && <span className="vy-check">✓</span>}
+                    <span className="vy-tile-art"><FurnArt item={item} size={TILE_SIZES[item.art] || 54} /></span>
+                    <span className="vy-tile-name">{item.name}</span>
+                    {owned ? <span className="vy-tile-tag">{placed ? 'Placed' : 'Place'}</span> : <span className="vy-tile-tag buy"><Star size={11} /> {item.cost}</span>}
                   </button>
                 )
               })}
             </div>
-          ) : (
-            <>
-              <p className="vy-hint" style={{ marginTop: 0, marginBottom: 12 }}>Adopt any creature you've discovered as your cabin companion.</p>
-              <div className="vy-opts">
-                <button className={`vy-opt ${!petKey ? 'on' : ''}`} onClick={() => setPet(null)}>
-                  <span className="vy-opt-swatch">–</span><span className="vy-part-name">None</span>
-                  <span className={`vy-part-tag ${!petKey ? 'worn' : ''}`}>{!petKey ? 'In use' : ''}</span>
-                </button>
-                {fauna.map(s => {
-                  const key = `${s.planetId}:${s.id}`, on = petKey === key
+            <p className="vy-hint">Tap to buy & place a piece; tap a placed piece to tuck it away. Beds, rugs, windows and doors swap one-for-one.</p>
+          </>}
+
+          {cabTab === 'colors' && ['wall', 'floor'].map(kind => (
+            <div key={kind} className="vy-color-block">
+              <div className="vy-color-label">{kind === 'wall' ? 'Walls' : 'Floor'}</div>
+              <div className="vy-colors">
+                {CABIN_COLORS[kind].map(c => {
+                  const on = cabin.colors?.[kind] === c.id, owned = cabOwns(cabin, c.id)
                   return (
-                    <button key={key} className={`vy-opt ${on ? 'on' : ''}`} onClick={() => setPet(key)}>
-                      <span className="vy-opt-pet"><Specimen form={s.form} color={s.color} size={48} /></span>
-                      <span className="vy-part-name">{s.name}</span>
-                      <span className={`vy-part-tag ${on ? 'worn' : ''}`}>{on ? 'Adopted' : 'Adopt'}</span>
+                    <button key={c.id} className={`vy-color ${on ? 'on' : ''}`} onClick={() => clickColor(kind, c)} title={c.name}>
+                      <span className="vy-color-dot" style={{ background: c.color }}>{on && <span className="vy-color-check">✓</span>}</span>
+                      {!owned && <span className="vy-color-cost"><Star size={10} /> {c.cost}</span>}
                     </button>
                   )
                 })}
-                {fauna.length === 0 && <p className="vy-hint">Discover a creature on an expedition to adopt it.</p>}
               </div>
-            </>
-          )}
+            </div>
+          ))}
+
+          {cabTab === 'pet' && <>
+            <p className="vy-hint" style={{ marginTop: 0, marginBottom: 12 }}>Adopt any creature you've discovered as your cabin companion.</p>
+            <div className="vy-grid">
+              <button className={`vy-tile ${!petKey ? 'placed' : ''}`} onClick={() => setPet(null)}>
+                {!petKey && <span className="vy-check">✓</span>}
+                <span className="vy-tile-art" style={{ color: 'var(--muted)', fontSize: 24 }}>–</span>
+                <span className="vy-tile-name">None</span>
+              </button>
+              {fauna.map(s => {
+                const key = `${s.planetId}:${s.id}`, on = petKey === key
+                return (
+                  <button key={key} className={`vy-tile ${on ? 'placed' : ''}`} onClick={() => setPet(key)}>
+                    {on && <span className="vy-check">✓</span>}
+                    <span className="vy-tile-art"><Specimen form={s.form} color={s.color} size={50} /></span>
+                    <span className="vy-tile-name">{s.name}</span>
+                  </button>
+                )
+              })}
+            </div>
+            {fauna.length === 0 && <p className="vy-hint">Discover a creature on an expedition to adopt it.</p>}
+          </>}
         </section>
       </>}
 

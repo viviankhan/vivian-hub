@@ -358,3 +358,96 @@ export function Specimen({ form = 'blob', color = '#8FD08A', size = 64, alive = 
     </svg>
   )
 }
+
+// ── Cabin furniture art ────────────────────────────────────────
+// One illustrated piece per furniture `art` key. `size` is the rendered width.
+export function FurnArt({ item, size = 64 }) {
+  const a = item?.art
+  const S = (w, h, kids) => <svg viewBox={`0 0 ${w} ${h}`} width={size} height={size * h / w} aria-hidden="true" style={{ display: 'block', overflow: 'visible' }}>{kids}</svg>
+  if (a === 'bed') {
+    const c = item.color || '#C98A6A', q = item.quilt || '#8FB27A'
+    return S(120, 74, <g>
+      <rect x="6" y="14" width="13" height="46" rx="4" fill={c} stroke={INK} strokeWidth="2.6" />
+      <rect x="8" y="52" width="104" height="12" rx="4" fill={c} stroke={INK} strokeWidth="2.6" />
+      <rect x="14" y="62" width="7" height="11" fill={darken(c, 0.2)} /><rect x="100" y="62" width="7" height="11" fill={darken(c, 0.2)} />
+      <rect x="18" y="34" width="94" height="20" rx="8" fill="#F7F1E8" stroke={INK} strokeWidth="2.6" />
+      <path d="M50,34 h62 a8,8 0 0 1 8,8 v6 a4,4 0 0 1-4,4 H50 Z" fill={q} stroke={INK} strokeWidth="2.6" strokeLinejoin="round" />
+      {[62, 82, 102].map((x, i) => <g key={i}><path d={`M${x - 6},42 l6,-6 6,6 -6,6 Z`} fill={lighten(q, 0.35)} stroke={INK} strokeWidth="1.4" /></g>)}
+      <rect x="22" y="30" width="26" height="17" rx="7" fill="#fff" stroke={INK} strokeWidth="2.6" />
+    </g>)
+  }
+  if (a === 'rug') {
+    const c = item.color || '#8FB0D8'
+    return S(120, 46, <g>
+      <ellipse cx="60" cy="24" rx="56" ry="20" fill={c} stroke={INK} strokeWidth="2.6" />
+      <ellipse cx="60" cy="24" rx="46" ry="14" fill="none" stroke={lighten(c, 0.4)} strokeWidth="2" />
+      {item.motif === 'star' && <path d="M60,15l2.4,5 5.4.6-4,3.6 1,5.4L60,32l-4.8,2.6 1-5.4-4-3.6 5.4-.6Z" fill={lighten(c, 0.5)} stroke={INK} strokeWidth="1.2" />}
+      {item.motif === 'moon' && <path d="M64,16a9,9 0 1 0 0,16 7,7 0 0 1 0-16Z" fill={lighten(c, 0.5)} stroke={INK} strokeWidth="1.2" />}
+    </g>)
+  }
+  if (a === 'window') return S(92, 118, <g>
+    <path d="M10,52 A36,36 0 0 1 82,52 L82,110 L10,110 Z" fill="#3A2E63" stroke="#B9A985" strokeWidth="6" strokeLinejoin="round" />
+    <path d="M46,18 L46,110 M12,60 L80,60 M12,84 L80,84" stroke="#7A6DA6" strokeWidth="3" />
+    <circle cx="60" cy="40" r="9" fill="#F6E7A8" opacity="0.9" />
+    {[[16, 44], [70, 40], [22, 78], [72, 76]].map(([x, y], i) => <circle key={i} cx={x} cy={y} r="4" fill="#DFF0E4" />)}
+    <path d="M10,52 A36,36 0 0 1 40,16" fill="none" stroke="#6AA36E" strokeWidth="6" strokeLinecap="round" />
+    <circle cx="20" cy="34" r="5" fill="#CFE8CF" /><circle cx="30" cy="22" r="5" fill="#CFE8CF" />
+  </g>)
+  if (a === 'door') return S(72, 108, <g>
+    <path d="M6,44 A30,30 0 0 1 66,44 L66,104 L6,104 Z" fill="#E9E0CE" stroke={INK} strokeWidth="2.6" strokeLinejoin="round" />
+    <path d="M12,46 A24,24 0 0 1 60,46 L60,100 L12,100 Z" fill="#A97C52" stroke={INK} strokeWidth="2.4" />
+    <path d="M36,20 L36,100" stroke={INK} strokeWidth="2" opacity="0.5" />
+    <circle cx="30" cy="66" r="2.6" fill="#F6D96B" stroke={INK} strokeWidth="1.4" />
+    <path d="M6,44 A30,30 0 0 1 40,16" fill="none" stroke="#7FB27A" strokeWidth="5" strokeLinecap="round" />
+    <circle cx="18" cy="30" r="4" fill="#C9A9E0" /><circle cx="30" cy="20" r="4" fill="#C9A9E0" />
+  </g>)
+  if (a === 'hanglamp') return S(46, 86, <g>
+    <path d="M23,0 L23,30" stroke={INK} strokeWidth="2" />
+    <path d="M8,54 C8,40 38,40 38,54 C38,64 30,70 23,70 C16,70 8,64 8,54 Z" fill="#5B8CA8" stroke={INK} strokeWidth="2.4" />
+    <g className="vy-flame" style={{ transformOrigin: '23px 48px' }}>
+      <path d="M15,52 Q23,30 31,52 Q23,44 15,52Z" fill="#F5A64B" /><path d="M18,52 Q23,38 28,52 Q23,46 18,52Z" fill="#F6D96B" />
+    </g>
+    <path d="M8,66 C8,76 38,76 38,66" fill="#4A7890" stroke={INK} strokeWidth="2.4" />
+  </g>)
+  if (a === 'sidelamp') return S(70, 92, <g>
+    <path d="M20,92 L50,92 L44,64 L26,64 Z" fill="#8A5A33" stroke={INK} strokeWidth="2.4" strokeLinejoin="round" />
+    <ellipse cx="35" cy="64" rx="20" ry="5" fill="#A97C52" stroke={INK} strokeWidth="2" />
+    <rect x="33" y="40" width="4" height="24" fill="#6E5B44" />
+    <path d="M22,40 L48,40 L44,20 L26,20 Z" fill="#F2C24E" stroke={INK} strokeWidth="2.4" strokeLinejoin="round" />
+    <path d="M26,30 L44,30" stroke={darken('#F2C24E', 0.12)} strokeWidth="2" opacity="0.6" />
+  </g>)
+  if (a === 'nightstand') return S(90, 68, <g>
+    <rect x="8" y="14" width="74" height="46" rx="6" fill="#2E5A4A" stroke={INK} strokeWidth="2.6" />
+    <rect x="16" y="22" width="58" height="14" rx="3" fill="#22463A" stroke={INK} strokeWidth="1.8" />
+    <rect x="16" y="40" width="58" height="14" rx="3" fill="#22463A" stroke={INK} strokeWidth="1.8" />
+    <path d="M40,29 q5,0 10,0 M40,47 q5,0 10,0" stroke="#E3B24E" strokeWidth="2.4" fill="none" strokeLinecap="round" />
+    <path d="M12,60 l-4,8 M78,60 l4,8" stroke={INK} strokeWidth="3" strokeLinecap="round" />
+  </g>)
+  if (a === 'vase') return S(60, 100, <g>
+    <path d="M20,50 C10,42 12,26 30,26 L30,50 Z" fill="#8A5A33" stroke={INK} strokeWidth="2.2" />
+    <path d="M18,52 L42,52 L38,96 L22,96 Z" fill="#B5875E" stroke={INK} strokeWidth="2.6" strokeLinejoin="round" />
+    <path d="M30,52 C30,40 34,26 40,14" stroke="#7A5A3A" strokeWidth="3" fill="none" strokeLinecap="round" />
+    {[[40, 14], [34, 24], [44, 26], [30, 36]].map(([x, y], i) => <g key={i}>{[0, 1, 2, 3, 4].map(p => { const ang = p / 5 * Math.PI * 2; return <ellipse key={p} cx={x + Math.cos(ang) * 4} cy={y + Math.sin(ang) * 4} rx="2.4" ry="3.4" transform={`rotate(${ang * 180 / Math.PI + 90} ${x + Math.cos(ang) * 4} ${y + Math.sin(ang) * 4})`} fill="#F7C5D2" stroke={INK} strokeWidth="0.9" /> })}<circle cx={x} cy={y} r="2" fill="#F6D96B" /></g>)}
+  </g>)
+  if (a === 'fan') return S(70, 66, <g>
+    <path d="M35,58 L12,20 A28,28 0 0 1 58,20 Z" fill="#F6C6D6" stroke={INK} strokeWidth="2.4" strokeLinejoin="round" />
+    {[20, 28, 35, 42, 50].map((x, i) => <path key={i} d={`M35,58 L${x},${18 + Math.abs(35 - x) * 0.2}`} stroke="#D98FA8" strokeWidth="1.6" />)}
+    <circle cx="35" cy="58" r="4" fill="#B5677F" stroke={INK} strokeWidth="1.8" />
+    <path d="M24,30 q4,-4 8,0 M40,28 q4,-4 8,0" stroke="#C56E88" strokeWidth="1.6" fill="none" strokeLinecap="round" />
+  </g>)
+  if (a === 'clock') return S(60, 60, <g>
+    <circle cx="30" cy="30" r="26" fill="#EFE7D4" stroke="#B9A985" strokeWidth="5" />
+    <circle cx="30" cy="30" r="20" fill="#FBF6EC" stroke={INK} strokeWidth="1.6" />
+    <path d="M30,30 L30,16 M30,30 L40,34" stroke={INK} strokeWidth="2.4" strokeLinecap="round" />
+    <circle cx="30" cy="30" r="2" fill={INK} />
+  </g>)
+  if (a === 'art') return S(58, 68, <g>
+    <path d="M29,4 L29,10" stroke={INK} strokeWidth="1.6" />
+    <rect x="8" y="10" width="42" height="48" rx="4" fill="#EEE6D8" stroke="#B98A6A" strokeWidth="4" />
+    <rect x="14" y="16" width="30" height="36" rx="2" fill="#CFE0EF" />
+    <path d="M20,30 C18,24 24,22 26,28" stroke="#7A5A3A" strokeWidth="2" fill="none" strokeLinecap="round" />
+    {[[26, 24], [22, 20], [30, 22]].map(([x, y], i) => <circle key={i} cx={x} cy={y} r="4" fill="#F5B8CE" stroke={INK} strokeWidth="1" />)}
+    <path d="M12,58 l4,6 M46,58 l-4,6" stroke="#C9B48E" strokeWidth="2" strokeLinecap="round" />
+  </g>)
+  return null
+}

@@ -169,68 +169,88 @@ export function allDiscovered(space) {
 // what's left to find.
 export const FIND_CHANCE = 0.72
 
-// ── Explorer's cabin (a decoratable room in the ship) ──────────
-// Everything is bought with stars; the first option in each category is free.
-export const CABIN_CATS = [
-  { key: 'wall',  name: 'Walls' },
-  { key: 'floor', name: 'Floor' },
-  { key: 'rug',   name: 'Rug' },
-  { key: 'bed',   name: 'Bed' },
-  { key: 'decor', name: 'Wall art' },
-]
-export const CABIN = {
+// ── Explorer's cabin — Finch-style furniture + colours ─────────
+// You buy furniture with stars, then place / remove pieces freely (a placed
+// piece shows a checkmark in the shop grid). Structural slots (bed / rug /
+// window / door) hold one piece at a time; everything else places on its own
+// spot. Wall & floor are separate colour swatches.
+export const CABIN_COLORS = {
   wall: [
-    { id: 'wall-mint',  name: 'Mint',   cost: 0,  color: '#CFE6D6' },
-    { id: 'wall-blue',  name: 'Sky',    cost: 30, color: '#CBDDF2' },
-    { id: 'wall-blush', name: 'Blush',  cost: 30, color: '#F0D6DD' },
-    { id: 'wall-lilac', name: 'Lilac',  cost: 45, color: '#DCD1EE', motif: 'stars' },
+    { id: 'wall-mint',  name: 'Mint',  cost: 0,  color: '#CFE6D6' },
+    { id: 'wall-sage',  name: 'Sage',  cost: 20, color: '#BFD8B0' },
+    { id: 'wall-sky',   name: 'Sky',   cost: 20, color: '#CBDDF2' },
+    { id: 'wall-blush', name: 'Blush', cost: 20, color: '#F0D6DD' },
+    { id: 'wall-lilac', name: 'Lilac', cost: 30, color: '#DCD1EE' },
+    { id: 'wall-clay',  name: 'Clay',  cost: 30, color: '#E8CBB2' },
   ],
   floor: [
-    { id: 'floor-oak',  name: 'Oak',    cost: 0,  color: '#D8C6A6' },
-    { id: 'floor-ash',  name: 'Ash',    cost: 25, color: '#C4CAD2' },
-    { id: 'floor-rose', name: 'Rose',   cost: 25, color: '#E3C6C2' },
-    { id: 'floor-moss', name: 'Moss',   cost: 40, color: '#B6CBA6' },
-  ],
-  rug: [
-    { id: 'rug-none',  name: 'None',   cost: 0,  color: null },
-    { id: 'rug-round', name: 'Round',  cost: 30, color: '#8FB0D8' },
-    { id: 'rug-star',  name: 'Star',   cost: 45, color: '#E8907A', motif: 'star' },
-    { id: 'rug-moon',  name: 'Moon',   cost: 45, color: '#B7A0E0', motif: 'moon' },
-  ],
-  bed: [
-    { id: 'bed-cozy',  name: 'Cozy',   cost: 0,  color: '#E9A9C6' },
-    { id: 'bed-cloud', name: 'Cloud',  cost: 70, color: '#DCEBF6' },
-    { id: 'bed-moss',  name: 'Nest',   cost: 60, color: '#A9C99A' },
-  ],
-  decor: [
-    { id: 'decor-none',   name: 'Bare',     cost: 0,  motif: 'none' },
-    { id: 'decor-map',    name: 'Star map', cost: 40, motif: 'map' },
-    { id: 'decor-window', name: 'Porthole', cost: 55, motif: 'window' },
-    { id: 'decor-plant',  name: 'Hanging',  cost: 35, motif: 'plant' },
+    { id: 'floor-oak',  name: 'Oak',   cost: 0,  color: '#D8C6A6' },
+    { id: 'floor-ash',  name: 'Ash',   cost: 20, color: '#C4CAD2' },
+    { id: 'floor-rose', name: 'Rose',  cost: 20, color: '#E3C6C2' },
+    { id: 'floor-moss', name: 'Moss',  cost: 30, color: '#B6CBA6' },
   ],
 }
+export function cabinColor(kind, id) { const l = CABIN_COLORS[kind] || []; return l.find(c => c.id === id) || l[0] }
+
+// Each piece: id, name, group (shop filter), slot (single-slot if in FURN_SINGLE),
+// cost, art (drawing key), optional color/motif, and a room `style` (position).
+export const FURNITURE = [
+  { id: 'bed-cozy',  name: 'Cozy bed',   group: 'Beds',    slot: 'bed',   cost: 0,  art: 'bed', color: '#C98A6A', quilt: '#8FB27A', style: { left: '15%', bottom: '18px', z: 3 } },
+  { id: 'bed-cloud', name: 'Cloud bed',  group: 'Beds',    slot: 'bed',   cost: 80, art: 'bed', color: '#B7C7DE', quilt: '#DCEBF6', style: { left: '15%', bottom: '18px', z: 3 } },
+  { id: 'bed-nest',  name: 'Mossy nest', group: 'Beds',    slot: 'bed',   cost: 70, art: 'bed', color: '#9A8567', quilt: '#A9C99A', style: { left: '15%', bottom: '18px', z: 3 } },
+  { id: 'rug-round', name: 'Round rug',  group: 'Rugs',    slot: 'rug',   cost: 25, art: 'rug', color: '#8FB0D8', style: { left: '50%', bottom: '10px', z: 1 } },
+  { id: 'rug-star',  name: 'Star rug',   group: 'Rugs',    slot: 'rug',   cost: 40, art: 'rug', color: '#4C6B3F', motif: 'star', style: { left: '50%', bottom: '10px', z: 1 } },
+  { id: 'rug-moon',  name: 'Moon rug',   group: 'Rugs',    slot: 'rug',   cost: 40, art: 'rug', color: '#B7A0E0', motif: 'moon', style: { left: '50%', bottom: '10px', z: 1 } },
+  { id: 'window-arch', name: 'Arched window', group: 'Windows', slot: 'window', cost: 45, art: 'window', style: { left: '40%', bottom: '150px', z: 1 } },
+  { id: 'door-arch',   name: 'Greenhouse door', group: 'Windows', slot: 'door', cost: 55, art: 'door', style: { left: '80%', bottom: '30px', z: 1 } },
+  { id: 'hanglamp',   name: 'Hanging lamp', group: 'Lighting', slot: 'hang',   cost: 35, art: 'hanglamp', style: { left: '50%', top: '0px', z: 2 } },
+  { id: 'sidelamp',   name: 'Lamp table',   group: 'Lighting', slot: 'side',   cost: 40, art: 'sidelamp', style: { left: '61%', bottom: '20px', z: 3 } },
+  { id: 'nightstand', name: 'Nightstand',   group: 'Tables',   slot: 'stand',  cost: 35, art: 'nightstand', style: { left: '33%', bottom: '22px', z: 3 } },
+  { id: 'vase',       name: 'Blossom vase', group: 'Plants',   slot: 'vase',   cost: 30, art: 'vase', style: { left: '90%', bottom: '20px', z: 3 } },
+  { id: 'wall-fan',   name: 'Paper fan',    group: 'Wall',     slot: 'fan',    cost: 20, art: 'fan',   style: { left: '9%',  bottom: '196px', z: 1 } },
+  { id: 'wall-clock', name: 'Wall clock',   group: 'Wall',     slot: 'clock',  cost: 30, art: 'clock', style: { left: '73%', bottom: '206px', z: 1 } },
+  { id: 'wall-art',   name: 'Blossom art',  group: 'Wall',     slot: 'art',    cost: 25, art: 'art',   style: { left: '20%', bottom: '176px', z: 1 } },
+]
+export const FURN_SINGLE = new Set(['bed', 'rug', 'window', 'door'])
+export const FURN_GROUPS = ['All', 'Beds', 'Rugs', 'Windows', 'Lighting', 'Tables', 'Plants', 'Wall']
+export function furnitureById(id) { return FURNITURE.find(f => f.id === id) || null }
+
 export function freshCabin() {
-  const equipped = { wall: 'wall-mint', floor: 'floor-oak', rug: 'rug-none', bed: 'bed-cozy', decor: 'decor-none', pet: null }
-  return { equipped, owned: Object.values(equipped).filter(Boolean) }
+  return { colors: { wall: 'wall-mint', floor: 'floor-oak' }, placed: ['bed-cozy', 'rug-round'], owned: ['bed-cozy', 'rug-round', 'wall-mint', 'floor-oak'], pet: null }
 }
-export function cabinPart(cat, id) { const list = CABIN[cat] || []; return list.find(p => p.id === id) || list[0] }
-export function cabinEquipped(cabin, cat) { return cabinPart(cat, (cabin || freshCabin()).equipped?.[cat]) }
-export function cabinOwns(cabin, id) { return (cabin?.owned || []).includes(id) }
-export function withCabinEquip(space, cat, id) {
+export function cabOwns(cabin, id) { return (cabin?.owned || []).includes(id) }
+export function cabPlaced(cabin, id) { return (cabin?.placed || []).includes(id) }
+export function placedFurniture(cabin) {
+  return (cabin?.placed || []).map(furnitureById).filter(Boolean).sort((a, b) => (a.style.z || 0) - (b.style.z || 0))
+}
+export function withCabColor(space, kind, id) {
   const s = { ...freshSpace(), ...(space || {}) }
   const cabin = { ...(s.cabin || freshCabin()) }
-  cabin.equipped = { ...cabin.equipped, [cat]: id }
+  cabin.colors = { ...cabin.colors, [kind]: id }
+  if (!(cabin.owned || []).includes(id)) cabin.owned = [...(cabin.owned || []), id]
   return { ...s, cabin }
 }
-export function withCabinOwned(space, id) {
+export function withCabPlace(space, item) {
   const s = { ...freshSpace(), ...(space || {}) }
   const cabin = { ...(s.cabin || freshCabin()) }
-  if ((cabin.owned || []).includes(id)) return s
-  cabin.owned = [...(cabin.owned || []), id]
+  if (!(cabin.owned || []).includes(item.id)) cabin.owned = [...(cabin.owned || []), item.id]
+  let placed = cabin.placed || []
+  if (FURN_SINGLE.has(item.slot)) placed = placed.filter(id => furnitureById(id)?.slot !== item.slot)
+  cabin.placed = [...placed.filter(id => id !== item.id), item.id]
   return { ...s, cabin }
+}
+export function withCabRemove(space, id) {
+  const s = { ...freshSpace(), ...(space || {}) }
+  const cabin = { ...(s.cabin || freshCabin()) }
+  cabin.placed = (cabin.placed || []).filter(x => x !== id)
+  return { ...s, cabin }
+}
+export function withCabPet(space, key) {
+  const s = { ...freshSpace(), ...(space || {}) }
+  return { ...s, cabin: { ...(s.cabin || freshCabin()), pet: key } }
 }
 export function cabinCompletion(cabin) {
-  const total = Object.values(CABIN).reduce((n, a) => n + a.length, 0)
+  const total = FURNITURE.length + CABIN_COLORS.wall.length + CABIN_COLORS.floor.length
   return { owned: (cabin?.owned || []).length, total }
 }
 
