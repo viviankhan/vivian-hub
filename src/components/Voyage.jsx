@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react'
 import { Glyph } from '../lib/glyphs.jsx'
 import { AlienSky, DayCloud } from '../lib/critters.jsx'
-import { Rocket, Planet, Specimen, FurnArt, Biome, MicroBiome } from '../lib/spaceart.jsx'
+import { Rocket, Planet, Specimen, FurnArt, Biome, MicroBiome, biomeType } from '../lib/spaceart.jsx'
 import { spendStars, grantStars, daySegments, emotionWeights } from '../lib/wellness.js'
 import {
   PART_CATS, PARTS, SEARCH_COST, FIND_CHANCE, PLANETS, freshShip, freshSpace,
@@ -25,6 +25,14 @@ function mix(hex, t) {
   return `#${m(r)}${m(g)}${m(b)}`
 }
 const VIEWS = [['build', 'Rocket'], ['explore', 'Explore'], ['greenhouse', 'Greenhouse'], ['cabin', 'Cabin']]
+// A short habitat blurb per biome type, shown when you tap a microhabitat.
+const BIOME_INFO = {
+  forest:  { label: 'Mossy forest', habitat: 'grows among rolling green hills where the air hangs soft and damp.' },
+  ocean:   { label: 'Reef shallows', habitat: 'drifts through warm tide-pools beneath two pale moons.' },
+  desert:  { label: 'Ember dunes',   habitat: 'basks on warm sands that glow faintly after dusk.' },
+  crystal: { label: 'Crystal grove', habitat: 'nests among humming crystal spires in perpetual twilight.' },
+  ice:     { label: 'Aurora ice',    habitat: 'roams frozen plains under skies that never stop shimmering.' },
+}
 // Per-art render sizes in the room vs. the shop tile.
 const ROOM_SIZES = { bed: 150, rug: 172, window: 96, door: 80, hanglamp: 52, sidelamp: 74, nightstand: 98, vase: 66, fan: 66, clock: 58, art: 60 }
 const TILE_SIZES = { bed: 66, rug: 62, window: 46, door: 40, hanglamp: 34, sidelamp: 46, nightstand: 62, vase: 42, fan: 46, clock: 42, art: 42 }
@@ -43,6 +51,7 @@ export default function Voyage({ game, persistGame, space, persistSpace, checkin
   const [furnGroup, setFurnGroup] = useState('All')
   const [launching, setLaunching] = useState(false)
   const [reveal, setReveal] = useState(null)
+  const [detail, setDetail] = useState(null)   // tapped microhabitat → species/biome card
   const [msg, setMsg] = useState(null)
   const flash = (m) => { setMsg(m); setTimeout(() => setMsg(null), 2600) }
 
@@ -187,7 +196,7 @@ export default function Voyage({ game, persistGame, space, persistSpace, checkin
 
       {/* ══ GREENHOUSE ══ */}
       {view === 'greenhouse' && <>
-        <section className="gh" style={{ '--gh-tint': planet.color, '--gh-soil': mix(planet.color, 0.2) }}>
+        <section className={`gh gh-${biomeType(planet.id)}`} style={{ '--gh-tint': planet.color, '--gh-soil': mix(planet.color, 0.2) }}>
           {/* the planet's own biome, seen through the glass walls */}
           <div className="gh-env" aria-hidden="true"><Biome planet={planet} className="gh-env-sky" /></div>
           {/* translucent glazing over the environment (peaked glass-house shape) */}
@@ -209,14 +218,15 @@ export default function Voyage({ game, persistGame, space, persistSpace, checkin
             ? <div className="gh-empty">Your greenhouse is waiting.<br />Discover specimens on your voyages, and each one brings a patch of its home world here.</div>
             : <div className="gh-bed">
                 {garden.map((s, i) => (
-                  <div key={s.planetId + s.id} className={`gh-micro ${s.kind}`}
+                  <button key={s.planetId + s.id} className={`gh-micro ${s.kind}`}
                     style={{ '--mc': s.color, '--mc2': mix(s.color, 0.45) }}
-                    title={`${s.name} · a microhabitat from ${s.planetName}`}>
+                    onClick={() => setDetail(s)}
+                    title={`${s.name} · tap for its habitat`}>
                     <span className={`gh-spec ${s.kind === 'fauna' ? 'hop' : 'sway'}`} style={{ animationDelay: `${(i % 6) * 0.4}s` }}>
                       <Specimen form={s.form} color={s.color} size={58} alive assetId={`creature:${s.id}`} />
                     </span>
                     <MicroBiome planetId={s.planetId} kind={s.kind} width={62} className="gh-micro-ground" />
-                  </div>
+                  </button>
                 ))}
               </div>}
         </section>
@@ -320,6 +330,32 @@ export default function Voyage({ game, persistGame, space, persistSpace, checkin
           </div>
         </div>
       )}
+
+      {detail && (() => {
+        const bt = biomeType(detail.planetId)
+        const info = BIOME_INFO[bt] || BIOME_INFO.forest
+        const home = planetById(detail.planetId)
+        const when = detail.ts && !isNaN(new Date(detail.ts)) ? new Date(detail.ts) : null
+        return (
+          <div className="wl-modal-scrim" onClick={() => setDetail(null)}>
+            <div className="wl-modal gh-detail" onClick={(e) => e.stopPropagation()}>
+              <div className={`gh-detail-hero gh-${bt}`}>
+                <Biome planet={home} className="gh-detail-sky" />
+                <div className="gh-detail-spec"><Specimen form={detail.form} color={detail.color} size={104} alive assetId={`creature:${detail.id}`} /></div>
+                <div className="gh-detail-soil"><MicroBiome planetId={detail.planetId} kind={detail.kind} width={92} /></div>
+              </div>
+              <div className="gh-detail-body">
+                <div className="gh-detail-tag">{detail.kind === 'flora' ? 'Flora' : 'Fauna'} · {info.label}</div>
+                <div className="serif gh-detail-name">{detail.name}</div>
+                <p className="gh-detail-text">Native to <b>{detail.planetName}</b> — {home?.blurb}</p>
+                <p className="gh-detail-text">This {detail.kind === 'flora' ? 'plant' : 'creature'} {info.habitat}</p>
+                {when && <div className="gh-detail-meta">Discovered {when.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}</div>}
+                <button className="vy-btn primary block" onClick={() => setDetail(null)}>Close</button>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
     </div>
   )
 }

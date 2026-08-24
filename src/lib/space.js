@@ -159,7 +159,7 @@ export function allDiscovered(space) {
   for (const d of (space?.discovered || [])) {
     const p = planetById(d.planetId)
     const s = p?.specimens.find(x => x.id === d.specimenId)
-    if (s) out.push({ ...s, planetId: d.planetId, planetName: p.name })
+    if (s) out.push({ ...s, planetId: d.planetId, planetName: p.name, ts: d.ts })
   }
   return out
 }
