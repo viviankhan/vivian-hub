@@ -187,28 +187,42 @@ export default function Voyage({ game, persistGame, space, persistSpace, checkin
 
       {/* ══ GREENHOUSE ══ */}
       {view === 'greenhouse' && <>
-        <section className="gh" style={{ '--gh-wall': mix(planet.color, 0.72), '--gh-wall2': mix(planet.color, 0.58), '--gh-floor': mix(planet.color, 0.34) }}>
-          <div className="gh-panes" aria-hidden="true" />
+        <section className="gh" style={{ '--gh-tint': planet.color, '--gh-soil': mix(planet.color, 0.2) }}>
+          {/* the planet's own environment, seen through the glass walls */}
+          <div className="gh-env" aria-hidden="true"><AlienSky className="gh-env-sky" tint={planet.color} /></div>
+          {/* translucent glazing over the environment (peaked glass-house shape) */}
+          <div className="gh-glass" aria-hidden="true" />
+          {/* mood cloud drifting up under the glass ceiling */}
+          <div className="gh-cloud wl-bob"><DayCloud segments={daySeg.segments} emotions={daySeg.emotions} weights={weights} dominant={daySeg.dominant} faceMood={daySeg.overall} size={80} /></div>
+          {/* vines trailing from the eaves */}
           <div className="gh-vines" aria-hidden="true"><span /><span /><span /></div>
-          <div className="gh-window"><AlienSky className="gh-window-sky" /></div>
-          <div className="gh-shelf" aria-hidden="true"><span className="gh-trophy" /><span className="gh-shelf-pot" style={{ background: '#C9A27A' }} /></div>
-          <div className="gh-telescope" aria-hidden="true"><span className="gh-tele-tube" /><span className="gh-tele-leg" /><span className="gh-tele-leg2" /></div>
-          <div className="gh-cloud wl-bob"><DayCloud segments={daySeg.segments} emotions={daySeg.emotions} weights={weights} dominant={daySeg.dominant} faceMood={daySeg.overall} size={92} /></div>
-          <div className="gh-floor" aria-hidden="true" />
-          <div className="gh-rug" aria-hidden="true" />
+          {/* painted greenhouse frame — gable roof, glazing bars, sill */}
+          <svg className="gh-frame" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+            <path className="gh-bar" d="M27,28 L50,3 M50,28 L50,3 M73,28 L50,3 M6,28 L94,28 M6,57 L94,57 M27,28 L27,86 M50,28 L50,86 M73,28 L73,86" vectorEffect="non-scaling-stroke" />
+            <path className="gh-edge" d="M6,86 L6,28 L50,3 L94,28 L94,86" vectorEffect="non-scaling-stroke" />
+            <path className="gh-sill" d="M3,86 L97,86" vectorEffect="non-scaling-stroke" />
+          </svg>
+          {/* soil bed the specimens are planted in */}
+          <div className="gh-bench" aria-hidden="true" />
+          {/* planting beds — each discovered specimen gets its own microenvironment */}
           {garden.length === 0
-            ? <div className="gh-empty">Your greenhouse is waiting.<br />Discover specimens on your voyages to fill it.</div>
-            : <div className="gh-ground">
+            ? <div className="gh-empty">Your greenhouse is waiting.<br />Discover specimens on your voyages, and each one brings a patch of its home world here.</div>
+            : <div className="gh-bed">
                 {garden.map((s, i) => (
-                  <span key={s.planetId + s.id} className={`gh-spec ${s.kind === 'fauna' ? 'hop' : 'sway'}`} style={{ animationDelay: `${(i % 6) * 0.4}s` }} title={`${s.name} · from ${s.planetName}`}>
-                    <Specimen form={s.form} color={s.color} size={66} alive assetId={`creature:${s.id}`} />
-                  </span>
+                  <div key={s.planetId + s.id} className={`gh-micro ${s.kind}`}
+                    style={{ '--mc': s.color, '--mc2': mix(s.color, 0.45) }}
+                    title={`${s.name} · a microhabitat from ${s.planetName}`}>
+                    <span className={`gh-spec ${s.kind === 'fauna' ? 'hop' : 'sway'}`} style={{ animationDelay: `${(i % 6) * 0.4}s` }}>
+                      <Specimen form={s.form} color={s.color} size={58} alive assetId={`creature:${s.id}`} />
+                    </span>
+                    <span className="gh-micro-ground" aria-hidden="true" />
+                  </div>
                 ))}
               </div>}
         </section>
         <section className="vy-card">
           <div className="vy-card-head"><h3 className="serif">Greenhouse</h3><span className="vy-count">{counts.collected}/{counts.total} specimens</span></div>
-          <p className="vy-hint">A glass wing of your ship, extended onto {planet.name}'s surface — its light tints to the world you're visiting. Your mood cloud drifts overhead while everything you've discovered grows below.</p>
+          <p className="vy-hint">A glass wing of your ship, planted on {planet.name}'s surface — the world glows through its walls and your mood cloud drifts under the roof. Every species you discover brings a patch of its own habitat to grow here.</p>
         </section>
       </>}
 

@@ -463,17 +463,32 @@ const SKY_STARS = [
   [182, 40, 0.9, 0.9], [214, 20, 1.1, 1.6], [40, 60, 0.7, 0.4], [120, 62, 0.8, 1.1],
   [166, 74, 0.7, 0.2], [270, 92, 0.9, 0.7], [300, 60, 0.8, 1.4], [86, 96, 0.7, 0.5],
 ]
-export function AlienSky({ className = '' }) {
+// Blend hex `a` toward hex `b` by amount t (0..1). Used to tint the alien sky
+// toward the planet you're visiting without losing its dusky character.
+function blend(a, b, t) {
+  const p = h => { const n = (h || '#000000').replace('#', ''); return [0, 2, 4].map(i => parseInt(n.slice(i, i + 2), 16)) }
+  const [r1, g1, b1] = p(a), [r2, g2, b2] = p(b)
+  const c = (x, y) => Math.round(x + (y - x) * t).toString(16).padStart(2, '0')
+  return `#${c(r1, r2)}${c(g1, g2)}${c(b1, b2)}`
+}
+export function AlienSky({ className = '', tint = null }) {
   const uid = useId().replace(/:/g, '')
   const reduced = prefersReduced()
+  // Base dusk palette; when a planet tint is given, pull each band toward it so
+  // every world reads as its own atmosphere (mossy Verda, cobalt seas, ember…).
+  const sky0 = tint ? blend('#241A47', tint, 0.30) : '#241A47'
+  const sky1 = tint ? blend('#3B2A63', tint, 0.34) : '#3B2A63'
+  const sky2 = tint ? blend('#5A3F72', tint, 0.44) : '#5A3F72'
+  const hill0 = tint ? blend('#3A2A58', tint, 0.42) : '#3A2A58'
+  const hill1 = tint ? blend('#2C2047', tint, 0.5) : '#2C2047'
   return (
     <svg className={className} viewBox="0 0 320 170" preserveAspectRatio="xMidYMid slice"
       aria-hidden="true" style={{ display: 'block', width: '100%', height: '100%' }}>
       <defs>
         <linearGradient id={`sky-${uid}`} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0" stopColor="#241A47" />
-          <stop offset="0.55" stopColor="#3B2A63" />
-          <stop offset="1" stopColor="#5A3F72" />
+          <stop offset="0" stopColor={sky0} />
+          <stop offset="0.55" stopColor={sky1} />
+          <stop offset="1" stopColor={sky2} />
         </linearGradient>
         <radialGradient id={`plan-${uid}`} cx="0.4" cy="0.35" r="0.75">
           <stop offset="0" stopColor="#F0A9C9" />
@@ -500,8 +515,8 @@ export function AlienSky({ className = '' }) {
       <circle cx="46" cy="34" r="8" fill="#EDE6D2" />
       <circle cx="49" cy="31" r="2" fill="#D9CFB4" opacity="0.7" />
       {/* soft alien horizon */}
-      <path d="M0,150 C60,132 110,148 170,140 C230,132 280,150 320,138 L320,170 L0,170 Z" fill="#3A2A58" opacity="0.85" />
-      <path d="M0,158 C70,146 120,160 190,152 C250,146 290,160 320,152 L320,170 L0,170 Z" fill="#2C2047" />
+      <path d="M0,150 C60,132 110,148 170,140 C230,132 280,150 320,138 L320,170 L0,170 Z" fill={hill0} opacity="0.85" />
+      <path d="M0,158 C70,146 120,160 190,152 C250,146 290,160 320,152 L320,170 L0,170 Z" fill={hill1} />
     </svg>
   )
 }
