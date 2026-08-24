@@ -1248,3 +1248,6 @@ textarea { resize: vertical; min-height: 160px; line-height: 1.6; }
 @media (max-width: 480px) {
   .vy-grid { grid-template-columns: repeat(3, 1fr); }
 }
+
+/* Softer depth on illustrated creatures. */
+.spec-body { filter: drop-shadow(0 2px 1.5px rgba(60,50,70,.16)); }

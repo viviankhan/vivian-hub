@@ -346,15 +346,19 @@ export function Specimen({ form = 'blob', color = '#8FD08A', size = 64, alive = 
   })()
 
   return (
-    <svg viewBox="0 0 100 100" width={size} height={size} className={className} aria-hidden="true" style={{ display: 'block', overflow: 'visible' }}>
+    <svg viewBox="0 0 100 100" width={size} height={size} className={`spec-svg ${className}`} aria-hidden="true" style={{ display: 'block', overflow: 'visible' }}>
       <defs>
-        <radialGradient id={gid} cx="0.4" cy="0.3" r="0.85">
-          <stop offset="0" stopColor={lighten(color, 0.4)} />
-          <stop offset="0.62" stopColor={color} />
-          <stop offset="1" stopColor={darken(color, 0.1)} />
+        {/* Richer 4-stop shading: highlight → base → a soft occluded base. */}
+        <radialGradient id={gid} cx="0.38" cy="0.28" r="0.9">
+          <stop offset="0" stopColor={lighten(color, 0.55)} />
+          <stop offset="0.35" stopColor={lighten(color, 0.18)} />
+          <stop offset="0.72" stopColor={color} />
+          <stop offset="1" stopColor={darken(color, 0.16)} />
         </radialGradient>
       </defs>
-      {shape}
+      {/* soft contact shadow so it reads grounded anywhere */}
+      <ellipse cx="50" cy="93" rx="24" ry="4.6" fill="#2A2438" opacity="0.14" />
+      <g className="spec-body">{shape}</g>
     </svg>
   )
 }
