@@ -205,10 +205,11 @@ export default function Voyage({ game, persistGame, space, persistSpace, checkin
           <div className="gh-glasswall" aria-hidden="true" />
           {/* interior glazing structure: a perspective roof overhead + the glass wall ahead */}
           <svg className="gh-frame" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
-            {/* roof rafters converging to a vanishing point (we're looking up the length of the house) */}
-            <path className="gh-bar" d="M0,30 L50,3 M17,30 L50,3 M33,30 L50,3 M50,30 L50,3 M67,30 L50,3 M83,30 L50,3 M100,30 L50,3" vectorEffect="non-scaling-stroke" />
-            {/* roof purlins */}
-            <path className="gh-bar" d="M9,24 L91,24 M19,16 L81,16 M29,9 L71,9" vectorEffect="non-scaling-stroke" />
+            {/* roof rafters running up toward a vanishing point ABOVE the frame — the ridge is
+                overhead and out of sight, so the peak never appears and we stay "inside" */}
+            <path className="gh-bar" d="M0,30 L50,-45 M17,30 L50,-45 M33,30 L50,-45 M50,30 L50,-45 M67,30 L50,-45 M83,30 L50,-45 M100,30 L50,-45" vectorEffect="non-scaling-stroke" />
+            {/* roof purlins — still spread apart at the top edge, never converging on screen */}
+            <path className="gh-bar" d="M3,26 L97,26 M11,14 L89,14 M19,2 L81,2" vectorEffect="non-scaling-stroke" />
             {/* glass wall mullions + transoms */}
             <path className="gh-bar" d="M0,30 L0,78 M17,30 L17,78 M33,30 L33,78 M50,30 L50,78 M67,30 L67,78 M83,30 L83,78 M100,30 L100,78 M0,48 L100,48 M0,63 L100,63" vectorEffect="non-scaling-stroke" />
             {/* eave beam where roof meets wall */}
