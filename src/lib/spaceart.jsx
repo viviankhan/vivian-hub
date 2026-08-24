@@ -487,7 +487,7 @@ export function FurnArt({ item, size = 64, assetId }) {
 const BIOME_TYPE = { verda: 'forest', cobalt: 'ocean', ember: 'desert', viola: 'crystal', aurora: 'ice' }
 // Painted landscape backdrops (in public/biomes/). A world listed here renders its
 // artwork behind the glass; any world without one falls back to the drawn SVG below.
-const BIOME_IMG = { verda: 'verda', cobalt: 'cobalt', ember: 'ember', aurora: 'aurora' }
+const BIOME_IMG = { verda: 'verda', cobalt: 'cobalt', ember: 'ember', aurora: 'aurora', viola: 'viola' }
 const B_STARS = [[24, 26], [58, 16], [118, 30], [176, 20], [248, 34], [292, 18], [206, 46], [150, 52], [88, 42], [300, 56], [40, 60], [270, 66]]
 
 export function Biome({ planet, tod = 'day', className = '' }) {
