@@ -64,6 +64,8 @@ export default function Voyage({ game, persistGame, space, persistSpace, checkin
 
   const daySeg = useMemo(() => daySegments(checkins), [checkins])
   const weights = useMemo(() => emotionWeights(checkins), [checkins])
+  // Time of day — the outside landscape through the greenhouse glass reflects it.
+  const tod = useMemo(() => { const h = new Date().getHours(); return h < 5 ? 'night' : h < 8 ? 'dawn' : h < 17 ? 'day' : h < 20 ? 'dusk' : 'night' }, [])
 
   // ── Rocket builder ──
   const pick = (part) => {
@@ -196,24 +198,29 @@ export default function Voyage({ game, persistGame, space, persistSpace, checkin
 
       {/* ══ GREENHOUSE ══ */}
       {view === 'greenhouse' && <>
-        <section className={`gh gh-${biomeType(planet.id)}`} style={{ '--gh-tint': planet.color, '--gh-soil': mix(planet.color, 0.2) }}>
-          {/* the planet's own biome, seen through the glass walls */}
-          <div className="gh-env" aria-hidden="true"><Biome planet={planet} className="gh-env-sky" /></div>
-          {/* translucent glazing over the environment (peaked glass-house shape) */}
-          <div className="gh-glass" aria-hidden="true" />
-          {/* mood cloud drifting up under the glass ceiling */}
-          <div className="gh-cloud wl-bob"><DayCloud segments={daySeg.segments} emotions={daySeg.emotions} weights={weights} dominant={daySeg.dominant} faceMood={daySeg.overall} size={80} /></div>
-          {/* vines trailing from the eaves */}
-          <div className="gh-vines" aria-hidden="true"><span /><span /><span /></div>
-          {/* painted greenhouse frame — gable roof, glazing bars, sill */}
+        <section className={`gh gh-${biomeType(planet.id)}`} style={{ '--gh-soil': mix(planet.color, 0.2) }}>
+          {/* OUTSIDE: the planet's biome seen through the glass, shifting with the time of day */}
+          <div className="gh-env" aria-hidden="true"><Biome planet={planet} tod={tod} className="gh-env-sky" /></div>
+          {/* the glass we're looking through — a faint glazing wash across the whole wall + roof */}
+          <div className="gh-glasswall" aria-hidden="true" />
+          {/* interior glazing structure: a perspective roof overhead + the glass wall ahead */}
           <svg className="gh-frame" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
-            <path className="gh-bar" d="M27,28 L50,3 M50,28 L50,3 M73,28 L50,3 M6,28 L94,28 M6,57 L94,57 M27,28 L27,86 M50,28 L50,86 M73,28 L73,86" vectorEffect="non-scaling-stroke" />
-            <path className="gh-edge" d="M6,86 L6,28 L50,3 L94,28 L94,86" vectorEffect="non-scaling-stroke" />
-            <path className="gh-sill" d="M3,86 L97,86" vectorEffect="non-scaling-stroke" />
+            {/* roof rafters converging to a vanishing point (we're looking up the length of the house) */}
+            <path className="gh-bar" d="M0,30 L50,3 M17,30 L50,3 M33,30 L50,3 M50,30 L50,3 M67,30 L50,3 M83,30 L50,3 M100,30 L50,3" vectorEffect="non-scaling-stroke" />
+            {/* roof purlins */}
+            <path className="gh-bar" d="M9,24 L91,24 M19,16 L81,16 M29,9 L71,9" vectorEffect="non-scaling-stroke" />
+            {/* glass wall mullions + transoms */}
+            <path className="gh-bar" d="M0,30 L0,78 M17,30 L17,78 M33,30 L33,78 M50,30 L50,78 M67,30 L67,78 M83,30 L83,78 M100,30 L100,78 M0,48 L100,48 M0,63 L100,63" vectorEffect="non-scaling-stroke" />
+            {/* eave beam where roof meets wall */}
+            <path className="gh-beam" d="M0,30 L100,30" vectorEffect="non-scaling-stroke" />
           </svg>
-          {/* soil bed the specimens are planted in */}
-          <div className="gh-bench" aria-hidden="true" />
-          {/* planting beds — each discovered specimen gets its own microenvironment */}
+          {/* INSIDE: mood cloud hangs from the ceiling */}
+          <div className="gh-cloud wl-bob"><DayCloud segments={daySeg.segments} emotions={daySeg.emotions} weights={weights} dominant={daySeg.dominant} faceMood={daySeg.overall} size={78} /></div>
+          {/* INSIDE: vines trailing from the eave beam */}
+          <div className="gh-vines" aria-hidden="true"><span /><span /><span /></div>
+          {/* INSIDE: the warm interior planting floor in the foreground */}
+          <div className="gh-floor" aria-hidden="true" />
+          {/* the living collection, planted on the interior floor */}
           {garden.length === 0
             ? <div className="gh-empty">Your greenhouse is waiting.<br />Discover specimens on your voyages, and each one brings a patch of its home world here.</div>
             : <div className="gh-bed">
@@ -340,7 +347,7 @@ export default function Voyage({ game, persistGame, space, persistSpace, checkin
           <div className="wl-modal-scrim" onClick={() => setDetail(null)}>
             <div className="wl-modal gh-detail" onClick={(e) => e.stopPropagation()}>
               <div className={`gh-detail-hero gh-${bt}`}>
-                <Biome planet={home} className="gh-detail-sky" />
+                <Biome planet={home} tod={tod} className="gh-detail-sky" />
                 <div className="gh-detail-spec"><Specimen form={detail.form} color={detail.color} size={104} alive assetId={`creature:${detail.id}`} /></div>
                 <div className="gh-detail-soil"><MicroBiome planetId={detail.planetId} kind={detail.kind} width={92} /></div>
               </div>

@@ -487,10 +487,10 @@ export function FurnArt({ item, size = 64, assetId }) {
 const BIOME_TYPE = { verda: 'forest', cobalt: 'ocean', ember: 'desert', viola: 'crystal', aurora: 'ice' }
 const B_STARS = [[24, 26], [58, 16], [118, 30], [176, 20], [248, 34], [292, 18], [206, 46], [150, 52], [88, 42], [300, 56], [40, 60], [270, 66]]
 
-export function Biome({ planet, className = '' }) {
+export function Biome({ planet, tod = 'day', className = '' }) {
   const type = BIOME_TYPE[planet?.id] || 'forest'
   const uid = useId().replace(/:/g, '')
-  const sky = `sky-${uid}`, sea = `sea-${uid}`, sun = `sun-${uid}`
+  const sky = `sky-${uid}`, sea = `sea-${uid}`, sun = `sun-${uid}`, tg = `tod-${uid}`, ts = `todsun-${uid}`
   const Sky = (a, b, c) => (
     <linearGradient id={sky} x1="0" y1="0" x2="0" y2="1">
       <stop offset="0" stopColor={a} /><stop offset="0.55" stopColor={b} /><stop offset="1" stopColor={c} />
@@ -589,12 +589,39 @@ export function Biome({ planet, className = '' }) {
     </g>
   }
 
+  // Time-of-day atmosphere washed over the biome so the outside landscape reads
+  // as dawn / day / dusk / night regardless of the world's own character.
+  let todDefs = null, todLayer = null
+  if (tod === 'night') {
+    todLayer = <g>
+      <rect x="0" y="0" width="320" height="200" fill="#141433" opacity="0.5" />
+      {stars(12)}
+      <circle cx="272" cy="38" r="15" fill="#EAF0F7" opacity="0.9" />
+      <circle cx="266" cy="34" r="4.5" fill="#CFD8E4" opacity="0.5" />
+    </g>
+  } else if (tod === 'dusk') {
+    todDefs = <>
+      <linearGradient id={tg} x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#3E2E63" stopOpacity="0.5" /><stop offset="0.55" stopColor="#E27B4A" stopOpacity="0.3" /><stop offset="1" stopColor="#F4A94E" stopOpacity="0.42" /></linearGradient>
+      <radialGradient id={ts} cx="0.5" cy="0.5" r="0.5"><stop offset="0" stopColor="#FBD98C" stopOpacity="0.75" /><stop offset="1" stopColor="#FBD98C" stopOpacity="0" /></radialGradient>
+    </>
+    todLayer = <g><ellipse cx="210" cy="120" rx="70" ry="60" fill={`url(#${ts})`} /><rect x="0" y="0" width="320" height="200" fill={`url(#${tg})`} /></g>
+  } else if (tod === 'dawn') {
+    todDefs = <>
+      <linearGradient id={tg} x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#5A6E9E" stopOpacity="0.38" /><stop offset="0.55" stopColor="#F0A9B8" stopOpacity="0.3" /><stop offset="1" stopColor="#FBD3A0" stopOpacity="0.4" /></linearGradient>
+      <radialGradient id={ts} cx="0.5" cy="0.5" r="0.5"><stop offset="0" stopColor="#FDE9C4" stopOpacity="0.7" /><stop offset="1" stopColor="#FDE9C4" stopOpacity="0" /></radialGradient>
+    </>
+    todLayer = <g><ellipse cx="96" cy="126" rx="64" ry="54" fill={`url(#${ts})`} /><rect x="0" y="0" width="320" height="200" fill={`url(#${tg})`} /></g>
+  } else {
+    todLayer = <rect x="0" y="0" width="320" height="200" fill="#FFF6E2" opacity="0.08" />
+  }
+
   return (
     <svg className={className} viewBox="0 0 320 200" preserveAspectRatio="xMidYMid slice"
       aria-hidden="true" style={{ display: 'block', width: '100%', height: '100%' }}>
-      <defs>{defs}</defs>
+      <defs>{defs}{todDefs}</defs>
       <rect x="0" y="0" width="320" height="200" fill={`url(#${sky})`} />
       {body}
+      {todLayer}
     </svg>
   )
 }

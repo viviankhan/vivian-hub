@@ -1159,43 +1159,41 @@ textarea { resize: vertical; min-height: 160px; line-height: 1.6; }
 .bio-wave { animation: bio-wave 4.5s ease-in-out infinite; transform-origin: center; }
 @keyframes bio-wave { 0%,100% { opacity: .35; transform: translateX(-3px); } 50% { opacity: .7; transform: translateX(3px); } }
 @media (prefers-reduced-motion: reduce) { .bio-twinkle, .bio-aurora, .bio-wave { animation: none; } }
-/* peaked glass — a translucent glazing wash over the environment. The pentagon
-   clip is the house silhouette: gable roof + straight walls to the sill. */
-.gh-glass { position: absolute; inset: 0; z-index: 1; pointer-events: none;
-  clip-path: polygon(6% 28%, 50% 3%, 94% 28%, 94% 86%, 6% 86%);
+/* the glass we look through — a faint full-wall glazing wash (we're INSIDE, so
+   it spans edge to edge rather than being cut into a house silhouette) */
+.gh-glasswall { position: absolute; inset: 0; z-index: 1; pointer-events: none;
   background:
-    radial-gradient(130% 70% at 50% 0%, var(--gfog, transparent), transparent 62%),
-    linear-gradient(135deg, rgba(255,255,255,.20) 0%, rgba(255,255,255,0) 28%),
-    linear-gradient(210deg, rgba(255,255,255,.12) 0%, rgba(255,255,255,0) 22%),
-    linear-gradient(to bottom, var(--gt1, rgba(214,240,228,.14)), var(--gt2, rgba(188,222,208,.22)));
-  box-shadow: inset 0 0 40px rgba(255,255,255,.12); }
+    radial-gradient(120% 55% at 50% 0%, var(--gfog, transparent), transparent 60%),
+    linear-gradient(135deg, rgba(255,255,255,.16) 0%, rgba(255,255,255,0) 24%),
+    linear-gradient(to bottom, var(--gt1, rgba(214,240,228,.12)), var(--gt2, rgba(188,222,208,.18)) 68%, transparent 82%); }
 /* per-world glass mood — the panes take on the visited planet's cast */
-.gh-forest  { --gt1: rgba(214,240,228,.14); --gt2: rgba(188,222,208,.22); --gfog: rgba(224,246,232,.14); }
-.gh-ocean   { --gt1: rgba(200,226,248,.16); --gt2: rgba(150,192,236,.28); --gfog: rgba(196,224,248,.16); }
-.gh-desert  { --gt1: rgba(250,222,184,.18); --gt2: rgba(240,168,102,.26); --gfog: rgba(250,210,158,.24); }
-.gh-crystal { --gt1: rgba(224,210,240,.16); --gt2: rgba(174,144,214,.26); --gfog: rgba(214,196,240,.18); }
-.gh-ice     { --gt1: rgba(226,246,244,.18); --gt2: rgba(148,204,204,.26); --gfog: rgba(230,248,246,.22); }
-/* soil planting bench along the interior floor */
-.gh-bench { position: absolute; left: 6%; right: 6%; bottom: 0; height: 70px; z-index: 2;
-  background: linear-gradient(var(--gh-soil,#C7B48E), color-mix(in srgb, var(--gh-soil,#C7B48E) 62%, #3a2b1c));
-  box-shadow: inset 0 4px 10px rgba(255,255,255,.18), inset 0 -6px 12px rgba(0,0,0,.28); }
-.gh-bench::before { content: ''; position: absolute; left: 0; right: 0; top: -5px; height: 8px;
-  background: color-mix(in srgb, var(--gh-soil,#C7B48E) 70%, #6b4f34); border-radius: 4px 4px 0 0; }
-/* vines trailing from the eaves */
-.gh-vines { position: absolute; top: 25%; left: 0; right: 0; height: 90px; z-index: 3; pointer-events: none; }
-.gh-vines span { position: absolute; top: 0; width: 8px; border-radius: 0 0 8px 8px; background: linear-gradient(#7FB27A, #5C9463); opacity: .92; }
-.gh-vines span:nth-child(1) { left: 9%; height: 56px; } .gh-vines span:nth-child(2) { left: 16%; height: 36px; } .gh-vines span:nth-child(3) { right: 11%; height: 66px; }
-.gh-vines span::after { content: ''; position: absolute; bottom: -5px; left: -4px; width: 15px; height: 11px; border-radius: 50%; background: #8FC08A; }
-/* mood cloud drifting under the glass ceiling */
-.gh-cloud { position: absolute; top: 9%; left: 50%; transform: translateX(-50%); z-index: 4; }
-/* painted greenhouse frame — drawn over everything like near glazing bars */
-.gh-frame { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 5; pointer-events: none; }
+.gh-forest  { --gt1: rgba(214,240,228,.13); --gt2: rgba(188,222,208,.20); --gfog: rgba(224,246,232,.13); }
+.gh-ocean   { --gt1: rgba(200,226,248,.15); --gt2: rgba(150,192,236,.24); --gfog: rgba(196,224,248,.15); }
+.gh-desert  { --gt1: rgba(250,222,184,.17); --gt2: rgba(240,168,102,.24); --gfog: rgba(250,210,158,.22); }
+.gh-crystal { --gt1: rgba(224,210,240,.15); --gt2: rgba(174,144,214,.24); --gfog: rgba(214,196,240,.17); }
+.gh-ice     { --gt1: rgba(226,246,244,.17); --gt2: rgba(148,204,204,.24); --gfog: rgba(230,248,246,.20); }
+/* interior glazing structure — roof + wall bars sit on the glass (behind plants) */
+.gh-frame { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 2; pointer-events: none; }
 .gh-frame path { fill: none; stroke-linecap: round; stroke-linejoin: round; }
-.gh-frame .gh-bar  { stroke: #EFE7D4; stroke-width: 1.6; opacity: .9; }
-.gh-frame .gh-edge { stroke: #F4EEDD; stroke-width: 2.6; filter: drop-shadow(0 1px 1px rgba(0,0,0,.25)); }
-.gh-frame .gh-sill { stroke: #E0D2B4; stroke-width: 3.4; }
-/* planting bed — microhabitats line up along the soil bench (scrolls if full) */
-.gh-bed { position: absolute; left: 0; right: 0; bottom: 12px; z-index: 3;
+.gh-frame .gh-bar  { stroke: #F0E8D6; stroke-width: 1.5; opacity: .82; }
+.gh-frame .gh-beam { stroke: #F6F0E0; stroke-width: 2.6; filter: drop-shadow(0 1px 1px rgba(0,0,0,.22)); }
+/* the warm interior planting floor in the foreground (the room we stand in) */
+.gh-floor { position: absolute; left: 0; right: 0; bottom: 0; height: 23%; z-index: 3;
+  background: linear-gradient(var(--gh-soil,#C7B48E), color-mix(in srgb, var(--gh-soil,#C7B48E) 56%, #33261a));
+  box-shadow: 0 -10px 24px rgba(0,0,0,.28); }
+.gh-floor::before { content: ''; position: absolute; left: 0; right: 0; top: 0; height: 6px;
+  background: color-mix(in srgb, var(--gh-soil,#C7B48E) 72%, #6b4f34); box-shadow: 0 2px 7px rgba(0,0,0,.28); }
+.gh-floor::after { content: ''; position: absolute; inset: 0;
+  background: radial-gradient(130% 100% at 50% 118%, rgba(255,236,190,.30), transparent 72%); }
+/* vines trailing from the eave beam into the room */
+.gh-vines { position: absolute; top: 30%; left: 0; right: 0; height: 80px; z-index: 4; pointer-events: none; }
+.gh-vines span { position: absolute; top: 0; width: 8px; border-radius: 0 0 8px 8px; background: linear-gradient(#7FB27A, #5C9463); opacity: .92; }
+.gh-vines span:nth-child(1) { left: 9%; height: 52px; } .gh-vines span:nth-child(2) { left: 16%; height: 34px; } .gh-vines span:nth-child(3) { right: 11%; height: 62px; }
+.gh-vines span::after { content: ''; position: absolute; bottom: -5px; left: -4px; width: 15px; height: 11px; border-radius: 50%; background: #8FC08A; }
+/* mood cloud hanging from the interior ceiling */
+.gh-cloud { position: absolute; top: 7%; left: 50%; transform: translateX(-50%); z-index: 4; }
+/* the living collection, planted on the interior floor (scrolls if full) */
+.gh-bed { position: absolute; left: 0; right: 0; bottom: 10px; z-index: 5;
   display: flex; flex-wrap: nowrap; align-items: flex-end; justify-content: safe center; gap: 2px;
   padding: 0 14px; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
 .gh-bed::-webkit-scrollbar { display: none; }
@@ -1215,7 +1213,7 @@ textarea { resize: vertical; min-height: 160px; line-height: 1.6; }
 .gh-micro-ground { position: relative; z-index: 0; filter: drop-shadow(0 3px 5px rgba(0,0,0,.28)); }
 @keyframes gh-sway { 0%,100% { transform: rotate(-3deg); } 50% { transform: rotate(3deg); } }
 @keyframes gh-hop { 0%,70%,100% { transform: translateY(0); } 80% { transform: translateY(-9px); } 90% { transform: translateY(-2px); } }
-.gh-empty { position: absolute; inset: 0; display: flex; align-items: flex-end; justify-content: center; text-align: center; color: #EDE6F2; font-size: 13px; font-weight: 600; line-height: 1.6; padding: 0 26px 22px; z-index: 4; text-shadow: 0 1px 6px rgba(0,0,0,.5); }
+.gh-empty { position: absolute; inset: 0; display: flex; align-items: flex-end; justify-content: center; text-align: center; color: #FDF6EA; font-size: 13px; font-weight: 600; line-height: 1.6; padding: 0 26px 18px; z-index: 5; text-shadow: 0 1px 6px rgba(0,0,0,.55); }
 @media (prefers-reduced-motion: reduce) { .gh-spec.sway, .gh-spec.hop { animation: none; } }
 
 /* ── Microhabitat detail card (tap a specimen in the greenhouse) ── */
