@@ -24,6 +24,18 @@ function mix(hex, t) {
   const m = v => Math.round(v + (255 - v) * t).toString(16).padStart(2, '0')
   return `#${m(r)}${m(g)}${m(b)}`
 }
+// A discovered organism's artwork. Once an animated GIF exists at
+// public/organisms/<id>.gif it plays; until then we fall back to the drawn
+// Specimen so the collection still shows something for every species.
+function OrganismArt({ s, size = 64, animate = true }) {
+  const [failed, setFailed] = useState(false)
+  if (failed || !s?.id) {
+    return <Specimen form={s.form} color={s.color} size={size} alive={animate} assetId={`creature:${s.id}`} />
+  }
+  return <img src={`${import.meta.env.BASE_URL}organisms/${s.id}.gif`} alt={s.name || ''}
+    width={size} height={size} onError={() => setFailed(true)}
+    style={{ display: 'block', width: size, height: size, objectFit: 'contain' }} />
+}
 const VIEWS = [['build', 'Rocket'], ['explore', 'Explore'], ['greenhouse', 'Greenhouse'], ['cabin', 'Cabin']]
 // A short habitat blurb per biome type, shown when you tap a microhabitat.
 const BIOME_INFO = {
@@ -52,6 +64,7 @@ export default function Voyage({ game, persistGame, space, persistSpace, checkin
   const [launching, setLaunching] = useState(false)
   const [reveal, setReveal] = useState(null)
   const [detail, setDetail] = useState(null)   // tapped microhabitat → species/biome card
+  const [invOpen, setInvOpen] = useState(false) // organism inventory (your whole collection)
   const [msg, setMsg] = useState(null)
   const flash = (m) => { setMsg(m); setTimeout(() => setMsg(null), 2600) }
 
@@ -231,7 +244,7 @@ export default function Voyage({ game, persistGame, space, persistSpace, checkin
                     onClick={() => setDetail(s)}
                     title={`${s.name} · tap for its habitat`}>
                     <span className={`gh-spec ${s.kind === 'fauna' ? 'hop' : 'sway'}`} style={{ animationDelay: `${(i % 6) * 0.4}s` }}>
-                      <Specimen form={s.form} color={s.color} size={58} alive assetId={`creature:${s.id}`} />
+                      <OrganismArt s={s} size={58} />
                     </span>
                     <MicroBiome planetId={s.planetId} kind={s.kind} width={62} className="gh-micro-ground" />
                   </button>
@@ -239,7 +252,7 @@ export default function Voyage({ game, persistGame, space, persistSpace, checkin
               </div>}
         </section>
         <section className="vy-card">
-          <div className="vy-card-head"><h3 className="serif">Greenhouse</h3><span className="vy-count">{counts.collected}/{counts.total} specimens</span></div>
+          <div className="vy-card-head"><h3 className="serif">Greenhouse</h3><button className="vy-count vy-count-btn" onClick={() => setInvOpen(true)}>{counts.collected}/{counts.total} specimens</button></div>
           <p className="vy-hint">A glass wing of your ship, planted on {planet.name}'s surface — the world glows through its walls and your mood cloud drifts under the roof. Every species you discover brings a patch of its own habitat to grow here.</p>
         </section>
       </>}
@@ -351,7 +364,7 @@ export default function Voyage({ game, persistGame, space, persistSpace, checkin
                 <Biome planet={home} tod={tod} className="gh-detail-sky" />
                 {/* the pane we view it through — the home world is always seen behind glass, never bare */}
                 <div className="gh-detail-glass" aria-hidden="true" />
-                <div className="gh-detail-spec"><Specimen form={detail.form} color={detail.color} size={104} alive assetId={`creature:${detail.id}`} /></div>
+                <div className="gh-detail-spec"><OrganismArt s={detail} size={104} /></div>
                 <div className="gh-detail-soil"><MicroBiome planetId={detail.planetId} kind={detail.kind} width={92} /></div>
               </div>
               <div className="gh-detail-body">
@@ -366,6 +379,48 @@ export default function Voyage({ game, persistGame, space, persistSpace, checkin
           </div>
         )
       })()}
+
+      {/* ══ ORGANISM INVENTORY — your whole collection, grouped by world ══ */}
+      {invOpen && (
+        <div className="wl-modal-scrim" onClick={() => setInvOpen(false)}>
+          <div className="wl-modal gh-inv" onClick={(e) => e.stopPropagation()}>
+            <div className="gh-inv-head">
+              <div>
+                <div className="serif gh-inv-title">Organism Inventory</div>
+                <div className="gh-inv-sub">{counts.collected} of {counts.total} species discovered</div>
+              </div>
+              <button className="gh-inv-x" aria-label="Close" onClick={() => setInvOpen(false)}>✕</button>
+            </div>
+            <div className="gh-inv-body">
+              {counts.collected === 0
+                ? <div className="gh-inv-empty">No organisms yet. Voyage to a world and search its surface — each species you find is added here.</div>
+                : PLANETS.map((p) => {
+                    const found = garden.filter(s => s.planetId === p.id)
+                    if (!found.length) return null
+                    const bt = biomeType(p.id)
+                    return (
+                      <section key={p.id} className={`gh-inv-world gh-${bt}`}>
+                        <div className="gh-inv-world-head">
+                          <span className="gh-inv-dot" style={{ background: p.color }} />
+                          <h4>{p.name}</h4>
+                          <span className="gh-inv-count">{found.length}/{p.specimens.length}</span>
+                        </div>
+                        <div className="gh-inv-grid">
+                          {found.map((s) => (
+                            <button key={s.id} className="gh-inv-cell" onClick={() => { setInvOpen(false); setDetail(s) }} title={`${s.name} · tap for its habitat`}>
+                              <span className="gh-inv-art"><OrganismArt s={s} size={54} animate={false} /></span>
+                              <span className="gh-inv-name">{s.name}</span>
+                              <span className={`gh-inv-kind ${s.kind}`}>{s.kind === 'flora' ? 'Flora' : 'Fauna'}</span>
+                            </button>
+                          ))}
+                        </div>
+                      </section>
+                    )
+                  })}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
