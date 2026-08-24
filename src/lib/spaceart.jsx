@@ -485,10 +485,15 @@ export function FurnArt({ item, size = 64, assetId }) {
 // distinct sky palette and silhouette so no two feel alike. Type is derived
 // from the planet id (see space.js blurbs); unknown ids fall back to forest.
 const BIOME_TYPE = { verda: 'forest', cobalt: 'ocean', ember: 'desert', viola: 'crystal', aurora: 'ice' }
+// Painted landscape backdrops (in public/biomes/). A world listed here renders its
+// artwork behind the glass; any world without one falls back to the drawn SVG below.
+const BIOME_IMG = { verda: 'verda', cobalt: 'cobalt', ember: 'ember', aurora: 'aurora' }
 const B_STARS = [[24, 26], [58, 16], [118, 30], [176, 20], [248, 34], [292, 18], [206, 46], [150, 52], [88, 42], [300, 56], [40, 60], [270, 66]]
 
 export function Biome({ planet, tod = 'day', className = '' }) {
   const type = BIOME_TYPE[planet?.id] || 'forest'
+  const imgName = BIOME_IMG[planet?.id]
+  const imgSrc = imgName ? `${import.meta.env.BASE_URL}biomes/${imgName}.jpg` : null
   const uid = useId().replace(/:/g, '')
   const sky = `sky-${uid}`, sea = `sea-${uid}`, sun = `sun-${uid}`, tg = `tod-${uid}`, ts = `todsun-${uid}`
   const Sky = (a, b, c) => (
@@ -618,9 +623,10 @@ export function Biome({ planet, tod = 'day', className = '' }) {
   return (
     <svg className={className} viewBox="0 0 320 200" preserveAspectRatio="xMidYMid slice"
       aria-hidden="true" style={{ display: 'block', width: '100%', height: '100%' }}>
-      <defs>{defs}{todDefs}</defs>
-      <rect x="0" y="0" width="320" height="200" fill={`url(#${sky})`} />
-      {body}
+      <defs>{!imgSrc && defs}{todDefs}</defs>
+      {imgSrc
+        ? <image href={imgSrc} x="0" y="0" width="320" height="200" preserveAspectRatio="xMidYMid slice" />
+        : <><rect x="0" y="0" width="320" height="200" fill={`url(#${sky})`} />{body}</>}
       {todLayer}
     </svg>
   )
