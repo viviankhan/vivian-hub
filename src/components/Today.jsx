@@ -1622,9 +1622,16 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
   // routine along by the same amount. Only routine steps cascade (the common
   // "my morning ran late, push the rest" case); the chooser still lets you reach
   // other tasks. `newMins` is the task's new start in minutes (null = untimed).
+  //
+  // A time block (e.g. "Work") isn't in the task list at all, so when its start
+  // moves we handle it separately below: sliding a block offers to bring the
+  // tasks scheduled *inside* its window (a "clock in", say) along with it, so
+  // they don't get left behind at the block's old start.
   const maybePromptShift = (pivotId, newMins) => {
+    if (newMins === null || newMins === undefined) return
     const pivot = tasksWithStatus.find(t => t.id === pivotId)
-    if (!pivot || pivot._mins === null || newMins === null || newMins === undefined) return
+    if (!pivot) { maybePromptBlockShift(pivotId, newMins); return }
+    if (pivot._mins === null) return
     if (!pivot.routine) return                       // only routines cascade
     const delta = newMins - pivot._mins
     if (delta === 0) return
@@ -1637,6 +1644,31 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
     // Blend of "just this routine" + "pick your own": pre-check the rest of this
     // task's routine, but show every later task so any can be added/removed.
     const selected = new Set(rest.filter(t => t.routine === pivot.routine).map(t => t.id))
+    setShiftPlan({ pivot, rest, selected, doneIds, delta, mode:'delta' })
+  }
+
+  // Moving a time block's start (e.g. rescheduling "Work" earlier/later): offer
+  // to slide the tasks that sit inside the block's window along by the same
+  // amount, so a "clock in" scheduled inside Work follows Work instead of being
+  // stranded at the old start. `blocks` still reflects the block's OLD window
+  // here (the save's state update hasn't flushed yet), so the delta and the
+  // tasks-inside lookup are both against the pre-move window.
+  const maybePromptBlockShift = (pivotId, newMins) => {
+    const block = blocks.find(b => b.id === pivotId)
+    if (!block || block.start == null) return
+    const delta = newMins - block.start
+    if (delta === 0) return
+    // Movable tasks whose start currently lands inside the block's window.
+    const rest = tasksWithStatus
+      .filter(t => t._mins !== null && t._mins >= block.start && t._mins < block.end && !INFLEXIBLE_TAGS.has(t.tag))
+      .sort((a, b) => a._mins - b._mins)
+    if (!rest.length) return
+    const doneIds = new Set(rest.filter(t => isDoneCheck(t.id, t.isCommitment)).map(t => t.id))
+    // Everything inside the block is pre-checked — the common case is "the block
+    // moved, bring what's in it" — but each row can still be unchecked.
+    const selected = new Set(rest.map(t => t.id))
+    // A lightweight pivot for the chooser's heading ("You moved 'Work' …").
+    const pivot = { id: block.id, title: block.label, label: block.label, _mins: block.start, routine: null }
     setShiftPlan({ pivot, rest, selected, doneIds, delta, mode:'delta' })
   }
 
