@@ -1600,7 +1600,7 @@ export default function App() {
         {tab==='taskmenu'    && <TaskMenu templates={taskTemplates} addTemplate={addTaskTemplate}
           updateTemplate={updateTaskTemplate} deleteTemplate={deleteTaskTemplate} categories={categories} />}
         {tab==='calendar'    && <Calendar    {...sharedProps} jumpTo={jumpTo} />}
-        {tab==='thoughts'    && <ThoughtsBoard addCommitment={addCommitment} addRecurringTask={addRecurringTaskFn}
+        {tab==='thoughts'    && <ThoughtsBoard addCommitment={addCommitment} deleteCommitment={deleteCommitment} addRecurringTask={addRecurringTaskFn}
           categories={categories} routines={routines} taskTemplates={taskTemplates} labelModel={labelModel}
           appendLog={appendLog} removeLog={removeLog} />}
         {tab==='events'      && <EventsManager events={events} addEvent={addEvent} deleteEvent={deleteEvent}
