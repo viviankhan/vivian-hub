@@ -20,9 +20,10 @@ function inkFor(color) { return '#4A4030' }
 
 // ── One sticky note ────────────────────────────────────────────
 function Sticky({ t, onSchedule, onComplete, onDelete, style, compact }) {
-  // A thought that's been acted on — either scheduled onto the calendar or
-  // marked completed — is shown "settled": faded, struck through.
-  const settled = t.scheduled || t.completed
+  // A scheduled thought stays on the board as a faded record. (Completing a
+  // thought removes it from the board entirely — it lives on as the dated
+  // event on the day it was finished — so there's no "completed" note state.)
+  const settled = t.scheduled
   return (
     <div style={{
       background: t.color, borderRadius: 3, padding: '12px 12px 10px',
@@ -39,11 +40,7 @@ function Sticky({ t, onSchedule, onComplete, onDelete, style, compact }) {
       <div style={{ marginTop:'auto', display:'flex', alignItems:'center', justifyContent:'space-between', gap:6 }}>
         <span style={{ fontSize:9.5, color:'rgba(74,64,48,.6)', letterSpacing:.3 }}>{fmtStamp(t.createdAt)}</span>
         <div style={{ display:'flex', gap:4, alignItems:'center' }}>
-          {t.completed ? (
-            // Completed — badge doubles as an "undo" toggle.
-            <button onClick={() => onComplete(t)} title="Mark not completed"
-              style={{ fontSize:8.5, letterSpacing:.5, textTransform:'uppercase', color:'#8A5A1E', fontWeight:700, background:'none', border:'none', cursor:'pointer', padding:'3px 2px' }}>★ Completed</button>
-          ) : t.scheduled ? (
+          {t.scheduled ? (
             <span style={{ fontSize:8.5, letterSpacing:.5, textTransform:'uppercase', color:'#2F6B4F', fontWeight:700 }}>✓ Scheduled</span>
           ) : (
             <>
@@ -62,7 +59,7 @@ function Sticky({ t, onSchedule, onComplete, onDelete, style, compact }) {
 }
 
 // ── Board ──────────────────────────────────────────────────────
-export default function ThoughtsBoard({ addCommitment, deleteCommitment, addRecurringTask, categories, routines = [], taskTemplates = [], labelModel = null, appendLog, removeLog }) {
+export default function ThoughtsBoard({ addCommitment, addRecurringTask, categories, routines = [], taskTemplates = [], labelModel = null, appendLog }) {
   const [thoughts, setThoughtsState] = useState([])
   const [loaded, setLoaded] = useState(false)
   const [text, setText]   = useState('')
@@ -132,43 +129,29 @@ export default function ThoughtsBoard({ addCommitment, deleteCommitment, addRecu
   const deleteThought = (id) => persist(thoughts.filter(t => t.id !== id))
   const markScheduled = (id) => persist(thoughts.map(t => t.id === id ? { ...t, scheduled: true } : t))
 
-  // Mark a thought completed (or undo it). Completing a thought drops it onto
-  // the day it was finished as an already-done, unscheduled ("anytime")
-  // commitment — so it shows up in the Day and Week views for that date — and
-  // records that completion in the shared activity log (keyed to the same
-  // commitment). That log is what powers the Informatics page and the
-  // calendar's streak flame, so a finished thought counts toward the gamified
-  // stats without having to be scheduled to a time first. Undoing removes both
-  // the commitment and its log entry.
-  const toggleCompleted = (t, anchorEl) => {
-    const now = !t.completed
-    if (now && anchorEl) bloomBurst(anchorEl)
+  // Mark a thought completed. Completing drops it onto the day it was finished
+  // as an already-done, unscheduled ("anytime") commitment — so it shows up in
+  // the Day and Week views for that date — and records that completion in the
+  // shared activity log (keyed to the same commitment). That log is what powers
+  // the Informatics page and the calendar's streak flame, so a finished thought
+  // counts toward the gamified stats without having to be scheduled to a time
+  // first. Once completed, the note leaves the board: it now lives on as the
+  // dated event. (To reverse it, uncheck or remove that event on its day.)
+  const completeThought = (t, anchorEl) => {
+    if (anchorEl) bloomBurst(anchorEl)
     const label = (t.text || '').trim()
-    if (now) {
-      const d = new Date()
-      const date = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
-      const dateLabel = d.toLocaleDateString('en-US', { weekday:'long', month:'long', day:'numeric' })
-      const cid = 'c-th-' + Date.now().toString(36)
-      // A dated commitment with no time is an "unscheduled" item; done:true so
-      // it lands already crossed off on that day.
-      addCommitment?.({
-        id: cid, text: label, date, time: null, durationMins: null,
-        cat: '', done: true, createdAt: new Date().toISOString(),
-      })
-      appendLog?.({ date, dateLabel, label, tag:'', storageKey: cid })
-      persist(thoughts.map(x => x.id === t.id
-        ? { ...x, completed: true, completedAt: d.toISOString(), completionCommitmentId: cid }
-        : x))
-    } else {
-      // Tear down the commitment + log entry we created on completion. Older
-      // completions (before this landed) logged against the thought id itself.
-      const cid = t.completionCommitmentId
-      if (cid) { deleteCommitment?.(cid); removeLog?.(label, cid) }
-      else removeLog?.(label, t.id)
-      persist(thoughts.map(x => x.id === t.id
-        ? { ...x, completed: false, completedAt: null, completionCommitmentId: null }
-        : x))
-    }
+    const d = new Date()
+    const date = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
+    const dateLabel = d.toLocaleDateString('en-US', { weekday:'long', month:'long', day:'numeric' })
+    const cid = 'c-th-' + Date.now().toString(36)
+    // A dated commitment with no time is an "unscheduled" item; done:true so it
+    // lands already crossed off on that day.
+    addCommitment?.({
+      id: cid, text: label, date, time: null, durationMins: null,
+      cat: '', done: true, createdAt: new Date().toISOString(),
+    })
+    appendLog?.({ date, dateLabel, label, tag:'', storageKey: cid })
+    persist(thoughts.filter(x => x.id !== t.id))
   }
 
   const q = query.trim().toLowerCase()
@@ -261,7 +244,7 @@ export default function ThoughtsBoard({ addCommitment, deleteCommitment, addRecu
                   touchAction:'none', cursor: dragging ? 'grabbing' : 'grab',
                   zIndex: dragging ? 5 : 1, transition: dragging ? 'none' : 'box-shadow .15s' }}>
                 <div style={{ position:'relative', transform: dragging ? 'scale(1.05)' : 'none', transition:'transform .12s' }}>
-                  <Sticky t={t} onSchedule={setScheduling} onComplete={toggleCompleted} onDelete={deleteThought} />
+                  <Sticky t={t} onSchedule={setScheduling} onComplete={completeThought} onDelete={deleteThought} />
                 </div>
               </div>
             )
@@ -271,7 +254,7 @@ export default function ThoughtsBoard({ addCommitment, deleteCommitment, addRecu
         // ── Sorted list ──
         <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(150px, 1fr))', gap:10 }}>
           {sorted.map(t => (
-            <Sticky key={t.id} t={t} onSchedule={setScheduling} onComplete={toggleCompleted} onDelete={deleteThought} compact
+            <Sticky key={t.id} t={t} onSchedule={setScheduling} onComplete={completeThought} onDelete={deleteThought} compact
               style={{ minHeight:96 }} />
           ))}
         </div>
