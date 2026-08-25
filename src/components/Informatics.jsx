@@ -9,6 +9,7 @@ import { useMemo, useState } from 'react'
 import { Icon } from './IconPicker.jsx'
 import { computeEntries, filterByRange, aggregate, answerQuestion, fmtHours, decimalHours } from '../lib/insights.js'
 import { computeSkills } from '../lib/skills.js'
+import WellnessInsights from './WellnessInsights.jsx'
 
 const RANGES = [['week', 'Past week'], ['month', 'Past month'], ['all', 'All time']]
 const sessions = (n) => `${n} time${n === 1 ? '' : 's'}`
@@ -27,7 +28,7 @@ function todayStr() {
 }
 const DUR_CHIPS = [15, 30, 45, 60, 90, 120]
 
-export default function Informatics({ commitments = [], recurringTasks = [], completions = {}, log = [], categories = [], timeLogs = [], addTimeLog, deleteTimeLog }) {
+export default function Informatics({ commitments = [], recurringTasks = [], completions = {}, log = [], categories = [], timeLogs = [], addTimeLog, deleteTimeLog, wlCheckins = [], wlEffects, wlEpisodes = [] }) {
   const [range, setRange] = useState('all')
   const [query, setQuery] = useState('')
   const [asked, setAsked] = useState('')   // the submitted question
@@ -85,6 +86,9 @@ export default function Informatics({ commitments = [], recurringTasks = [], com
     <div>
       <div className="page-title">Informatics</div>
       <div className="page-sub">Ask about yourself — “how many hours on MCAT studying?”, “what skills am I using?”, “where does my time go?” It reads the titles, descriptions and subtasks of everything you finished, infers the skills behind them, and breaks your time down by area, task and skill. Hours show wherever a task had a duration; everything you checked off still counts as a session.</div>
+
+      {/* Mind & body — mood trend, time carried by each condition, correlations */}
+      <WellnessInsights checkins={wlCheckins} effects={wlEffects} episodes={wlEpisodes} log={log} />
 
       {/* Range + log-time */}
       <div style={{ display:'flex', gap:6, margin:'4px 0 14px', flexWrap:'wrap', alignItems:'center' }}>

@@ -520,3 +520,51 @@ export function AlienSky({ className = '', tint = null }) {
     </svg>
   )
 }
+
+// ── The guide — a luminescent floating blob ────────────────────
+// A serene, glowing wisp that hovers beside its counsel. It softly pulses and
+// drifts; `speaking` brightens it while a tip is on screen. `tint` lets the
+// three lenses (mind / body / work) shade its glow to match the advice.
+export function GuideBlob({ size = 76, tint = '#8FD6CE', speaking = false, className = '' }) {
+  const uid = useId().replace(/:/g, '')
+  const reduced = prefersReduced()
+  const core = lighten(tint, 0.55), halo = tint, deep = blend(tint, '#2A3A5A', 0.4)
+  const anim = reduced ? '' : 'guide-float'
+  return (
+    <div className={`guide-blob ${className}`} style={{ width: size, height: size }}>
+      <svg viewBox="0 0 100 100" width={size} height={size} className={anim} aria-hidden="true" style={{ display: 'block', overflow: 'visible' }}>
+        <defs>
+          <radialGradient id={`gh-${uid}`} cx="0.5" cy="0.42" r="0.62">
+            <stop offset="0" stopColor={core} stopOpacity="0.95" />
+            <stop offset="0.55" stopColor={halo} stopOpacity="0.72" />
+            <stop offset="1" stopColor={deep} stopOpacity="0.5" />
+          </radialGradient>
+          <radialGradient id={`gg-${uid}`} cx="0.5" cy="0.5" r="0.5">
+            <stop offset="0" stopColor={halo} stopOpacity={speaking ? 0.55 : 0.34} />
+            <stop offset="1" stopColor={halo} stopOpacity="0" />
+          </radialGradient>
+        </defs>
+        {/* outer glow */}
+        <circle cx="50" cy="52" r="48" fill={`url(#gg-${uid})`} className={reduced ? '' : 'guide-pulse'} style={{ transformOrigin: '50px 52px' }} />
+        {/* body — a soft wobbling blob */}
+        <path fill={`url(#gh-${uid})`} d="M50,14 C68,14 84,27 84,48 C84,70 70,86 50,86 C31,86 16,71 16,49 C16,28 32,14 50,14 Z">
+          {!reduced && <animate attributeName="d" dur="7s" repeatCount="indefinite"
+            values="M50,14 C68,14 84,27 84,48 C84,70 70,86 50,86 C31,86 16,71 16,49 C16,28 32,14 50,14 Z;
+                    M50,16 C70,15 82,30 83,50 C84,72 68,84 50,85 C30,86 17,69 17,47 C17,27 33,16 50,16 Z;
+                    M50,14 C68,14 84,27 84,48 C84,70 70,86 50,86 C31,86 16,71 16,49 C16,28 32,14 50,14 Z"
+            keyTimes="0;0.5;1" />}
+        </path>
+        {/* bright inner core */}
+        <ellipse cx="44" cy="40" rx="16" ry="13" fill="#FFFFFF" opacity="0.5" />
+        {/* serene eyes + soft smile */}
+        <path d="M40,52 q4,4 8,0" fill="none" stroke="#2C3A4E" strokeWidth="2.6" strokeLinecap="round" opacity="0.72" />
+        <path d="M54,52 q4,4 8,0" fill="none" stroke="#2C3A4E" strokeWidth="2.6" strokeLinecap="round" opacity="0.72" />
+        <path d="M46,62 q5,4 10,0" fill="none" stroke="#2C3A4E" strokeWidth="2.4" strokeLinecap="round" opacity="0.55" />
+        {/* drifting motes */}
+        {!reduced && [[24, 30, 0], [78, 40, 1.1], [70, 74, 2], [30, 70, 1.6]].map(([x, y, d], i) => (
+          <circle key={i} cx={x} cy={y} r="1.6" fill={core} className="guide-mote" style={{ transformOrigin: `${x}px ${y}px`, animationDelay: `${d}s` }} />
+        ))}
+      </svg>
+    </div>
+  )
+}

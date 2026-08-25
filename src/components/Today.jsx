@@ -8,6 +8,7 @@ import { iconColorOn, suggestGlyph } from '../lib/glyphs.jsx'
 import { bloomBurst } from '../lib/bloom.js'
 import AddItemModal from './AddItemModal.jsx'
 import AiAssistant from './AiAssistant.jsx'
+import TodayWellness from './TodayWellness.jsx'
 import { aiScheduleAvailable } from '../lib/parseEvent.js'
 import FocusMode from './FocusMode.jsx'
 import DateField from './DateField.jsx'
@@ -1041,7 +1042,8 @@ function WeekStrip({ viewDate, setViewDate, commitments, categories, doneCount, 
 }
 
 // ── Main ───────────────────────────────────────────────────────
-export default function Today({ todos, weekState, syncToggle, clearCompletion, pushUndo, commitments, addCommitment, updateCommitment, deleteCommitment, moveCommitmentToThoughts, addEvent, appendLog, scheduled, categories, recurringTasks, recurringExceptions, occStarted = {}, skipRecurringOccurrence, deleteRecurringTask, addRecurringTask, updateRecurringTask, routines = [], taskTemplates = [], summary, labelModel = null, externalEvents = [], externalCalendars = [], toggleCalendar, importedAdoptions = {}, adoptImportedEvent }) {
+export default function Today({ todos, weekState, syncToggle, clearCompletion, pushUndo, commitments, addCommitment, updateCommitment, deleteCommitment, moveCommitmentToThoughts, addEvent, appendLog, scheduled, categories, recurringTasks, recurringExceptions, occStarted = {}, skipRecurringOccurrence, deleteRecurringTask, addRecurringTask, updateRecurringTask, routines = [], taskTemplates = [], summary, labelModel = null, externalEvents = [], externalCalendars = [], toggleCalendar, importedAdoptions = {}, adoptImportedEvent,
+  wlCheckins = [], persistWlCheckins, wlEffects, persistWlEffects, wlEpisodes = [], persistWlEpisodes, wlGame, persistWlGame, wlLog = [], onOpenWellness }) {
   const [now,         setNow]         = useState(nowMins())
   // The day the timeline is showing. Defaults to today; the week strip up top
   // navigates to any day. "Now" logic (the progress marker, current/overdue,
@@ -1910,6 +1912,18 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
         dayProgress={dayProgress} isToday={isToday}
         summary={summary} todos={todos}
         recurringTasks={recurringTasks} recurringExceptions={recurringExceptions} />
+
+      {/* Wellness for the day — the guide, a quick mood check-in, and the
+          physical conditions you're carrying right now. Today only. */}
+      {isToday && (
+        <TodayWellness
+          checkins={wlCheckins} persistCheckins={persistWlCheckins}
+          effects={wlEffects} persistEffects={persistWlEffects}
+          episodes={wlEpisodes} persistEpisodes={persistWlEpisodes}
+          game={wlGame} persistGame={persistWlGame} log={wlLog}
+          taskStats={{ done: doneCount, total: tasksWithStatus.length }}
+          onOpenWellness={onOpenWellness} />
+      )}
 
       {/* Subscribed-calendar visibility toggles — hide/show each imported feed
           across the whole app right from the day view. */}

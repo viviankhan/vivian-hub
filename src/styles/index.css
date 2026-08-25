@@ -1294,3 +1294,68 @@ textarea { resize: vertical; min-height: 160px; line-height: 1.6; }
 
 /* Softer depth on illustrated creatures. */
 .spec-body { filter: drop-shadow(0 2px 1.5px rgba(60,50,70,.16)); }
+
+/* ── The guide (luminescent blob) + Today wellness strip ──────── */
+.guide-blob { position: relative; display: grid; place-items: center; flex-shrink: 0; }
+.guide-float { animation: guide-float 5.5s ease-in-out infinite; }
+@keyframes guide-float { 0%,100% { transform: translateY(0) rotate(-1.5deg); } 50% { transform: translateY(-7px) rotate(1.5deg); } }
+.guide-pulse { animation: guide-pulse 3.6s ease-in-out infinite; }
+@keyframes guide-pulse { 0%,100% { opacity: .7; transform: scale(.94); } 50% { opacity: 1; transform: scale(1.06); } }
+.guide-mote { animation: guide-mote 4.2s ease-in-out infinite; }
+@keyframes guide-mote { 0%,100% { opacity: 0; transform: translateY(3px) scale(.6); } 50% { opacity: .9; transform: translateY(-5px) scale(1); } }
+@media (prefers-reduced-motion: reduce) { .guide-float, .guide-pulse, .guide-mote { animation: none; } }
+
+.tw { position: relative; border-radius: 18px; padding: 14px 15px 16px; margin-bottom: 14px;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--lens,#8FD6CE) 12%, var(--cream)) 0%, var(--cream) 60%);
+  border: 1px solid var(--border); box-shadow: 0 4px 18px rgba(60,72,88,.05); }
+.tw-guide { display: flex; align-items: center; gap: 6px; margin-bottom: 14px; }
+.tw-blob-btn { border: none; background: none; padding: 0; cursor: pointer; flex-shrink: 0; }
+.tw-bubble { position: relative; flex: 1; min-width: 0; text-align: left; cursor: pointer;
+  background: #fff; border: 1px solid var(--border); border-radius: 14px; padding: 10px 14px;
+  box-shadow: 0 3px 12px rgba(60,72,88,.07); display: flex; flex-direction: column; gap: 3px; font-family: inherit; }
+.tw-bubble::before { content: ''; position: absolute; left: -7px; top: 22px; width: 12px; height: 12px;
+  background: #fff; border-left: 1px solid var(--border); border-bottom: 1px solid var(--border); transform: rotate(45deg); }
+.tw-lens { display: inline-flex; align-items: center; gap: 4px; font-size: 10.5px; font-weight: 700;
+  letter-spacing: .04em; text-transform: uppercase; color: color-mix(in srgb, var(--lens,#8FD6CE) 72%, #3a3f4a); }
+.tw-tip { font-size: 13.5px; line-height: 1.5; color: var(--text); }
+.tw-more { font-size: 10.5px; color: var(--muted); font-weight: 600; }
+.tw-block { margin-top: 12px; }
+.tw-row-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.tw-label { font-size: 12.5px; font-weight: 700; color: var(--forest); }
+.tw-link, .tw-today-cloud { border: none; background: none; cursor: pointer; font-family: inherit; }
+.tw-link { font-size: 11.5px; font-weight: 600; color: var(--teal); }
+.tw-today-cloud { display: inline-flex; align-items: center; gap: 4px; }
+.tw-count { font-size: 11px; font-weight: 700; color: var(--muted); }
+.tw-moods { display: flex; gap: 4px; justify-content: space-between; }
+.tw-mood { flex: 1; border: none; background: none; cursor: pointer; font-family: inherit;
+  display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 4px 2px; border-radius: 12px; transition: transform .15s, background .15s; }
+.tw-mood:hover, .tw-mood:focus-visible { transform: translateY(-2px); background: rgba(255,255,255,.6); outline: none; }
+.tw-mood-name { font-size: 10px; font-weight: 600; color: var(--muted); }
+.tw-fx { display: flex; flex-wrap: wrap; gap: 7px; }
+.tw-chip { display: inline-flex; align-items: center; gap: 6px; border: 1.5px solid var(--border);
+  background: var(--cream); border-radius: 999px; padding: 6px 12px 6px 9px; font-size: 12px; font-weight: 600;
+  color: var(--text); cursor: pointer; font-family: inherit; transition: transform .12s, box-shadow .12s; }
+.tw-chip:hover { transform: translateY(-1px); }
+.tw-chip.on { box-shadow: 0 3px 10px rgba(0,0,0,.16); }
+.tw-chip-ico { display: inline-flex; }
+.tw-chip-time { font-size: 10.5px; font-weight: 700; opacity: .82; padding-left: 2px; }
+
+/* ── Wellness insights (Informatics: mind & body) ─────────────── */
+.wi-card { background: #fff; border: 1px solid var(--border); border-radius: 16px; padding: 15px 16px 16px; margin-bottom: 16px; box-shadow: 0 4px 18px rgba(60,72,88,.05); }
+.wi-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+.wi-title { display: inline-flex; align-items: center; gap: 7px; font-size: 15px; font-weight: 700; color: var(--forest); }
+.wi-avg { font-size: 12px; font-weight: 600; color: var(--muted); }
+.wi-sub { font-size: 11px; font-weight: 700; letter-spacing: .03em; text-transform: uppercase; color: var(--muted); margin-bottom: 6px; }
+.wi-empty { font-size: 13px; line-height: 1.5; color: var(--muted); }
+.wi-bars { display: flex; flex-direction: column; gap: 8px; }
+.wi-bar-row { display: flex; align-items: center; gap: 9px; }
+.wi-bar-ico { flex-shrink: 0; width: 24px; height: 24px; border-radius: 7px; display: grid; place-items: center; }
+.wi-bar-name { flex-shrink: 0; width: 84px; font-size: 12px; font-weight: 600; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wi-bar-track { flex: 1; height: 9px; border-radius: 6px; background: #EEECF0; overflow: hidden; }
+.wi-bar-fill { display: block; height: 100%; border-radius: 6px; transition: width .4s ease; }
+.wi-bar-val { flex-shrink: 0; width: 48px; text-align: right; font-size: 11px; font-weight: 700; color: var(--muted); }
+.wi-insights { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 7px; }
+.wi-insight { position: relative; padding: 8px 12px 8px 26px; border-radius: 10px; font-size: 12.5px; line-height: 1.45; color: var(--text); background: var(--cream); }
+.wi-insight::before { content: ''; position: absolute; left: 11px; top: 12px; width: 7px; height: 7px; border-radius: 50%; }
+.wi-insight.good::before { background: #5FA87F; }
+.wi-insight.watch::before { background: #D0956B; }

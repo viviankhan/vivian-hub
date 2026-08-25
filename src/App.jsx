@@ -1639,7 +1639,12 @@ export default function App() {
       )}
 
       <main className="content">
-        {tab==='today'       && <Today       {...sharedProps} appendLog={appendLog} scheduled={scheduled} deleteCommitment={deleteCommitment} />}
+        {tab==='today'       && <Today       {...sharedProps} appendLog={appendLog} scheduled={scheduled} deleteCommitment={deleteCommitment}
+          wlCheckins={wlCheckins} persistWlCheckins={persistWlCheckins}
+          wlEffects={wlEffects} persistWlEffects={persistWlEffects}
+          wlEpisodes={wlEpisodes} persistWlEpisodes={persistWlEpisodes}
+          wlGame={wlGame} persistWlGame={persistWlGame} wlLog={log}
+          onOpenWellness={() => setTab('wellness')} />}
         {tab==='week'        && <ThisWeek    {...sharedProps} deleteCommitment={deleteCommitment} />}
         {tab==='taskmenu'    && <TaskMenu templates={taskTemplates} addTemplate={addTaskTemplate}
           updateTemplate={updateTaskTemplate} deleteTemplate={deleteTaskTemplate} categories={categories} />}
@@ -1663,7 +1668,7 @@ export default function App() {
           log={log} />}
         {tab==='voyage'      && <Voyage game={wlGame} persistGame={persistWlGame}
           space={wlSpace} persistSpace={persistWlSpace} checkins={wlCheckins} />}
-        {tab==='informatics' && <Informatics commitments={commitmentsView} recurringTasks={recurringTasksEnriched} completions={completions} log={log} categories={categories} timeLogs={timeLogs} addTimeLog={addTimeLog} deleteTimeLog={deleteTimeLog} />}
+        {tab==='informatics' && <Informatics commitments={commitmentsView} recurringTasks={recurringTasksEnriched} completions={completions} log={log} categories={categories} timeLogs={timeLogs} addTimeLog={addTimeLog} deleteTimeLog={deleteTimeLog} wlCheckins={wlCheckins} wlEffects={wlEffects} wlEpisodes={wlEpisodes} />}
       </main>
 
       <SettingsDrawer
