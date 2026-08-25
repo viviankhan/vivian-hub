@@ -902,6 +902,14 @@ export default function App() {
     try { await addLogEntry(newEntry) } catch (e) { reportSaveError(e) }
   }, [])
 
+  // Remove a completion log entry (mirror of appendLog) — used when a logged
+  // completion is undone, e.g. un-completing a thought on the board. Keeps the
+  // in-memory log in step with storage so the gamified stats update at once.
+  const removeLog = useCallback(async (label, storageKey) => {
+    setLog_(prev => prev.filter(e => !(e.label === label && e.storageKey === storageKey)))
+    try { await deleteLogEntry(label, storageKey) } catch (e) { reportSaveError(e) }
+  }, [])
+
   // ── Recurring tasks CRUD (real per-row table) ────────────────
   const addRecurringTaskFn = useCallback(async task => {
     try {
@@ -1593,7 +1601,8 @@ export default function App() {
           updateTemplate={updateTaskTemplate} deleteTemplate={deleteTaskTemplate} categories={categories} />}
         {tab==='calendar'    && <Calendar    {...sharedProps} jumpTo={jumpTo} />}
         {tab==='thoughts'    && <ThoughtsBoard addCommitment={addCommitment} addRecurringTask={addRecurringTaskFn}
-          categories={categories} routines={routines} taskTemplates={taskTemplates} labelModel={labelModel} />}
+          categories={categories} routines={routines} taskTemplates={taskTemplates} labelModel={labelModel}
+          appendLog={appendLog} removeLog={removeLog} />}
         {tab==='events'      && <EventsManager events={events} addEvent={addEvent} deleteEvent={deleteEvent}
           vacations={vacations} addVacation={addVacation} deleteVacation={deleteVacation} />}
         {tab==='recurring'   && <RecurringTasksManager recurringTasks={{ tasks: recurringTasksEnriched }}
