@@ -62,7 +62,7 @@ function Sticky({ t, onSchedule, onComplete, onDelete, style, compact }) {
 }
 
 // ── Board ──────────────────────────────────────────────────────
-export default function ThoughtsBoard({ addCommitment, addRecurringTask, categories, routines = [], taskTemplates = [], labelModel = null, appendLog, removeLog }) {
+export default function ThoughtsBoard({ addCommitment, deleteCommitment, addRecurringTask, categories, routines = [], taskTemplates = [], labelModel = null, appendLog, removeLog }) {
   const [thoughts, setThoughtsState] = useState([])
   const [loaded, setLoaded] = useState(false)
   const [text, setText]   = useState('')
@@ -132,25 +132,42 @@ export default function ThoughtsBoard({ addCommitment, addRecurringTask, categor
   const deleteThought = (id) => persist(thoughts.filter(t => t.id !== id))
   const markScheduled = (id) => persist(thoughts.map(t => t.id === id ? { ...t, scheduled: true } : t))
 
-  // Mark a thought completed (or undo it). Completing feeds the gamified
-  // stats: it writes a completion into the shared activity log — the same log
-  // that powers the Informatics page and the calendar's streak flame — so a
-  // finished thought counts toward your progress even without scheduling it.
+  // Mark a thought completed (or undo it). Completing a thought drops it onto
+  // the day it was finished as an already-done, unscheduled ("anytime")
+  // commitment — so it shows up in the Day and Week views for that date — and
+  // records that completion in the shared activity log (keyed to the same
+  // commitment). That log is what powers the Informatics page and the
+  // calendar's streak flame, so a finished thought counts toward the gamified
+  // stats without having to be scheduled to a time first. Undoing removes both
+  // the commitment and its log entry.
   const toggleCompleted = (t, anchorEl) => {
     const now = !t.completed
     if (now && anchorEl) bloomBurst(anchorEl)
-    persist(thoughts.map(x => x.id === t.id
-      ? { ...x, completed: now, completedAt: now ? new Date().toISOString() : null }
-      : x))
     const label = (t.text || '').trim()
-    const storageKey = t.id
     if (now) {
       const d = new Date()
       const date = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
       const dateLabel = d.toLocaleDateString('en-US', { weekday:'long', month:'long', day:'numeric' })
-      appendLog?.({ date, dateLabel, label, tag:'', storageKey })
+      const cid = 'c-th-' + Date.now().toString(36)
+      // A dated commitment with no time is an "unscheduled" item; done:true so
+      // it lands already crossed off on that day.
+      addCommitment?.({
+        id: cid, text: label, date, time: null, durationMins: null,
+        cat: '', done: true, createdAt: new Date().toISOString(),
+      })
+      appendLog?.({ date, dateLabel, label, tag:'', storageKey: cid })
+      persist(thoughts.map(x => x.id === t.id
+        ? { ...x, completed: true, completedAt: d.toISOString(), completionCommitmentId: cid }
+        : x))
     } else {
-      removeLog?.(label, storageKey)
+      // Tear down the commitment + log entry we created on completion. Older
+      // completions (before this landed) logged against the thought id itself.
+      const cid = t.completionCommitmentId
+      if (cid) { deleteCommitment?.(cid); removeLog?.(label, cid) }
+      else removeLog?.(label, t.id)
+      persist(thoughts.map(x => x.id === t.id
+        ? { ...x, completed: false, completedAt: null, completionCommitmentId: null }
+        : x))
     }
   }
 
