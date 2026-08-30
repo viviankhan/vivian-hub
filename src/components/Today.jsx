@@ -1174,14 +1174,28 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
   // has no category at all — so it renders as the color shown while editing it,
   // not a fixed grey.
   const catColorOf = (catId) => (categories || []).find(x => x.id === catId)?.color || TAG_COLORS[catId] || null
+  // A block can be nudged for just this day by the same day-local time override
+  // the shift chooser writes for tasks — so a block (e.g. "Work") can ride along
+  // when you push the rest of the day's events later. A commitment block that
+  // moved for real (its own time changed) carries no override and reads its new
+  // time; a recurring block moves via the override, since its template time is
+  // shared across every day.
+  const blockStart = (id, baseMins) => (timeOverrides[id] != null ? timeOverrides[id] : baseMins)
   const blocks = [
     ...todayCommitments.filter(c => c.block && c.time && c.durationMins)
-      .map(c => ({ id:c.id, label:(c.text||'').trim(), color: c.color || catColorOf(c.cat) || '#8AA0B8', icon: c.icon || null, cat: c.cat || null, isCommitment:true,
-        start: hhmmToMins(c.time), end: hhmmToMins(c.time) + c.durationMins })),
+      .map(c => { const s = blockStart(c.id, hhmmToMins(c.time)); return { id:c.id, label:(c.text||'').trim(), color: c.color || catColorOf(c.cat) || '#8AA0B8', icon: c.icon || null, cat: c.cat || null, isCommitment:true,
+        start: s, end: s + c.durationMins } }),
     ...templateTodos.filter(o => o.block && o._time && o._dur)
-      .map(o => ({ id:o.id, label:(o.title||o.text||'').trim(), color: o.color || catColorOf(o.cat || o.tag) || '#8AA0B8', icon: o.icon || null, cat: o.cat || o.tag || null, isCommitment:false,
-        start: hhmmToMins(o._time), end: hhmmToMins(o._time) + o._dur })),
+      .map(o => { const s = blockStart(o.id, hhmmToMins(o._time)); return { id:o.id, label:(o.title||o.text||'').trim(), color: o.color || catColorOf(o.cat || o.tag) || '#8AA0B8', icon: o.icon || null, cat: o.cat || o.tag || null, isCommitment:false,
+        start: s, end: s + o._dur } }),
   ]
+  // Blocks recast as shiftable candidates, shaped like timeline tasks so the
+  // shift chooser can list them and applyTimeShift can move them alongside tasks.
+  const blockShiftItems = () => blocks.map(b => ({
+    id: b.id, _mins: b.start, _dur: b.end - b.start, _time: minsToHHMM(b.start),
+    title: b.label, label: b.label, tag: b.cat, isCommitment: b.isCommitment,
+    isBlock: true, routine: null,
+  }))
   // A block whose window has fully passed today reads as "done" — and folds up
   // on its own (like a finished routine) unless the user has explicitly set it
   // open/closed. An explicit toggle (in collapsedBlocks) always wins.
@@ -1584,13 +1598,19 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
       if (t.isCommitment && updateCommitment) { commitReverts.push({ id: t.id, time: t._time || null }); updateCommitment(t.id, { time: minsToHHMM(mins) }) }
       else overrides[t.id] = mins
     }
-    tasksWithStatus
+    // Timeline tasks plus blocks (e.g. "Work") — a block can ride along with the
+    // rest of the day when selected, moving by the same delta as everything else.
+    const pool = [...tasksWithStatus, ...blockShiftItems()]
+    pool
       .filter(t => sel.has(t.id) && t._mins !== null && !INFLEXIBLE_TAGS.has(t.tag))
       .sort((a, b) => a._mins - b._mins)
       .forEach(t => {
         const target = t._mins + delta
         if (target < 0) return
         if (target > END_OF_DAY_MINS) {
+          // A block that ran off the end of the day just clamps at its old start
+          // rather than being torn out of its series and dumped onto tomorrow.
+          if (t.isBlock) return
           // Ran off the end of the day → send it to tomorrow, like the other shifts.
           committed++
           const tm = new Date(); tm.setDate(tm.getDate() + 1)
@@ -1604,7 +1624,7 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
         }
         setStart(t, target)
         shifted++
-        if ((t.autoComplete || (t.routine && routineIds.has(t.routine)) || inAnyBlock(t)) && clearCompletion) {
+        if (!t.isBlock && (t.autoComplete || (t.routine && routineIds.has(t.routine)) || inAnyBlock(t)) && clearCompletion) {
           clearCompletion(t.id, t.isCommitment ? null : dateKey)
         }
       })
@@ -1624,21 +1644,61 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
   // routine along by the same amount. Only routine steps cascade (the common
   // "my morning ran late, push the rest" case); the chooser still lets you reach
   // other tasks. `newMins` is the task's new start in minutes (null = untimed).
+  //
+  // A time block (e.g. "Work") isn't in the task list at all, so when its start
+  // moves we handle it separately below: sliding a block offers to bring the
+  // tasks scheduled *inside* its window (a "clock in", say) along with it, so
+  // they don't get left behind at the block's old start.
   const maybePromptShift = (pivotId, newMins) => {
+    if (newMins === null || newMins === undefined) return
     const pivot = tasksWithStatus.find(t => t.id === pivotId)
-    if (!pivot || pivot._mins === null || newMins === null || newMins === undefined) return
+    if (!pivot) { maybePromptBlockShift(pivotId, newMins); return }
+    if (pivot._mins === null) return
     if (!pivot.routine) return                       // only routines cascade
     const delta = newMins - pivot._mins
     if (delta === 0) return
     // Later movable tasks by their current position — candidates to slide.
-    const rest = tasksWithStatus
-      .filter(t => t.id !== pivotId && t._mins !== null && t._mins > pivot._mins && !INFLEXIBLE_TAGS.has(t.tag))
-      .sort((a, b) => a._mins - b._mins)
+    // Blocks (e.g. "Work") that start after the pivot ride along too, so pushing
+    // the morning later can bring Work down with everything else.
+    const laterBlocks = blockShiftItems().filter(b => b._mins > pivot._mins && !INFLEXIBLE_TAGS.has(b.tag))
+    const rest = [
+      ...tasksWithStatus.filter(t => t.id !== pivotId && t._mins !== null && t._mins > pivot._mins && !INFLEXIBLE_TAGS.has(t.tag)),
+      ...laterBlocks,
+    ].sort((a, b) => a._mins - b._mins)
     if (!rest.length) return
     const doneIds = new Set(rest.filter(t => isDoneCheck(t.id, t.isCommitment)).map(t => t.id))
     // Blend of "just this routine" + "pick your own": pre-check the rest of this
-    // task's routine, but show every later task so any can be added/removed.
-    const selected = new Set(rest.filter(t => t.routine === pivot.routine).map(t => t.id))
+    // task's routine plus any later blocks, but show every later task so any can
+    // be added/removed.
+    const selected = new Set([
+      ...rest.filter(t => !t.isBlock && t.routine === pivot.routine).map(t => t.id),
+      ...laterBlocks.map(b => b.id),
+    ])
+    setShiftPlan({ pivot, rest, selected, doneIds, delta, mode:'delta' })
+  }
+
+  // Moving a time block's start (e.g. rescheduling "Work" earlier/later): offer
+  // to slide the tasks that sit inside the block's window along by the same
+  // amount, so a "clock in" scheduled inside Work follows Work instead of being
+  // stranded at the old start. `blocks` still reflects the block's OLD window
+  // here (the save's state update hasn't flushed yet), so the delta and the
+  // tasks-inside lookup are both against the pre-move window.
+  const maybePromptBlockShift = (pivotId, newMins) => {
+    const block = blocks.find(b => b.id === pivotId)
+    if (!block || block.start == null) return
+    const delta = newMins - block.start
+    if (delta === 0) return
+    // Movable tasks whose start currently lands inside the block's window.
+    const rest = tasksWithStatus
+      .filter(t => t._mins !== null && t._mins >= block.start && t._mins < block.end && !INFLEXIBLE_TAGS.has(t.tag))
+      .sort((a, b) => a._mins - b._mins)
+    if (!rest.length) return
+    const doneIds = new Set(rest.filter(t => isDoneCheck(t.id, t.isCommitment)).map(t => t.id))
+    // Everything inside the block is pre-checked — the common case is "the block
+    // moved, bring what's in it" — but each row can still be unchecked.
+    const selected = new Set(rest.map(t => t.id))
+    // A lightweight pivot for the chooser's heading ("You moved 'Work' …").
+    const pivot = { id: block.id, title: block.label, label: block.label, _mins: block.start, routine: null }
     setShiftPlan({ pivot, rest, selected, doneIds, delta, mode:'delta' })
   }
 

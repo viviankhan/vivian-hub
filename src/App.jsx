@@ -1650,7 +1650,8 @@ export default function App() {
           updateTemplate={updateTaskTemplate} deleteTemplate={deleteTaskTemplate} categories={categories} />}
         {tab==='calendar'    && <Calendar    {...sharedProps} jumpTo={jumpTo} />}
         {tab==='thoughts'    && <ThoughtsBoard addCommitment={addCommitment} addRecurringTask={addRecurringTaskFn}
-          categories={categories} routines={routines} taskTemplates={taskTemplates} labelModel={labelModel} />}
+          categories={categories} routines={routines} taskTemplates={taskTemplates} labelModel={labelModel}
+          appendLog={appendLog} />}
         {tab==='events'      && <EventsManager events={events} addEvent={addEvent} deleteEvent={deleteEvent}
           vacations={vacations} addVacation={addVacation} deleteVacation={deleteVacation} />}
         {tab==='recurring'   && <RecurringTasksManager recurringTasks={{ tasks: recurringTasksEnriched }}

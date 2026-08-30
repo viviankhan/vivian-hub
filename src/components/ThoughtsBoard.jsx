@@ -19,27 +19,37 @@ function fmtStamp(iso) {
 function inkFor(color) { return '#4A4030' }
 
 // ── One sticky note ────────────────────────────────────────────
-function Sticky({ t, onSchedule, onDelete, style, compact }) {
+function Sticky({ t, onSchedule, onComplete, onDelete, style, compact }) {
+  // A scheduled thought stays on the board as a faded record. (Completing a
+  // thought removes it from the board entirely — it lives on as the dated
+  // event on the day it was finished — so there's no "completed" note state.)
+  const settled = t.scheduled
   return (
     <div style={{
       background: t.color, borderRadius: 3, padding: '12px 12px 10px',
-      boxShadow: t.scheduled ? '0 1px 4px rgba(0,0,0,.12)' : '0 6px 14px rgba(90,80,50,.22)',
+      boxShadow: settled ? '0 1px 4px rgba(0,0,0,.12)' : '0 6px 14px rgba(90,80,50,.22)',
       transform: compact ? 'none' : `rotate(${t.rot}deg)`,
-      opacity: t.scheduled ? .62 : 1,
+      opacity: settled ? .62 : 1,
       display: 'flex', flexDirection: 'column', gap: 8, ...style,
     }}>
       {/* little piece of "tape" */}
       {!compact && <div style={{ position:'absolute', top:-7, left:'50%', transform:'translateX(-50%) rotate(-3deg)', width:44, height:14, background:'rgba(255,255,255,.5)', border:'1px solid rgba(0,0,0,.05)' }} />}
-      <div style={{ fontSize:13.5, lineHeight:1.4, color:inkFor(t.color), whiteSpace:'pre-wrap', wordBreak:'break-word', fontWeight:500, textDecoration: t.scheduled ? 'line-through' : 'none' }}>
+      <div style={{ fontSize:13.5, lineHeight:1.4, color:inkFor(t.color), whiteSpace:'pre-wrap', wordBreak:'break-word', fontWeight:500, textDecoration: settled ? 'line-through' : 'none' }}>
         {t.text}
       </div>
       <div style={{ marginTop:'auto', display:'flex', alignItems:'center', justifyContent:'space-between', gap:6 }}>
         <span style={{ fontSize:9.5, color:'rgba(74,64,48,.6)', letterSpacing:.3 }}>{fmtStamp(t.createdAt)}</span>
-        <div style={{ display:'flex', gap:4 }}>
-          {t.scheduled
-            ? <span style={{ fontSize:8.5, letterSpacing:.5, textTransform:'uppercase', color:'#2F6B4F', fontWeight:700 }}>✓ Scheduled</span>
-            : <button onClick={() => onSchedule(t)} title="Schedule into calendar"
-                style={{ fontSize:12, lineHeight:1, background:'rgba(255,255,255,.55)', border:'none', borderRadius:6, padding:'3px 6px', cursor:'pointer' }}>📅</button>}
+        <div style={{ display:'flex', gap:4, alignItems:'center' }}>
+          {t.scheduled ? (
+            <span style={{ fontSize:8.5, letterSpacing:.5, textTransform:'uppercase', color:'#2F6B4F', fontWeight:700 }}>✓ Scheduled</span>
+          ) : (
+            <>
+              <button onClick={e => onComplete(t, e.currentTarget)} title="Mark completed"
+                style={{ fontSize:12, lineHeight:1, background:'rgba(255,255,255,.55)', border:'none', borderRadius:6, padding:'3px 6px', cursor:'pointer' }}>✓</button>
+              <button onClick={() => onSchedule(t)} title="Schedule into calendar"
+                style={{ fontSize:12, lineHeight:1, background:'rgba(255,255,255,.55)', border:'none', borderRadius:6, padding:'3px 6px', cursor:'pointer' }}>📅</button>
+            </>
+          )}
           <button onClick={() => onDelete(t.id)} title="Remove"
             style={{ fontSize:12, lineHeight:1, background:'none', border:'none', color:'rgba(74,64,48,.5)', cursor:'pointer', padding:'3px 4px' }}>✕</button>
         </div>
@@ -49,7 +59,7 @@ function Sticky({ t, onSchedule, onDelete, style, compact }) {
 }
 
 // ── Board ──────────────────────────────────────────────────────
-export default function ThoughtsBoard({ addCommitment, addRecurringTask, categories, routines = [], taskTemplates = [], labelModel = null }) {
+export default function ThoughtsBoard({ addCommitment, addRecurringTask, categories, routines = [], taskTemplates = [], labelModel = null, appendLog }) {
   const [thoughts, setThoughtsState] = useState([])
   const [loaded, setLoaded] = useState(false)
   const [text, setText]   = useState('')
@@ -119,6 +129,31 @@ export default function ThoughtsBoard({ addCommitment, addRecurringTask, categor
   const deleteThought = (id) => persist(thoughts.filter(t => t.id !== id))
   const markScheduled = (id) => persist(thoughts.map(t => t.id === id ? { ...t, scheduled: true } : t))
 
+  // Mark a thought completed. Completing drops it onto the day it was finished
+  // as an already-done, unscheduled ("anytime") commitment — so it shows up in
+  // the Day and Week views for that date — and records that completion in the
+  // shared activity log (keyed to the same commitment). That log is what powers
+  // the Informatics page and the calendar's streak flame, so a finished thought
+  // counts toward the gamified stats without having to be scheduled to a time
+  // first. Once completed, the note leaves the board: it now lives on as the
+  // dated event. (To reverse it, uncheck or remove that event on its day.)
+  const completeThought = (t, anchorEl) => {
+    if (anchorEl) bloomBurst(anchorEl)
+    const label = (t.text || '').trim()
+    const d = new Date()
+    const date = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
+    const dateLabel = d.toLocaleDateString('en-US', { weekday:'long', month:'long', day:'numeric' })
+    const cid = 'c-th-' + Date.now().toString(36)
+    // A dated commitment with no time is an "unscheduled" item; done:true so it
+    // lands already crossed off on that day.
+    addCommitment?.({
+      id: cid, text: label, date, time: null, durationMins: null,
+      cat: '', done: true, createdAt: new Date().toISOString(),
+    })
+    appendLog?.({ date, dateLabel, label, tag:'', storageKey: cid })
+    persist(thoughts.filter(x => x.id !== t.id))
+  }
+
   const q = query.trim().toLowerCase()
   const filtered = thoughts.filter(t => !q || t.text.toLowerCase().includes(q))
   const sorted = [...filtered].sort((a, b) =>
@@ -150,7 +185,7 @@ export default function ThoughtsBoard({ addCommitment, addRecurringTask, categor
   return (
     <div>
       <div className="page-title">Thoughts</div>
-      <div className="page-sub">Jot a thought — it lands on the board with a timestamp. Drag notes to rearrange them, search, sort, or schedule one into your calendar.</div>
+      <div className="page-sub">Jot a thought — it lands on the board with a timestamp. Drag notes to rearrange them, search, sort, schedule one into your calendar, or mark it ✓ completed to count toward your progress.</div>
 
       {/* Add a thought */}
       <div style={{ display:'flex', gap:8, marginBottom:14, alignItems:'flex-start' }}>
@@ -209,7 +244,7 @@ export default function ThoughtsBoard({ addCommitment, addRecurringTask, categor
                   touchAction:'none', cursor: dragging ? 'grabbing' : 'grab',
                   zIndex: dragging ? 5 : 1, transition: dragging ? 'none' : 'box-shadow .15s' }}>
                 <div style={{ position:'relative', transform: dragging ? 'scale(1.05)' : 'none', transition:'transform .12s' }}>
-                  <Sticky t={t} onSchedule={setScheduling} onDelete={deleteThought} />
+                  <Sticky t={t} onSchedule={setScheduling} onComplete={completeThought} onDelete={deleteThought} />
                 </div>
               </div>
             )
@@ -219,7 +254,7 @@ export default function ThoughtsBoard({ addCommitment, addRecurringTask, categor
         // ── Sorted list ──
         <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(150px, 1fr))', gap:10 }}>
           {sorted.map(t => (
-            <Sticky key={t.id} t={t} onSchedule={setScheduling} onDelete={deleteThought} compact
+            <Sticky key={t.id} t={t} onSchedule={setScheduling} onComplete={completeThought} onDelete={deleteThought} compact
               style={{ minHeight:96 }} />
           ))}
         </div>
