@@ -8,7 +8,7 @@ import { iconColorOn, suggestGlyph } from '../lib/glyphs.jsx'
 import { bloomBurst } from '../lib/bloom.js'
 import AddItemModal from './AddItemModal.jsx'
 import AiAssistant from './AiAssistant.jsx'
-import TodayWellness from './TodayWellness.jsx'
+import DayRail from './DayRail.jsx'
 import { aiScheduleAvailable } from '../lib/parseEvent.js'
 import FocusMode from './FocusMode.jsx'
 import DateField from './DateField.jsx'
@@ -1903,7 +1903,16 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
   }
 
   return (
-    <div>
+    <div className={isToday ? 'today-root has-rail' : 'today-root'}>
+      {/* The wellness day-rail: the mind blob rides the current time down the
+          left edge; mood moments and status effects land beside their time. */}
+      {isToday && (
+        <DayRail
+          checkins={wlCheckins} persistCheckins={persistWlCheckins}
+          effects={wlEffects} persistEffects={persistWlEffects}
+          episodes={wlEpisodes} persistEpisodes={persistWlEpisodes}
+          game={wlGame} persistGame={persistWlGame} />
+      )}
       {/* Structured-style header: big date + week strip + progress bar */}
       <WeekStrip
         viewDate={viewDate} setViewDate={setViewDate}
@@ -1912,18 +1921,6 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
         dayProgress={dayProgress} isToday={isToday}
         summary={summary} todos={todos}
         recurringTasks={recurringTasks} recurringExceptions={recurringExceptions} />
-
-      {/* Wellness for the day — the guide, a quick mood check-in, and the
-          physical conditions you're carrying right now. Today only. */}
-      {isToday && (
-        <TodayWellness
-          checkins={wlCheckins} persistCheckins={persistWlCheckins}
-          effects={wlEffects} persistEffects={persistWlEffects}
-          episodes={wlEpisodes} persistEpisodes={persistWlEpisodes}
-          game={wlGame} persistGame={persistWlGame} log={wlLog}
-          taskStats={{ done: doneCount, total: tasksWithStatus.length }}
-          onOpenWellness={onOpenWellness} />
-      )}
 
       {/* Subscribed-calendar visibility toggles — hide/show each imported feed
           across the whole app right from the day view. */}

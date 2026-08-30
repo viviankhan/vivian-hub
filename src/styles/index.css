@@ -1359,3 +1359,73 @@ textarea { resize: vertical; min-height: 160px; line-height: 1.6; }
 .wi-insight::before { content: ''; position: absolute; left: 11px; top: 12px; width: 7px; height: 7px; border-radius: 50%; }
 .wi-insight.good::before { background: #5FA87F; }
 .wi-insight.watch::before { background: #D0956B; }
+
+/* ── Wellness day-rail (Today tab) ────────────────────────────── */
+.today-root { position: relative; }
+.today-root.has-rail { padding-left: 48px; }
+/* status-effect colour trails running down the rail */
+.rail-trail { position: absolute; left: 24px; width: 7px; border: none; padding: 0; border-radius: 5px;
+  transform: translateX(-50%); z-index: 8; opacity: .9; box-shadow: 0 1px 4px rgba(0,0,0,.12); }
+.rail-trail.live, .rail-trail:hover { opacity: 1; }
+/* markers — mood clouds + status icons floating by the timeline */
+.rail-mark { position: absolute; left: 24px; margin-left: -15px; border: none; background: none; padding: 0; cursor: pointer; z-index: 14; transform-origin: center; }
+.rail-fx { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; box-shadow: 0 2px 7px rgba(0,0,0,.2); }
+.rail-fx.live { box-shadow: 0 0 0 3px rgba(255,255,255,.6), 0 2px 8px rgba(0,0,0,.24); }
+/* the mind blob riding the current time */
+.rail-blob { position: absolute; left: 0; z-index: 20; }
+.rail-blob-btn { border: none; background: none; padding: 0; cursor: pointer; display: block; filter: drop-shadow(0 3px 8px rgba(80,110,150,.3)); }
+/* radial menu fanning to the right of the blob */
+.rail-radial { position: absolute; left: 0; top: 0; }
+.rail-bub { position: absolute; border: none; cursor: pointer; border-radius: 50%; display: grid; place-items: center;
+  background: #fff; box-shadow: 0 6px 20px rgba(40,60,90,.28); animation: rail-pop .28s cubic-bezier(.34,1.56,.64,1) both; }
+.rail-bub-cloud { width: 58px; height: 58px; left: 46px; top: -30px; }
+.rail-bub-lotus { width: 54px; height: 54px; left: 50px; top: 34px; color: var(--teal); animation-delay: .05s; }
+@keyframes rail-pop { from { opacity: 0; transform: translate(-14px, 6px) scale(.4); } to { opacity: 1; transform: none; } }
+.rail-say { position: absolute; left: 112px; top: 2px; width: min(200px, 46vw); background: #fff; border-radius: 14px;
+  padding: 10px 13px; font-size: 12.5px; line-height: 1.45; color: var(--text); box-shadow: 0 8px 26px rgba(40,60,90,.24);
+  animation: rail-pop .3s ease both .1s; }
+.rail-say::before { content: ''; position: absolute; left: -6px; top: 16px; width: 11px; height: 11px; background: #fff; transform: rotate(45deg); }
+/* the accent-tinted film over everything else */
+.rail-film { position: fixed; inset: 0; z-index: 300; border: none;
+  background: color-mix(in srgb, var(--teal, #4C9A87) 24%, transparent); -webkit-backdrop-filter: blur(1.5px); backdrop-filter: blur(1.5px); }
+/* When the menu is open, lift the blob + radial above the film. */
+.today-root.has-rail .rail-blob { z-index: 20; }
+.rail-blob:has(.rail-radial) { z-index: 320; }
+
+/* ── Sheets (mood moment / status effect) ─────────────────────── */
+.rail-sheet { position: fixed; left: 50%; bottom: max(20px, env(safe-area-inset-bottom)); transform: translateX(-50%); z-index: 340;
+  width: min(440px, calc(100vw - 28px)); max-height: 80vh; overflow-y: auto; background: var(--cream);
+  border: 1px solid var(--border); border-radius: 22px; padding: 18px 18px 20px; box-shadow: 0 -10px 50px rgba(30,40,60,.3); }
+.rail-sheet-title { font-family: 'Fraunces', Georgia, serif; font-size: 19px; font-weight: 600; color: var(--forest); text-align: center; margin-bottom: 14px; }
+.rail-moods { display: flex; gap: 4px; justify-content: space-between; align-items: flex-end; }
+.rail-moodpick { flex: 1; border: none; background: none; cursor: pointer; font-family: inherit; display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 4px 2px; border-radius: 14px; transition: background .15s; }
+.rail-moodpick span { font-size: 10.5px; font-weight: 600; color: var(--muted); }
+.rail-moodpick.on { background: #fff; }
+.rail-moodpick.on span { color: var(--forest); }
+.rail-addnote { margin: 14px auto 0; display: block; border: 1px dashed var(--border); background: none; color: var(--teal); font-weight: 600; font-size: 12.5px; border-radius: 999px; padding: 8px 16px; cursor: pointer; font-family: inherit; }
+.rail-emos { display: flex; flex-wrap: wrap; gap: 6px; margin: 14px 0 10px; justify-content: center; }
+.rail-emo { border: 1.5px solid var(--border); background: #fff; border-radius: 999px; padding: 5px 11px; font-size: 12px; font-weight: 600; color: var(--text); cursor: pointer; font-family: inherit; }
+.rail-emo.on { border-color: var(--teal); background: var(--green-light); color: var(--teal); }
+.rail-note { width: 100%; box-sizing: border-box; border: 1.5px solid var(--border); border-radius: 14px; padding: 10px 12px; font-size: 13px; font-family: inherit; resize: vertical; margin: 12px 0 0; background: #fff; color: var(--text); }
+.rail-log { display: block; width: 100%; margin-top: 14px; border: none; border-radius: 14px; padding: 13px; font-size: 14px; font-weight: 700; cursor: pointer; font-family: inherit; background: var(--forest); color: var(--green-light); }
+.rail-active { display: flex; flex-direction: column; gap: 7px; margin-bottom: 14px; }
+.rail-active-chip { display: inline-flex; align-items: center; gap: 7px; border: none; border-radius: 999px; padding: 8px 14px; font-size: 12.5px; font-weight: 700; cursor: pointer; font-family: inherit; }
+.rail-x { margin-left: auto; opacity: .85; font-size: 11px; }
+.rail-fxgrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.rail-fxpick { display: flex; flex-direction: column; align-items: center; gap: 6px; border: 1.5px solid var(--border); background: #fff; border-radius: 14px; padding: 11px 6px 9px; font-size: 11.5px; font-weight: 600; color: var(--text); cursor: pointer; font-family: inherit; }
+.rail-fxpick:disabled { opacity: .45; cursor: default; }
+.rail-fxpick-ico { width: 30px; height: 30px; border-radius: 9px; display: grid; place-items: center; }
+
+/* ── Marker detail popover ────────────────────────────────────── */
+.rail-detail { position: fixed; left: 50%; top: 50%; transform: translate(-50%,-50%); z-index: 340;
+  width: min(300px, calc(100vw - 40px)); background: var(--cream); border: 1px solid var(--border); border-radius: 20px; padding: 18px; box-shadow: 0 16px 50px rgba(30,40,60,.32); text-align: center; }
+.rail-detail-head { display: flex; align-items: center; justify-content: center; gap: 8px; font-size: 17px; color: var(--forest); }
+.rail-detail-ico { width: 30px; height: 30px; border-radius: 9px; display: grid; place-items: center; }
+.rail-detail-time { font-size: 12px; color: var(--muted); margin-top: 3px; }
+.rail-detail-emos { font-size: 12px; color: var(--teal); font-weight: 600; margin-top: 6px; }
+.rail-detail-note { font-size: 13.5px; line-height: 1.5; color: var(--text); margin: 10px 0 4px; }
+.rail-detail-note.muted { color: var(--muted); font-style: italic; }
+
+/* Rail container — offset below the date header so markers ride the timeline. */
+.day-rail { position: absolute; left: 0; top: 158px; bottom: 12px; width: 48px; }
+@media (min-width: 760px) { .day-rail { top: 150px; } }

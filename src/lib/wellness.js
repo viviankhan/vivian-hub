@@ -245,9 +245,17 @@ export function activeEpisode(episodes, effectId) {
 export function isActive(episodes, effectId) {
   return !!activeEpisode(episodes, effectId)
 }
-export function startEpisode(episodes, effectId, at = new Date()) {
+export function startEpisode(episodes, effectId, at = new Date(), note = '') {
   if (isActive(episodes, effectId)) return episodes || []
-  return [{ id: 'ep-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 4), effectId, start: at.toISOString(), end: null }, ...(episodes || [])]
+  return [{ id: 'ep-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 4), effectId, start: at.toISOString(), end: null, note: note || '' }, ...(episodes || [])]
+}
+// Attach / update the free-text description on an effect's active episode.
+export function setEpisodeNote(episodes, effectId, note) {
+  let done = false
+  return (episodes || []).map(e => {
+    if (!done && e.effectId === effectId && !e.end) { done = true; return { ...e, note: note || '' } }
+    return e
+  })
 }
 export function endEpisode(episodes, effectId, at = new Date()) {
   let done = false
