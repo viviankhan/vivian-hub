@@ -53,6 +53,14 @@ export default function DayRail({
   const [sheet, setSheet] = useState(null)         // 'mood' | 'status' | null
   const [moodDetail, setMoodDetail] = useState(null)   // a tapped cloud
   const nowFrac = fracOf(nowMs)
+  const blobRef = useRef(null)
+  const [anchor, setAnchor] = useState(null)       // blob centre in viewport px
+  const closeAll = () => { setMenu(false); setSheet(null); setMoodDetail(null) }
+  const openMenu = () => {
+    const r = blobRef.current?.getBoundingClientRect()
+    if (r) setAnchor({ left: r.left + r.width / 2, top: r.top + r.height / 2 })
+    setMenu(true)
+  }
 
   const todayMoments = useMemo(() => checkinsForDay(checkins, today), [checkins, today])
   const lastMood = todayMoments.length ? todayMoments[todayMoments.length - 1].mood : 4
@@ -152,34 +160,37 @@ export default function DayRail({
 
       {/* The mind blob — rides the current time, taps open the radial menu. */}
       <div className="rail-blob" style={{ top: `${nowFrac * 100}%` }}>
-        <button className="rail-blob-btn" onClick={() => setMenu(m => !m)} aria-label="Wellness">
+        <button ref={blobRef} className="rail-blob-btn" onClick={() => (menu ? closeAll() : openMenu())} aria-label="Wellness">
           <GuideBlob size={54} tint="#8FB0D8" speaking={menu} />
         </button>
-        {menu && (
-          <div className="rail-radial">
-            <button className="rail-bub rail-bub-cloud" onClick={() => setSheet('mood')} aria-label="Log how you feel">
-              <MoodCloud v={lastMood} size={40} />
-            </button>
-            <button className="rail-bub rail-bub-lotus" onClick={() => setSheet('status')} aria-label="Log a status effect">
-              <Glyph id="flower" size={26} />
-            </button>
-            <div className="rail-say">{affirm(activeEffects)}</div>
-          </div>
-        )}
       </div>
       </div>
 
-      {/* Accent-tinted film when the menu / a sheet is open. */}
+      {/* One fixed overlay holds the accent film AND everything that must sit on
+          top of it — so stacking never depends on the rail's ancestor context. */}
       {(menu || sheet || moodDetail) && (
-        <div className="rail-film" onClick={() => { setMenu(false); setSheet(null); setMoodDetail(null) }} />
+        <div className="rail-overlay">
+          <div className="rail-film" onClick={closeAll} />
+          {menu && !sheet && !moodDetail && anchor && (
+            <div className="rail-anchor" style={{ left: anchor.left, top: anchor.top }}>
+              <div className="rail-anchor-blob"><GuideBlob size={54} tint="#8FB0D8" speaking /></div>
+              <button className="rail-bub rail-bub-cloud" onClick={() => setSheet('mood')} aria-label="Log how you feel">
+                <MoodCloud v={lastMood} size={40} />
+              </button>
+              <button className="rail-bub rail-bub-lotus" onClick={() => setSheet('status')} aria-label="Log a status effect">
+                <Glyph id="flower" size={26} />
+              </button>
+              <div className="rail-say">{affirm(activeEffects)}</div>
+            </div>
+          )}
+          {sheet === 'mood' && <MomentSheet onClose={closeAll} onLog={logMood} />}
+          {sheet === 'status' && (
+            <StatusSheet effects={effectList} episodes={episodes} byId={byId}
+              onAdd={addStatus} onEnd={(id) => endStatus(id, false)} onClose={closeAll} />
+          )}
+          {moodDetail && <DetailPopover item={moodDetail} onClose={closeAll} />}
+        </div>
       )}
-
-      {sheet === 'mood' && <MomentSheet onClose={() => setSheet(null)} onLog={logMood} />}
-      {sheet === 'status' && (
-        <StatusSheet effects={effectList} episodes={episodes} byId={byId}
-          onAdd={addStatus} onEnd={(id) => endStatus(id, false)} onClose={() => setSheet(null)} />
-      )}
-      {moodDetail && <DetailPopover item={moodDetail} onClose={() => setMoodDetail(null)} />}
     </>
   )
 }

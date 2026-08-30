@@ -1374,23 +1374,24 @@ textarea { resize: vertical; min-height: 160px; line-height: 1.6; }
 /* the mind blob riding the current time */
 .rail-blob { position: absolute; left: 0; z-index: 20; }
 .rail-blob-btn { border: none; background: none; padding: 0; cursor: pointer; display: block; filter: drop-shadow(0 3px 8px rgba(80,110,150,.3)); }
-/* radial menu fanning to the right of the blob */
-.rail-radial { position: absolute; left: 0; top: 0; }
-.rail-bub { position: absolute; border: none; cursor: pointer; border-radius: 50%; display: grid; place-items: center;
-  background: #fff; box-shadow: 0 6px 20px rgba(40,60,90,.28); animation: rail-pop .28s cubic-bezier(.34,1.56,.64,1) both; }
-.rail-bub-cloud { width: 58px; height: 58px; left: 46px; top: -30px; }
-.rail-bub-lotus { width: 54px; height: 54px; left: 50px; top: 34px; color: var(--teal); animation-delay: .05s; }
-@keyframes rail-pop { from { opacity: 0; transform: translate(-14px, 6px) scale(.4); } to { opacity: 1; transform: none; } }
-.rail-say { position: absolute; left: 112px; top: 2px; width: min(200px, 46vw); background: #fff; border-radius: 14px;
-  padding: 10px 13px; font-size: 12.5px; line-height: 1.45; color: var(--text); box-shadow: 0 8px 26px rgba(40,60,90,.24);
-  animation: rail-pop .3s ease both .1s; }
-.rail-say::before { content: ''; position: absolute; left: -6px; top: 16px; width: 11px; height: 11px; background: #fff; transform: rotate(45deg); }
-/* the accent-tinted film over everything else */
-.rail-film { position: fixed; inset: 0; z-index: 300; border: none;
+/* One fixed overlay carries the film + the menu, so the blob and bubbles are
+   always above the film regardless of any ancestor stacking context. */
+.rail-overlay { position: fixed; inset: 0; z-index: 1000; }
+.rail-film { position: absolute; inset: 0; border: none;
   background: color-mix(in srgb, var(--teal, #4C9A87) 24%, transparent); -webkit-backdrop-filter: blur(1.5px); backdrop-filter: blur(1.5px); }
-/* When the menu is open, lift the blob + radial above the film. */
-.today-root.has-rail .rail-blob { z-index: 20; }
-.rail-blob:has(.rail-radial) { z-index: 320; }
+/* the menu anchored to the blob's centre, fanning to its right */
+.rail-anchor { position: absolute; width: 0; height: 0; }
+.rail-anchor-blob { position: absolute; left: -27px; top: -27px; filter: drop-shadow(0 3px 10px rgba(80,110,150,.4)); }
+.rail-bub { position: absolute; margin-left: -28px; margin-top: -28px; border: none; cursor: pointer; border-radius: 50%;
+  display: grid; place-items: center; background: #fff; box-shadow: 0 6px 20px rgba(40,60,90,.3);
+  animation: rail-pop .28s cubic-bezier(.34,1.56,.64,1) both; }
+.rail-bub-cloud { width: 58px; height: 58px; left: 50px; top: -36px; }
+.rail-bub-lotus { width: 54px; height: 54px; left: 50px; top: 36px; color: var(--teal); animation-delay: .05s; }
+@keyframes rail-pop { from { opacity: 0; transform: translate(-16px, 4px) scale(.4); } to { opacity: 1; transform: none; } }
+.rail-say { position: absolute; left: 104px; top: -30px; margin: 0; width: min(210px, 52vw); background: #fff; border-radius: 14px;
+  padding: 10px 13px; font-size: 12.5px; line-height: 1.45; color: var(--text); box-shadow: 0 8px 26px rgba(40,60,90,.26);
+  animation: rail-pop .3s ease both .1s; }
+.rail-say::before { content: ''; position: absolute; left: -6px; top: 30px; width: 11px; height: 11px; background: #fff; transform: rotate(45deg); }
 
 /* ── Sheets (mood moment / status effect) ─────────────────────── */
 .rail-sheet { position: fixed; left: 50%; bottom: max(20px, env(safe-area-inset-bottom)); transform: translateX(-50%); z-index: 340;
