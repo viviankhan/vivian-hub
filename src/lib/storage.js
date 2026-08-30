@@ -47,9 +47,21 @@ export function stableSignature(str) {
 // blob that hasn't actually changed since the last write — including the
 // once-per-load pref re-push, which was writing the identical ui_prefs blob on
 // every single app open. See dbSet.
+// Namespaced by the signed-in user's id (below), so one account's "already
+// wrote this" signatures never make another account skip a needed write when
+// two people use the same browser.
 const WSIG_PREFIX = 'vivian_wsig_'
-const wsigGet = (k) => { try { return localStorage.getItem(WSIG_PREFIX + k) } catch { return null } }
-const wsigSet = (k, v) => { try { localStorage.setItem(WSIG_PREFIX + k, v) } catch {} }
+const wsigGet = (k) => { try { return localStorage.getItem(WSIG_PREFIX + kvNs() + k) } catch { return null } }
+const wsigSet = (k, v) => { try { localStorage.setItem(WSIG_PREFIX + kvNs() + k, v) } catch {} }
+
+// ── Current account (set by src/lib/auth.js) ────────────────────
+// kv_store is keyed per (user_id, key), so a write must carry the owner and its
+// upsert must resolve conflicts on the composite key. auth.js calls
+// setStorageUser() whenever the session changes; storage.js never imports auth
+// (that would be a cycle). 'local' is the implicit single user without Supabase.
+let kvUid = USE_SUPABASE ? null : 'local'
+const kvNs = () => (kvUid ? kvUid + ':' : '')
+export function setStorageUser(uid) { kvUid = uid || (USE_SUPABASE ? null : 'local') }
 
 // ── In-flight write tracking ────────────────────────────────────
 // Cloud writes are async — refreshing or closing the tab right after an edit
@@ -132,7 +144,14 @@ export async function dbSet(key, value) {
     const thisWrite = prevWrite.then(async () => {
       pendingWrites++
       try {
-        const { error } = await supabase.from('kv_store').upsert({ key, value, updated_at: new Date().toISOString() })
+        // kv_store's primary key is (user_id, key) once accounts are on, so the
+        // owner is written explicitly and the upsert resolves on that composite
+        // key. Falls back to a bare row (single-key PK) when user_id is null,
+        // which is the pre-migration schema.
+        const row = kvUid ? { user_id: kvUid, key, value, updated_at: new Date().toISOString() }
+                          : { key, value, updated_at: new Date().toISOString() }
+        const opts = kvUid ? { onConflict: 'user_id,key' } : undefined
+        const { error } = await supabase.from('kv_store').upsert(row, opts)
         if (error) throw new Error(`Cloud save failed for "${key}": ${error.message}`)
         wsigSet(key, sig)
       } finally {
@@ -351,6 +370,27 @@ export const setChangeHistory = v  => dbSet('change_history', v)
 //   { id, text, durationMins, cat, cats, color, icon, description, subtasks, person, createdAt }
 export const getTaskTemplates = () => dbGet('task_templates').then(v => Array.isArray(v) ? v : [])
 export const setTaskTemplates = v  => dbSet('task_templates', v)
+
+// ── B&B work & expense tracker ──────────────────────────────────
+// A small business log kept for tax records: hours worked (by whom, on what),
+// and money spent (to whom, for what). Stored as three per-user kv_store blobs
+// — low-volume, edited a few entries at a time, so a whole-array write per
+// change is fine (same pattern as time_logs / thoughts) and it needs no new
+// tables beyond the accounts migration. Shapes:
+//   worker:  { id, name, role, payRate, color, createdAt }
+//   session: { id, date, workerId, activity, title, mins, miles, notes, createdAt }
+//   expense: { id, date, paidTo, workerId, amount, category, description, miles, receipt, createdAt }
+// `receipt` is a small downscaled JPEG data URL (see lib/bnb.js compressImage).
+export const getBnbWorkers  = () => dbGet('bnb_workers').then(v => Array.isArray(v) ? v : [])
+export const setBnbWorkers  = v  => dbSet('bnb_workers', v)
+export const getBnbSessions = () => dbGet('bnb_sessions').then(v => Array.isArray(v) ? v : [])
+export const setBnbSessions = v  => dbSet('bnb_sessions', v)
+export const getBnbExpenses = () => dbGet('bnb_expenses').then(v => Array.isArray(v) ? v : [])
+export const setBnbExpenses = v  => dbSet('bnb_expenses', v)
+// Remembered activity/expense categories for the tracker (free-form labels the
+// user has typed), so the forms can offer them again. { activities:[], expenses:[] }
+export const getBnbCats = () => dbGet('bnb_cats').then(v => (v && typeof v === 'object') ? v : { activities: [], expenses: [] })
+export const setBnbCats = v  => dbSet('bnb_cats', v)
 
 // ── Classes ────────────────────────────────────────────────────
 export async function getClasses() {

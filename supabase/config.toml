@@ -12,3 +12,10 @@ verify_jwt = false
 # database.
 [functions.parse-event]
 verify_jwt = false
+
+# The receipt scanner (B&B tracker) runs without JWT verification for the same
+# reason — the browser's CORS preflight carries no auth header. It only sends the
+# photo to Gemini with your server-side key and returns structured JSON; it never
+# touches the database.
+[functions.parse-receipt]
+verify_jwt = false

@@ -1,5 +1,10 @@
 -- Run this in your Supabase SQL editor (supabase.com → project → SQL editor)
 -- Safe to re-run — every statement is idempotent (IF NOT EXISTS / DROP+CREATE POLICY).
+--
+-- ▶ ACCOUNTS: this file creates the tables with wide-open ("Allow all") policies.
+--   To turn on per-user logins and private data, run `supabase_auth_migration.sql`
+--   AFTER this file — it adds a user_id to every table and tightens each policy so
+--   an account only sees its own rows. See ACCOUNTS.md.
 
 -- ── Generic key-value store ─────────────────────────────────────
 -- Still used for settings-shaped data that's edited as one unit by one
