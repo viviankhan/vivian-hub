@@ -29,9 +29,15 @@ const EMO_COLORS = ['#8E9BC4', '#F4B24C', '#9E8AA6', '#8FB27A', '#DB8A73', '#7FA
 // The waking-day window the rail spans, in hours. 6am → midnight.
 const DAY_START = 6, DAY_END = 24
 const clockTime = (ts) => { try { return new Date(ts).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) } catch { return '' } }
+// Position on today's rail (0 = 6am, 1 = midnight). Date-aware and clamped, so
+// anything that started before today (e.g. a condition left running overnight)
+// sits at the very top rather than landing in the evening by its clock hour.
 const fracOf = (d) => {
-  const dt = new Date(d), h = dt.getHours() + dt.getMinutes() / 60
-  return Math.max(0, Math.min(1, (h - DAY_START) / (DAY_END - DAY_START)))
+  const t = new Date(d).getTime()
+  const now = new Date()
+  const start = new Date(now.getFullYear(), now.getMonth(), now.getDate(), DAY_START).getTime()
+  const span = (DAY_END - DAY_START) * 3600000
+  return Math.max(0, Math.min(1, (t - start) / span))
 }
 
 // A kind line for the blob to speak, shaped by what you're carrying right now.
