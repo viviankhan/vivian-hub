@@ -1443,3 +1443,14 @@ textarea { resize: vertical; min-height: 160px; line-height: 1.6; }
 .rail-emo-plus:hover { border-color: var(--teal); background: var(--green-light); }
 .rail-emo-input { width: 118px; border: 1.5px solid var(--teal); border-radius: 999px; padding: 6px 13px; font-size: 12.5px; font-family: inherit; background: #fff; color: var(--text); }
 .rail-emo-hint { font-size: 11px; color: var(--muted); margin-top: 8px; text-align: center; }
+
+/* Live conditions + today's mood orbiting the mind blob */
+.rail-orbit { position: absolute; z-index: 21; border: none; padding: 0; cursor: pointer; border-radius: 50%;
+  display: grid; place-items: center; animation: rail-pop .3s cubic-bezier(.34,1.56,.64,1) both; }
+.rail-orbit-fx { box-shadow: 0 2px 6px rgba(0,0,0,.22), 0 0 0 2px rgba(255,255,255,.7); }
+.rail-orbit-mood { background: none; box-shadow: none; }
+.rail-orbit-mood:hover, .rail-orbit-fx:hover { filter: brightness(1.05); }
+/* selection check on a chosen condition (multi-select) */
+.rail-fxpick { position: relative; }
+.rail-fxpick-check { position: absolute; top: -7px; right: -7px; width: 18px; height: 18px; border-radius: 50%;
+  display: grid; place-items: center; font-size: 11px; font-weight: 800; box-shadow: 0 1px 4px rgba(0,0,0,.22); }

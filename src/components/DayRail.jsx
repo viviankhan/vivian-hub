@@ -103,7 +103,8 @@ export default function DayRail({
   const markers = useMemo(() => {
     const list = [
       ...todayMoments.map(c => ({ type: 'mood', key: c.id, frac: fracOf(c.ts), data: c })),
-      ...todayEpisodes.map(e => ({ type: 'fx', key: e.id, frac: fracOf(e.start), data: e })),
+      // Only ENDED conditions sit on the timeline; live ones orbit the blob.
+      ...todayEpisodes.filter(e => e.end).map(e => ({ type: 'fx', key: e.id, frac: fracOf(e.start), data: e })),
     ].sort((a, b) => a.frac - b.frac)
     let cluster = -1, prev = -Infinity
     return list.map(m => {
@@ -123,9 +124,13 @@ export default function DayRail({
     }
     setSheet(null); setMenu(false)
   }
-  const addStatus = (effectId, note) => {
-    let next = startEpisode(episodes, effectId)
-    if (note && note.trim()) next = setEpisodeNote(next, effectId, note.trim())
+  const addStatus = (ids, note) => {
+    const arr = Array.isArray(ids) ? ids : [ids]
+    let next = episodes
+    for (const id of arr) {
+      next = startEpisode(next, id)
+      if (note && note.trim()) next = setEpisodeNote(next, id, note.trim())
+    }
     persistEpisodes(next)
     setSheet(null); setMenu(false)
   }
@@ -142,8 +147,25 @@ export default function DayRail({
     persistEpisodes(endEpisode(episodes, effectId))
   }
 
-  const activeEffects = effectList.filter(f => isActive(episodes, f.id))
-    .map(f => ({ id: f.id, name: f.name, good: POSITIVE_EFFECTS.has(f.id) }))
+  const activeFxFull = effectList.filter(f => isActive(episodes, f.id))
+  const activeEffects = activeFxFull.map(f => ({ id: f.id, name: f.name, good: POSITIVE_EFFECTS.has(f.id) }))
+  // The things hovering around the blob at "now": live conditions + today's mood.
+  const orbit = [
+    ...activeFxFull.map(f => ({ kind: 'fx', id: 'o-' + f.id, fx: f })),
+    ...(todayMoments.length ? [{ kind: 'mood', id: 'o-mood', mood: lastMood }] : []),
+  ]
+  const N = orbit.length
+  // The cluster fans across the upper arc above the blob — where the rail is
+  // empty — kept inside the gutter (never off the left edge, never far into the
+  // timeline). Icons shrink as more pile on so it always fits.
+  const oSize = Math.max(15, 27 - Math.max(0, N - 3) * 2)
+  const oR = 30
+  const oSpan = N <= 1 ? 0 : Math.min(64, 30 + N * 12)   // stays within ±32° of straight up (inside the gutter)
+  const oStart = 270 - oSpan / 2
+  const orbitPos = orbit.map((it, i) => {
+    const ang = (N === 1 ? 270 : oStart + oSpan * (i / (N - 1))) * Math.PI / 180
+    return { ...it, x: 27 + oR * Math.cos(ang), y: 27 + oR * Math.sin(ang) }
+  })
 
   return (
     <>
@@ -181,11 +203,25 @@ export default function DayRail({
         )
       })}
 
-      {/* The mind blob — rides the current time, taps open the radial menu. */}
+      {/* The mind blob — rides the current time, taps open the radial menu.
+          Live conditions + today's mood orbit it; tapping one opens its menu. */}
       <div className="rail-blob" style={{ top: `${nowFrac * 100}%` }}>
         <button ref={blobRef} className="rail-blob-btn" onClick={() => (menu ? closeAll() : openMenu())} aria-label="Wellness">
           <GuideBlob size={54} tint="#8FB0D8" speaking={menu} />
         </button>
+        {orbitPos.map(it => (
+          it.kind === 'fx'
+            ? <button key={it.id} className="rail-orbit rail-orbit-fx" title={`${it.fx.name} · tap to manage`}
+                onClick={(ev) => { ev.stopPropagation(); setSheet('status') }}
+                style={{ left: it.x - oSize / 2, top: it.y - oSize / 2, width: oSize, height: oSize, background: it.fx.color, color: iconColorOn(it.fx.color) }}>
+                <Glyph id={it.fx.icon} size={Math.round(oSize * 0.56)} />
+              </button>
+            : <button key={it.id} className="rail-orbit rail-orbit-mood" title="Your mood today · tap to log"
+                onClick={(ev) => { ev.stopPropagation(); setSheet('mood') }}
+                style={{ left: it.x - oSize / 2, top: it.y - oSize / 2 }}>
+                <MoodCloud v={it.mood} size={oSize} />
+              </button>
+        ))}
       </div>
       </div>
 
@@ -292,11 +328,12 @@ function MomentSheet({ onClose, onLog, emotions: emoList = [], onAddEmotion, onD
   )
 }
 
-// ── Status sheet — pick / describe / end a condition ────────────
+// ── Status sheet — pick one or several, describe, or end ────────
 function StatusSheet({ effects, episodes, byId, onAdd, onEnd, onClose }) {
-  const [pick, setPick] = useState(null)
+  const [picks, setPicks] = useState([])
   const [note, setNote] = useState('')
   const active = effects.filter(f => isActive(episodes, f.id))
+  const toggle = (id) => setPicks(p => p.includes(id) ? p.filter(x => x !== id) : [...p, id])
   return (
     <div className="rail-sheet" onClick={(e) => e.stopPropagation()}>
       <div className="rail-sheet-title">What are you feeling in your body or mind?</div>
@@ -306,7 +343,7 @@ function StatusSheet({ effects, episodes, byId, onAdd, onEnd, onClose }) {
             const ep = activeEpisode(episodes, f.id)
             return (
               <button key={f.id} className="rail-active-chip" style={{ background: f.color, color: iconColorOn(f.color) }} onClick={() => onEnd(f.id)}>
-                <Glyph id={f.icon} size={14} /> {f.name} · {fmtDuration(episodeMinutes(ep))} <span className="rail-x">✕ end</span>
+                <Glyph id={f.icon} size={14} /> {f.name} · {fmtDuration(episodeMinutes(ep))} <span className="rail-x">End</span>
               </button>
             )
           })}
@@ -315,19 +352,21 @@ function StatusSheet({ effects, episodes, byId, onAdd, onEnd, onClose }) {
       <div className="rail-fxgrid">
         {effects.map(f => {
           const on = isActive(episodes, f.id)
+          const sel = picks.includes(f.id)
           return (
-            <button key={f.id} className={`rail-fxpick ${pick === f.id ? 'sel' : ''} ${on ? 'on' : ''}`} disabled={on}
-              onClick={() => setPick(f.id)} style={pick === f.id ? { borderColor: f.color, background: `color-mix(in srgb, ${f.color} 16%, #fff)` } : undefined}>
+            <button key={f.id} className={`rail-fxpick ${sel ? 'sel' : ''} ${on ? 'on' : ''}`} disabled={on}
+              onClick={() => toggle(f.id)} style={sel ? { borderColor: f.color, background: `color-mix(in srgb, ${f.color} 16%, #fff)` } : undefined}>
+              {sel && <span className="rail-fxpick-check" style={{ background: f.color, color: iconColorOn(f.color) }}>✓</span>}
               <span className="rail-fxpick-ico" style={{ background: f.color, color: iconColorOn(f.color) }}><Glyph id={f.icon} size={15} /></span>
               <span>{f.name}</span>
             </button>
           )
         })}
       </div>
-      {pick && (
+      {picks.length > 0 && (
         <>
-          <textarea className="rail-note" placeholder={`Describe the ${(byId.get(pick)?.name || '').toLowerCase()} — as much or as little as you like`} value={note} onChange={e => setNote(e.target.value)} rows={2} />
-          <button className="rail-log" onClick={() => onAdd(pick, note)}>Start tracking this</button>
+          <textarea className="rail-note" placeholder="Describe how these feel — optional, and shared across the ones you picked" value={note} onChange={e => setNote(e.target.value)} rows={2} />
+          <button className="rail-log" onClick={() => onAdd(picks, note)}>Start tracking{picks.length > 1 ? ` ${picks.length}` : ''}</button>
         </>
       )}
     </div>
