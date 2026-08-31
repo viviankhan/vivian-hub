@@ -146,7 +146,7 @@ export default function Calendar({ commitments, vacations, events, log, categori
     const cat = resolveCat(o.cat)
     return {
       id: o.id, date: dateStr, isRecurring: true,
-      text: o.text, label: o.label,
+      text: o.text, label: o.label, cat: o.cat,
       done: !!(todos && todos[`${dateStr}_${o.id}`]),
       color: cat.color, icon: cat.icon, catLabel: cat.label,
     }
@@ -292,6 +292,10 @@ export default function Calendar({ commitments, vacations, events, log, categori
           {selectedEvents.map((e, i) => (
             <div key={i} style={{ padding:'9px 12px', borderRadius:8, marginBottom:6, background:`${e.color}14`, border:`1px solid ${e.color}44`, opacity: e.done ? .6 : 1 }}>
               <div style={{ display:'flex', gap:10, alignItems:'center' }}>
+                <div onClick={() => syncToggle && syncToggle(e.id, e.text, e.raw.cat, null, !e.done)} role="checkbox" aria-checked={e.done} title={e.done ? 'Mark not done' : 'Mark done'}
+                  style={{ width:18, height:18, borderRadius:5, flexShrink:0, cursor:'pointer', border: e.done ? 'none' : `2px solid ${e.color}`, background: e.done ? e.color : 'transparent', display:'flex', alignItems:'center', justifyContent:'center' }}>
+                  {e.done && <span style={{ color:'white', fontSize:10, fontWeight:700 }}>✓</span>}
+                </div>
                 <span style={{ display:'inline-flex', alignItems:'center', gap:4, fontSize:10, letterSpacing:1, textTransform:'uppercase', color:e.color, minWidth:70, fontWeight:600 }}>
                   {e.icon && <Icon value={e.icon} size={12} />}{e.catLabel}
                 </span>
@@ -321,6 +325,10 @@ export default function Calendar({ commitments, vacations, events, log, categori
               The ✕ skips just this occurrence (synced to every view). */}
           {selectedRecurring.map((e, i) => (
             <div key={'rec'+i} style={{ display:'flex', gap:10, alignItems:'center', padding:'9px 12px', borderRadius:8, marginBottom:6, background:`${e.color}14`, border:`1px solid ${e.color}44`, opacity: e.done ? .6 : 1 }}>
+              <div onClick={() => syncToggle && syncToggle(e.id, e.text, e.cat, selected, !e.done)} role="checkbox" aria-checked={e.done} title={e.done ? 'Mark not done' : 'Mark done'}
+                style={{ width:18, height:18, borderRadius:5, flexShrink:0, cursor:'pointer', border: e.done ? 'none' : `2px solid ${e.color}`, background: e.done ? e.color : 'transparent', display:'flex', alignItems:'center', justifyContent:'center' }}>
+                {e.done && <span style={{ color:'white', fontSize:10, fontWeight:700 }}>✓</span>}
+              </div>
               <span style={{ display:'inline-flex', alignItems:'center', gap:4, fontSize:10, letterSpacing:1, textTransform:'uppercase', color:e.color, minWidth:70, fontWeight:600 }}>
                 {e.icon && <Icon value={e.icon} size={12} />}{e.catLabel}
               </span>
