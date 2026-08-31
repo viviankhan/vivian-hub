@@ -1437,7 +1437,7 @@ textarea { resize: vertical; min-height: 160px; line-height: 1.6; }
 /* Emotion vocabulary — press-and-hold a word to remove, clean + to add */
 .rail-emos-label { font-size: 12px; font-weight: 700; color: var(--forest); margin: 14px 0 8px; }
 .rail-emo { touch-action: none; user-select: none; transition: background .15s, color .15s, transform .12s; }
-.rail-emo.confirm { background: #C0554A; color: #fff; border-color: #C0554A; }
+.rail-emo.confirm { background: var(--teal); color: var(--on-accent, #fff); border-color: var(--teal); }
 .rail-emo-plus { display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px; border-radius: 999px;
   border: 1.5px dashed var(--border); background: none; color: var(--teal); font-size: 21px; font-weight: 500; line-height: 1; cursor: pointer; font-family: inherit; }
 .rail-emo-plus:hover { border-color: var(--teal); background: var(--green-light); }
