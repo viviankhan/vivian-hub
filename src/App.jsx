@@ -35,8 +35,7 @@ import RecurringTasksManager from './components/RecurringTasksManager.jsx'
 import CategoriesManager from './components/CategoriesManager.jsx'
 import EventsManager from './components/EventsManager.jsx'
 import ExternalCalendars from './components/ExternalCalendars.jsx'
-import Informatics from './components/Informatics.jsx'
-import BnbTracker from './components/BnbTracker.jsx'
+import Insights from './components/Insights.jsx'
 import TaskMenu from './components/TaskMenu.jsx'
 import { authEnabled, getCurrentUser, signOut } from './lib/auth.js'
 import { refreshCalendar, loadCachedCalendar, clearCachedCalendar, eventsToSpans } from './lib/calendars.js'
@@ -88,7 +87,6 @@ const TABS = [
   { id:'events',      label:'Events',      glyph:'ticket' },
   { id:'recurring',   label:'Recurring',   glyph:'repeat' },
   { id:'informatics', label:'Insights',    glyph:'chart' },
-  { id:'bnb',         label:'B&B',         glyph:'bed' },
 ]
 
 // On the desktop top bar these tabs are tucked under a single "More" dropdown
@@ -1636,8 +1634,7 @@ export default function App() {
           categories={categories} taskTemplates={taskTemplates} labelModel={labelModel}
           routines={routines} addRoutine={addRoutineFn} updateRoutine={updateRoutineFn} deleteRoutine={deleteRoutineFn}
           defaultWeekTasks={DEFAULT_RECURRING_TASKS} defaultDailyTodos={DEFAULT_DAILY_TODOS} />}
-        {tab==='informatics' && <Informatics commitments={commitmentsView} recurringTasks={recurringTasksEnriched} completions={completions} log={log} categories={categories} timeLogs={timeLogs} addTimeLog={addTimeLog} deleteTimeLog={deleteTimeLog} />}
-        {tab==='bnb'         && <BnbTracker />}
+        {tab==='informatics' && <Insights />}
       </main>
 
       <SettingsDrawer

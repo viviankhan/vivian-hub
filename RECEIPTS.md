@@ -1,28 +1,37 @@
-# Bed & Breakfast tracker + receipt scanning
+# Insights trackers + receipt scanning
 
-The **B&B** tab is a work-and-expense log built for tax records:
+The **Insights** tab is a home for **trackers** — folders you create for anything
+worth keeping records on (a bed & breakfast, a rental, freelance work, mileage…).
 
-- **Hours** — log time worked, by whom, on what activity, and what got done
-  (plus optional miles driven).
-- **Expenses** — log money spent: who was paid, how much, what for, when (plus
-  optional miles and a receipt photo).
-- **People** — add yourself and anyone you pay, so hours and payments are
-  attributed per person.
-- **Summary** — donut charts of hours by activity, hours by person, spending by
-  category, and spending by payee, over any time frame you pick.
-- **Download report** — an itemized PDF for any period. You choose which sections
-  and columns appear (hours, miles, money, who, what, when, receipt photos), then
-  your browser's **Save as PDF** writes the file.
+Each tracker holds **fields you define yourself**, so one entry can carry
+whatever you want at once — money coming in, money going out, hours, a number
+like miles, a category, a person, a receipt photo. From that, every tracker gives
+you:
+
+- **A summary** of money **in vs out → net (what's left over)**, plus **hours**,
+  and — if you set a budget — **how much money and time you have left**.
+- A few **plain-English highlights** and clean **donut charts** (no generic bar
+  breakdowns).
+- **Export** to a **PDF** or an **editable CSV**, picking exactly which columns
+  appear.
+
+The tab's **Overview** rolls every tracker up into one money-and-time summary, and
+"Export all" gives a combined PDF/CSV across all of them.
+
+New trackers start from a **template** (Standard, Bed & Breakfast, Mileage,
+Freelance, or Blank) — just a starting set of fields you can change any time in
+the tracker's **Setup** tab, where you also set budgets.
 
 All of it is private to your account (see `ACCOUNTS.md`) and works offline —
 everything except the AI receipt scanner, which needs the steps below.
 
 ## Receipt scanning (optional AI)
 
-On the **Expenses** form, **📷 Scan a receipt** lets you photograph or upload a
-receipt; it's read automatically and the vendor, date, amount, category and a
-short description are filled in for you to review. A small copy of the photo is
-kept on the expense so it can appear in your PDF.
+If a tracker has a **Receipt** field, its entry form shows **📷 Scan a receipt**:
+photograph or upload a receipt and it's read automatically, filling in the amount
+(into a *money out* field), a category, a description, and the date, for you to
+review. A small copy of the photo is kept on the entry so it can appear in your
+PDF.
 
 It uses the **same free Google Gemini setup** as the "paste an event" assistant —
 if you've already done `AI_SETUP.md`, you only need to deploy one more function:
@@ -31,21 +40,20 @@ if you've already done `AI_SETUP.md`, you only need to deploy one more function:
 supabase functions deploy parse-receipt
 ```
 
-That's it — the `GEMINI_API_KEY` secret you already set is reused. If you haven't
-set up Gemini yet, follow `AI_SETUP.md` first (get a free key, set the secret),
-then run the deploy above.
+The `GEMINI_API_KEY` secret you already set is reused. If you haven't set up
+Gemini yet, follow `AI_SETUP.md` first, then run the deploy above.
 
 ### Without the AI
 
-If Gemini isn't set up, the scan button still lets you **attach** a receipt
-photo — you just type the details in yourself. Nothing about the tracker
-requires the AI; it only saves you typing.
+If Gemini isn't set up, the Receipt field still lets you **attach** a photo — you
+just type the details yourself. Nothing about the trackers requires the AI; it
+only saves you typing.
 
 ## Notes
 
 - **Privacy:** when you scan, the downscaled photo is sent to Google Gemini to be
-  read, and structured fields come back. Nothing is saved to your records until
-  you review the draft and tap **Save expense**.
+  read, and structured fields come back. Nothing is saved until you review the
+  draft and tap **Save entry**.
 - **Cost:** free within Gemini's free tier.
 - **Images:** photos are downscaled in your browser before being stored or sent,
   so a big phone photo doesn't bloat your data or the request.

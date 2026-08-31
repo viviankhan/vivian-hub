@@ -371,26 +371,32 @@ export const setChangeHistory = v  => dbSet('change_history', v)
 export const getTaskTemplates = () => dbGet('task_templates').then(v => Array.isArray(v) ? v : [])
 export const setTaskTemplates = v  => dbSet('task_templates', v)
 
-// ── B&B work & expense tracker ──────────────────────────────────
-// A small business log kept for tax records: hours worked (by whom, on what),
-// and money spent (to whom, for what). Stored as three per-user kv_store blobs
-// — low-volume, edited a few entries at a time, so a whole-array write per
-// change is fine (same pattern as time_logs / thoughts) and it needs no new
-// tables beyond the accounts migration. Shapes:
-//   worker:  { id, name, role, payRate, color, createdAt }
-//   session: { id, date, workerId, activity, title, mins, miles, notes, createdAt }
-//   expense: { id, date, paidTo, workerId, amount, category, description, miles, receipt, createdAt }
-// `receipt` is a small downscaled JPEG data URL (see lib/bnb.js compressImage).
-export const getBnbWorkers  = () => dbGet('bnb_workers').then(v => Array.isArray(v) ? v : [])
-export const setBnbWorkers  = v  => dbSet('bnb_workers', v)
-export const getBnbSessions = () => dbGet('bnb_sessions').then(v => Array.isArray(v) ? v : [])
-export const setBnbSessions = v  => dbSet('bnb_sessions', v)
-export const getBnbExpenses = () => dbGet('bnb_expenses').then(v => Array.isArray(v) ? v : [])
-export const setBnbExpenses = v  => dbSet('bnb_expenses', v)
-// Remembered activity/expense categories for the tracker (free-form labels the
-// user has typed), so the forms can offer them again. { activities:[], expenses:[] }
-export const getBnbCats = () => dbGet('bnb_cats').then(v => (v && typeof v === 'object') ? v : { activities: [], expenses: [] })
-export const setBnbCats = v  => dbSet('bnb_cats', v)
+// ── Trackers (custom folders in the Insights tab) ───────────────
+// User-created record folders — a B&B, a rental, freelance work, mileage… Each
+// folder holds hours worked and money spent, attributed to people, so it can be
+// summarized and exported (PDF / CSV) for tax records. Stored as per-user
+// kv_store blobs (arrays) — low-volume, edited a few entries at a time, so a
+// whole-array write per change is fine (same pattern as time_logs / thoughts)
+// and it needs no new tables beyond the accounts migration. Shapes:
+// The user defines each folder's OWN fields (a driving trip can carry a money-out
+// for gas, a time value, and a mileage number all in one entry), and can set a
+// money + time budget so the summary shows profit, spend, and what's left.
+//   folder: { id, name, icon, color, createdAt, fields:[{id,type,name}], budgetMoney, budgetHours }
+//   person: { id, folderId, name, role, color, createdAt }
+//   entry:  { id, folderId, date, values:{ [fieldId]: value }, createdAt }
+// A `receipt`-type field's value is a small downscaled JPEG data URL (see
+// lib/trackers.js compressImage). Field types: moneyIn, moneyOut, hours, number,
+// category, text, person, receipt (see lib/trackers.js FIELD_TYPES).
+export const getTrackerFolders = () => dbGet('tracker_folders').then(v => Array.isArray(v) ? v : [])
+export const setTrackerFolders = v  => dbSet('tracker_folders', v)
+export const getTrackerPeople  = () => dbGet('tracker_people').then(v => Array.isArray(v) ? v : [])
+export const setTrackerPeople  = v  => dbSet('tracker_people', v)
+export const getTrackerEntries = () => dbGet('tracker_entries').then(v => Array.isArray(v) ? v : [])
+export const setTrackerEntries = v  => dbSet('tracker_entries', v)
+// Remembered field values the user has typed, so text/category inputs can offer
+// them again. Shape: { [folderId]: { [fieldId]: string[] } }
+export const getTrackerCats = () => dbGet('tracker_cats').then(v => (v && typeof v === 'object') ? v : {})
+export const setTrackerCats = v  => dbSet('tracker_cats', v)
 
 // ── Classes ────────────────────────────────────────────────────
 export async function getClasses() {
