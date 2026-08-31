@@ -76,6 +76,16 @@ import SeasonalEffects from './components/SeasonalEffects.jsx'
 // it's obvious on-device which version is actually running after a deploy.
 const BUILD_ID = typeof __BUILD_ID__ !== 'undefined' ? __BUILD_ID__ : 'dev'
 
+// Today's date as a YYYY-MM-DD string (local time), matching how dates are
+// stored on commitments/recurring rows everywhere else in the app.
+function todayStr() {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
+}
+// A YYYY-MM-DD date that's already gone (strictly before today). Scheduling
+// something onto such a day means it already happened, so it lands checked off.
+function isPastDate(dateStr) { return !!dateStr && dateStr < todayStr() }
+
 // Routine groups tasks can be filed under. Each carries a soft "film" tint that
 // washes behind its tasks on the timeline (pink morning, blue night by default).
 // Users can rename/add/delete these; these two are just the initial seed.
@@ -1176,9 +1186,24 @@ export default function App() {
 
   const addCommitment = useCallback(async (c, opts = {}) => {
     const { description, subtasks, cats, color, icon, location, startedAt, block, routine, autoComplete, ...core } = c
+    // Scheduling an item onto a day that's already passed means it happened —
+    // land it already checked off (a real completion that counts toward
+    // progress), unless it's a time block or the caller already set done.
+    // Skipped for silent adds (undo/redo restores keep their snapshot's state).
+    const backfillDone = !opts.silent && !block && !core.done && isPastDate(core.date)
+    if (backfillDone) core.done = true
     try {
       const created = await dbAddCommitment(core)
       setCommitments_(prev => [created, ...prev])
+      if (backfillDone) {
+        // Mirror a manual check-off: record the completion and log it so the
+        // item counts toward the Informatics stats and streak, same as syncToggle.
+        setCompletions_(prev => { const n = { ...prev, [created.id]: true }; setCompletion(created.id, true).catch(reportSaveError); return n })
+        const d = new Date()
+        const entry = { date: todayStr(), dateLabel: d.toLocaleDateString('en-US', { weekday:'long', month:'long', day:'numeric' }), label: created.text || 'task', tag: core.cat || '', ts: d.toISOString(), storageKey: created.id }
+        setLog_(prev => [...prev, entry])
+        addLogEntry(entry).catch(reportSaveError)
+      }
       pushUndo('added “' + (created.text || 'task') + '”', () => deleteCommitment(created.id))
       if (!opts.silent) recordChange({ kind: 'add', entity: 'task', label: 'Added “' + (created.text || 'task') + '”', inverse: { op: 'delete', entity: 'task', id: created.id } })
       const hasCats = Array.isArray(cats) && cats.length > 1
