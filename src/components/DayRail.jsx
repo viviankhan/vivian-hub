@@ -229,10 +229,23 @@ function MomentSheet({ onClose, onLog, emotions: emoList = [], onAddEmotion, onD
   const [emotions, setEmotions] = useState([])
   const [note, setNote] = useState('')
   const [noting, setNoting] = useState(false)
-  const [editing, setEditing] = useState(false)
+  const [adding, setAdding] = useState(false)
   const [newEmo, setNewEmo] = useState('')
+  const [pending, setPending] = useState(null)   // press-and-hold armed a delete
+  const holdTimer = useRef(null)
+  const heldRef = useRef(false)
   const toggleEmo = (id) => setEmotions(p => p.includes(id) ? p.filter(x => x !== id) : (p.length < 4 ? [...p, id] : p))
-  const submitNew = () => { if (newEmo.trim()) { onAddEmotion?.(newEmo); setNewEmo('') } }
+  const submitNew = () => { const v = newEmo.trim(); if (v) onAddEmotion?.(v); setNewEmo(''); setAdding(false) }
+  // Press and hold a word to arm its removal; a second tap confirms.
+  const startHold = (id) => { heldRef.current = false; clearTimeout(holdTimer.current); holdTimer.current = setTimeout(() => { heldRef.current = true; setPending(id) }, 500) }
+  const endHold = () => { clearTimeout(holdTimer.current); holdTimer.current = null }
+  useEffect(() => { if (!pending) return; const t = setTimeout(() => setPending(null), 3000); return () => clearTimeout(t) }, [pending])
+  const chipClick = (ev, id) => {
+    ev.stopPropagation()
+    if (heldRef.current) { heldRef.current = false; return }   // the hold itself, not a tap
+    if (pending === id) { onDeleteEmotion?.(id); setPending(null); return }
+    setPending(null); toggleEmo(id)
+  }
   return (
     <div className="rail-sheet" onClick={(e) => e.stopPropagation()}>
       <div className="rail-sheet-title">How are you, right now?</div>
@@ -249,25 +262,27 @@ function MomentSheet({ onClose, onLog, emotions: emoList = [], onAddEmotion, onD
           {!noting
             ? <button className="rail-addnote" onClick={() => setNoting(true)}>＋ Say why (optional)</button>
             : <>
-                <div className="rail-emos-head">
-                  <span className="rail-emos-label">Name the feeling (optional)</span>
-                  {canEdit && <button className="rail-emos-edit" onClick={() => setEditing(v => !v)}>{editing ? 'Done' : 'Edit'}</button>}
-                </div>
-                <div className="rail-emos">
+                <div className="rail-emos-label">Name the feeling (optional)</div>
+                <div className="rail-emos" onClick={() => setPending(null)}>
                   {emoList.map(e => (
-                    <span key={e.id} className={`rail-emo-wrap ${editing ? 'editing' : ''}`}>
-                      <button className={`rail-emo ${emotions.includes(e.id) ? 'on' : ''}`} onClick={() => editing ? null : toggleEmo(e.id)}>{e.name}</button>
-                      {editing && <button className="rail-emo-del" onClick={() => onDeleteEmotion?.(e.id)} aria-label={`Delete ${e.name}`}>✕</button>}
-                    </span>
+                    <button key={e.id}
+                      className={`rail-emo ${emotions.includes(e.id) ? 'on' : ''} ${pending === e.id ? 'confirm' : ''}`}
+                      onClick={(ev) => chipClick(ev, e.id)}
+                      onPointerDown={() => canEdit && startHold(e.id)} onPointerUp={endHold} onPointerLeave={endHold} onPointerCancel={endHold}
+                      onContextMenu={(ev) => ev.preventDefault()}>
+                      {pending === e.id ? 'Remove?' : e.name}
+                    </button>
                   ))}
+                  {canEdit && (adding
+                    ? <input className="rail-emo-input" autoFocus placeholder="feeling…" value={newEmo} maxLength={22}
+                        onClick={(ev) => ev.stopPropagation()}
+                        onChange={(e) => setNewEmo(e.target.value)}
+                        onKeyDown={(e) => { if (e.key === 'Enter') submitNew(); if (e.key === 'Escape') { setNewEmo(''); setAdding(false) } }}
+                        onBlur={submitNew} />
+                    : <button className="rail-emo-plus" onClick={(ev) => { ev.stopPropagation(); setAdding(true) }} aria-label="Add a feeling word">+</button>
+                  )}
                 </div>
-                {editing && (
-                  <div className="rail-emo-add">
-                    <input className="rail-emo-input" placeholder="Add a word…" value={newEmo} maxLength={22}
-                      onChange={e => setNewEmo(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') submitNew() }} />
-                    <button className="rail-emo-addbtn" onClick={submitNew}>Add</button>
-                  </div>
-                )}
+                {canEdit && <div className="rail-emo-hint">Tap to choose · press &amp; hold to remove</div>}
                 <textarea className="rail-note" placeholder="What's behind this feeling? (only if you want to)" value={note} onChange={e => setNote(e.target.value)} rows={2} />
               </>}
           <button className="rail-log" onClick={() => onLog(mood, emotions, note)}>Log this moment</button>
