@@ -303,6 +303,15 @@ export function setEffectsEnabled(on) {
   try { localStorage.setItem('bloom_effects', on ? 'on' : 'off') } catch {}
 }
 
+// Whether the guide speaks with philosopher quotes (on) or in its own gentle
+// voice (off, the default). Device-local, synced with the other prefs.
+export function getPhilosopherQuotes() {
+  try { return localStorage.getItem('bloom_philo') === 'on' } catch { return false }
+}
+export function setPhilosopherQuotes(on) {
+  try { localStorage.setItem('bloom_philo', on ? 'on' : 'off') } catch {}
+}
+
 // Apply whatever's saved — call once as early as possible to avoid a flash of
 // the default look before React mounts.
 // ── Background illustration ──────────────────────────────────

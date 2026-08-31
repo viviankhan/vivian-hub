@@ -17,10 +17,14 @@ import { useState, useMemo, useEffect, useRef } from 'react'
 import { Glyph, iconColorOn } from '../lib/glyphs.jsx'
 import { GuideBlob, MoodCloud } from '../lib/critters.jsx'
 import {
-  dayKey, MOODS, moodMeta, COMPLEX_EMOTIONS, emotionMeta, checkinsForDay,
+  dayKey, MOODS, moodMeta, COMPLEX_EMOTIONS, checkinsForDay,
   DEFAULT_EFFECTS, POSITIVE_EFFECTS, isActive, activeEpisode, startEpisode, endEpisode, setEpisodeNote,
   episodeMinutes, fmtDuration, applyCheckIn, awardPetals,
 } from '../lib/wellness.js'
+import { pickQuote } from '../lib/quotes.js'
+
+// Soft palette for custom emotion words the user adds.
+const EMO_COLORS = ['#8E9BC4', '#F4B24C', '#9E8AA6', '#8FB27A', '#DB8A73', '#7FA8C9', '#9FD3C2', '#EAD79A', '#B0A0C8', '#97A9B8', '#F2B7CB', '#F0C06A']
 
 // The waking-day window the rail spans, in hours. 6am → midnight.
 const DAY_START = 6, DAY_END = 24
@@ -42,8 +46,11 @@ function affirm(activeEffects) {
 export default function DayRail({
   checkins = [], persistCheckins, effects, persistEffects,
   episodes = [], persistEpisodes, game, persistGame,
+  emotions, persistEmotions, quotesOn = false,
 }) {
   const today = dayKey()
+  const emotionList = (emotions && emotions.length) ? emotions : COMPLEX_EMOTIONS
+  const emoName = (id) => (emotionList.find(e => e.id === id)?.name) || id
   const effectList = (effects && effects.length) ? effects : DEFAULT_EFFECTS
   const byId = useMemo(() => new Map(effectList.map(f => [f.id, f])), [effectList])
   const [nowMs, setNowMs] = useState(Date.now())
@@ -55,15 +62,31 @@ export default function DayRail({
   const nowFrac = fracOf(nowMs)
   const blobRef = useRef(null)
   const [anchor, setAnchor] = useState(null)       // blob centre in viewport px
+  const [speakN, setSpeakN] = useState(0)          // rotates the guide's line each open
   const closeAll = () => { setMenu(false); setSheet(null); setMoodDetail(null) }
   const openMenu = () => {
     const r = blobRef.current?.getBoundingClientRect()
     if (r) setAnchor({ left: r.left + r.width / 2, top: r.top + r.height / 2 })
+    setSpeakN(n => n + 1)
     setMenu(true)
   }
 
   const todayMoments = useMemo(() => checkinsForDay(checkins, today), [checkins, today])
   const lastMood = todayMoments.length ? todayMoments[todayMoments.length - 1].mood : 4
+  const moodToday = todayMoments.length ? Math.round(todayMoments.reduce((s, c) => s + (c.mood || 3), 0) / todayMoments.length) : null
+
+  // Add / remove a custom emotion word (persists the whole list).
+  const addEmotion = (name) => {
+    const nm = (name || '').trim(); if (!nm || !persistEmotions) return
+    const base = (emotions && emotions.length) ? emotions : COMPLEX_EMOTIONS
+    if (base.some(e => e.name.toLowerCase() === nm.toLowerCase())) return
+    persistEmotions([...base, { id: 'emo-' + Date.now().toString(36), name: nm, color: EMO_COLORS[base.length % EMO_COLORS.length] }])
+  }
+  const deleteEmotion = (id) => {
+    if (!persistEmotions) return
+    const base = (emotions && emotions.length) ? emotions : COMPLEX_EMOTIONS
+    persistEmotions(base.filter(e => e.id !== id))
+  }
 
   // Today's status episodes (any that touch today), resolved with their effect.
   const todayEpisodes = useMemo(() => {
@@ -180,15 +203,20 @@ export default function DayRail({
               <button className="rail-bub rail-bub-lotus" onClick={() => setSheet('status')} aria-label="Log a status effect">
                 <Glyph id="flower" size={26} />
               </button>
-              <div className="rail-say">{affirm(activeEffects)}</div>
+              {quotesOn
+                ? (() => {
+                    const q = pickQuote({ mood: moodToday, struggling: activeEffects.some(e => !e.good), easeful: activeEffects.some(e => e.good), n: speakN })
+                    return <div className="rail-say"><span className="rail-say-q">“{q.t}”</span><span className="rail-say-a">— {q.a}</span></div>
+                  })()
+                : <div className="rail-say">{affirm(activeEffects)}</div>}
             </div>
           )}
-          {sheet === 'mood' && <MomentSheet onClose={closeAll} onLog={logMood} />}
+          {sheet === 'mood' && <MomentSheet onClose={closeAll} onLog={logMood} emotions={emotionList} onAddEmotion={addEmotion} onDeleteEmotion={deleteEmotion} canEdit={!!persistEmotions} />}
           {sheet === 'status' && (
             <StatusSheet effects={effectList} episodes={episodes} byId={byId}
               onAdd={addStatus} onEnd={(id) => endStatus(id, false)} onClose={closeAll} />
           )}
-          {moodDetail && <DetailPopover item={moodDetail} onClose={closeAll} />}
+          {moodDetail && <DetailPopover item={moodDetail} onClose={closeAll} emoName={emoName} />}
         </div>
       )}
     </>
@@ -196,12 +224,15 @@ export default function DayRail({
 }
 
 // ── Moment sheet — pick a mood, optionally say why ──────────────
-function MomentSheet({ onClose, onLog }) {
+function MomentSheet({ onClose, onLog, emotions: emoList = [], onAddEmotion, onDeleteEmotion, canEdit }) {
   const [mood, setMood] = useState(null)
   const [emotions, setEmotions] = useState([])
   const [note, setNote] = useState('')
   const [noting, setNoting] = useState(false)
+  const [editing, setEditing] = useState(false)
+  const [newEmo, setNewEmo] = useState('')
   const toggleEmo = (id) => setEmotions(p => p.includes(id) ? p.filter(x => x !== id) : (p.length < 4 ? [...p, id] : p))
+  const submitNew = () => { if (newEmo.trim()) { onAddEmotion?.(newEmo); setNewEmo('') } }
   return (
     <div className="rail-sheet" onClick={(e) => e.stopPropagation()}>
       <div className="rail-sheet-title">How are you, right now?</div>
@@ -218,11 +249,25 @@ function MomentSheet({ onClose, onLog }) {
           {!noting
             ? <button className="rail-addnote" onClick={() => setNoting(true)}>＋ Say why (optional)</button>
             : <>
+                <div className="rail-emos-head">
+                  <span className="rail-emos-label">Name the feeling (optional)</span>
+                  {canEdit && <button className="rail-emos-edit" onClick={() => setEditing(v => !v)}>{editing ? 'Done' : 'Edit'}</button>}
+                </div>
                 <div className="rail-emos">
-                  {COMPLEX_EMOTIONS.map(e => (
-                    <button key={e.id} className={`rail-emo ${emotions.includes(e.id) ? 'on' : ''}`} onClick={() => toggleEmo(e.id)}>{e.name}</button>
+                  {emoList.map(e => (
+                    <span key={e.id} className={`rail-emo-wrap ${editing ? 'editing' : ''}`}>
+                      <button className={`rail-emo ${emotions.includes(e.id) ? 'on' : ''}`} onClick={() => editing ? null : toggleEmo(e.id)}>{e.name}</button>
+                      {editing && <button className="rail-emo-del" onClick={() => onDeleteEmotion?.(e.id)} aria-label={`Delete ${e.name}`}>✕</button>}
+                    </span>
                   ))}
                 </div>
+                {editing && (
+                  <div className="rail-emo-add">
+                    <input className="rail-emo-input" placeholder="Add a word…" value={newEmo} maxLength={22}
+                      onChange={e => setNewEmo(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') submitNew() }} />
+                    <button className="rail-emo-addbtn" onClick={submitNew}>Add</button>
+                  </div>
+                )}
                 <textarea className="rail-note" placeholder="What's behind this feeling? (only if you want to)" value={note} onChange={e => setNote(e.target.value)} rows={2} />
               </>}
           <button className="rail-log" onClick={() => onLog(mood, emotions, note)}>Log this moment</button>
@@ -275,7 +320,7 @@ function StatusSheet({ effects, episodes, byId, onAdd, onEnd, onClose }) {
 }
 
 // ── Detail popover — tap a marker to read it back ───────────────
-function DetailPopover({ item, onClose }) {
+function DetailPopover({ item, onClose, emoName = (id) => id }) {
   if (item.isFx) {
     return (
       <div className="rail-detail" onClick={(e) => e.stopPropagation()}>
@@ -287,7 +332,7 @@ function DetailPopover({ item, onClose }) {
     )
   }
   const c = item
-  const emos = (c.emotions || []).map(id => emotionMeta(id)?.name).filter(Boolean)
+  const emos = (c.emotions || []).map(id => emoName(id)).filter(Boolean)
   return (
     <div className="rail-detail" onClick={(e) => e.stopPropagation()}>
       <div className="rail-detail-head"><MoodCloud v={c.mood} size={40} emotions={c.emotions} /><b>{moodMeta(c.mood).label}</b></div>

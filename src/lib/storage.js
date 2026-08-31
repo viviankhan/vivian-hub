@@ -364,6 +364,8 @@ export const getWellnessCheckins = () => dbGet('wellness_checkins').then(v => Ar
 export const setWellnessCheckins = v  => dbSet('wellness_checkins', v)
 export const getWellnessEffects  = () => dbGet('wellness_effects').then(v => Array.isArray(v) ? v : null)
 export const setWellnessEffects  = v  => dbSet('wellness_effects', v)
+export const getWellnessEmotions = () => dbGet('wellness_emotions').then(v => Array.isArray(v) ? v : null)
+export const setWellnessEmotions = v  => dbSet('wellness_emotions', v)
 export const getWellnessEpisodes = () => dbGet('wellness_episodes').then(v => Array.isArray(v) ? v : [])
 export const setWellnessEpisodes = v  => dbSet('wellness_episodes', v)
 export const getWellnessGame     = () => dbGet('wellness_game').then(v => (v && typeof v === 'object') ? v : null)

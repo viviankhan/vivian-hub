@@ -1043,7 +1043,8 @@ function WeekStrip({ viewDate, setViewDate, commitments, categories, doneCount, 
 
 // ── Main ───────────────────────────────────────────────────────
 export default function Today({ todos, weekState, syncToggle, clearCompletion, pushUndo, commitments, addCommitment, updateCommitment, deleteCommitment, moveCommitmentToThoughts, addEvent, appendLog, scheduled, categories, recurringTasks, recurringExceptions, occStarted = {}, skipRecurringOccurrence, deleteRecurringTask, addRecurringTask, updateRecurringTask, routines = [], taskTemplates = [], summary, labelModel = null, externalEvents = [], externalCalendars = [], toggleCalendar, importedAdoptions = {}, adoptImportedEvent,
-  wlCheckins = [], persistWlCheckins, wlEffects, persistWlEffects, wlEpisodes = [], persistWlEpisodes, wlGame, persistWlGame, wlLog = [], onOpenWellness }) {
+  wlCheckins = [], persistWlCheckins, wlEffects, persistWlEffects, wlEpisodes = [], persistWlEpisodes, wlGame, persistWlGame, wlLog = [], onOpenWellness,
+  wlEmotions, persistWlEmotions, quotesOn = false }) {
   const [now,         setNow]         = useState(nowMins())
   // The day the timeline is showing. Defaults to today; the week strip up top
   // navigates to any day. "Now" logic (the progress marker, current/overdue,
@@ -1971,7 +1972,8 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
           checkins={wlCheckins} persistCheckins={persistWlCheckins}
           effects={wlEffects} persistEffects={persistWlEffects}
           episodes={wlEpisodes} persistEpisodes={persistWlEpisodes}
-          game={wlGame} persistGame={persistWlGame} />
+          game={wlGame} persistGame={persistWlGame}
+          emotions={wlEmotions} persistEmotions={persistWlEmotions} quotesOn={quotesOn} />
       )}
       {/* Structured-style header: big date + week strip + progress bar */}
       <WeekStrip

@@ -68,7 +68,7 @@ export const COMPLEX_EMOTIONS = [
   { id: 'sadness',     name: 'Sadness',     color: '#7FA8C9' },
   { id: 'hope',        name: 'Hope',        color: '#9FD3C2' },
   { id: 'gratitude',   name: 'Gratitude',   color: '#EAD79A' },
-  { id: 'overwhelm',   name: 'Overwhelm',   color: '#B0A0C8' },
+  { id: 'overwhelm',   name: 'Overwhelmed', color: '#B0A0C8' },
   { id: 'loneliness',  name: 'Loneliness',  color: '#97A9B8' },
   { id: 'contentment', name: 'Contentment', color: '#F2B7CB' },
   { id: 'pride',       name: 'Pride',       color: '#F0C06A' },

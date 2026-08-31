@@ -29,7 +29,7 @@ const seenSet = (k, v) => { try { if (v) localStorage.setItem(SEEN_PREFIX + k, v
 const PREF_KEYS = [
   'bloom_theme', 'bloom_season', 'bloom_custom_color',
   'bloom_background', 'bloom_background_mobile',
-  'bloom_font', 'bloom_layout', 'bloom_summary', 'bloom_sound', 'bloom_effects',
+  'bloom_font', 'bloom_layout', 'bloom_summary', 'bloom_sound', 'bloom_effects', 'bloom_philo',
   'bloom_saved_colors', 'vivian_duration_presets', 'bloom_recurring_view_filter',
   'bloom_saved_places', 'bloom_recent_places',
   'bloom_default_alerts',   // reminder default-alert set — see notifications.js

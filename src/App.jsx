@@ -25,6 +25,7 @@ import {
   getWellnessGame, setWellnessGame,
   getWellnessTreasures, setWellnessTreasures,
   getWellnessSpace, setWellnessSpace,
+  getWellnessEmotions, setWellnessEmotions,
   getArtOverrides, setArtOverrides,
   addCategory as dbAddCategory, updateCategory as dbUpdateCategory, deleteCategory as dbDeleteCategory,
 } from './lib/storage.js'
@@ -64,6 +65,7 @@ import { getFontPref, setFontPref, applyFont, getThemePref, setThemePref, applyT
   getLayoutPref, setLayoutPref, applyLayout, getSoundEnabled, setSoundEnabled,
   getSummaryPref, setSummaryPref, getEffectsEnabled, setEffectsEnabled,
   getSeasonPref, setSeasonPref, applyLook, resolveSeason,
+  getPhilosopherQuotes, setPhilosopherQuotes,
   getBackgroundPref, setBackgroundPref, applyBackground,
   getCustomBackground, setCustomBackground,
   getMobileBackgroundPref, setMobileBackgroundPref,
@@ -139,7 +141,7 @@ function saveBottomBar(items) {
 }
 
 // ── Settings Drawer ────────────────────────────────────────────
-function SettingsDrawer({ open, onClose, settingsTab, setSettingsTab, notes, updateNotes, categories, addCategory, updateCategory, deleteCategory, events, commitments, recurring, locatedCount, changeHistory, undoChange, clearChangeHistory, externalCalendars, calendarStatuses, addCalendar, toggleCalendar, removeCalendar, refreshOneCalendar, updateCalendar, font, setFont, theme, setTheme, season, setSeason, customColor, setCustom, background, setBackground, customBg, setCustomBg, mobileBackground, setMobileBackground, mobileCustomBg, setMobileCustomBg, layout, setLayout, soundOn, setSound, summary, setSummary, effectsOn, setEffects, admin, persistArt }) {
+function SettingsDrawer({ open, onClose, settingsTab, setSettingsTab, notes, updateNotes, categories, addCategory, updateCategory, deleteCategory, events, commitments, recurring, locatedCount, changeHistory, undoChange, clearChangeHistory, externalCalendars, calendarStatuses, addCalendar, toggleCalendar, removeCalendar, refreshOneCalendar, updateCalendar, font, setFont, theme, setTheme, season, setSeason, customColor, setCustom, background, setBackground, customBg, setCustomBg, mobileBackground, setMobileBackground, mobileCustomBg, setMobileCustomBg, layout, setLayout, soundOn, setSound, summary, setSummary, effectsOn, setEffects, philoOn, setPhilo, admin, persistArt }) {
   if (!open) return null
   const SECTIONS = [
     ['customize','Look','sun'],
@@ -165,7 +167,7 @@ function SettingsDrawer({ open, onClose, settingsTab, setSettingsTab, notes, upd
         {/* Scrollable content */}
         <div style={{ flex:1, minHeight:0, overflowY:'auto', WebkitOverflowScrolling:'touch' }}>
           <div style={{ padding:'20px 24px' }}>
-            {settingsTab==='customize'  && <Customization font={font} onFont={setFont} theme={theme} onTheme={setTheme} season={season} onSeason={setSeason} customColor={customColor} onCustomColor={setCustom} background={background} onBackground={setBackground} customBackground={customBg} onCustomBackground={setCustomBg} mobileBackground={mobileBackground} onMobileBackground={setMobileBackground} mobileCustomBackground={mobileCustomBg} onMobileCustomBackground={setMobileCustomBg} layout={layout} onLayout={setLayout} soundOn={soundOn} onSound={setSound} summary={summary} onSummary={setSummary} effectsOn={effectsOn} onEffects={setEffects} />}
+            {settingsTab==='customize'  && <Customization font={font} onFont={setFont} theme={theme} onTheme={setTheme} season={season} onSeason={setSeason} customColor={customColor} onCustomColor={setCustom} background={background} onBackground={setBackground} customBackground={customBg} onCustomBackground={setCustomBg} mobileBackground={mobileBackground} onMobileBackground={setMobileBackground} mobileCustomBackground={mobileCustomBg} onMobileCustomBackground={setMobileCustomBg} layout={layout} onLayout={setLayout} soundOn={soundOn} onSound={setSound} summary={summary} onSummary={setSummary} effectsOn={effectsOn} onEffects={setEffects} philoOn={philoOn} onPhilo={setPhilo} />}
 
             {settingsTab==='reminders'  && <NotificationsSettings events={events} commitments={commitments} recurring={recurring} locatedCount={locatedCount} />}
             {settingsTab==='calendars'  && <ExternalCalendars calendars={externalCalendars} statuses={calendarStatuses} onAdd={addCalendar} onToggle={toggleCalendar} onRemove={removeCalendar} onRefresh={refreshOneCalendar} onUpdate={updateCalendar} />}
@@ -321,6 +323,8 @@ export default function App() {
   const [summary,setSummaryState]= useState(getSummaryPref)
   // Ambient seasonal motion (falling leaves / petals / snow / bubbles) on/off.
   const [effectsOn,setEffectsState] = useState(getEffectsEnabled)
+  // Whether the guide speaks with philosopher quotes rather than its own voice.
+  const [philoOn, setPhiloState] = useState(getPhilosopherQuotes)
   // Arrival-started recurring occurrences (device-local): occKey → timestamp.
   // A recurring task with a location auto-starts on arrival like a one-off, but
   // per-day, so it needs its own started map keyed by occurrence.
@@ -359,6 +363,7 @@ export default function App() {
   // Ambient motion toggle — flips the drifting particles without touching the
   // season's banner/accent. SeasonalEffects renders nothing when this is off.
   const setEffects = useCallback(on => { setEffectsState(on); setEffectsEnabled(on); pushPrefs() }, [])
+  const setPhilo   = useCallback(on => { setPhiloState(on); setPhilosopherQuotes(on); pushPrefs() }, [])
 
   // ── Customizable mobile bottom bar ───────────────────────────
   // `barItems` is the ordered list of destinations shown in the phone bottom
@@ -492,7 +497,7 @@ export default function App() {
           setCustomColorState(getCustomColor()); setBackgroundState(getBackgroundPref()); setCustomBgState(getCustomBackground())
           setMobileBackgroundState(getMobileBackgroundPref()); setMobileCustomBgState(getMobileCustomBackground())
           setLayoutState(getLayoutPref()); setSoundState(getSoundEnabled()); setSummaryState(getSummaryPref())
-          setEffectsState(getEffectsEnabled())
+          setEffectsState(getEffectsEnabled()); setPhiloState(getPhilosopherQuotes())
           applySavedAppearance()   // re-apply theme/season/background/font/layout from the hydrated values
           // Nudge components that read their own device-local stores to refresh.
           try { window.dispatchEvent(new Event(RECURRING_FILTER_EVENT)) } catch {}
@@ -600,19 +605,20 @@ export default function App() {
   const [wlGame,           setWlGame_]           = useState(null)
   const [wlTreasures,      setWlTreasures_]      = useState([])
   const [wlSpace,          setWlSpace_]          = useState(null)
+  const [wlEmotions,       setWlEmotions_]       = useState(null)   // null → default COMPLEX_EMOTIONS
   const [loading,          setLoading]          = useState(true)
 
   useEffect(() => {
     async function load() {
       await runMigrationIfNeeded()
-      const [comp, l, n, fcp, fcs, sch, com, rt, vac, evs, cats, cmeta, rexc, rmeta, rout, tlogs, tpls, chist, wlc, wlfx, wlep, wlg, wltr, wlsp, artov] = await Promise.all([
+      const [comp, l, n, fcp, fcs, sch, com, rt, vac, evs, cats, cmeta, rexc, rmeta, rout, tlogs, tpls, chist, wlc, wlfx, wlep, wlg, wltr, wlsp, artov, wlemo] = await Promise.all([
         getCompletions(), getLogEntries(), getNotes(),
         getFcProgress(), getFcStudied(), getScheduledTasks(),
         getCommitments(), getRecurringTasks(), getVacations(), getEvents(),
         seedCategoriesIfNeeded(), getCommitmentMeta(), getRecurringExceptions(), getRecurringMeta(),
         getRoutineGroups(), getTimeLogs(), getTaskTemplates(), getChangeHistory(),
         getWellnessCheckins(), getWellnessEffects(), getWellnessEpisodes(), getWellnessGame(),
-        getWellnessTreasures(), getWellnessSpace(), getArtOverrides(),
+        getWellnessTreasures(), getWellnessSpace(), getArtOverrides(), getWellnessEmotions(),
       ])
       setCompletions_(comp); setLog_(l); setNotes_(n)
       setFcProgress_(fcp); setFcStudied_(fcs); setScheduled_(sch)
@@ -627,6 +633,7 @@ export default function App() {
       setWlGame_(wlg && typeof wlg === 'object' ? wlg : null)
       setWlTreasures_(Array.isArray(wltr) ? wltr : [])
       setWlSpace_(wlsp && typeof wlsp === 'object' ? wlsp : null)
+      setWlEmotions_(Array.isArray(wlemo) ? wlemo : null)
       // Seed the custom-art override store from the synced blob so any uploaded
       // images replace their code-drawn defaults on first paint.
       loadOverrides(artov)
@@ -1435,6 +1442,7 @@ export default function App() {
   const persistWlGame     = useCallback(next => { setWlGame_(next);     setWellnessGame(next).catch(reportSaveError) }, [])
   const persistWlTreasures = useCallback(next => { setWlTreasures_(next); setWellnessTreasures(next).catch(reportSaveError) }, [])
   const persistWlSpace     = useCallback(next => { setWlSpace_(next);     setWellnessSpace(next).catch(reportSaveError) }, [])
+  const persistWlEmotions  = useCallback(next => { setWlEmotions_(next);  setWellnessEmotions(next).catch(reportSaveError) }, [])
   // Custom-art uploads: the Art Studio mutates the in-memory override store
   // (lib/art.js) for an instant re-render, then hands us the whole map to sync.
   const persistArt         = useCallback(map  => { setArtOverrides(map).catch(reportSaveError) }, [])
@@ -1644,6 +1652,7 @@ export default function App() {
           wlEffects={wlEffects} persistWlEffects={persistWlEffects}
           wlEpisodes={wlEpisodes} persistWlEpisodes={persistWlEpisodes}
           wlGame={wlGame} persistWlGame={persistWlGame} wlLog={log}
+          wlEmotions={wlEmotions} persistWlEmotions={persistWlEmotions} quotesOn={philoOn}
           onOpenWellness={() => setTab('wellness')} />}
         {tab==='week'        && <ThisWeek    {...sharedProps} deleteCommitment={deleteCommitment} />}
         {tab==='taskmenu'    && <TaskMenu templates={taskTemplates} addTemplate={addTaskTemplate}
@@ -1666,7 +1675,7 @@ export default function App() {
           episodes={wlEpisodes} persistEpisodes={persistWlEpisodes}
           game={wlGame} persistGame={persistWlGame}
           treasures={wlTreasures} persistTreasures={persistWlTreasures}
-          log={log} />}
+          emotions={wlEmotions} log={log} />}
         {tab==='voyage'      && <Voyage game={wlGame} persistGame={persistWlGame}
           space={wlSpace} persistSpace={persistWlSpace} checkins={wlCheckins} />}
         {tab==='informatics' && <Informatics commitments={commitmentsView} recurringTasks={recurringTasksEnriched} completions={completions} log={log} categories={categories} timeLogs={timeLogs} addTimeLog={addTimeLog} deleteTimeLog={deleteTimeLog} wlCheckins={wlCheckins} wlEffects={wlEffects} wlEpisodes={wlEpisodes} />}
@@ -1694,6 +1703,7 @@ export default function App() {
         layout={layout} setLayout={setLayout} soundOn={soundOn} setSound={setSound}
         summary={summary} setSummary={setSummary}
         effectsOn={effectsOn} setEffects={setEffects}
+        philoOn={philoOn} setPhilo={setPhilo}
         admin={admin} persistArt={persistArt} />
 
       <SearchOverlay

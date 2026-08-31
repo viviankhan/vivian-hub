@@ -88,7 +88,7 @@ function BgTile({ label, css, selected, empty, onClick }) {
   )
 }
 
-export default function Customization({ font, onFont, theme, onTheme, season, onSeason, customColor, onCustomColor, background, onBackground, customBackground, onCustomBackground, mobileBackground, onMobileBackground, mobileCustomBackground, onMobileCustomBackground, layout, onLayout, soundOn, onSound, summary, onSummary, effectsOn, onEffects }) {
+export default function Customization({ font, onFont, theme, onTheme, season, onSeason, customColor, onCustomColor, background, onBackground, customBackground, onCustomBackground, mobileBackground, onMobileBackground, mobileCustomBackground, onMobileCustomBackground, layout, onLayout, soundOn, onSound, summary, onSummary, effectsOn, onEffects, philoOn, onPhilo }) {
   const autoSeason = resolveSeason('auto')
   const bgFileRef = useRef(null)
   const [bgErr, setBgErr] = useState('')
@@ -166,6 +166,23 @@ export default function Customization({ font, onFont, theme, onTheme, season, on
           or bubbles. Turn it off to keep the season’s colors without any moving
           particles. (Motion is always skipped when your device prefers reduced
           motion, whatever this is set to.)
+        </div>
+      </>}
+
+      {/* ── Guide's voice: philosopher quotes ─────────────────── */}
+      {onPhilo && <>
+        <div style={sectionLabel}>Your guide's voice</div>
+        <div style={{ ...card, display:'flex', alignItems:'center', gap:12, marginBottom:8 }}>
+          <span style={{ display:'inline-flex', color:'var(--teal)' }}>
+            <Icon value="glyph:sparkle" size={22} color="var(--teal)" />
+          </span>
+          <span style={{ flex:1, fontSize:15, fontWeight:500, color:'var(--text)' }}>Speak with philosopher quotes</span>
+          <Switch on={philoOn} onClick={() => onPhilo(!philoOn)} />
+        </div>
+        <div style={help}>
+          When on, the guide sets aside its own words and offers a line from a
+          philosopher or contemplative — chosen to fit how your day is going, for
+          resilience and encouragement without pressure.
         </div>
       </>}
 

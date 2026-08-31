@@ -275,7 +275,7 @@ function DayDetail({ date, checkins, episodes, effects, log, treasures, onAddTre
                   <span className="wl-moment-time">{clockTime(m.ts)}</span>
                 </div>
                 {(m.emotions && m.emotions.length > 0) && (
-                  <div className="wl-moment-emos">{m.emotions.map(id => emotionMeta(id)?.name).filter(Boolean).join(' · ')}</div>
+                  <div className="wl-moment-emos">{m.emotions.map(id => emoMeta(id)?.name).filter(Boolean).join(' · ')}</div>
                 )}
                 {m.note && <div className="wl-moment-note">“{m.note}”</div>}
               </div>
@@ -349,8 +349,14 @@ export default function BloomWellness({
   game, persistGame,
   treasures = [], persistTreasures,
   log = [],
+  emotions,
 }) {
   const today = dayKey()
+  // The active emotion vocabulary — custom list if the user has edited it (from
+  // the Today rail), else the built-in set. `emoMeta` resolves ids for labels /
+  // colours, falling back to the static set for ids no longer in the list.
+  const emoList = (emotions && emotions.length) ? emotions : COMPLEX_EMOTIONS
+  const emoMeta = (id) => emoList.find(e => e.id === id) || emotionMeta(id)
 
   // Live "now" tick so active-effect timers (and the day cloud's proportions)
   // stay current while the tab is open.
@@ -512,7 +518,7 @@ export default function BloomWellness({
 
             <div className="wl-ask">Any complex feelings? <span className="wl-optional">the cloud's lining · up to 4</span></div>
             <div className="wl-emotions">
-              {COMPLEX_EMOTIONS.map(e => {
+              {emoList.map(e => {
                 const on = emotionsSel.includes(e.id)
                 return (
                   <button key={e.id} className={`wl-emo ${on ? 'on' : ''}`} onClick={() => toggleEmotion(e.id)}
@@ -530,7 +536,7 @@ export default function BloomWellness({
                 <span className="wl-bob"><MoodCloud v={mood} emotions={emotionsSel} size={92} animate /></span>
                 <div className="wl-preview-cap">
                   {moodMeta(mood).label}
-                  {emotionsSel.length ? ' · ' + emotionsSel.map(id => emotionMeta(id)?.name).filter(Boolean).join(', ') : ''}
+                  {emotionsSel.length ? ' · ' + emotionsSel.map(id => emoMeta(id)?.name).filter(Boolean).join(', ') : ''}
                 </div>
               </div>
             )}
@@ -580,7 +586,7 @@ export default function BloomWellness({
             {daySeg.emotions.length > 0 && (
               <div className="wl-day-linings">
                 {daySeg.emotions.map(id => {
-                  const e = emotionMeta(id); if (!e) return null
+                  const e = emoMeta(id); if (!e) return null
                   return <span key={id} className="wl-lining-chip" style={{ borderColor: e.color, color: '#4A5560' }}>
                     <span className="wl-emo-dot" style={{ background: e.color }} />{e.name}
                   </span>
@@ -599,7 +605,7 @@ export default function BloomWellness({
                       <span className="wl-moment-time">{clockTime(m.ts)}</span>
                     </div>
                     {(m.emotions && m.emotions.length > 0) && (
-                      <div className="wl-moment-emos">{m.emotions.map(id => emotionMeta(id)?.name).filter(Boolean).join(' · ')}</div>
+                      <div className="wl-moment-emos">{m.emotions.map(id => emoMeta(id)?.name).filter(Boolean).join(' · ')}</div>
                     )}
                     {m.note && <div className="wl-moment-note">“{m.note}”</div>}
                   </div>
