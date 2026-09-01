@@ -12,13 +12,13 @@ import {
   getTrackerEntries, setTrackerEntries, getTrackerCats, setTrackerCats,
 } from '../lib/storage.js'
 import { Glyph } from '../lib/glyphs.jsx'
-import DonutChart from './DonutChart.jsx'
 import TrackerFolder, { Highlights } from './TrackerFolder.jsx'
-import { inputStyle, labelStyle, card, primaryBtn, Field, Stat, ChartCard, RangeBar } from './trackerUi.jsx'
+import { TrendColumns, RankedBars, abbrMoney } from './TrackerCharts.jsx'
+import { inputStyle, labelStyle, card, primaryBtn, Field, Stat, RangeBar } from './trackerUi.jsx'
 import {
   resolveRange, prevRange, inRange, rangeLabel,
-  fmtHours, decimalHours, fmtMoney, summarize, toSlices, fieldsOfType, val, num,
-  personName, folderName, ACCENT_COLORS, FOLDER_ICONS, TEMPLATES,
+  fmtHours, decimalHours, fmtMoney, summarize, toSlices, fieldsOfType, val, num, monthlySeries,
+  personName, ACCENT_COLORS, FOLDER_ICONS, TEMPLATES,
   buildTableHtml, printReport, buildCsv, downloadFile,
 } from '../lib/trackers.js'
 
@@ -120,9 +120,21 @@ export default function Insights() {
   agg.net = agg.moneyIn - agg.moneyOut
   const hasData = agg.count > 0
   const money$ = v => fmtMoney(v)
-  const spendByFolder = toSlices(perFolder.map(pf => ({ key: pf.folder.id, label: pf.folder.name, value: pf.s.moneyOut })), { colorFor: k => folders.find(f => f.id === k)?.color })
-  const hoursByFolder = toSlices(perFolder.map(pf => ({ key: pf.folder.id, label: pf.folder.name, value: pf.s.mins })), { colorFor: k => folders.find(f => f.id === k)?.color })
+  const folderColor = k => folders.find(f => f.id === k)?.color
+  const spendByFolder = toSlices(perFolder.map(pf => ({ key: pf.folder.id, label: pf.folder.name, value: pf.s.moneyOut })), { colorFor: folderColor })
+  const hoursByFolder = toSlices(perFolder.map(pf => ({ key: pf.folder.id, label: pf.folder.name, value: pf.s.mins })), { colorFor: folderColor })
   const overviewHi = overviewHighlights(perFolder, agg)
+  // Combined net-by-month across every tracker (full history, not range-limited).
+  const overviewMonths = (() => {
+    let combined = null
+    for (const f of folders) {
+      const ms = monthlySeries(entries.filter(e => e.folderId === f.id), f.fields || [], 6)
+      if (!combined) combined = ms.map(m => ({ key: m.key, label: m.label, value: m.net }))
+      else ms.forEach((m, i) => { combined[i].value += m.net })
+    }
+    return combined || []
+  })()
+  const monthsHaveData = overviewMonths.some(m => m.value !== 0)
 
   return (
     <div>
@@ -152,8 +164,9 @@ export default function Insights() {
                 <Stat label="Hours" value={`${decimalHours(agg.mins)}h`} sub={`for ${rangeText}`} />
               </div>
               {overviewHi.length > 0 && <Highlights items={overviewHi} />}
-              {agg.moneyOut > 0 && <ChartCard title="Spending by tracker"><DonutChart slices={spendByFolder.slices} total={spendByFolder.total} formatValue={money$} centerLabel={money$(spendByFolder.total)} centerSub="out" /></ChartCard>}
-              {agg.mins > 0 && <ChartCard title="Hours by tracker"><DonutChart slices={hoursByFolder.slices} total={hoursByFolder.total} formatValue={fmtHours} centerLabel={`${decimalHours(hoursByFolder.total)}h`} centerSub="total" /></ChartCard>}
+              {monthsHaveData && <TrendColumns title="Net by month" caption="all trackers · last 6 months" series={overviewMonths} abbr={abbrMoney} diverging />}
+              {agg.moneyOut > 0 && folders.length > 1 && <RankedBars title="Spending by tracker" slices={spendByFolder.slices} total={spendByFolder.total} formatValue={money$} />}
+              {agg.mins > 0 && folders.length > 1 && <RankedBars title="Hours by tracker" slices={hoursByFolder.slices} total={hoursByFolder.total} formatValue={fmtHours} />}
             </>
           ) : (
             <div style={{ ...card, color: 'var(--muted)', fontSize: 13.5, lineHeight: 1.5 }}>Nothing logged for <b>{rangeText}</b> yet. Open a tracker below to add entries, or widen the time frame.</div>

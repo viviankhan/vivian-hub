@@ -6,14 +6,14 @@
 // charts and plain-English highlights. Setup edits the fields and budgets.
 // Export produces a PDF or an editable CSV of the columns you choose.
 import { useMemo, useState, useRef } from 'react'
-import DonutChart from './DonutChart.jsx'
 import { Glyph } from '../lib/glyphs.jsx'
-import { inputStyle, labelStyle, card, primaryBtn, Field, HmInput, Suggest, Empty, ChartCard, Stat, RangeBar } from './trackerUi.jsx'
+import { inputStyle, labelStyle, card, primaryBtn, Field, HmInput, Suggest, Empty, Stat, RangeBar } from './trackerUi.jsx'
+import { TrendColumns, RankedBars, abbrMoney, abbrHours } from './TrackerCharts.jsx'
 import { scanReceipt, receiptScanAvailable } from '../lib/parseReceipt.js'
 import {
   FIELD_TYPES, FIELD_TYPE_ORDER, makeField,
   inRange, todayStr, fmtHours, decimalHours, fmtMoney, fmtNumber, personName, num, val,
-  summarize, groupSlices, autoCharts, computeHighlights, fieldsOfType, firstFieldOfType,
+  summarize, groupSlices, autoCharts, computeHighlights, fieldsOfType, firstFieldOfType, monthlySeries,
   compressImage, dataUrlToBase64, prettyDate, fieldColumns,
   buildReportHtml, printReport, buildCsv, downloadFile, safeFileName,
 } from '../lib/trackers.js'
@@ -59,7 +59,7 @@ export default function TrackerFolder({
           right={<button onClick={() => setExportOpen(true)} style={{ ...primaryBtn(), padding: '7px 14px', fontSize: 12.5 }}>⬇ Export</button>} />
       )}
 
-      {sub === 'summary' && <FolderSummary folder={folder} entries={fEntries} people={people} rangeText={rangeText} prevEntries={prevEntries} />}
+      {sub === 'summary' && <FolderSummary folder={folder} entries={fEntries} allEntries={entries} people={people} rangeText={rangeText} prevEntries={prevEntries} />}
       {sub === 'entries' && <EntriesView folder={folder} entries={fEntries} people={people} suggest={suggest} onAdd={addEntry} onDelete={deleteEntry} />}
       {sub === 'people' && <People people={people} entries={entries} fields={fields} onAdd={addPerson} onUpdate={updatePerson} onDelete={deletePerson} />}
       {sub === 'setup' && <Setup folder={folder} onUpdateFolder={onUpdateFolder} />}
@@ -70,10 +70,12 @@ export default function TrackerFolder({
 }
 
 // ── Summary ─────────────────────────────────────────────────────
-function FolderSummary({ folder, entries, people, rangeText, prevEntries }) {
+const RAMP_FOR = { moneyOut: 'spend', moneyIn: 'revenue', hours: 'hours' }
+function FolderSummary({ folder, entries, allEntries, people, rangeText, prevEntries }) {
   const fields = folder.fields || []
   const s = summarize(entries, fields)
   const charts = useMemo(() => autoCharts(fields), [fields])
+  const months = useMemo(() => monthlySeries(allEntries, fields, 6), [allEntries, fields])
   const highlights = useMemo(() => computeHighlights({ entries, fields, people, budgetMoney: folder.budgetMoney, budgetHours: folder.budgetHours, prevEntries }), [entries, fields, people, folder.budgetMoney, folder.budgetHours, prevEntries])
   const hasMoney = fieldsOfType(fields, 'moneyIn').length || fieldsOfType(fields, 'moneyOut').length
   const hasHours = fieldsOfType(fields, 'hours').length
@@ -83,6 +85,7 @@ function FolderSummary({ folder, entries, people, rangeText, prevEntries }) {
 
   const moneyLeft = folder.budgetMoney > 0 ? folder.budgetMoney - s.moneyOut : null
   const timeLeft = folder.budgetHours > 0 ? folder.budgetHours - s.mins : null
+  const monthsHaveData = months.some(m => m.moneyIn || m.moneyOut || m.mins)
 
   return (
     <>
@@ -104,12 +107,19 @@ function FolderSummary({ folder, entries, people, rangeText, prevEntries }) {
 
       {highlights.length > 0 && <Highlights items={highlights} />}
 
+      {/* Trend over time — the thing a pie can't show. */}
+      {monthsHaveData && (hasMoney
+        ? <TrendColumns title="Net by month" caption="money in − out · last 6 months" series={months.map(m => ({ key: m.key, label: m.label, value: m.net }))} abbr={abbrMoney} diverging />
+        : hasHours
+          ? <TrendColumns title="Hours by month" caption="last 6 months" series={months.map(m => ({ key: m.key, label: m.label, value: m.mins }))} abbr={abbrHours} diverging={false} hue="#4A9EB5" />
+          : null)}
+
+      {/* Breakdowns — ranked bars, one baseline, biggest first. */}
       {charts.map(c => {
-        const isMoney = c.measure.type !== 'hours'
-        const fmt = isMoney ? (v => fmtMoney(v)) : fmtHours
         const g = groupSlices(entries, c.dim, c.measure, people, { colorFor: c.dim.type === 'person' ? (k => people.find(p => p.id === k)?.color || '#8899AA') : undefined })
         if (g.total <= 0) return null
-        return <ChartCard key={c.id} title={c.title[0].toUpperCase() + c.title.slice(1)}><DonutChart slices={g.slices} total={g.total} formatValue={fmt} centerLabel={isMoney ? fmtMoney(g.total) : `${decimalHours(g.total)}h`} centerSub="total" /></ChartCard>
+        const fmt = c.measure.type === 'hours' ? fmtHours : (v => fmtMoney(v))
+        return <RankedBars key={c.id} title={c.title[0].toUpperCase() + c.title.slice(1)} slices={g.slices} total={g.total} ramp={RAMP_FOR[c.measure.type] || 'neutral'} formatValue={fmt} />
       })}
     </>
   )

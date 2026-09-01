@@ -4,15 +4,36 @@
 // USER defines — so one entry (say a driving trip) can carry a money-out for gas,
 // a time value, and a mileage number all at once. Everything rolls up into a
 // summary of money in / out / net and hours, against optional budgets ("what's
-// left"). Also: donut-chart aggregation, plain-English highlights, and export to
-// a printable PDF or an editable CSV. Pure functions — no React.
+// left"). Also: ranked-bar + trend aggregation, plain-English highlights, and
+// export to a printable PDF or an editable CSV. Pure functions — no React.
 // ─────────────────────────────────────────────────────────────
 
 // ── Palette ─────────────────────────────────────────────────────
-export const SLICE_COLORS = ['#2a78d6', '#eb6834', '#1baf7a', '#eda100', '#e87ba4', '#008300', '#4a3aa7', '#e34948']
-export const OTHER_COLOR = '#8899AA'
+export const OTHER_COLOR = '#9AA7B2'
 export const ACCENT_COLORS = ['#4A9EB5', '#E8804A', '#7C9CBF', '#5FA86E', '#C86FA0', '#B08968', '#6C7BC0', '#D08A3A']
 export const FOLDER_ICONS = ['bed', 'house', 'briefcase', 'sprout', 'car', 'camera', 'cart', 'wrench', 'paw', 'heart', 'flask', 'book']
+
+// Semantic single-hue ramps for ranked bars (dark = biggest). On-theme, not a
+// rainbow — the eye reads magnitude by length; color just reinforces the metric.
+//   spend = warm coral · revenue = sage green · hours = teal/forest · neutral = slate
+export const RAMPS = {
+  spend:   ['#B23A1E', '#F1B49E'],
+  revenue: ['#2E7D5B', '#A9D3B4'],
+  hours:   ['#2A4858', '#8FC3D8'],
+  neutral: ['#41607A', '#A9C2D4'],
+}
+export const POS_COLOR = '#3E9E6C'   // net positive (green)
+export const NEG_COLOR = '#E06A45'   // net negative (coral)
+
+function hex2rgb(h) { const n = parseInt(h.slice(1), 16); return [n >> 16 & 255, n >> 8 & 255, n & 255] }
+function rgb2hex(r, g, b) { return '#' + [r, g, b].map(x => Math.max(0, Math.min(255, Math.round(x))).toString(16).padStart(2, '0')).join('') }
+// n colors interpolated between a ramp's dark and light anchors (index 0 = dark).
+export function rampColors(ramp, n) {
+  const [d, l] = RAMPS[ramp] || RAMPS.neutral
+  const [dr, dg, db] = hex2rgb(d), [lr, lg, lb] = hex2rgb(l)
+  if (n <= 1) return [d]
+  return Array.from({ length: n }, (_, i) => { const t = i / (n - 1); return rgb2hex(dr + (lr - dr) * t, dg + (lg - dg) * t, db + (lb - db) * t) })
+}
 
 // ── Field types ─────────────────────────────────────────────────
 // Each carries: label, kind (how it aggregates), and whether it's a "measure"
@@ -152,6 +173,33 @@ export function summarize(entries, fields) {
 // Sum a single measure field across entries.
 export function sumField(entries, fieldId) { return entries.reduce((s, e) => s + num(val(e, fieldId)), 0) }
 
+// The last `months` calendar months (ending this month), each bucketed with its
+// money in/out/net and hours — the trend chart's input. Independent of the range
+// picker so the trend always shows recent history for context.
+export function monthlySeries(entries, fields, months = 6) {
+  const moneyInF = fieldsOfType(fields, 'moneyIn').map(f => f.id)
+  const moneyOutF = fieldsOfType(fields, 'moneyOut').map(f => f.id)
+  const hoursF = fieldsOfType(fields, 'hours').map(f => f.id)
+  const now = new Date()
+  const buckets = []
+  const index = {}
+  for (let i = months - 1; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+    const b = { key, label: d.toLocaleDateString('en-US', { month: 'short' }), moneyIn: 0, moneyOut: 0, net: 0, mins: 0 }
+    index[key] = b; buckets.push(b)
+  }
+  for (const e of entries) {
+    const key = (e.date || '').slice(0, 7)
+    const b = index[key]; if (!b) continue
+    for (const id of moneyInF) b.moneyIn += num(val(e, id))
+    for (const id of moneyOutF) b.moneyOut += num(val(e, id))
+    for (const id of hoursF) b.mins += num(val(e, id))
+  }
+  for (const b of buckets) b.net = b.moneyIn - b.moneyOut
+  return buckets
+}
+
 // ── Donut aggregation ───────────────────────────────────────────
 // Group entries by a dimension field (category or person) and sum a measure
 // (a money/hours/number field), or count entries when measureId is null.
@@ -181,10 +229,10 @@ export function toSlices(rows, { max = 7, colorFor } = {}) {
   const total = sorted.reduce((s, r) => s + r.value, 0) || 1
   const head = sorted.slice(0, max - 1 > 0 ? max - 1 : sorted.length)
   const tail = sorted.slice(head.length)
-  const slices = head.map((r, i) => ({ ...r, color: (colorFor && colorFor(r.key)) || SLICE_COLORS[i % SLICE_COLORS.length], pct: r.value / total }))
+  const slices = head.map((r) => ({ ...r, color: colorFor ? colorFor(r.key) : undefined, pct: r.value / total }))
   if (tail.length) {
     const tv = tail.reduce((s, r) => s + r.value, 0)
-    slices.push({ key: '__other', label: `Other (${tail.length})`, value: tv, color: OTHER_COLOR, pct: tv / total })
+    slices.push({ key: '__other', label: `Other (${tail.length})`, value: tv, color: OTHER_COLOR, other: true, pct: tv / total })
   }
   return { slices, total }
 }
