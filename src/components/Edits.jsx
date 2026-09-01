@@ -4,6 +4,17 @@
 
 const EDIT_LOG = [
   {
+    date: '2026-09-01',
+    summary: 'Rescheduling one recurring occurrence actually moves it — plus a "this & future" option',
+    changes: [
+      'Fixed: opening a recurring task to reschedule no longer shows the date the series *started* — the picker now opens on the day you actually tapped, so you\'re editing the right occurrence',
+      'Fixed: moving a single occurrence to a different day now removes it from the old day and lands it on the new one (before, "just this event" quietly ignored the new date and left it where it was)',
+      'When you move one occurrence onto a day the task already repeats on, the regular instance for that day steps aside so you see the moved one only — no accidental duplicate',
+      'New "This & all future events" choice when saving a change to a repeating task — it splits the series at that day, so a tweak going forward never rewrites the occurrences you already did in the past',
+      'The Recurring tab now labels a task\'s start as "Started <date>" (was "From <date>"), so that info lives where it belongs instead of leaking into the reschedule picker',
+    ]
+  },
+  {
     date: '2026-08-18',
     summary: 'Week tasks check off like Today, and "Move to Thoughts" replaces "Move to Inbox"',
     changes: [
