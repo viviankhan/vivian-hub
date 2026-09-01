@@ -3,10 +3,13 @@
 The **Insights** tab is a home for **trackers** — folders you create for anything
 worth keeping records on (a bed & breakfast, a rental, freelance work, mileage…).
 
-Each tracker holds **fields you define yourself**, so one entry can carry
-whatever you want at once — money coming in, money going out, hours, a number
-like miles, a category, a person, a receipt photo. From that, every tracker gives
-you:
+Each tracker is **category-first**: you keep a list of **categories** (each marked
+income or expense — Bookings, Supplies, Repairs, Payroll…), and every entry starts
+by picking one, which decides whether its amount counts as money in or out. On the
+same entry you can also add **your own time** (talking to / managing a contractor),
+the contractor's **work started → finished** dates (it shows the turnaround, e.g.
+"took 5 days"), **miles**, a **note**, and an uploaded **bill/receipt** (auto-read
+by AI). From that, every tracker gives you:
 
 - **An honest financial picture** — a cascade of Revenue → Expenses → **Profit**
   → Mileage deduction → Taxable → Tax set-aside → **Yours to keep**. Only the
@@ -18,16 +21,16 @@ you:
   one tap.
 - **A summary** of money **in vs out → net (what's left over)**, plus **hours**,
   and — if you set a budget — **how much money and time you have left**.
-- A few **plain-English highlights** and clean **donut charts** (no generic bar
-  breakdowns).
+- A few **plain-English highlights**, a **net-by-month** trend, and **ranked bars**
+  by category (no pie charts).
 - **Export** to a **PDF** or an **editable CSV**, picking exactly which columns
   appear.
 
 The tab's **Overview** rolls every tracker up into one money-and-time summary, and
 "Export all" gives a combined PDF/CSV across all of them.
 
-New trackers start from a **template** (Standard, Bed & Breakfast, Mileage,
-Freelance, or Blank) — just a starting set of fields you can change any time in
+New trackers start from a **template** (Bed & Breakfast, Rental, Freelance,
+Mileage, or Blank) — a starting set of categories you can change any time in
 the tracker's **Setup** tab, where you also set budgets.
 
 All of it is private to your account (see `ACCOUNTS.md`) and works offline —
