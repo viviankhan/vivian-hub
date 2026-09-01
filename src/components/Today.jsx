@@ -769,7 +769,7 @@ function TimelineBlock({ task, categories, status, now, prevColor, nextColor, ro
       {/* Time gutter */}
       <div style={{ width:52, flexShrink:0, paddingTop:16, textAlign:'right', paddingRight:10 }}>
         {timeMins!==null && (
-          <span style={{ fontSize:11, color:isCurrent?'var(--teal)':'var(--muted)', fontWeight:isCurrent?700:500, whiteSpace:'nowrap' }}>{fmtTimeLabel(timeMins)}</span>
+          <span data-mins={timeMins} style={{ fontSize:11, color:isCurrent?'var(--teal)':'var(--muted)', fontWeight:isCurrent?700:500, whiteSpace:'nowrap' }}>{fmtTimeLabel(timeMins)}</span>
         )}
       </div>
       {/* Colored duration pill + progress spine. The spine reads as a progress
@@ -865,7 +865,7 @@ function TimelineBlock({ task, categories, status, now, prevColor, nextColor, ro
           task, with the time on its right. This lands inside the class you're
           in, instead of floating after it. */}
       {nowFrac !== null && (
-        <div style={{ position:'absolute', top:`${14 + nowFrac * pillH}px`, left:0, transform:'translateY(-50%)', display:'flex', alignItems:'center', zIndex:4, pointerEvents:'none' }}>
+        <div data-railnow style={{ position:'absolute', top:`${14 + nowFrac * pillH}px`, left:0, transform:'translateY(-50%)', display:'flex', alignItems:'center', zIndex:4, pointerEvents:'none' }}>
           <div style={{ width:52, flexShrink:0 }} />
           <div style={{ width:52, flexShrink:0, display:'flex', justifyContent:'center' }}>
             <div style={{ width:13, height:13, borderRadius:'50%', background:'white', border:'3px solid var(--teal)', boxShadow:'0 0 0 3px rgba(74,158,181,.16)' }} />
@@ -887,7 +887,7 @@ function NowMarker({ now, bandTint = null, bandOpacity = 0.5 }) {
   // vertical margin and carries the block's film full-bleed behind it, so the
   // blue reads as one continuous wash with just a thin "now" line over it.
   return (
-    <div style={{ position:'relative', zIndex:0, display:'flex', gap:0, alignItems:'center', margin: bandTint?0:'4px 0' }}>
+    <div data-railnow style={{ position:'relative', zIndex:0, display:'flex', gap:0, alignItems:'center', margin: bandTint?0:'4px 0' }}>
       {bandTint && (
         <div style={{ position:'absolute', top:0, bottom:0, left:44, right:0, background:bandTint, opacity:bandOpacity, zIndex:-1 }} />
       )}

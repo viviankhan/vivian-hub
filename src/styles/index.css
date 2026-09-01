@@ -1428,8 +1428,9 @@ textarea { resize: vertical; min-height: 160px; line-height: 1.6; }
 .rail-detail-note.muted { color: var(--muted); font-style: italic; }
 
 /* Rail container — offset below the date header so markers ride the timeline. */
-.day-rail { position: absolute; left: 0; top: 158px; bottom: 12px; width: 48px; }
-@media (min-width: 760px) { .day-rail { top: 150px; } }
+/* Spans the whole Today view; children are placed at measured pixel Ys that
+   match the task timeline's own time markers (see DayRail measure()). */
+.day-rail { position: absolute; left: 0; top: 0; bottom: 0; width: 48px; }
 
 /* Guide quote styling in the rail say-bubble */
 .rail-say-q { display: block; font-style: italic; }

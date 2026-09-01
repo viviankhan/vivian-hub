@@ -13,7 +13,7 @@
 // behind it) while still active. Tapping a trail ends that effect (asking, the
 // first time). Markers that crowd the same time shrink and fan diagonally.
 // ─────────────────────────────────────────────────────────────
-import { useState, useMemo, useEffect, useRef } from 'react'
+import { useState, useMemo, useEffect, useRef, useLayoutEffect, useCallback } from 'react'
 import { Glyph, iconColorOn } from '../lib/glyphs.jsx'
 import { GuideBlob, MoodCloud } from '../lib/critters.jsx'
 import {
@@ -65,10 +65,71 @@ export default function DayRail({
   const [menu, setMenu] = useState(false)          // radial open
   const [sheet, setSheet] = useState(null)         // 'mood' | 'status' | null
   const [moodDetail, setMoodDetail] = useState(null)   // a tapped cloud
-  const nowFrac = fracOf(nowMs)
   const blobRef = useRef(null)
+  const railRef = useRef(null)
   const [anchor, setAnchor] = useState(null)       // blob centre in viewport px
   const [speakN, setSpeakN] = useState(0)          // rotates the guide's line each open
+
+  // ── Align the rail to the actual task timeline ────────────────
+  // The timeline is task-based, not a flat clock, so we can't place things by a
+  // linear day fraction. Instead we measure the timeline's own time markers
+  // ([data-mins]) and its now-dot ([data-railnow]) and map any timestamp onto
+  // the real pixel positions between them — so the blob and every marker line up
+  // beside their moment on the timeline. Falls back to a simple clock scale when
+  // the day has no timed tasks to anchor to.
+  const [anchors, setAnchors] = useState([])   // sorted [{ mins, y }] in root px
+  const [nowY, setNowY] = useState(null)
+  const [railH, setRailH] = useState(600)
+  const measure = useCallback(() => {
+    const root = railRef.current?.offsetParent
+    if (!root) return
+    const rootTop = root.getBoundingClientRect().top
+    const pts = []
+    root.querySelectorAll('[data-mins]').forEach(n => {
+      const m = Number(n.dataset.mins); if (Number.isNaN(m)) return
+      const r = n.getBoundingClientRect(); pts.push({ mins: m, y: r.top + r.height / 2 - rootTop })
+    })
+    pts.sort((a, b) => a.mins - b.mins)
+    setAnchors(pts)
+    setRailH(root.offsetHeight || 600)
+    const nowEl = root.querySelector('[data-railnow]')
+    setNowY(nowEl ? (nowEl.getBoundingClientRect().top + nowEl.getBoundingClientRect().height / 2 - rootTop) : null)
+  }, [])
+  useLayoutEffect(() => {
+    measure()
+    const root = railRef.current?.offsetParent
+    if (!root || typeof ResizeObserver === 'undefined') return
+    const ro = new ResizeObserver(() => measure())
+    ro.observe(root)
+    window.addEventListener('resize', measure)
+    return () => { ro.disconnect(); window.removeEventListener('resize', measure) }
+  }, [measure])
+  useEffect(() => { const t = setTimeout(measure, 60); return () => clearTimeout(t) }, [measure, episodes, checkins, nowMs])
+
+  // Minutes-since-midnight for a timestamp, clamped to today (before today → 0).
+  const dayMin = (d) => {
+    const d0 = new Date(); d0.setHours(0, 0, 0, 0)
+    return Math.max(0, Math.min(1439, (new Date(d).getTime() - d0.getTime()) / 60000))
+  }
+  // Map a day-minute to a pixel Y using the measured timeline anchors.
+  const yForMin = (m) => {
+    const a = anchors
+    if (a.length === 0) {   // no timed tasks — fall back to a flat clock scale
+      const frac = Math.max(0, Math.min(1, (m / 60 - DAY_START) / (DAY_END - DAY_START)))
+      return frac * railH
+    }
+    if (m <= a[0].mins) return a[0].y
+    if (m >= a[a.length - 1].mins) return a[a.length - 1].y
+    for (let i = 0; i < a.length - 1; i++) {
+      if (m >= a[i].mins && m <= a[i + 1].mins) {
+        const t = (m - a[i].mins) / ((a[i + 1].mins - a[i].mins) || 1)
+        return a[i].y + t * (a[i + 1].y - a[i].y)
+      }
+    }
+    return a[a.length - 1].y
+  }
+  const yForTs = (ts) => yForMin(dayMin(ts))
+  const blobY = nowY != null ? nowY : yForTs(nowMs)
   const closeAll = () => { setMenu(false); setSheet(null); setMoodDetail(null) }
   const openMenu = () => {
     const r = blobRef.current?.getBoundingClientRect()
@@ -179,25 +240,26 @@ export default function DayRail({
 
   return (
     <>
-      <div className="day-rail">
+      <div className="day-rail" ref={railRef}>
       {/* Status-effect trails (behind everything; run down to the blob). */}
       {todayEpisodes.map(e => {
-        const top = fracOf(e.start), bottom = e.end ? fracOf(e.end) : nowFrac
+        const top = yForTs(e.start), bottom = e.end ? yForTs(e.end) : blobY
         const h = Math.max(0, bottom - top)
         return (
           <button key={'t' + e.id} className="rail-trail" title={`${e.fx.name}${e.note ? ' · ' + e.note : ''} · tap to end`}
             onClick={() => e.end ? null : endStatus(e.effectId)}
-            style={{ top: `${top * 100}%`, height: `${h * 100}%`, background: `linear-gradient(${e.fx.color}, color-mix(in srgb, ${e.fx.color} 55%, transparent))`, cursor: e.end ? 'default' : 'pointer' }} />
+            style={{ top: `${top}px`, height: `${h}px`, background: `linear-gradient(${e.fx.color}, color-mix(in srgb, ${e.fx.color} 55%, transparent))`, cursor: e.end ? 'default' : 'pointer' }} />
         )
       })}
 
       {/* Markers — mood clouds + status icons, fanned when they crowd. */}
       {markers.map(m => {
         const dx = m.cluster * 13, scale = m.cluster ? 0.72 : 1
+        const y = yForTs(m.type === 'mood' ? m.data.ts : m.data.start)
         if (m.type === 'mood') {
           const c = m.data
           return (
-            <button key={m.key} className="rail-mark rail-mood" style={{ top: `${m.frac * 100}%`, transform: `translate(${dx}px,-50%) scale(${scale})` }}
+            <button key={m.key} className="rail-mark rail-mood" style={{ top: `${y}px`, transform: `translate(${dx}px,-50%) scale(${scale})` }}
               title={`${moodMeta(c.mood).label} · ${clockTime(c.ts)}`} onClick={() => setMoodDetail(c)}>
               <MoodCloud v={c.mood} size={30} emotions={c.emotions} />
             </button>
@@ -205,7 +267,7 @@ export default function DayRail({
         }
         const e = m.data
         return (
-          <button key={m.key} className={`rail-mark rail-fx ${e.end ? '' : 'live'}`} style={{ top: `${m.frac * 100}%`, transform: `translate(${dx}px,-50%) scale(${scale})`, background: e.fx.color, color: iconColorOn(e.fx.color) }}
+          <button key={m.key} className={`rail-mark rail-fx ${e.end ? '' : 'live'}`} style={{ top: `${y}px`, transform: `translate(${dx}px,-50%) scale(${scale})`, background: e.fx.color, color: iconColorOn(e.fx.color) }}
             title={`${e.fx.name}${e.note ? ' · ' + e.note : ''} · ${clockTime(e.start)}${e.end ? '' : ' · tap to end'}`}
             onClick={() => e.end ? setMoodDetail({ isFx: true, ep: e }) : endStatus(e.effectId)}>
             <Glyph id={e.fx.icon} size={15} />
@@ -213,9 +275,9 @@ export default function DayRail({
         )
       })}
 
-      {/* The mind blob — rides the current time, taps open the radial menu.
-          Live conditions + today's mood orbit it; tapping one opens its menu. */}
-      <div className="rail-blob" style={{ top: `${nowFrac * 100}%` }}>
+      {/* The mind blob — sits beside the current time on the timeline; taps open
+          the radial menu. Live conditions + today's mood orbit it. */}
+      <div className="rail-blob" style={{ top: `${blobY}px` }}>
         <button ref={blobRef} className="rail-blob-btn" onClick={() => (menu ? closeAll() : openMenu())} aria-label="Wellness">
           <GuideBlob size={54} tint="#8FB0D8" speaking={menu} />
         </button>
