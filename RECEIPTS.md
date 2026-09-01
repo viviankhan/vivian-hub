@@ -8,6 +8,14 @@ whatever you want at once — money coming in, money going out, hours, a number
 like miles, a category, a person, a receipt photo. From that, every tracker gives
 you:
 
+- **An honest financial picture** — a cascade of Revenue → Expenses → **Profit**
+  → Mileage deduction → Taxable → Tax set-aside → **Yours to keep**. Only the
+  lines that apply show. A `Mileage` field turns miles into a tax deduction
+  (miles × an editable rate), and a tax-set-aside % keeps profit from being
+  mistaken for take-home. All of this lives in the tracker's **Setup → Finances**
+  (with sensible defaults) so day-to-day entry stays simple.
+- **Fixed monthly costs** (rent, insurance) you define once and add each month in
+  one tap.
 - **A summary** of money **in vs out → net (what's left over)**, plus **hours**,
   and — if you set a budget — **how much money and time you have left**.
 - A few **plain-English highlights** and clean **donut charts** (no generic bar

@@ -17,8 +17,8 @@ import { TrendColumns, RankedBars, abbrMoney } from './TrackerCharts.jsx'
 import { inputStyle, labelStyle, card, primaryBtn, Field, Stat, RangeBar } from './trackerUi.jsx'
 import {
   resolveRange, prevRange, inRange, rangeLabel,
-  fmtHours, decimalHours, fmtMoney, summarize, toSlices, fieldsOfType, val, num, monthlySeries,
-  personName, ACCENT_COLORS, FOLDER_ICONS, TEMPLATES,
+  fmtHours, decimalHours, fmtMoney, summarize, financials, toSlices, fieldsOfType, val, num, monthlySeries,
+  personName, ACCENT_COLORS, FOLDER_ICONS, TEMPLATES, DEFAULT_TAX_RATE, DEFAULT_MILEAGE_RATE,
   buildTableHtml, printReport, buildCsv, downloadFile,
 } from '../lib/trackers.js'
 
@@ -71,7 +71,12 @@ export default function Insights() {
   }
 
   const addFolder = ({ name, icon, color, fields }) => {
-    const f = { id: uid('fld'), name, icon, color, fields, budgetMoney: null, budgetHours: null, createdAt: new Date().toISOString() }
+    const f = {
+      id: uid('fld'), name, icon, color, fields,
+      budgetMoney: null, budgetHours: null,
+      taxRate: DEFAULT_TAX_RATE, mileageRate: DEFAULT_MILEAGE_RATE, currency: '$', fixedCosts: [],
+      createdAt: new Date().toISOString(),
+    }
     saveFolders([...folders, f]); setOpenId(f.id); setNewOpen(false)
   }
   const updateFolder = (id, changes) => saveFolders(folders.map(f => f.id === id ? { ...f, ...changes } : f))
@@ -98,6 +103,7 @@ export default function Insights() {
           suggest={fid => suggest(openId, fid)} rememberValue={() => {}}
           preset={preset} setPreset={setPreset} custom={custom} setCustom={setCustom} range={range} rangeText={rangeText} prevWindow={prevWindow}
           addEntry={e => { saveEntries([...entries, { id: uid('e'), folderId: openId, createdAt: new Date().toISOString(), ...e }]); rememberValues(openId, folder, e.values || {}) }}
+          addManyEntries={list => saveEntries([...entries, ...list.map(e => ({ id: uid('e'), folderId: openId, createdAt: new Date().toISOString(), ...e }))])}
           deleteEntry={id => saveEntries(entries.filter(e => e.id !== id))}
           addPerson={p => savePeople([...people, { id: uid('p'), folderId: openId, color: ACCENT_COLORS[fPeople.length % ACCENT_COLORS.length], createdAt: new Date().toISOString(), ...p }])}
           updatePerson={(id, ch) => savePeople(people.map(p => p.id === id ? { ...p, ...ch } : p))}
@@ -118,6 +124,11 @@ export default function Insights() {
   })
   const agg = perFolder.reduce((a, pf) => ({ moneyIn: a.moneyIn + pf.s.moneyIn, moneyOut: a.moneyOut + pf.s.moneyOut, mins: a.mins + pf.s.mins, count: a.count + pf.s.count }), { moneyIn: 0, moneyOut: 0, mins: 0, count: 0 })
   agg.net = agg.moneyIn - agg.moneyOut
+  // Aggregate the financial cascade across trackers (each carries its own tax %).
+  const fins = perFolder.map(pf => financials(pf.s, pf.folder))
+  agg.profit = fins.reduce((a, f) => a + f.profit, 0)
+  agg.taxSetAside = fins.reduce((a, f) => a + f.taxSetAside, 0)
+  agg.takeHome = fins.reduce((a, f) => a + f.takeHome, 0)
   const hasData = agg.count > 0
   const money$ = v => fmtMoney(v)
   const folderColor = k => folders.find(f => f.id === k)?.color
@@ -158,10 +169,12 @@ export default function Insights() {
           {hasData ? (
             <>
               <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 14 }}>
-                <Stat label="Money in" value={money$(agg.moneyIn)} sub="across all trackers" />
-                <Stat label="Money out" value={money$(agg.moneyOut)} sub={`${agg.count} entr${agg.count === 1 ? 'y' : 'ies'}`} />
-                <Stat label={agg.net >= 0 ? 'Left over' : 'Shortfall'} value={money$(agg.net)} sub="money in − out" />
-                <Stat label="Hours" value={`${decimalHours(agg.mins)}h`} sub={`for ${rangeText}`} />
+                <Stat label="Revenue" value={money$(agg.moneyIn)} sub="across all trackers" />
+                <Stat label="Expenses" value={money$(agg.moneyOut)} sub={`${agg.count} entr${agg.count === 1 ? 'y' : 'ies'}`} />
+                <Stat label={agg.profit >= 0 ? 'Profit' : 'Loss'} value={money$(agg.profit)} sub="revenue − expenses" />
+                {agg.taxSetAside > 0
+                  ? <Stat label="Yours to keep" value={money$(agg.takeHome)} sub={`after ~${money$(agg.taxSetAside)} tax`} />
+                  : <Stat label="Hours" value={`${decimalHours(agg.mins)}h`} sub={`for ${rangeText}`} />}
               </div>
               {overviewHi.length > 0 && <Highlights items={overviewHi} />}
               {monthsHaveData && <TrendColumns title="Net by month" caption="all trackers · last 6 months" series={overviewMonths} abbr={abbrMoney} diverging />}
@@ -201,8 +214,9 @@ export default function Insights() {
 // A few overview observations across trackers.
 function overviewHighlights(perFolder, agg) {
   const out = []
-  if (agg.moneyIn > 0 && agg.moneyOut > 0) out.push({ icon: 'dollar', text: `Across your trackers you took in ${fmtMoney(agg.moneyIn)} and spent ${fmtMoney(agg.moneyOut)} — ${agg.net >= 0 ? fmtMoney(agg.net) + ' left over' : fmtMoney(-agg.net) + ' short'}.` })
+  if (agg.moneyIn > 0 && agg.moneyOut > 0) out.push({ icon: 'dollar', text: `Across your trackers you took in ${fmtMoney(agg.moneyIn)} and spent ${fmtMoney(agg.moneyOut)} — ${agg.profit >= 0 ? fmtMoney(agg.profit) + ' profit' : fmtMoney(-agg.profit) + ' loss'}.` })
   else if (agg.moneyOut > 0) out.push({ icon: 'dollar', text: `You spent ${fmtMoney(agg.moneyOut)} in total.` })
+  if (agg.taxSetAside > 0) out.push({ icon: 'chart', text: `Set aside about ${fmtMoney(agg.taxSetAside)} for taxes — roughly ${fmtMoney(agg.takeHome)} is really yours.` })
   const bySpend = [...perFolder].filter(p => p.s.moneyOut > 0).sort((a, b) => b.s.moneyOut - a.s.moneyOut)[0]
   if (bySpend && perFolder.length > 1) out.push({ icon: 'chart', text: `Most spending was in ${bySpend.folder.name} (${fmtMoney(bySpend.s.moneyOut)}).` })
   const byTime = [...perFolder].filter(p => p.s.mins > 0).sort((a, b) => b.s.mins - a.s.mins)[0]

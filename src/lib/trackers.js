@@ -42,13 +42,17 @@ export const FIELD_TYPES = {
   moneyOut: { label: 'Money out', kind: 'money', measure: true },
   moneyIn:  { label: 'Money in',  kind: 'money', measure: true },
   hours:    { label: 'Time',      kind: 'hours', measure: true },
-  number:   { label: 'Number',    kind: 'number', measure: true },   // miles, nights, qty…
+  mileage:  { label: 'Mileage (tax-deductible)', kind: 'mileage', measure: true }, // miles × rate → deduction
+  number:   { label: 'Number',    kind: 'number', measure: true },   // nights, qty…
   category: { label: 'Category',  kind: 'text', dimension: true },
   person:   { label: 'Person',    kind: 'person', dimension: true },
   text:     { label: 'Text/note', kind: 'text' },
   receipt:  { label: 'Receipt photo', kind: 'receipt' },
 }
-export const FIELD_TYPE_ORDER = ['moneyOut', 'moneyIn', 'hours', 'number', 'category', 'person', 'text', 'receipt']
+export const FIELD_TYPE_ORDER = ['moneyOut', 'moneyIn', 'hours', 'mileage', 'number', 'category', 'person', 'text', 'receipt']
+// The IRS standard mileage rate changes yearly; this is the editable default.
+export const DEFAULT_MILEAGE_RATE = 0.70
+export const DEFAULT_TAX_RATE = 25   // % of taxable profit to set aside
 
 let _fid = 0
 export function newFieldId() { return 'f' + Date.now().toString(36) + (_fid++).toString(36) }
@@ -57,11 +61,11 @@ export function makeField(type, name) { return { id: newFieldId(), type, name } 
 // Starter templates offered when creating a tracker. "Blank" starts empty.
 export const TEMPLATES = [
   { id: 'standard', name: 'Standard (hours + expenses)', icon: 'briefcase',
-    fields: () => [makeField('category', 'Category'), makeField('text', 'Paid to / activity'), makeField('moneyOut', 'Amount'), makeField('hours', 'Time'), makeField('number', 'Miles'), makeField('person', 'Person'), makeField('receipt', 'Receipt')] },
+    fields: () => [makeField('category', 'Category'), makeField('text', 'Paid to / activity'), makeField('moneyOut', 'Amount'), makeField('hours', 'Time'), makeField('mileage', 'Miles'), makeField('person', 'Person'), makeField('receipt', 'Receipt')] },
   { id: 'bnb', name: 'Bed & Breakfast', icon: 'bed',
-    fields: () => [makeField('text', 'Guest / note'), makeField('category', 'Category'), makeField('moneyIn', 'Revenue'), makeField('moneyOut', 'Expense'), makeField('hours', 'Hours worked'), makeField('person', 'Person'), makeField('receipt', 'Receipt')] },
+    fields: () => [makeField('text', 'Guest / note'), makeField('category', 'Category'), makeField('moneyIn', 'Revenue'), makeField('moneyOut', 'Expense'), makeField('hours', 'Hours worked'), makeField('mileage', 'Miles'), makeField('person', 'Person'), makeField('receipt', 'Receipt')] },
   { id: 'mileage', name: 'Mileage & expenses', icon: 'car',
-    fields: () => [makeField('text', 'Purpose'), makeField('number', 'Miles'), makeField('moneyOut', 'Cost'), makeField('hours', 'Time'), makeField('category', 'Category')] },
+    fields: () => [makeField('text', 'Purpose'), makeField('mileage', 'Miles'), makeField('moneyOut', 'Cost'), makeField('hours', 'Time'), makeField('category', 'Category')] },
   { id: 'freelance', name: 'Freelance / clients', icon: 'briefcase',
     fields: () => [makeField('text', 'Client'), makeField('category', 'Task'), makeField('hours', 'Hours'), makeField('moneyIn', 'Invoiced'), makeField('moneyOut', 'Expenses'), makeField('receipt', 'Receipt')] },
   { id: 'blank', name: 'Blank (add your own fields)', icon: 'sprout', fields: () => [] },
@@ -157,21 +161,47 @@ export function folderName(folders, id) { const f = (folders || []).find(x => x.
 export function val(entry, fieldId) { return entry?.values ? entry.values[fieldId] : undefined }
 export function num(v) { const n = Number(v); return Number.isFinite(n) ? n : 0 }
 
-// ── Summary (money in / out / net / hours) ──────────────────────
+// ── Summary (money in / out / net / hours / miles) ──────────────
 export function summarize(entries, fields) {
   const moneyInF = fieldsOfType(fields, 'moneyIn').map(f => f.id)
   const moneyOutF = fieldsOfType(fields, 'moneyOut').map(f => f.id)
   const hoursF = fieldsOfType(fields, 'hours').map(f => f.id)
-  let moneyIn = 0, moneyOut = 0, mins = 0
+  const milesF = fieldsOfType(fields, 'mileage').map(f => f.id)
+  let moneyIn = 0, moneyOut = 0, mins = 0, miles = 0
   for (const e of entries) {
     for (const id of moneyInF) moneyIn += num(val(e, id))
     for (const id of moneyOutF) moneyOut += num(val(e, id))
     for (const id of hoursF) mins += num(val(e, id))
+    for (const id of milesF) miles += num(val(e, id))
   }
-  return { moneyIn, moneyOut, net: moneyIn - moneyOut, mins, count: entries.length }
+  return { moneyIn, moneyOut, net: moneyIn - moneyOut, mins, miles, count: entries.length }
 }
 // Sum a single measure field across entries.
 export function sumField(entries, fieldId) { return entries.reduce((s, e) => s + num(val(e, fieldId)), 0) }
+
+// ── The financial cascade (the small-business "framework") ──────
+// Turns a raw summary + a tracker's finance settings into the honest chain:
+//   Revenue − Expenses = Profit
+//   Profit − Mileage deduction (miles × rate) = Taxable profit
+//   Taxable × tax% = Set aside for taxes
+//   Profit − Set aside = Yours to keep
+// Every line degrades gracefully: no mileage field → no deduction line; no tax
+// rate → no tax line (take-home just equals profit).
+export function financials(s, folder = {}) {
+  const profit = (s.moneyIn || 0) - (s.moneyOut || 0)
+  const miles = s.miles || 0
+  const rate = Number(folder.mileageRate) || 0
+  const mileageDeduction = miles * rate
+  const taxRate = Number(folder.taxRate) || 0
+  const taxableProfit = Math.max(0, profit - mileageDeduction)
+  const taxSetAside = taxRate > 0 ? taxableProfit * (taxRate / 100) : 0
+  const takeHome = profit - taxSetAside
+  return {
+    profit, miles, rate, mileageDeduction, taxRate, taxableProfit, taxSetAside, takeHome,
+    hasMileage: miles > 0 && rate > 0, hasTax: taxRate > 0,
+    hasMoney: (s.moneyIn || 0) > 0 || (s.moneyOut || 0) > 0,
+  }
+}
 
 // The last `months` calendar months (ending this month), each bucketed with its
 // money in/out/net and hours — the trend chart's input. Independent of the range
@@ -254,13 +284,42 @@ export function autoCharts(fields) {
   return charts
 }
 
+// ── Recurring fixed costs ───────────────────────────────────────
+// A tracker can define fixed monthly costs (rent, insurance…). They're added as
+// real entries — one tap per month — so they show in the record and export. An
+// entry created this way carries a `fixedKey` (`<costId>@<YYYY-MM>`) so the same
+// cost is never added twice in the same month.
+export function canUseFixedCosts(folder) { return !!firstFieldOfType(folder.fields || [], 'moneyOut') }
+export function missingFixedCosts(folder, entries, mKey) {
+  const costs = folder.fixedCosts || []
+  if (!costs.length) return []
+  const present = new Set(entries.filter(e => (e.date || '').slice(0, 7) === mKey && e.fixedKey).map(e => e.fixedKey))
+  return costs.filter(c => !present.has(`${c.id}@${mKey}`))
+}
+export function makeFixedEntry(folder, cost, dateStr) {
+  const moneyF = firstFieldOfType(folder.fields || [], 'moneyOut')
+  if (!moneyF) return null
+  const catF = firstFieldOfType(folder.fields || [], 'category')
+  const textF = firstFieldOfType(folder.fields || [], 'text')
+  const values = { [moneyF.id]: Number(cost.amount) || 0 }
+  if (catF) values[catF.id] = cost.category || cost.label
+  else if (textF) values[textF.id] = cost.label
+  return { date: dateStr, values, fixedKey: `${cost.id}@${dateStr.slice(0, 7)}` }
+}
+
 // ── Highlights ──────────────────────────────────────────────────
-export function computeHighlights({ entries = [], fields = [], people = [], folders = null, budgetMoney = null, budgetHours = null, prevEntries = null } = {}) {
+export function computeHighlights({ entries = [], fields = [], people = [], folders = null, folder = {}, budgetMoney = null, budgetHours = null, prevEntries = null } = {}) {
   const out = []
   const s = summarize(entries, fields)
-  if (s.moneyIn > 0 && s.moneyOut > 0) out.push({ icon: 'dollar', text: `You took in ${fmtMoney(s.moneyIn)} and spent ${fmtMoney(s.moneyOut)} — ${s.net >= 0 ? 'a net of ' + fmtMoney(s.net) + ' left over' : 'a shortfall of ' + fmtMoney(-s.net)}.` })
-  else if (s.moneyOut > 0) out.push({ icon: 'dollar', text: `You spent ${fmtMoney(s.moneyOut)} across ${s.count} ${s.count === 1 ? 'entry' : 'entries'}.` })
-  else if (s.moneyIn > 0) out.push({ icon: 'dollar', text: `You took in ${fmtMoney(s.moneyIn)}.` })
+  const sym = folder.currency || '$'
+  const $ = v => fmtMoney(v, sym)
+  const f = financials(s, folder)
+  if (s.moneyIn > 0 && s.moneyOut > 0) out.push({ icon: 'dollar', text: `You took in ${$(s.moneyIn)} and spent ${$(s.moneyOut)} — ${f.profit >= 0 ? 'a profit of ' + $(f.profit) : 'a loss of ' + $(-f.profit)}.` })
+  else if (s.moneyOut > 0) out.push({ icon: 'dollar', text: `You spent ${$(s.moneyOut)} across ${s.count} ${s.count === 1 ? 'entry' : 'entries'}.` })
+  else if (s.moneyIn > 0) out.push({ icon: 'dollar', text: `You took in ${$(s.moneyIn)}.` })
+  // Tax reality: profit is not take-home.
+  if (f.hasTax && f.profit > 0) out.push({ icon: 'chart', text: `Set aside about ${$(f.taxSetAside)} for taxes (${f.taxRate}%) — roughly ${$(f.takeHome)} is really yours.` })
+  if (f.hasMileage) out.push({ icon: 'car', text: `${fmtNumber(f.miles)} deductible miles = ${$(f.mileageDeduction)} off your taxable profit${f.hasTax ? `, saving ~${$(f.mileageDeduction * f.taxRate / 100)} in taxes` : ''}.` })
 
   if (s.mins > 0) {
     const dh = decimalHours(s.mins)
@@ -322,7 +381,7 @@ export function fieldColumns(fields, people) {
     const t = f.type, kind = FIELD_TYPES[t]?.kind
     if (t === 'moneyOut' || t === 'moneyIn') cols.push({ id: f.id, header: f.name, kind: 'money', align: 'num', measure: true, pdf: e => escHtml(num(val(e, f.id)) ? fmtMoney(val(e, f.id)) : '—'), csv: e => num(val(e, f.id)) ? num(val(e, f.id)).toFixed(2) : '' })
     else if (t === 'hours') cols.push({ id: f.id, header: f.name, kind: 'hours', align: 'num', measure: true, pdf: e => escHtml(num(val(e, f.id)) ? fmtHours(val(e, f.id)) : '—'), csv: e => num(val(e, f.id)) ? decimalHours(val(e, f.id)) : '' })
-    else if (t === 'number') cols.push({ id: f.id, header: f.name, kind: 'number', align: 'num', measure: true, pdf: e => escHtml(num(val(e, f.id)) ? fmtNumber(val(e, f.id)) : '—'), csv: e => num(val(e, f.id)) || '' })
+    else if (t === 'number' || t === 'mileage') cols.push({ id: f.id, header: f.name, kind: 'number', align: 'num', measure: true, pdf: e => escHtml(num(val(e, f.id)) ? fmtNumber(val(e, f.id)) : '—'), csv: e => num(val(e, f.id)) || '' })
     else if (t === 'person') cols.push({ id: f.id, header: f.name, kind: 'person', align: '', pdf: e => escHtml(personName(people, val(e, f.id))), csv: e => personName(people, val(e, f.id)) })
     else if (t === 'receipt') cols.push({ id: f.id, header: f.name, kind: 'receipt', align: 'rcptcol', pdf: e => val(e, f.id) ? `<img class="rcpt" src="${val(e, f.id)}" />` : '—', csv: null })
     else cols.push({ id: f.id, header: f.name, kind: 'text', align: t === 'text' ? 'wide' : '', pdf: e => escHtml((val(e, f.id) || '').toString().trim() || '—'), csv: e => (val(e, f.id) || '').toString() })
@@ -355,17 +414,23 @@ export function safeFileName(s) { return (s || 'export').replace(/[^a-z0-9]+/gi,
 
 // ── PDF report ──────────────────────────────────────────────────
 function escHtml(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])) }
-export function buildReportHtml({ title = 'Record', owner = '', rangeText = 'all time', fields = [], entries = [], people = [], columns = null, includeSummary = true, extraCols = [] }) {
+export function buildReportHtml({ title = 'Record', owner = '', rangeText = 'all time', fields = [], entries = [], people = [], columns = null, includeSummary = true, extraCols = [], folder = {} }) {
   const cols = [...extraCols, ...(columns || fieldColumns(fields, people))]
   const s = summarize(entries, fields)
+  const sym = folder.currency || '$'
+  const f = financials(s, folder)
   const generated = new Date().toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' })
-  const summaryHtml = includeSummary ? `
-    <section><div class="cards">
-      <div class="card"><div class="cval">${escHtml(fmtMoney(s.moneyIn))}</div><div class="clab">Money in</div></div>
-      <div class="card"><div class="cval">${escHtml(fmtMoney(s.moneyOut))}</div><div class="clab">Money out</div></div>
-      <div class="card"><div class="cval">${escHtml(fmtMoney(s.net))}</div><div class="clab">Net</div></div>
-      <div class="card"><div class="cval">${decimalHours(s.mins)}</div><div class="clab">Hours</div></div>
-    </div></section>` : ''
+  // Financial cascade cards — only the lines that apply.
+  const cards = []
+  if (f.hasMoney) {
+    cards.push(['Revenue', fmtMoney(s.moneyIn, sym)], ['Expenses', fmtMoney(s.moneyOut, sym)], ['Profit', fmtMoney(f.profit, sym)])
+    if (f.hasMileage) cards.push(['Mileage deduction', '−' + fmtMoney(f.mileageDeduction, sym)])
+    if (f.hasTax && f.profit > 0) cards.push([`Tax set-aside (${f.taxRate}%)`, '−' + fmtMoney(f.taxSetAside, sym)], ['Yours to keep', fmtMoney(f.takeHome, sym)])
+  }
+  if (s.mins > 0) cards.push(['Hours', String(decimalHours(s.mins))])
+  const summaryHtml = includeSummary && cards.length
+    ? `<section><div class="cards">${cards.map(c => `<div class="card"><div class="cval">${escHtml(c[1])}</div><div class="clab">${escHtml(c[0])}</div></div>`).join('')}</div></section>`
+    : ''
   const rows = [...entries].sort((a, b) => (a.date || '').localeCompare(b.date || ''))
   const body = rows.length ? rows.map(e => `<tr>${cols.map(c => `<td class="${c.align || ''}">${c.pdf(e)}</td>`).join('')}</tr>`).join('')
     : `<tr><td colspan="${cols.length}" class="empty">No entries in this period.</td></tr>`

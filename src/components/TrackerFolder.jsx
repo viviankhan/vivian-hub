@@ -8,12 +8,13 @@
 import { useMemo, useState, useRef } from 'react'
 import { Glyph } from '../lib/glyphs.jsx'
 import { inputStyle, labelStyle, card, primaryBtn, Field, HmInput, Suggest, Empty, Stat, RangeBar } from './trackerUi.jsx'
-import { TrendColumns, RankedBars, abbrMoney, abbrHours } from './TrackerCharts.jsx'
+import { TrendColumns, RankedBars, MoneyCascade, abbrMoney, abbrHours } from './TrackerCharts.jsx'
 import { scanReceipt, receiptScanAvailable } from '../lib/parseReceipt.js'
 import {
-  FIELD_TYPES, FIELD_TYPE_ORDER, makeField,
+  FIELD_TYPES, FIELD_TYPE_ORDER, makeField, DEFAULT_MILEAGE_RATE, DEFAULT_TAX_RATE,
   inRange, todayStr, fmtHours, decimalHours, fmtMoney, fmtNumber, personName, num, val,
-  summarize, groupSlices, autoCharts, computeHighlights, fieldsOfType, firstFieldOfType, monthlySeries,
+  summarize, financials, groupSlices, autoCharts, computeHighlights, fieldsOfType, firstFieldOfType, monthlySeries,
+  canUseFixedCosts, missingFixedCosts, makeFixedEntry,
   compressImage, dataUrlToBase64, prettyDate, fieldColumns,
   buildReportHtml, printReport, buildCsv, downloadFile, safeFileName,
 } from '../lib/trackers.js'
@@ -23,7 +24,7 @@ const SUBTABS = [['summary', 'Summary'], ['entries', 'Entries'], ['people', 'Peo
 export default function TrackerFolder({
   folder, people, entries, suggest, rememberValue,
   preset, setPreset, custom, setCustom, range, rangeText, prevWindow,
-  addEntry, deleteEntry, addPerson, updatePerson, deletePerson,
+  addEntry, addManyEntries, deleteEntry, addPerson, updatePerson, deletePerson,
   onRename, onDelete, onUpdateFolder, onBack,
 }) {
   const [sub, setSub] = useState('summary')
@@ -60,7 +61,7 @@ export default function TrackerFolder({
       )}
 
       {sub === 'summary' && <FolderSummary folder={folder} entries={fEntries} allEntries={entries} people={people} rangeText={rangeText} prevEntries={prevEntries} />}
-      {sub === 'entries' && <EntriesView folder={folder} entries={fEntries} people={people} suggest={suggest} onAdd={addEntry} onDelete={deleteEntry} />}
+      {sub === 'entries' && <EntriesView folder={folder} entries={fEntries} allEntries={entries} people={people} suggest={suggest} onAdd={addEntry} onAddMany={addManyEntries} onDelete={deleteEntry} />}
       {sub === 'people' && <People people={people} entries={entries} fields={fields} onAdd={addPerson} onUpdate={updatePerson} onDelete={deletePerson} />}
       {sub === 'setup' && <Setup folder={folder} onUpdateFolder={onUpdateFolder} />}
 
@@ -76,8 +77,9 @@ function FolderSummary({ folder, entries, allEntries, people, rangeText, prevEnt
   const s = summarize(entries, fields)
   const charts = useMemo(() => autoCharts(fields), [fields])
   const months = useMemo(() => monthlySeries(allEntries, fields, 6), [allEntries, fields])
-  const highlights = useMemo(() => computeHighlights({ entries, fields, people, budgetMoney: folder.budgetMoney, budgetHours: folder.budgetHours, prevEntries }), [entries, fields, people, folder.budgetMoney, folder.budgetHours, prevEntries])
-  const hasMoney = fieldsOfType(fields, 'moneyIn').length || fieldsOfType(fields, 'moneyOut').length
+  const highlights = useMemo(() => computeHighlights({ entries, fields, people, folder, budgetMoney: folder.budgetMoney, budgetHours: folder.budgetHours, prevEntries }), [entries, fields, people, folder, prevEntries])
+  const sym = folder.currency || '$'
+  const $ = v => fmtMoney(v, sym)
   const hasHours = fieldsOfType(fields, 'hours').length
 
   if (fields.length === 0) return <Empty text="This tracker has no fields yet. Open Setup to add fields (money, time, category…), then log entries." />
@@ -89,18 +91,20 @@ function FolderSummary({ folder, entries, allEntries, people, rangeText, prevEnt
 
   return (
     <>
-      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 14 }}>
-        {hasMoney ? <>
-          <Stat label="Money in" value={fmtMoney(s.moneyIn)} sub="income / revenue" />
-          <Stat label="Money out" value={fmtMoney(s.moneyOut)} sub={`${s.count} entr${s.count === 1 ? 'y' : 'ies'}`} />
-          <Stat label={s.net >= 0 ? 'Left over' : 'Shortfall'} value={fmtMoney(s.net)} sub="money in − out" />
-        </> : null}
-        {hasHours ? <Stat label="Hours" value={`${decimalHours(s.mins)}h`} sub={fmtHours(s.mins)} /> : null}
-      </div>
+      {/* The financial framework, honest and calm. */}
+      <MoneyCascade summary={s} folder={folder} />
+
+      {/* Secondary measures */}
+      {(hasHours || s.miles > 0) && (
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 14 }}>
+          {hasHours ? <Stat label="Hours" value={`${decimalHours(s.mins)}h`} sub={fmtHours(s.mins)} /> : null}
+          {s.miles > 0 ? <Stat label="Miles" value={fmtNumber(s.miles)} sub={folder.mileageRate > 0 ? `${$(s.miles * folder.mileageRate)} deduction` : 'tracked'} /> : null}
+        </div>
+      )}
 
       {(moneyLeft != null || timeLeft != null) && (
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 14 }}>
-          {moneyLeft != null && <BudgetBar label="Budget" used={s.moneyOut} total={folder.budgetMoney} left={moneyLeft} fmt={fmtMoney} />}
+          {moneyLeft != null && <BudgetBar label="Budget" used={s.moneyOut} total={folder.budgetMoney} left={moneyLeft} fmt={$} />}
           {timeLeft != null && <BudgetBar label="Time budget" used={s.mins} total={folder.budgetHours} left={timeLeft} fmt={fmtHours} />}
         </div>
       )}
@@ -108,8 +112,8 @@ function FolderSummary({ folder, entries, allEntries, people, rangeText, prevEnt
       {highlights.length > 0 && <Highlights items={highlights} />}
 
       {/* Trend over time — the thing a pie can't show. */}
-      {monthsHaveData && (hasMoney
-        ? <TrendColumns title="Net by month" caption="money in − out · last 6 months" series={months.map(m => ({ key: m.key, label: m.label, value: m.net }))} abbr={abbrMoney} diverging />
+      {monthsHaveData && (financials(s, folder).hasMoney
+        ? <TrendColumns title="Net by month" caption="revenue − expenses · last 6 months" series={months.map(m => ({ key: m.key, label: m.label, value: m.net }))} abbr={v => abbrMoney(v, sym)} diverging />
         : hasHours
           ? <TrendColumns title="Hours by month" caption="last 6 months" series={months.map(m => ({ key: m.key, label: m.label, value: m.mins }))} abbr={abbrHours} diverging={false} hue="#4A9EB5" />
           : null)}
@@ -118,7 +122,7 @@ function FolderSummary({ folder, entries, allEntries, people, rangeText, prevEnt
       {charts.map(c => {
         const g = groupSlices(entries, c.dim, c.measure, people, { colorFor: c.dim.type === 'person' ? (k => people.find(p => p.id === k)?.color || '#8899AA') : undefined })
         if (g.total <= 0) return null
-        const fmt = c.measure.type === 'hours' ? fmtHours : (v => fmtMoney(v))
+        const fmt = c.measure.type === 'hours' ? fmtHours : (v => fmtMoney(v, sym))
         return <RankedBars key={c.id} title={c.title[0].toUpperCase() + c.title.slice(1)} slices={g.slices} total={g.total} ramp={RAMP_FOR[c.measure.type] || 'neutral'} formatValue={fmt} />
       })}
     </>
@@ -157,7 +161,7 @@ export function Highlights({ items }) {
 }
 
 // ── Entries (dynamic form + list) ───────────────────────────────
-function EntriesView({ folder, entries, people, suggest, onAdd, onDelete }) {
+function EntriesView({ folder, entries, allEntries, people, suggest, onAdd, onAddMany, onDelete }) {
   const fields = folder.fields || []
   const [open, setOpen] = useState(entries.length === 0)
   const [date, setDate] = useState(todayStr())
@@ -165,6 +169,16 @@ function EntriesView({ folder, entries, people, suggest, onAdd, onDelete }) {
   const [scanMsg, setScanMsg] = useState('')
   const [scanning, setScanning] = useState(false)
   const setV = (id, v) => setValues(prev => ({ ...prev, [id]: v }))
+
+  // This month's fixed costs (rent, insurance…) not yet added — one tap adds them.
+  const curMonth = todayStr().slice(0, 7)
+  const missing = canUseFixedCosts(folder) ? missingFixedCosts(folder, allEntries || [], curMonth) : []
+  const addFixed = () => {
+    const first = `${curMonth}-01`
+    const rows = missing.map(c => makeFixedEntry(folder, c, first)).filter(Boolean)
+    if (rows.length && onAddMany) onAddMany(rows)
+  }
+  const sym = folder.currency || '$'
 
   const hasMeasure = fields.some(f => FIELD_TYPES[f.type]?.measure || f.type === 'text' || f.type === 'category')
   const save = () => {
@@ -204,8 +218,18 @@ function EntriesView({ folder, entries, people, suggest, onAdd, onDelete }) {
   }
 
   const rows = [...entries].sort((a, b) => (b.date || '').localeCompare(a.date || ''))
+  const monthName = new Date(curMonth + '-01T12:00:00').toLocaleDateString('en-US', { month: 'long' })
   return (
     <>
+      {missing.length > 0 && (
+        <div style={{ ...card, background: '#F0FDFB', border: '1px solid #cdeae6', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+          <div style={{ flex: 1, minWidth: 200 }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--teal)' }}>Add {monthName}’s fixed costs?</div>
+            <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>{missing.map(c => `${c.label} ${fmtMoney(c.amount, sym)}`).join(' · ')}</div>
+          </div>
+          <button onClick={addFixed} style={{ ...primaryBtn(), padding: '9px 16px', fontSize: 13 }}>Add {missing.length}</button>
+        </div>
+      )}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', margin: '2px 0 10px' }}>
         <div style={{ fontSize: 12, color: 'var(--muted)', letterSpacing: 1, textTransform: 'uppercase', fontWeight: 600 }}>{rows.length} entr{rows.length === 1 ? 'y' : 'ies'}</div>
         {fields.length > 0 && <button onClick={() => setOpen(o => !o)} style={{ ...primaryBtn(), padding: '7px 14px', fontSize: 12.5 }}>{open ? 'Close' : '+ Add entry'}</button>}
@@ -229,7 +253,7 @@ function EntriesView({ folder, entries, people, suggest, onAdd, onDelete }) {
 
       {rows.length === 0 ? (fields.length > 0 && <Empty text="No entries in this period." />)
         : <div style={{ ...card, padding: '4px 16px' }}>
-          {rows.map((e, i) => <EntryRow key={e.id} entry={e} fields={fields} people={people} onDelete={() => onDelete(e.id)} last={i === rows.length - 1} />)}
+          {rows.map((e, i) => <EntryRow key={e.id} entry={e} fields={fields} people={people} folder={folder} onDelete={() => onDelete(e.id)} last={i === rows.length - 1} />)}
         </div>}
     </>
   )
@@ -240,7 +264,7 @@ function FieldInput({ field, value, onChange, people, options, onReceipt, scanni
   const t = field.type
   if (t === 'hours') return <div><label style={labelStyle}>{field.name}</label><HmInput mins={num(value)} onChange={onChange} /></div>
   if (t === 'moneyIn' || t === 'moneyOut') return <Field label={field.name}><input type="number" min="0" step="0.01" value={value ?? ''} onChange={e => onChange(e.target.value === '' ? '' : Number(e.target.value))} placeholder="0.00" style={inputStyle} /></Field>
-  if (t === 'number') return <Field label={field.name}><input type="number" step="any" value={value ?? ''} onChange={e => onChange(e.target.value === '' ? '' : Number(e.target.value))} placeholder="0" style={inputStyle} /></Field>
+  if (t === 'number' || t === 'mileage') return <Field label={t === 'mileage' ? `${field.name} (miles)` : field.name}><input type="number" step="any" value={value ?? ''} onChange={e => onChange(e.target.value === '' ? '' : Number(e.target.value))} placeholder="0" style={inputStyle} /></Field>
   if (t === 'person') return <Field label={field.name}><select value={value || ''} onChange={e => onChange(e.target.value)} style={inputStyle}><option value="">— Select —</option>{people.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></Field>
   if (t === 'category') return <Field label={field.name}><Suggest value={value || ''} onChange={onChange} placeholder={field.name} options={options} listId={'sg-' + field.id} /></Field>
   if (t === 'receipt') return (
@@ -258,7 +282,7 @@ function FieldInput({ field, value, onChange, people, options, onReceipt, scanni
 }
 
 // A compact list row summarizing an entry from its fields.
-function EntryRow({ entry, fields, people, onDelete, last }) {
+function EntryRow({ entry, fields, people, folder, onDelete, last }) {
   const textF = fieldsOfType(fields, 'text')[0] || fieldsOfType(fields, 'category')[0]
   const catF = fieldsOfType(fields, 'category')[0]
   const personF = fieldsOfType(fields, 'person')[0]
@@ -275,8 +299,11 @@ function EntryRow({ entry, fields, people, onDelete, last }) {
   if (numF && num(val(entry, numF.id))) metaBits.push(`${fmtNumber(val(entry, numF.id))} ${numF.name.toLowerCase()}`)
   if (mins) metaBits.push(fmtHours(mins))
 
-  const right = moneyOut > 0 ? { txt: '−' + fmtMoney(moneyOut), color: 'var(--coral)' }
-    : moneyIn > 0 ? { txt: '+' + fmtMoney(moneyIn), color: '#0a7d3c' }
+  const sym = folder?.currency || '$'
+  const right = (moneyIn > 0 && moneyOut > 0)
+    ? { txt: (moneyIn - moneyOut >= 0 ? '+' : '−') + fmtMoney(Math.abs(moneyIn - moneyOut), sym), color: moneyIn - moneyOut >= 0 ? '#0a7d3c' : 'var(--coral)' }
+    : moneyOut > 0 ? { txt: '−' + fmtMoney(moneyOut, sym), color: 'var(--coral)' }
+    : moneyIn > 0 ? { txt: '+' + fmtMoney(moneyIn, sym), color: '#0a7d3c' }
     : mins > 0 ? { txt: fmtHours(mins), color: 'var(--text)' } : { txt: '', color: 'var(--text)' }
 
   return (
@@ -346,6 +373,25 @@ function Setup({ folder, onUpdateFolder }) {
   const [newName, setNewName] = useState('')
   const [bMoney, setBMoney] = useState(folder.budgetMoney || '')
   const [bHours, setBHours] = useState(folder.budgetHours || 0)
+  const [taxRate, setTaxRate] = useState(folder.taxRate ?? '')
+  const [mileageRate, setMileageRate] = useState(folder.mileageRate ?? '')
+  const [currency, setCurrency] = useState(folder.currency || '$')
+  const [fcLabel, setFcLabel] = useState('')
+  const [fcAmount, setFcAmount] = useState('')
+  const fixedCosts = folder.fixedCosts || []
+  const hasMileageField = fieldsOfType(fields, 'mileage').length > 0
+  const saveFinances = () => onUpdateFolder({
+    taxRate: taxRate === '' ? null : Math.max(0, Math.min(100, Number(taxRate))),
+    mileageRate: mileageRate === '' ? null : Math.max(0, Number(mileageRate)),
+    currency: (currency || '$').trim().slice(0, 3) || '$',
+  })
+  const addFixedCost = () => {
+    if (!fcLabel.trim() || !(Number(fcAmount) > 0)) return
+    onUpdateFolder({ fixedCosts: [...fixedCosts, { id: 'fc' + Date.now().toString(36), label: fcLabel.trim(), amount: Number(fcAmount) }] })
+    setFcLabel(''); setFcAmount('')
+  }
+  const removeFixedCost = (id) => onUpdateFolder({ fixedCosts: fixedCosts.filter(c => c.id !== id) })
+  const sym = folder.currency || '$'
 
   const addField = () => {
     if (!newName.trim()) return
@@ -388,6 +434,54 @@ function Setup({ folder, onUpdateFolder }) {
         </div>
       </div>
 
+      {/* Finances — tax set-aside, mileage rate, currency. */}
+      <div style={card}>
+        <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', marginBottom: 4 }}>Finances</div>
+        <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 12 }}>Turns raw money into a real picture: what to set aside for taxes, and mileage as a deduction. Leave a field blank to hide that line.</div>
+        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+          <div style={{ width: 90 }}><label style={labelStyle}>Currency</label><input value={currency} onChange={e => setCurrency(e.target.value)} placeholder="$" style={{ ...inputStyle, textAlign: 'center' }} /></div>
+          <div style={{ width: 150 }}><label style={labelStyle}>Set aside for taxes</label>
+            <div style={{ position: 'relative' }}>
+              <input type="number" min="0" max="100" value={taxRate} onChange={e => setTaxRate(e.target.value)} placeholder={String(DEFAULT_TAX_RATE)} style={{ ...inputStyle, paddingRight: 26 }} />
+              <span style={{ position: 'absolute', right: 11, top: 10, color: 'var(--muted)', fontSize: 13 }}>%</span>
+            </div>
+          </div>
+          {hasMileageField && (
+            <div style={{ width: 170 }}><label style={labelStyle}>Mileage rate (per mile)</label>
+              <input type="number" min="0" step="0.01" value={mileageRate} onChange={e => setMileageRate(e.target.value)} placeholder={String(DEFAULT_MILEAGE_RATE)} style={inputStyle} />
+            </div>
+          )}
+          <button onClick={saveFinances} style={primaryBtn()}>Save</button>
+        </div>
+        <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 10, lineHeight: 1.5 }}>
+          The tax % is a rough set-aside so profit isn’t mistaken for take-home — your accountant confirms the real number.{hasMileageField ? ' The mileage rate defaults to the IRS standard rate.' : ' Add a “Mileage” field to deduct miles.'}
+        </div>
+      </div>
+
+      {/* Fixed monthly costs */}
+      {canUseFixedCosts(folder) && (
+        <div style={card}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', marginBottom: 4 }}>Fixed monthly costs</div>
+          <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 12 }}>Recurring expenses like rent or insurance. Each month, the Entries tab offers to add them in one tap — no re-typing.</div>
+          {fixedCosts.length > 0 && (
+            <div style={{ marginBottom: 12 }}>
+              {fixedCosts.map((c, i) => (
+                <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', borderBottom: i < fixedCosts.length - 1 ? '1px solid #F1EEF3' : 'none' }}>
+                  <span style={{ flex: 1, minWidth: 0, fontSize: 13.5, color: 'var(--text)' }}>{c.label}</span>
+                  <span style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--text)', fontVariantNumeric: 'tabular-nums' }}>{fmtMoney(c.amount, sym)}</span>
+                  <button onClick={() => removeFixedCost(c.id)} style={{ background: 'none', border: 'none', color: '#B9B3AC', fontSize: 15, cursor: 'pointer', padding: '0 2px' }}>✕</button>
+                </div>
+              ))}
+            </div>
+          )}
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+            <div style={{ flex: 1, minWidth: 150 }}><label style={labelStyle}>Cost name</label><input value={fcLabel} onChange={e => setFcLabel(e.target.value)} placeholder="e.g. Mortgage, Insurance" style={inputStyle} onKeyDown={e => e.key === 'Enter' && addFixedCost()} /></div>
+            <div style={{ width: 130 }}><label style={labelStyle}>Amount / month</label><input type="number" min="0" step="0.01" value={fcAmount} onChange={e => setFcAmount(e.target.value)} placeholder="0.00" style={inputStyle} onKeyDown={e => e.key === 'Enter' && addFixedCost()} /></div>
+            <button onClick={addFixedCost} disabled={!fcLabel.trim() || !(Number(fcAmount) > 0)} style={primaryBtn(!!fcLabel.trim() && Number(fcAmount) > 0)}>+ Add</button>
+          </div>
+        </div>
+      )}
+
       <div style={card}>
         <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', marginBottom: 4 }}>Budget for the period</div>
         <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 12 }}>Optional. When set, the summary shows how much money and time you have left for the selected time frame.</div>
@@ -415,7 +509,7 @@ function ExportModal({ folder, entries, people, rangeText, onClose }) {
   const setAll = v => setOn(Object.fromEntries(allCols.map(c => [c.id, v])))
 
   const rows = [...entries].sort((a, b) => (a.date || '').localeCompare(b.date || ''))
-  const downloadPdf = () => printReport(buildReportHtml({ title: `${folder.name} — Record`, owner: owner.trim(), rangeText, fields, entries: rows, people, columns: chosen, includeSummary }))
+  const downloadPdf = () => printReport(buildReportHtml({ title: `${folder.name} — Record`, owner: owner.trim(), rangeText, fields, entries: rows, people, columns: chosen, includeSummary, folder }))
   const downloadCsv = () => downloadFile(`${base}.csv`, buildCsv(chosen, rows))
 
   const secondaryBtn = { padding: '13px 14px', borderRadius: 11, border: '1px solid var(--border)', background: 'white', color: 'var(--teal)', cursor: 'pointer', fontFamily: 'DM Sans,sans-serif', fontWeight: 700, fontSize: 13.5, flex: 1 }

@@ -10,9 +10,51 @@
 // Both stay in Bloom's calm forest/teal/coral palette.
 import { useState } from 'react'
 import { card } from './trackerUi.jsx'
-import { rampColors, OTHER_COLOR, POS_COLOR, NEG_COLOR } from '../lib/trackers.js'
+import { rampColors, OTHER_COLOR, POS_COLOR, NEG_COLOR, financials, fmtMoney, fmtNumber, decimalHours } from '../lib/trackers.js'
 
 const TRACK = '#ECEAF0'
+
+// ── The financial cascade (Revenue → … → Yours to keep) ─────────
+// A calm, receipt-style P&L. Only the lines that apply are shown, and the last
+// meaningful figure (take-home if taxes are on, else profit) is the hero.
+export function MoneyCascade({ summary, folder = {} }) {
+  const sym = folder.currency || '$'
+  const $ = v => fmtMoney(v, sym)
+  const f = financials(summary, folder)
+  if (!f.hasMoney) return null
+  const taxOn = f.hasTax && f.profit > 0
+  const rows = [
+    { label: 'Revenue', value: $(summary.moneyIn) },
+    { label: 'Expenses', value: '−' + $(summary.moneyOut) },
+    { rule: true },
+    { label: 'Profit', value: $(f.profit), strong: true, hero: !taxOn, tone: f.profit < 0 ? 'neg' : 'pos' },
+  ]
+  if (f.hasMileage) rows.push({ label: 'Mileage deduction', sub: `${fmtNumber(f.miles)} mi × ${sym}${f.rate.toFixed(2)}`, value: '−' + $(f.mileageDeduction), muted: true })
+  if (taxOn) {
+    if (f.hasMileage) rows.push({ label: 'Taxable profit', value: $(f.taxableProfit), muted: true })
+    rows.push({ label: `Set aside for taxes (${f.taxRate}%)`, value: '−' + $(f.taxSetAside) })
+    rows.push({ rule: 'double' })
+    rows.push({ label: 'Yours to keep', value: $(f.takeHome), hero: true, tone: 'pos' })
+  }
+  return (
+    <div style={{ ...card, padding: '16px 18px' }}>
+      <div style={{ display: 'flex', flexDirection: 'column' }}>
+        {rows.map((r, i) => r.rule ? (
+          <div key={i} style={{ borderTop: `${r.rule === 'double' ? 2 : 1}px solid var(--border)`, margin: '8px 0' }} />
+        ) : (
+          <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 12, padding: r.hero ? '4px 0 2px' : '4px 0' }}>
+            <div style={{ minWidth: 0 }}>
+              <span className={r.hero ? 'serif' : undefined} style={{ fontSize: r.hero ? 17 : 13.5, fontWeight: r.hero || r.strong ? 700 : 500, color: r.hero ? 'var(--forest)' : r.muted ? 'var(--muted)' : 'var(--text)' }}>{r.label}</span>
+              {r.sub && <span style={{ fontSize: 11, color: 'var(--muted)', marginLeft: 7 }}>{r.sub}</span>}
+            </div>
+            <span className={r.hero ? 'serif' : undefined} style={{ flexShrink: 0, fontVariantNumeric: 'tabular-nums', fontSize: r.hero ? 22 : 14, fontWeight: r.hero || r.strong ? 800 : 600,
+              color: r.hero ? (r.tone === 'neg' ? 'var(--coral)' : 'var(--forest)') : r.tone === 'neg' ? 'var(--coral)' : r.muted ? 'var(--muted)' : 'var(--text)' }}>{r.value}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
 
 // ── Trend: columns per month ────────────────────────────────────
 // series: [{ key, label, value }]. diverging=true → zero baseline, green up /
@@ -112,9 +154,9 @@ export function RankedBars({ title, slices = [], total = 0, ramp = 'neutral', fo
 }
 
 // Compact money/hours abbreviations for trend labels.
-export function abbrMoney(v) {
+export function abbrMoney(v, sym = '$') {
   const a = Math.abs(v)
-  if (a >= 1000) return `${v < 0 ? '-' : ''}$${(a / 1000).toFixed(a >= 10000 ? 0 : 1)}k`
-  return `${v < 0 ? '-' : ''}$${Math.round(a)}`
+  if (a >= 1000) return `${v < 0 ? '-' : ''}${sym}${(a / 1000).toFixed(a >= 10000 ? 0 : 1)}k`
+  return `${v < 0 ? '-' : ''}${sym}${Math.round(a)}`
 }
 export function abbrHours(mins) { const h = Math.round((mins || 0) / 60 * 10) / 10; return `${h}h` }
