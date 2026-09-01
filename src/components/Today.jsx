@@ -1973,7 +1973,7 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
           effects={wlEffects} persistEffects={persistWlEffects}
           episodes={wlEpisodes} persistEpisodes={persistWlEpisodes}
           game={wlGame} persistGame={persistWlGame}
-          emotions={wlEmotions} persistEmotions={persistWlEmotions} quotesOn={quotesOn} />
+          emotions={wlEmotions} persistEmotions={persistWlEmotions} quotesOn={quotesOn} log={wlLog} />
       )}
       {/* Structured-style header: big date + week strip + progress bar */}
       <WeekStrip

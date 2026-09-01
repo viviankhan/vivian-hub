@@ -421,6 +421,20 @@ function compareOn(records, hasEffect, metric, minSamples = 3) {
 // shifts on the days it's active, plus a couple of whole-history correlations.
 // Every insight carries a plain-language sentence and a signed strength so the
 // UI can sort and tint them. Only reasonably-supported findings are returned.
+// Every data point that co-occurred with a time span — the raw material for
+// correlations. Given a window (a condition episode's start→end), return the
+// mood check-ins and completed tasks whose timestamps fall inside it, each
+// carrying its own metadata (mood/energy/emotions/note for moods; label/tag/
+// time for tasks) so downstream analysis can relate the condition to what was
+// felt and done while it lasted.
+export function overlapAll(startMs, endMs, { checkins = [], log = [] } = {}) {
+  const inR = (ts) => { const t = new Date(ts).getTime(); return t >= startMs && t <= endMs }
+  return {
+    moods: (checkins || []).filter(c => c.ts && inR(c.ts)),
+    tasks: (log || []).filter(x => x.ts && inR(x.ts)),
+  }
+}
+
 export function computeInsights({ records = [], effects = [] }) {
   const insights = []
   const named = new Map((effects || []).map(fx => [fx.id, fx]))

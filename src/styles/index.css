@@ -1372,7 +1372,7 @@ textarea { resize: vertical; min-height: 160px; line-height: 1.6; }
 .rail-fx { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; box-shadow: 0 2px 7px rgba(0,0,0,.2); }
 .rail-fx.live { box-shadow: 0 0 0 3px rgba(255,255,255,.6), 0 2px 8px rgba(0,0,0,.24); }
 /* the mind blob riding the current time */
-.rail-blob { position: absolute; left: 0; z-index: 20; }
+.rail-blob { position: absolute; left: 0; z-index: 20; transform: translateY(-50%); }
 .rail-blob-btn { border: none; background: none; padding: 0; cursor: pointer; display: block; filter: drop-shadow(0 3px 8px rgba(80,110,150,.3)); }
 /* One fixed overlay carries the film + the menu, so the blob and bubbles are
    always above the film regardless of any ancestor stacking context. */
@@ -1454,3 +1454,16 @@ textarea { resize: vertical; min-height: 160px; line-height: 1.6; }
 .rail-fxpick { position: relative; }
 .rail-fxpick-check { position: absolute; top: -7px; right: -7px; width: 18px; height: 18px; border-radius: 50%;
   display: grid; place-items: center; font-size: 11px; font-weight: 800; box-shadow: 0 1px 4px rgba(0,0,0,.22); }
+
+/* Condition detail — co-occurring context + retroactive end-time edit */
+.rail-detail-ctx { margin: 10px 0 4px; padding: 10px 12px; border-radius: 12px; background: var(--cream); text-align: left; }
+.rail-detail-ctx-h { font-size: 10.5px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); margin-bottom: 5px; }
+.rail-detail-ctx-row { font-size: 12.5px; line-height: 1.5; color: var(--text); }
+.rail-detail-foot { display: flex; align-items: center; gap: 10px; margin-top: 12px; }
+.rail-detail-close { flex: 1; margin-top: 0; }
+.rail-detail-edit { flex-shrink: 0; border: 1px solid var(--border); background: #fff; color: var(--muted); font-weight: 700; font-size: 12.5px; border-radius: 12px; padding: 11px 16px; cursor: pointer; font-family: inherit; }
+.rail-edit { margin-top: 10px; text-align: left; }
+.rail-edit-label { display: block; font-size: 11px; font-weight: 700; color: var(--forest); margin-bottom: 6px; }
+.rail-edit-row { display: flex; gap: 8px; }
+.rail-edit-input { flex: 1; border: 1.5px solid var(--teal); border-radius: 12px; padding: 8px 12px; font-size: 14px; font-family: inherit; background: #fff; color: var(--text); }
+.rail-edit-save { border: none; border-radius: 12px; padding: 8px 18px; font-size: 13px; font-weight: 700; cursor: pointer; font-family: inherit; background: var(--teal); color: var(--on-accent, #fff); }

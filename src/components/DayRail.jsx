@@ -19,7 +19,7 @@ import { GuideBlob, MoodCloud } from '../lib/critters.jsx'
 import {
   dayKey, MOODS, moodMeta, COMPLEX_EMOTIONS, checkinsForDay,
   DEFAULT_EFFECTS, POSITIVE_EFFECTS, isActive, activeEpisode, startEpisode, endEpisode, setEpisodeNote,
-  episodeMinutes, fmtDuration, applyCheckIn, awardPetals,
+  episodeMinutes, fmtDuration, applyCheckIn, awardPetals, overlapAll,
 } from '../lib/wellness.js'
 import { pickQuote } from '../lib/quotes.js'
 
@@ -52,7 +52,7 @@ function affirm(activeEffects) {
 export default function DayRail({
   checkins = [], persistCheckins, effects, persistEffects,
   episodes = [], persistEpisodes, game, persistGame,
-  emotions, persistEmotions, quotesOn = false,
+  emotions, persistEmotions, quotesOn = false, log = [],
 }) {
   const today = dayKey()
   const emotionList = (emotions && emotions.length) ? emotions : COMPLEX_EMOTIONS
@@ -152,6 +152,10 @@ export default function DayRail({
     }
     persistEpisodes(endEpisode(episodes, effectId))
   }
+  // Retroactively adjust an episode's end time (for a forgotten log).
+  const editEnd = (epId, endISO) => {
+    persistEpisodes((episodes || []).map(e => e.id === epId ? { ...e, end: endISO } : e))
+  }
 
   const activeFxFull = effectList.filter(f => isActive(episodes, f.id))
   const activeEffects = activeFxFull.map(f => ({ id: f.id, name: f.name, good: POSITIVE_EFFECTS.has(f.id) }))
@@ -203,7 +207,7 @@ export default function DayRail({
         return (
           <button key={m.key} className={`rail-mark rail-fx ${e.end ? '' : 'live'}`} style={{ top: `${m.frac * 100}%`, transform: `translate(${dx}px,-50%) scale(${scale})`, background: e.fx.color, color: iconColorOn(e.fx.color) }}
             title={`${e.fx.name}${e.note ? ' · ' + e.note : ''} · ${clockTime(e.start)}${e.end ? '' : ' · tap to end'}`}
-            onClick={() => e.end ? setMoodDetail({ fx: e.fx, note: e.note, ts: e.start, isFx: true }) : endStatus(e.effectId)}>
+            onClick={() => e.end ? setMoodDetail({ isFx: true, ep: e }) : endStatus(e.effectId)}>
             <Glyph id={e.fx.icon} size={15} />
           </button>
         )
@@ -258,7 +262,7 @@ export default function DayRail({
             <StatusSheet effects={effectList} episodes={episodes} byId={byId}
               onAdd={addStatus} onEnd={(id) => endStatus(id, false)} onClose={closeAll} />
           )}
-          {moodDetail && <DetailPopover item={moodDetail} onClose={closeAll} emoName={emoName} />}
+          {moodDetail && <DetailPopover item={moodDetail} onClose={closeAll} emoName={emoName} checkins={checkins} log={log} onEditEnd={editEnd} />}
         </div>
       )}
     </>
@@ -380,17 +384,56 @@ function StatusSheet({ effects, episodes, byId, onAdd, onEnd, onClose }) {
 }
 
 // ── Detail popover — tap a marker to read it back ───────────────
-function DetailPopover({ item, onClose, emoName = (id) => id }) {
+const hhmm = (d) => `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+function DetailPopover({ item, onClose, emoName = (id) => id, checkins = [], log = [], onEditEnd }) {
+  const ep = item.isFx ? item.ep : null
+  const [editing, setEditing] = useState(false)
+  const [endVal, setEndVal] = useState(() => hhmm(new Date(ep?.end || Date.now())))
+
   if (item.isFx) {
+    const startMs = new Date(ep.start).getTime()
+    const endMs = ep.end ? new Date(ep.end).getTime() : Date.now()
+    const mins = Math.max(0, Math.round((endMs - startMs) / 60000))
+    // Everything that co-occurred while this condition was active — the raw
+    // material for correlations (moods felt, tasks done) during its span.
+    const { moods: moodsIn, tasks: tasksIn } = overlapAll(startMs, endMs, { checkins, log })
+    const avgMood = moodsIn.length ? Math.round(moodsIn.reduce((s, c) => s + (c.mood || 3), 0) / moodsIn.length * 10) / 10 : null
+    const emosIn = [...new Set(moodsIn.flatMap(c => c.emotions || []))].map(emoName).filter(Boolean).slice(0, 4)
+    const saveEnd = () => {
+      const [hh, mm] = endVal.split(':').map(Number)
+      const base = new Date(ep.end || Date.now()); base.setHours(hh, mm, 0, 0)
+      let ms = base.getTime(); if (ms < startMs) ms = startMs
+      onEditEnd?.(ep.id, new Date(ms).toISOString()); setEditing(false)
+    }
     return (
       <div className="rail-detail" onClick={(e) => e.stopPropagation()}>
-        <div className="rail-detail-head"><span className="rail-detail-ico" style={{ background: item.fx.color, color: iconColorOn(item.fx.color) }}><Glyph id={item.fx.icon} size={16} /></span><b>{item.fx.name}</b></div>
-        <div className="rail-detail-time">{clockTime(item.ts)}</div>
-        {item.note ? <p className="rail-detail-note">{item.note}</p> : <p className="rail-detail-note muted">No description.</p>}
-        <button className="rail-log" onClick={onClose}>Close</button>
+        <div className="rail-detail-head"><span className="rail-detail-ico" style={{ background: ep.fx.color, color: iconColorOn(ep.fx.color) }}><Glyph id={ep.fx.icon} size={16} /></span><b>{ep.fx.name}</b></div>
+        <div className="rail-detail-time">{clockTime(ep.start)} – {ep.end ? clockTime(ep.end) : 'now'} · {fmtDuration(mins)}</div>
+        {ep.note ? <p className="rail-detail-note">{ep.note}</p> : <p className="rail-detail-note muted">No description.</p>}
+        {(moodsIn.length > 0 || tasksIn.length > 0) && (
+          <div className="rail-detail-ctx">
+            <div className="rail-detail-ctx-h">While this was active</div>
+            {moodsIn.length > 0 && <div className="rail-detail-ctx-row"><b>{moodsIn.length}</b> check-in{moodsIn.length > 1 ? 's' : ''} · avg mood {avgMood}{emosIn.length ? ' · ' + emosIn.join(', ') : ''}</div>}
+            {tasksIn.length > 0 && <div className="rail-detail-ctx-row"><b>{tasksIn.length}</b> task{tasksIn.length > 1 ? 's' : ''}: {tasksIn.slice(0, 4).map(t => t.label).join(', ')}{tasksIn.length > 4 ? '…' : ''}</div>}
+          </div>
+        )}
+        {ep.end && editing && (
+          <div className="rail-edit">
+            <label className="rail-edit-label">Change end time</label>
+            <div className="rail-edit-row">
+              <input type="time" className="rail-edit-input" value={endVal} onChange={e => setEndVal(e.target.value)} />
+              <button className="rail-edit-save" onClick={saveEnd}>Save</button>
+            </div>
+          </div>
+        )}
+        <div className="rail-detail-foot">
+          <button className="rail-log rail-detail-close" onClick={onClose}>Close</button>
+          {ep.end && !editing && <button className="rail-detail-edit" onClick={() => setEditing(true)}>Edit?</button>}
+        </div>
       </div>
     )
   }
+
   const c = item
   const emos = (c.emotions || []).map(id => emoName(id)).filter(Boolean)
   return (
