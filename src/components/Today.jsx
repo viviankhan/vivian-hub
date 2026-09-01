@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo, useLayoutEffect } from 'react'
-import { recurringOccurrencesForDate, taskSegments, occKey } from '../lib/occurrences.js'
+import { recurringOccurrencesForDate, taskSegments, occKey, recurringActiveOn } from '../lib/occurrences.js'
 import { findSlots } from '../lib/scheduler.js'
 import { getRoutines } from '../lib/storage.js'
 import { normalizeRoutineItems, sortByTime, to12 } from './Routines.jsx'
@@ -2309,6 +2309,13 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
           // ORIGINAL date and add a one-off commitment carrying the edits, on
           // whatever day it now lands (occ.date). Other days stay as-is.
           skipRecurringOccurrence && skipRecurringOccurrence(editingRec.id, origDate)
+          // If it moved onto a day the series already lands on, skip that day's
+          // instance too, so the moved copy doesn't sit next to a duplicate.
+          if (occ.date !== origDate && skipRecurringOccurrence &&
+              recurringActiveOn(editingRec, occ.date) &&
+              !(recurringExceptions || {})[occKey(editingRec.id, occ.date)]) {
+            skipRecurringOccurrence(editingRec.id, occ.date)
+          }
           if (addCommitment) addCommitment(occ)
           setItemReminders(occ.id, reminderMins)
           setEditingRec(null); setEditingRecDate(null)
