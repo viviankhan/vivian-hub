@@ -69,7 +69,7 @@ export default function Insights() {
     setOpenId(null)
   }
 
-  if (loading) return <div><div className="page-title">Insights</div><div style={{ padding: 20, color: 'var(--muted)' }}>Loading your records…</div></div>
+  if (loading) return <div><div className="page-title">Records</div><div style={{ padding: 20, color: 'var(--muted)' }}>Loading your records…</div></div>
 
   // ── A folder is open ──────────────────────────────────────────
   if (openId) {
@@ -79,7 +79,7 @@ export default function Insights() {
     const fEntries = entries.filter(e => e.folderId === openId)
     return (
       <div>
-        <div className="page-title">Insights</div>
+        <div className="page-title">Records</div>
         <TrackerFolder
           folder={folder} people={fPeople} entries={fEntries}
           preset={preset} setPreset={setPreset} custom={custom} setCustom={setCustom} range={range} rangeText={rangeText} prevWindow={prevWindow}
@@ -128,7 +128,7 @@ export default function Insights() {
 
   return (
     <div>
-      <div className="page-title">Insights</div>
+      <div className="page-title">Records</div>
       <div className="page-sub">Trackers for anything worth recording — a B&amp;B, a rental, freelance. Each keeps categories of income and expenses, your time, contractors and bills, and shows profit, taxes and what’s really yours over any period. Export a tidy record (PDF or editable CSV) anytime.</div>
 
       <RangeBar preset={preset} setPreset={setPreset} custom={custom} setCustom={setCustom}

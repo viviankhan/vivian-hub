@@ -193,7 +193,7 @@ const NoteIcon2 = () => (<svg viewBox="0 0 24 24" width="18" height="18" fill="n
 const TrashIcon2 = () => (<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4.5 7h15M9 7V5.2A1.2 1.2 0 0 1 10.2 4h3.6A1.2 1.2 0 0 1 15 5.2V7M6.5 7l1 12.5h9L17.5 7"/></svg>)
 const TargetIcon = () => (<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4.5"/><circle cx="12" cy="12" r="1" fill="currentColor" stroke="none"/></svg>)
 
-export default function AddItemModal({ existing = null, existingRecurring = null, occurrenceDate = null, onSaveOccurrence = null, onDeleteOccurrence = null, onDeleteFuture = null, presetDate = null, presetText = '', presetTime = '', presetDur = null, presetCat = '', presetCats = null, presetDescription = '', presetSubtasks = null, presetReminders = null, lockDate = false, defaultRepeat = false, categories = [], routines = [], templates = [], labelModel = null, onSave, onSaveRecurring = null, onDelete = null, onDuplicate = null, onMoveToThoughts = null, onClose, title = 'Add to calendar' }) {
+export default function AddItemModal({ existing = null, existingRecurring = null, occurrenceDate = null, onSaveOccurrence = null, onSaveFuture = null, onDeleteOccurrence = null, onDeleteFuture = null, presetDate = null, presetText = '', presetTime = '', presetDur = null, presetCat = '', presetCats = null, presetDescription = '', presetSubtasks = null, presetReminders = null, lockDate = false, defaultRepeat = false, categories = [], routines = [], templates = [], labelModel = null, onSave, onSaveRecurring = null, onDelete = null, onDuplicate = null, onMoveToThoughts = null, onClose, title = 'Add to calendar' }) {
   const cats = (categories && categories.length) ? categories : DEFAULT_CATEGORIES
   const isEdit = !!existing
   // Editing an existing recurring task: it comes in the Recurring-tab row shape
@@ -206,11 +206,18 @@ export default function AddItemModal({ existing = null, existingRecurring = null
   // handler for detaching it. Default to this-event so a one-off tweak never
   // silently rewrites every day.
   const canEditOccurrence = isRecEdit && !!occurrenceDate && !!onSaveOccurrence
+  // Splitting the series at this occurrence — apply the edits to this day and
+  // every future one, leaving past occurrences on the old definition.
+  const canEditFuture = isRecEdit && !!occurrenceDate && !!onSaveFuture
   const canScopedDelete = isRecEdit && !!occurrenceDate && (!!onDeleteOccurrence || !!onDeleteFuture)
   const [scopePrompt, setScopePrompt] = useState(false)   // save-time "this event / all events" chooser
   const recSplit = rec ? splitTimePrefix(rec.label ?? rec.text ?? '') : { time:null, title:'' }
   const [label, setLabel]         = useState(existing?.text ?? (rec ? recSplit.title : presetText) ?? '')
-  const [date, setDate]           = useState(existing?.date ?? rec?.startDate ?? presetDate ?? '')
+  // For a recurring-occurrence edit (opened from Today/Calendar) the date shows
+  // the day you tapped — the occurrence — not the template's start date, so the
+  // picker doesn't mysteriously jump back to when the series began. When editing
+  // the template itself (Recurring tab, no occurrenceDate) it's the start date.
+  const [date, setDate]           = useState(existing?.date ?? (occurrenceDate || rec?.startDate) ?? presetDate ?? '')
   const [time, setTime]           = useState(existing?.time ?? (rec ? (recSplit.time || '') : (presetTime || '')) ?? '')  // start
   const [endTime, setEndTime]     = useState(() => {
     if (existing?.time && existing?.durationMins) return addMinutes(existing.time, existing.durationMins)
@@ -554,6 +561,34 @@ export default function AddItemModal({ existing = null, existingRecurring = null
   }
   const chooseDefault = () => { setUseDefault(true); setReminders([]) }
 
+  // Build a recurring template row (the Recurring-tab shape) from the current
+  // editor state, for a given id + start date. Shared by "all events" and the
+  // "this & future" split so the two paths can never drift apart.
+  const buildRecurringTask = (id, startDate) => {
+    const primaryCatId = effectiveCats[0] || null
+    return {
+      id,
+      type: 'today',
+      freq: repeatFreq,
+      interval: Math.max(1, repeatInterval),
+      days: repeatFreq === 'weekly' ? WEEKDAY_ORDER.filter(d => repeatDays.includes(d)) : [],
+      monthDay: repeatFreq === 'monthly' ? parseInt(startDate.slice(8, 10), 10) : null,
+      cat: primaryCatId,
+      tag: primaryCatId,
+      label: time ? `${fmt12(time)} — ${label.trim()}` : label.trim(),
+      note: description.trim() || '',
+      durationMins: durationMins || null,
+      routine: routine || null,
+      icon: effectiveIcon || null,
+      color: color || null,
+      block: block || false,
+      location: buildLocation(),
+      startDate,
+      endDate: repeatEnd || null,
+      autoComplete,
+    }
+  }
+
   const submit = (scope) => {
     if (!canSave) return
     // Remember a tagged place so it's a one-tap suggestion next time.
@@ -563,10 +598,15 @@ export default function AddItemModal({ existing = null, existingRecurring = null
     // other days of the series are untouched.
     if (canEditOccurrence && scope === 'occurrence') {
       const primaryCatId = effectiveCats[0] || null
+      // The detached one-off lands on whatever day the date picker now shows —
+      // so moving a single occurrence to a different day actually moves it there,
+      // while the series is skipped on its original day (the parent handles that
+      // with the occurrenceDate we pass alongside).
+      const targetDate = date || occurrenceDate
       const occ = {
         id: 'occ-' + rec.id + '-' + occurrenceDate,
         text: label.trim(),
-        date: occurrenceDate,
+        date: targetDate,
         time: time || null,
         durationMins: durationMins || null,
         cat: primaryCatId,
@@ -585,35 +625,33 @@ export default function AddItemModal({ existing = null, existingRecurring = null
       onClose()
       return
     }
+    // Applying to this occurrence and every future one → split the series: cap
+    // the old template the day before this occurrence and start a fresh one, with
+    // the edits, from here on. Past occurrences keep the old definition. The
+    // parent does the capping (it has the original row); we hand it the new
+    // series plus the pivot date.
+    if (canEditFuture && scope === 'future') {
+      const startDate = date || occurrenceDate || localTodayStr()
+      const newSeries = { ...buildRecurringTask('r-' + Date.now(), startDate) }
+      onSaveFuture(occurrenceDate, newSeries, useDefault ? null : reminders)
+      onClose()
+      return
+    }
     // Repeating → create a recurring template (Recurring tab format) rather than
     // a single commitment. It carries its time in the label prefix ('today'
     // type) so it lands on the timeline; category, note, start/end date and the
     // repeat rule (freq/interval/day-of-month) come along too. Duration and
     // subtasks aren't part of the recurring schema.
     if (repeatOn && onSaveRecurring) {
-      const primaryCatId = effectiveCats[0] || null
-      const startDate = date || localTodayStr()
-      const recurringTask = {
-        id: isRecEdit ? rec.id : ('r-' + Date.now()),
-        type: 'today',
-        freq: repeatFreq,
-        interval: Math.max(1, repeatInterval),
-        days: repeatFreq === 'weekly' ? WEEKDAY_ORDER.filter(d => repeatDays.includes(d)) : [],
-        monthDay: repeatFreq === 'monthly' ? parseInt(startDate.slice(8, 10), 10) : null,
-        cat: primaryCatId,
-        tag: primaryCatId,
-        label: time ? `${fmt12(time)} — ${label.trim()}` : label.trim(),
-        note: description.trim() || '',
-        durationMins: durationMins || null,
-        routine: routine || null,
-        icon: effectiveIcon || null,
-        color: color || null,
-        block: block || false,
-        location: buildLocation(),
-        startDate,
-        endDate: repeatEnd || null,
-        autoComplete,
-      }
+      // "Apply to all events" on an existing series keeps the template's original
+      // start date — the date field now shows the occurrence you opened, so we
+      // must not let that quietly truncate when the series began. A brand-new
+      // series (or a Recurring-tab edit, where the date field IS the start) uses
+      // the field.
+      const startDate = (isRecEdit && occurrenceDate)
+        ? (rec.startDate || date || localTodayStr())
+        : (date || localTodayStr())
+      const recurringTask = buildRecurringTask(isRecEdit ? rec.id : ('r-' + Date.now()), startDate)
       onSaveRecurring(recurringTask)
       // Converting an existing one-off into a series → remove the original
       // single task so it isn't duplicated alongside the new recurring one.
@@ -1392,10 +1430,14 @@ export default function AddItemModal({ existing = null, existingRecurring = null
           <div onClick={e => e.stopPropagation()}
             style={{ background:'white', borderRadius:18, padding:20, maxWidth:330, width:'100%', boxShadow:'0 24px 64px rgba(0,0,0,.3)' }}>
             <div className="serif" style={{ fontSize:17, fontWeight:600, color:'var(--text)', marginBottom:6 }}>Save changes to…</div>
-            <div style={{ fontSize:13, color:'var(--muted)', marginBottom:16, lineHeight:1.5 }}>This is a repeating event. Update only this one, or every occurrence?</div>
+            <div style={{ fontSize:13, color:'var(--muted)', marginBottom:16, lineHeight:1.5 }}>This is a repeating event. Update just this one, this one and everything after it, or every occurrence?</div>
             <div style={{ display:'flex', flexDirection:'column', gap:9 }}>
               <button type="button" onClick={() => { setScopePrompt(false); submit('occurrence') }}
                 style={{ padding:'12px', borderRadius:12, border:'none', background: headerColor, color:'white', cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:700, fontSize:14 }}>Just this event</button>
+              {canEditFuture && (
+                <button type="button" onClick={() => { setScopePrompt(false); submit('future') }}
+                  style={{ padding:'12px', borderRadius:12, border:'1px solid var(--border)', background:'white', color:'var(--text)', cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:700, fontSize:14 }}>This &amp; all future events</button>
+              )}
               <button type="button" onClick={() => { setScopePrompt(false); submit('series') }}
                 style={{ padding:'12px', borderRadius:12, border:'1px solid var(--border)', background:'white', color:'var(--text)', cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:700, fontSize:14 }}>Apply to all events</button>
               <button type="button" onClick={() => setScopePrompt(false)}

@@ -1,0 +1,302 @@
+// src/lib/space.js
+// ─────────────────────────────────────────────────────────────
+// The Rocket — a Raz-Rocket-style build-your-own-ship reward. Tending to
+// yourself earns STARS (a spendable currency that rides alongside the
+// companion's petals); you spend them in the parts shop to buy nose cones,
+// hulls, fins, windows, boosters and a little pilot, and snap them onto your
+// rocket. Pure data + logic; the shop UI is in Voyage.jsx and the modular
+// rocket art in spaceart.jsx.
+// ─────────────────────────────────────────────────────────────
+
+// The part categories, in the order the shop lists them.
+export const PART_CATS = [
+  { key: 'nose',   name: 'Nose cone' },
+  { key: 'body',   name: 'Hull' },
+  { key: 'wings',  name: 'Fins' },
+  { key: 'window', name: 'Window' },
+  { key: 'flame',  name: 'Booster' },
+  { key: 'pilot',  name: 'Pilot' },
+]
+
+// Every buyable part. The first in each category is the free default. Visual
+// fields (shape / color / style / colors / form) are read by the art.
+export const PARTS = {
+  nose: [
+    { id: 'nose-red',  name: 'Classic', cost: 0,  shape: 'cone',  color: '#E9857A' },
+    { id: 'nose-blue', name: 'Azure',   cost: 20, shape: 'cone',  color: '#6E97D8' },
+    { id: 'nose-dome', name: 'Bubble',  cost: 35, shape: 'dome',  color: '#E9A9C6' },
+    { id: 'nose-gold', name: 'Comet',   cost: 55, shape: 'spike', color: '#EBC96B' },
+  ],
+  body: [
+    { id: 'body-white',  name: 'Cloud',  cost: 0,  color: '#E7ECF3' },
+    { id: 'body-mint',   name: 'Mint',   cost: 25, color: '#9FD9BE' },
+    { id: 'body-coral',  name: 'Coral',  cost: 25, color: '#F0A79A' },
+    { id: 'body-stripe', name: 'Racer',  cost: 60, color: '#E7ECF3', stripe: '#6E97D8' },
+  ],
+  wings: [
+    { id: 'wings-classic', name: 'Classic', cost: 0,  style: 'classic', color: '#C6CEDA' },
+    { id: 'wings-swept',   name: 'Swept',   cost: 30, style: 'swept',   color: '#8FB0D8' },
+    { id: 'wings-round',   name: 'Rounded', cost: 30, style: 'round',   color: '#E9A9C6' },
+  ],
+  window: [
+    { id: 'win-porthole', name: 'Porthole', cost: 0,  style: 'round' },
+    { id: 'win-visor',    name: 'Visor',    cost: 25, style: 'visor' },
+    { id: 'win-double',   name: 'Double',   cost: 40, style: 'double' },
+  ],
+  flame: [
+    { id: 'flame-orange',  name: 'Orange',  cost: 0,  colors: ['#F5A64B', '#F6D96B'] },
+    { id: 'flame-blue',    name: 'Blue',    cost: 20, colors: ['#5FA8E8', '#BFE6F2'] },
+    { id: 'flame-mint',    name: 'Mint',    cost: 20, colors: ['#5FC9A0', '#C7F0DE'] },
+    { id: 'flame-rainbow', name: 'Rainbow', cost: 75, colors: ['rainbow'] },
+  ],
+  pilot: [
+    { id: 'pilot-none',   name: 'Empty',   cost: 0,  form: 'none' },
+    { id: 'pilot-sprout', name: 'Sprout',  cost: 30, form: 'sprout' },
+    { id: 'pilot-alien',  name: 'Zib',     cost: 45, form: 'alien' },
+    { id: 'pilot-star',   name: 'Twinkle', cost: 50, form: 'star' },
+  ],
+}
+
+// A fresh ship wears every category's default and owns exactly those.
+export function freshShip() {
+  const equipped = { nose: 'nose-red', body: 'body-white', wings: 'wings-classic', window: 'win-porthole', flame: 'flame-orange', pilot: 'pilot-none' }
+  return { equipped, owned: Object.values(equipped) }
+}
+export function freshSpace() {
+  return { ship: freshShip(), unlocked: [], current: 'verda', discovered: [], cabin: null }
+}
+
+// ── Planets & specimens ────────────────────────────────────────
+// You spend stars to TRAVEL to a planet (unlock it); only then can you SEARCH it
+// to discover its specimens. A specimen stays completely hidden — you can't see
+// the plant or animal at all — until it's discovered.
+export const SEARCH_COST = 15
+
+export const PLANETS = [
+  {
+    id: 'verda', name: 'Verda', color: '#77C598', ring: false, unlock: 0,
+    blurb: 'A mossy green world where everything grows.',
+    specimens: [
+      { id: 'sprigling', name: 'Sprigling', kind: 'flora', color: '#8FD08A', form: 'sprout' },
+      { id: 'bulbo',     name: 'Bulbo',     kind: 'fauna', color: '#B7E29C', form: 'cyclops' },
+      { id: 'fernly',    name: 'Fernly',    kind: 'flora', color: '#6FB98A', form: 'frond' },
+      { id: 'hoppa',     name: 'Hoppa',     kind: 'fauna', color: '#A6D97E', form: 'critter' },
+    ],
+  },
+  {
+    id: 'cobalt', name: 'Cobalt', color: '#6E97D8', ring: false, unlock: 80,
+    blurb: 'An ocean planet drifting under two pale moons.',
+    specimens: [
+      { id: 'finn',    name: 'Finn',    kind: 'fauna', color: '#7FB0E6', form: 'floaty' },
+      { id: 'coralux', name: 'Coralux', kind: 'flora', color: '#9AC4EE', form: 'frond' },
+      { id: 'jelli',   name: 'Jelli',   kind: 'fauna', color: '#B8C8F0', form: 'slime' },
+      { id: 'reedy',   name: 'Reedy',   kind: 'flora', color: '#6FA0D0', form: 'sprout' },
+    ],
+  },
+  {
+    id: 'ember', name: 'Ember', color: '#E39B6B', ring: true, unlock: 200,
+    blurb: 'Warm dunes where the flowers glow at dusk.',
+    specimens: [
+      { id: 'cinder',  name: 'Cinder',  kind: 'fauna', color: '#EBA878', form: 'bear' },
+      { id: 'flarea',  name: 'Flarea',  kind: 'flora', color: '#F0C08A', form: 'bloom' },
+      { id: 'molto',   name: 'Molto',   kind: 'fauna', color: '#E8895E', form: 'slime' },
+      { id: 'sunspur', name: 'Sunspur', kind: 'flora', color: '#F2B56A', form: 'cactus' },
+    ],
+  },
+  {
+    id: 'viola', name: 'Viola', color: '#A98BD6', ring: true, unlock: 400,
+    blurb: 'A twilight world of humming crystal groves.',
+    specimens: [
+      { id: 'prism',  name: 'Prism',  kind: 'flora', color: '#C3ABE8', form: 'shroom' },
+      { id: 'noctis', name: 'Noctis', kind: 'fauna', color: '#9E86C8', form: 'bear' },
+      { id: 'lumen',  name: 'Lumen',  kind: 'fauna', color: '#B7A0E0', form: 'floaty' },
+      { id: 'violet', name: 'Violet', kind: 'flora', color: '#8E74C0', form: 'bloom' },
+    ],
+  },
+  {
+    id: 'aurora', name: 'Aurora', color: '#79C9C0', ring: true, unlock: 700,
+    blurb: 'Where the skies never stop shimmering.',
+    specimens: [
+      { id: 'glimmer', name: 'Glimmer', kind: 'fauna', color: '#8FD6CE', form: 'floaty' },
+      { id: 'wispen',  name: 'Wispen',  kind: 'flora', color: '#A6E0D6', form: 'frond' },
+      { id: 'polara',  name: 'Polara',  kind: 'fauna', color: '#6FBDB4', form: 'critter' },
+      { id: 'dawnlet', name: 'Dawnlet', kind: 'flora', color: '#B8E4C6', form: 'bloom' },
+    ],
+  },
+]
+
+export function planetById(id) { return PLANETS.find(p => p.id === id) || null }
+export function isUnlocked(space, id) { return id === 'verda' || (space?.unlocked || []).includes(id) }
+export function discoveredSet(space) {
+  return new Set((space?.discovered || []).map(d => `${d.planetId}:${d.specimenId}`))
+}
+// A planet's discovery state. `missing` is only a COUNT here — callers must not
+// reveal which specimens are missing (they stay hidden until found).
+export function planetDiscovery(space, planetId) {
+  const p = planetById(planetId)
+  if (!p) return { found: [], remaining: 0, total: 0 }
+  const set = discoveredSet(space)
+  const found = p.specimens.filter(s => set.has(`${planetId}:${s.id}`))
+  return { found, remaining: p.specimens.length - found.length, total: p.specimens.length }
+}
+export function collectionCounts(space) {
+  const total = PLANETS.reduce((n, p) => n + p.specimens.length, 0)
+  return { collected: (space?.discovered || []).length, total }
+}
+// Pick a random not-yet-discovered specimen on a planet (or null if all found).
+export function pickUndiscovered(space, planetId, rnd = Math.random) {
+  const p = planetById(planetId)
+  if (!p) return null
+  const set = discoveredSet(space)
+  const missing = p.specimens.filter(s => !set.has(`${planetId}:${s.id}`))
+  if (!missing.length) return null
+  return missing[Math.floor(rnd() * missing.length)]
+}
+// Every specimen the traveller has discovered, resolved to full objects — the
+// contents of the greenhouse.
+export function allDiscovered(space) {
+  const out = []
+  for (const d of (space?.discovered || [])) {
+    const p = planetById(d.planetId)
+    const s = p?.specimens.find(x => x.id === d.specimenId)
+    if (s) out.push({ ...s, planetId: d.planetId, planetName: p.name, ts: d.ts })
+  }
+  return out
+}
+
+// Chance an expedition actually turns something up (otherwise it comes back with
+// only a scouting consolation). Discovery on this planet is still bounded by
+// what's left to find.
+export const FIND_CHANCE = 0.72
+
+// ── Explorer's cabin — Finch-style furniture + colours ─────────
+// You buy furniture with stars, then place / remove pieces freely (a placed
+// piece shows a checkmark in the shop grid). Structural slots (bed / rug /
+// window / door) hold one piece at a time; everything else places on its own
+// spot. Wall & floor are separate colour swatches.
+export const CABIN_COLORS = {
+  wall: [
+    { id: 'wall-mint',  name: 'Mint',  cost: 0,  color: '#CFE6D6' },
+    { id: 'wall-sage',  name: 'Sage',  cost: 20, color: '#BFD8B0' },
+    { id: 'wall-sky',   name: 'Sky',   cost: 20, color: '#CBDDF2' },
+    { id: 'wall-blush', name: 'Blush', cost: 20, color: '#F0D6DD' },
+    { id: 'wall-lilac', name: 'Lilac', cost: 30, color: '#DCD1EE' },
+    { id: 'wall-clay',  name: 'Clay',  cost: 30, color: '#E8CBB2' },
+  ],
+  floor: [
+    { id: 'floor-oak',  name: 'Oak',   cost: 0,  color: '#D8C6A6' },
+    { id: 'floor-ash',  name: 'Ash',   cost: 20, color: '#C4CAD2' },
+    { id: 'floor-rose', name: 'Rose',  cost: 20, color: '#E3C6C2' },
+    { id: 'floor-moss', name: 'Moss',  cost: 30, color: '#B6CBA6' },
+  ],
+}
+export function cabinColor(kind, id) { const l = CABIN_COLORS[kind] || []; return l.find(c => c.id === id) || l[0] }
+
+// Each piece: id, name, group (shop filter), slot (single-slot if in FURN_SINGLE),
+// cost, art (drawing key), optional color/motif, and a room `style` (position).
+export const FURNITURE = [
+  { id: 'bed-cozy',  name: 'Cozy bed',   group: 'Beds',    slot: 'bed',   cost: 0,  art: 'bed', color: '#C98A6A', quilt: '#8FB27A', style: { left: '15%', bottom: '18px', z: 3 } },
+  { id: 'bed-cloud', name: 'Cloud bed',  group: 'Beds',    slot: 'bed',   cost: 80, art: 'bed', color: '#B7C7DE', quilt: '#DCEBF6', style: { left: '15%', bottom: '18px', z: 3 } },
+  { id: 'bed-nest',  name: 'Mossy nest', group: 'Beds',    slot: 'bed',   cost: 70, art: 'bed', color: '#9A8567', quilt: '#A9C99A', style: { left: '15%', bottom: '18px', z: 3 } },
+  { id: 'rug-round', name: 'Round rug',  group: 'Rugs',    slot: 'rug',   cost: 25, art: 'rug', color: '#8FB0D8', style: { left: '50%', bottom: '10px', z: 1 } },
+  { id: 'rug-star',  name: 'Star rug',   group: 'Rugs',    slot: 'rug',   cost: 40, art: 'rug', color: '#4C6B3F', motif: 'star', style: { left: '50%', bottom: '10px', z: 1 } },
+  { id: 'rug-moon',  name: 'Moon rug',   group: 'Rugs',    slot: 'rug',   cost: 40, art: 'rug', color: '#B7A0E0', motif: 'moon', style: { left: '50%', bottom: '10px', z: 1 } },
+  { id: 'window-arch', name: 'Arched window', group: 'Windows', slot: 'window', cost: 45, art: 'window', style: { left: '40%', bottom: '150px', z: 1 } },
+  { id: 'door-arch',   name: 'Greenhouse door', group: 'Windows', slot: 'door', cost: 55, art: 'door', style: { left: '80%', bottom: '30px', z: 1 } },
+  { id: 'hanglamp',   name: 'Hanging lamp', group: 'Lighting', slot: 'hang',   cost: 35, art: 'hanglamp', style: { left: '50%', top: '0px', z: 2 } },
+  { id: 'sidelamp',   name: 'Lamp table',   group: 'Lighting', slot: 'side',   cost: 40, art: 'sidelamp', style: { left: '61%', bottom: '20px', z: 3 } },
+  { id: 'nightstand', name: 'Nightstand',   group: 'Tables',   slot: 'stand',  cost: 35, art: 'nightstand', style: { left: '33%', bottom: '22px', z: 3 } },
+  { id: 'vase',       name: 'Blossom vase', group: 'Plants',   slot: 'vase',   cost: 30, art: 'vase', style: { left: '90%', bottom: '20px', z: 3 } },
+  { id: 'wall-fan',   name: 'Paper fan',    group: 'Wall',     slot: 'fan',    cost: 20, art: 'fan',   style: { left: '9%',  bottom: '196px', z: 1 } },
+  { id: 'wall-clock', name: 'Wall clock',   group: 'Wall',     slot: 'clock',  cost: 30, art: 'clock', style: { left: '73%', bottom: '206px', z: 1 } },
+  { id: 'wall-art',   name: 'Blossom art',  group: 'Wall',     slot: 'art',    cost: 25, art: 'art',   style: { left: '20%', bottom: '176px', z: 1 } },
+]
+export const FURN_SINGLE = new Set(['bed', 'rug', 'window', 'door'])
+export const FURN_GROUPS = ['All', 'Beds', 'Rugs', 'Windows', 'Lighting', 'Tables', 'Plants', 'Wall']
+export function furnitureById(id) { return FURNITURE.find(f => f.id === id) || null }
+
+export function freshCabin() {
+  return { colors: { wall: 'wall-mint', floor: 'floor-oak' }, placed: ['bed-cozy', 'rug-round'], owned: ['bed-cozy', 'rug-round', 'wall-mint', 'floor-oak'], pet: null }
+}
+export function cabOwns(cabin, id) { return (cabin?.owned || []).includes(id) }
+export function cabPlaced(cabin, id) { return (cabin?.placed || []).includes(id) }
+export function placedFurniture(cabin) {
+  return (cabin?.placed || []).map(furnitureById).filter(Boolean).sort((a, b) => (a.style.z || 0) - (b.style.z || 0))
+}
+export function withCabColor(space, kind, id) {
+  const s = { ...freshSpace(), ...(space || {}) }
+  const cabin = { ...(s.cabin || freshCabin()) }
+  cabin.colors = { ...cabin.colors, [kind]: id }
+  if (!(cabin.owned || []).includes(id)) cabin.owned = [...(cabin.owned || []), id]
+  return { ...s, cabin }
+}
+export function withCabPlace(space, item) {
+  const s = { ...freshSpace(), ...(space || {}) }
+  const cabin = { ...(s.cabin || freshCabin()) }
+  if (!(cabin.owned || []).includes(item.id)) cabin.owned = [...(cabin.owned || []), item.id]
+  let placed = cabin.placed || []
+  if (FURN_SINGLE.has(item.slot)) placed = placed.filter(id => furnitureById(id)?.slot !== item.slot)
+  cabin.placed = [...placed.filter(id => id !== item.id), item.id]
+  return { ...s, cabin }
+}
+export function withCabRemove(space, id) {
+  const s = { ...freshSpace(), ...(space || {}) }
+  const cabin = { ...(s.cabin || freshCabin()) }
+  cabin.placed = (cabin.placed || []).filter(x => x !== id)
+  return { ...s, cabin }
+}
+export function withCabPet(space, key) {
+  const s = { ...freshSpace(), ...(space || {}) }
+  return { ...s, cabin: { ...(s.cabin || freshCabin()), pet: key } }
+}
+export function cabinCompletion(cabin) {
+  const total = FURNITURE.length + CABIN_COLORS.wall.length + CABIN_COLORS.floor.length
+  return { owned: (cabin?.owned || []).length, total }
+}
+
+export function withUnlocked(space, planetId) {
+  const s = { ...freshSpace(), ...(space || {}) }
+  if ((s.unlocked || []).includes(planetId)) return s
+  return { ...s, unlocked: [...(s.unlocked || []), planetId] }
+}
+export function withCurrent(space, planetId) { return { ...freshSpace(), ...(space || {}), current: planetId } }
+export function withDiscovered(space, planetId, specimenId) {
+  const s = { ...freshSpace(), ...(space || {}) }
+  if (discoveredSet(s).has(`${planetId}:${specimenId}`)) return s
+  return { ...s, discovered: [...(s.discovered || []), { planetId, specimenId, ts: new Date().toISOString() }] }
+}
+
+export function partById(cat, id) {
+  const list = PARTS[cat] || []
+  return list.find(p => p.id === id) || list[0]
+}
+export function equippedPart(ship, cat) { return partById(cat, ship?.equipped?.[cat]) }
+export function isOwned(ship, id) { return (ship?.owned || []).includes(id) }
+
+// The rocket as a flat {cat: part} map the art consumes.
+export function equippedParts(ship) {
+  const s = ship || freshShip()
+  const out = {}
+  for (const c of PART_CATS) out[c.key] = equippedPart(s, c.key)
+  return out
+}
+
+export function withEquip(space, cat, id) {
+  const s = { ...freshSpace(), ...(space || {}) }
+  const ship = { ...(s.ship || freshShip()) }
+  ship.equipped = { ...ship.equipped, [cat]: id }
+  return { ...s, ship }
+}
+export function withOwned(space, id) {
+  const s = { ...freshSpace(), ...(space || {}) }
+  const ship = { ...(s.ship || freshShip()) }
+  if ((ship.owned || []).includes(id)) return s
+  ship.owned = [...(ship.owned || []), id]
+  return { ...s, ship }
+}
+
+// Progress toward owning the whole catalog (for the little "12/22 parts" tag).
+export function shipCompletion(ship) {
+  const total = Object.values(PARTS).reduce((n, a) => n + a.length, 0)
+  return { owned: (ship?.owned || []).length, total }
+}

@@ -111,7 +111,7 @@ function fmtDate(d) {
 // "From 07/27/2026" straight into "No end date").
 function dateRangeText(startDate, endDate) {
   if (startDate && endDate) return `${fmtDate(startDate)} – ${fmtDate(endDate)}`
-  if (startDate) return `From ${fmtDate(startDate)}`
+  if (startDate) return `Started ${fmtDate(startDate)}`
   if (endDate)   return `Until ${fmtDate(endDate)}`
   return ''
 }

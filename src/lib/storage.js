@@ -398,6 +398,36 @@ export const setTrackerEntries = v  => dbSet('tracker_entries', v)
 export const getTrackerCats = () => dbGet('tracker_cats').then(v => (v && typeof v === 'object') ? v : {})
 export const setTrackerCats = v  => dbSet('tracker_cats', v)
 
+// ── Wellness (mood check-ins, status effects, companion game) ───
+// The gamified mental-health + physical-condition tab. Four synced kv_store
+// blobs, so the whole feature needs no schema migration and rides the same
+// cross-device sync as everything else:
+//   • wellness_checkins — [{ date:'YYYY-MM-DD', mood:1..5, energy:1..5, note, ts }]
+//   • wellness_effects  — the user's DnD-style condition definitions (null → seed)
+//   • wellness_episodes — [{ id, effectId, start:ISO, end:ISO|null }] on/off spans
+//   • wellness_game     — { xp, petals, streak, best, lastCheckIn, companionName, … }
+export const getWellnessCheckins = () => dbGet('wellness_checkins').then(v => Array.isArray(v) ? v : [])
+export const setWellnessCheckins = v  => dbSet('wellness_checkins', v)
+export const getWellnessEffects  = () => dbGet('wellness_effects').then(v => Array.isArray(v) ? v : null)
+export const setWellnessEffects  = v  => dbSet('wellness_effects', v)
+export const getWellnessEpisodes = () => dbGet('wellness_episodes').then(v => Array.isArray(v) ? v : [])
+export const setWellnessEpisodes = v  => dbSet('wellness_episodes', v)
+export const getWellnessGame     = () => dbGet('wellness_game').then(v => (v && typeof v === 'object') ? v : null)
+export const setWellnessGame     = v  => dbSet('wellness_game', v)
+// "Treasures" — a keepsake photo + description the user pins to a day, shown
+// with that day's cloud. One synced kv_store blob (array); images are stored
+// downscaled as data URLs. Each: { id, date, image, desc, ts }.
+export const getWellnessTreasures = () => dbGet('wellness_treasures').then(v => Array.isArray(v) ? v : [])
+export const setWellnessTreasures = v  => dbSet('wellness_treasures', v)
+// The Voyage meta-game state (unlocked planets, collected specimens, ship). One
+// synced kv_store blob; see src/lib/space.js. `null` → seed a fresh voyage.
+export const getWellnessSpace = () => dbGet('wellness_space').then(v => (v && typeof v === 'object') ? v : null)
+export const setWellnessSpace = v  => dbSet('wellness_space', v)
+// Custom-art overrides — { assetId: dataURL } uploaded by the owner (see
+// src/lib/art.js). One synced kv_store blob.
+export const getArtOverrides = () => dbGet('art_overrides').then(v => (v && typeof v === 'object') ? v : {})
+export const setArtOverrides = v  => dbSet('art_overrides', v)
+
 // ── Classes ────────────────────────────────────────────────────
 export async function getClasses() {
   if (USE_SUPABASE) {

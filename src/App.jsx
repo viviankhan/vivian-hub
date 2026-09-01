@@ -19,6 +19,13 @@ import {
   getRecurringExceptions, setRecurringExceptions,
   getRecurringMeta, setRecurringMeta,
   getRoutineGroups, setRoutineGroups,
+  getWellnessCheckins, setWellnessCheckins,
+  getWellnessEffects, setWellnessEffects,
+  getWellnessEpisodes, setWellnessEpisodes,
+  getWellnessGame, setWellnessGame,
+  getWellnessTreasures, setWellnessTreasures,
+  getWellnessSpace, setWellnessSpace,
+  getArtOverrides, setArtOverrides,
   addCategory as dbAddCategory, updateCategory as dbUpdateCategory, deleteCategory as dbDeleteCategory,
 } from './lib/storage.js'
 import { occKey, recurringOccurrencesForDate } from './lib/occurrences.js'
@@ -36,6 +43,11 @@ import CategoriesManager from './components/CategoriesManager.jsx'
 import EventsManager from './components/EventsManager.jsx'
 import ExternalCalendars from './components/ExternalCalendars.jsx'
 import Insights from './components/Insights.jsx'
+import Informatics from './components/Informatics.jsx'
+import BloomWellness from './components/BloomWellness.jsx'
+import Voyage from './components/Voyage.jsx'
+import ArtStudio from './components/ArtStudio.jsx'
+import { loadOverrides, isAdmin } from './lib/art.js'
 import TaskMenu from './components/TaskMenu.jsx'
 import { authEnabled, getCurrentUser, signOut } from './lib/auth.js'
 import { refreshCalendar, loadCachedCalendar, clearCachedCalendar, eventsToSpans } from './lib/calendars.js'
@@ -66,6 +78,16 @@ import SeasonalEffects from './components/SeasonalEffects.jsx'
 // it's obvious on-device which version is actually running after a deploy.
 const BUILD_ID = typeof __BUILD_ID__ !== 'undefined' ? __BUILD_ID__ : 'dev'
 
+// Today's date as a YYYY-MM-DD string (local time), matching how dates are
+// stored on commitments/recurring rows everywhere else in the app.
+function todayStr() {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
+}
+// A YYYY-MM-DD date that's already gone (strictly before today). Scheduling
+// something onto such a day means it already happened, so it lands checked off.
+function isPastDate(dateStr) { return !!dateStr && dateStr < todayStr() }
+
 // Routine groups tasks can be filed under. Each carries a soft "film" tint that
 // washes behind its tasks on the timeline (pink morning, blue night by default).
 // Users can rename/add/delete these; these two are just the initial seed.
@@ -83,10 +105,13 @@ const TABS = [
   { id:'week',        label:'Week',        glyph:'calendar' },
   { id:'taskmenu',    label:'Task Menu',    glyph:'clipboard' },
   { id:'calendar',    label:'Calendar',    glyph:'grid' },
+  { id:'wellness',    label:'Wellness',    glyph:'flower' },
+  { id:'voyage',      label:'Rocket',      glyph:'rocket' },
   { id:'thoughts',    label:'Thoughts',    glyph:'bulb' },
   { id:'events',      label:'Events',      glyph:'ticket' },
   { id:'recurring',   label:'Recurring',   glyph:'repeat' },
   { id:'informatics', label:'Insights',    glyph:'chart' },
+  { id:'records',     label:'Records',     glyph:'book' },
 ]
 
 // On the desktop top bar these tabs are tucked under a single "More" dropdown
@@ -155,7 +180,7 @@ function AccountPanel() {
 }
 
 // ── Settings Drawer ────────────────────────────────────────────
-function SettingsDrawer({ open, onClose, settingsTab, setSettingsTab, notes, updateNotes, categories, addCategory, updateCategory, deleteCategory, events, commitments, recurring, locatedCount, changeHistory, undoChange, clearChangeHistory, externalCalendars, calendarStatuses, addCalendar, toggleCalendar, removeCalendar, refreshOneCalendar, updateCalendar, font, setFont, theme, setTheme, season, setSeason, customColor, setCustom, background, setBackground, customBg, setCustomBg, mobileBackground, setMobileBackground, mobileCustomBg, setMobileCustomBg, layout, setLayout, soundOn, setSound, summary, setSummary, effectsOn, setEffects }) {
+function SettingsDrawer({ open, onClose, settingsTab, setSettingsTab, notes, updateNotes, categories, addCategory, updateCategory, deleteCategory, events, commitments, recurring, locatedCount, changeHistory, undoChange, clearChangeHistory, externalCalendars, calendarStatuses, addCalendar, toggleCalendar, removeCalendar, refreshOneCalendar, updateCalendar, font, setFont, theme, setTheme, season, setSeason, customColor, setCustom, background, setBackground, customBg, setCustomBg, mobileBackground, setMobileBackground, mobileCustomBg, setMobileCustomBg, layout, setLayout, soundOn, setSound, summary, setSummary, effectsOn, setEffects, admin, persistArt }) {
   if (!open) return null
   const SECTIONS = [
     ['customize','Look','sun'],
@@ -166,6 +191,8 @@ function SettingsDrawer({ open, onClose, settingsTab, setSettingsTab, notes, upd
     ['history','History','clock'],
     ['edits','Edits','sparkle'],
     ...(authEnabled ? [['account','Account','idcard']] : []),
+    // Owner-only: upload custom art to replace the code-drawn creatures/props.
+    ...(admin ? [['artstudio','Art','rocket']] : []),
   ]
   const activeLabel = (SECTIONS.find(s => s[0] === settingsTab) || SECTIONS[0])[1]
   return (
@@ -189,6 +216,7 @@ function SettingsDrawer({ open, onClose, settingsTab, setSettingsTab, notes, upd
             {settingsTab==='history'    && <History history={changeHistory} onUndo={undoChange} onClear={clearChangeHistory} />}
             {settingsTab==='edits'      && <Edits />}
             {settingsTab==='account'    && <AccountPanel />}
+            {settingsTab==='artstudio' && admin && <ArtStudio persistArt={persistArt} />}
           </div>
           <div style={{ padding:'4px 24px 20px', textAlign:'center', fontSize:11, color:'var(--muted)' }}>
             Bloom · build {BUILD_ID}
@@ -322,6 +350,10 @@ export default function App() {
   }, [tab])
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [settingsTab,  setSettingsTab]  = useState('customize')
+  // Owner-only art-upload gate (see lib/art.js). `?admin=1` in the URL turns it
+  // on for this device; read once at mount so the Art Studio section only shows
+  // for the owner. Read-only for everyone else — the rendering path is identical.
+  const [admin] = useState(isAdmin)
   // Appearance — device-local font + accent theme. main.jsx applies the saved
   // values before first paint; these setters keep the live app in step.
   const [font,   setFontState]   = useState(getFontPref)
@@ -604,17 +636,26 @@ export default function App() {
   const [timeLogs,         setTimeLogs_]        = useState([])   // manual hours logged on the Informatics page
   const [taskTemplates,    setTaskTemplates_]   = useState([])   // reusable date-less task presets (the Task Menu)
   const [routines,         setRoutines_]         = useState(DEFAULT_ROUTINES)
+  // ── Wellness (mood check-ins, DnD-style status effects, companion game) ──
+  const [wlCheckins,       setWlCheckins_]       = useState([])
+  const [wlEffects,        setWlEffects_]        = useState(null)   // null → seed defaults in the tab
+  const [wlEpisodes,       setWlEpisodes_]       = useState([])
+  const [wlGame,           setWlGame_]           = useState(null)
+  const [wlTreasures,      setWlTreasures_]      = useState([])
+  const [wlSpace,          setWlSpace_]          = useState(null)
   const [loading,          setLoading]          = useState(true)
 
   useEffect(() => {
     async function load() {
       await runMigrationIfNeeded()
-      const [comp, l, n, fcp, fcs, sch, com, rt, vac, evs, cats, cmeta, rexc, rmeta, rout, tlogs, tpls, chist] = await Promise.all([
+      const [comp, l, n, fcp, fcs, sch, com, rt, vac, evs, cats, cmeta, rexc, rmeta, rout, tlogs, tpls, chist, wlc, wlfx, wlep, wlg, wltr, wlsp, artov] = await Promise.all([
         getCompletions(), getLogEntries(), getNotes(),
         getFcProgress(), getFcStudied(), getScheduledTasks(),
         getCommitments(), getRecurringTasks(), getVacations(), getEvents(),
         seedCategoriesIfNeeded(), getCommitmentMeta(), getRecurringExceptions(), getRecurringMeta(),
         getRoutineGroups(), getTimeLogs(), getTaskTemplates(), getChangeHistory(),
+        getWellnessCheckins(), getWellnessEffects(), getWellnessEpisodes(), getWellnessGame(),
+        getWellnessTreasures(), getWellnessSpace(), getArtOverrides(),
       ])
       setCompletions_(comp); setLog_(l); setNotes_(n)
       setFcProgress_(fcp); setFcStudied_(fcs); setScheduled_(sch)
@@ -623,6 +664,15 @@ export default function App() {
       setTimeLogs_(Array.isArray(tlogs) ? tlogs : [])
       setTaskTemplates_(Array.isArray(tpls) ? tpls : [])
       setChangeHistory_(Array.isArray(chist) ? chist : [])
+      setWlCheckins_(Array.isArray(wlc) ? wlc : [])
+      setWlEffects_(Array.isArray(wlfx) ? wlfx : null)
+      setWlEpisodes_(Array.isArray(wlep) ? wlep : [])
+      setWlGame_(wlg && typeof wlg === 'object' ? wlg : null)
+      setWlTreasures_(Array.isArray(wltr) ? wltr : [])
+      setWlSpace_(wlsp && typeof wlsp === 'object' ? wlsp : null)
+      // Seed the custom-art override store from the synced blob so any uploaded
+      // images replace their code-drawn defaults on first paint.
+      loadOverrides(artov)
       // Routine groups: use what's saved, or seed the Morning/Night defaults.
       if (rout) {
         // One-time tint upgrade: bump any routine still on an old seed tint to
@@ -1169,9 +1219,24 @@ export default function App() {
 
   const addCommitment = useCallback(async (c, opts = {}) => {
     const { description, subtasks, cats, color, icon, location, startedAt, block, routine, autoComplete, ...core } = c
+    // Scheduling an item onto a day that's already passed means it happened —
+    // land it already checked off (a real completion that counts toward
+    // progress), unless it's a time block or the caller already set done.
+    // Skipped for silent adds (undo/redo restores keep their snapshot's state).
+    const backfillDone = !opts.silent && !block && !core.done && isPastDate(core.date)
+    if (backfillDone) core.done = true
     try {
       const created = await dbAddCommitment(core)
       setCommitments_(prev => [created, ...prev])
+      if (backfillDone) {
+        // Mirror a manual check-off: record the completion and log it so the
+        // item counts toward the Informatics stats and streak, same as syncToggle.
+        setCompletions_(prev => { const n = { ...prev, [created.id]: true }; setCompletion(created.id, true).catch(reportSaveError); return n })
+        const d = new Date()
+        const entry = { date: todayStr(), dateLabel: d.toLocaleDateString('en-US', { weekday:'long', month:'long', day:'numeric' }), label: created.text || 'task', tag: core.cat || '', ts: d.toISOString(), storageKey: created.id }
+        setLog_(prev => [...prev, entry])
+        addLogEntry(entry).catch(reportSaveError)
+      }
       pushUndo('added “' + (created.text || 'task') + '”', () => deleteCommitment(created.id))
       if (!opts.silent) recordChange({ kind: 'add', entity: 'task', label: 'Added “' + (created.text || 'task') + '”', inverse: { op: 'delete', entity: 'task', id: created.id } })
       const hasCats = Array.isArray(cats) && cats.length > 1
@@ -1418,6 +1483,20 @@ export default function App() {
     setTaskTemplates_(prev => { const next = prev.filter(t => t.id !== id); setTaskTemplates(next).catch(reportSaveError); return next })
   }, [])
 
+  // ── Wellness persist helpers (each one synced kv blob) ───────
+  // The wellness tab composes the pure game/analysis logic in lib/wellness.js
+  // and hands us the whole next value to save — mirroring the routine-group /
+  // time-log pattern above (local state first, cloud write best-effort).
+  const persistWlCheckins = useCallback(next => { setWlCheckins_(next); setWellnessCheckins(next).catch(reportSaveError) }, [])
+  const persistWlEffects  = useCallback(next => { setWlEffects_(next);  setWellnessEffects(next).catch(reportSaveError) }, [])
+  const persistWlEpisodes = useCallback(next => { setWlEpisodes_(next); setWellnessEpisodes(next).catch(reportSaveError) }, [])
+  const persistWlGame     = useCallback(next => { setWlGame_(next);     setWellnessGame(next).catch(reportSaveError) }, [])
+  const persistWlTreasures = useCallback(next => { setWlTreasures_(next); setWellnessTreasures(next).catch(reportSaveError) }, [])
+  const persistWlSpace     = useCallback(next => { setWlSpace_(next);     setWellnessSpace(next).catch(reportSaveError) }, [])
+  // Custom-art uploads: the Art Studio mutates the in-memory override store
+  // (lib/art.js) for an instant re-render, then hands us the whole map to sync.
+  const persistArt         = useCallback(map  => { setArtOverrides(map).catch(reportSaveError) }, [])
+
   // ── Unified toggle ───────────────────────────────────────────
   const syncToggle = useCallback(async (id, label, tag, date, explicitNext) => {
     const storageKey = date ? `${date}_${id}` : id
@@ -1618,7 +1697,12 @@ export default function App() {
       )}
 
       <main className="content">
-        {tab==='today'       && <Today       {...sharedProps} appendLog={appendLog} scheduled={scheduled} deleteCommitment={deleteCommitment} />}
+        {tab==='today'       && <Today       {...sharedProps} appendLog={appendLog} scheduled={scheduled} deleteCommitment={deleteCommitment}
+          wlCheckins={wlCheckins} persistWlCheckins={persistWlCheckins}
+          wlEffects={wlEffects} persistWlEffects={persistWlEffects}
+          wlEpisodes={wlEpisodes} persistWlEpisodes={persistWlEpisodes}
+          wlGame={wlGame} persistWlGame={persistWlGame} wlLog={log}
+          onOpenWellness={() => setTab('wellness')} />}
         {tab==='week'        && <ThisWeek    {...sharedProps} deleteCommitment={deleteCommitment} />}
         {tab==='taskmenu'    && <TaskMenu templates={taskTemplates} addTemplate={addTaskTemplate}
           updateTemplate={updateTaskTemplate} deleteTemplate={deleteTaskTemplate} categories={categories} />}
@@ -1634,7 +1718,17 @@ export default function App() {
           categories={categories} taskTemplates={taskTemplates} labelModel={labelModel}
           routines={routines} addRoutine={addRoutineFn} updateRoutine={updateRoutineFn} deleteRoutine={deleteRoutineFn}
           defaultWeekTasks={DEFAULT_RECURRING_TASKS} defaultDailyTodos={DEFAULT_DAILY_TODOS} />}
-        {tab==='informatics' && <Insights />}
+        {tab==='wellness'    && <BloomWellness
+          checkins={wlCheckins} persistCheckins={persistWlCheckins}
+          effects={wlEffects} persistEffects={persistWlEffects}
+          episodes={wlEpisodes} persistEpisodes={persistWlEpisodes}
+          game={wlGame} persistGame={persistWlGame}
+          treasures={wlTreasures} persistTreasures={persistWlTreasures}
+          log={log} />}
+        {tab==='voyage'      && <Voyage game={wlGame} persistGame={persistWlGame}
+          space={wlSpace} persistSpace={persistWlSpace} checkins={wlCheckins} />}
+        {tab==='informatics' && <Informatics commitments={commitmentsView} recurringTasks={recurringTasksEnriched} completions={completions} log={log} categories={categories} timeLogs={timeLogs} addTimeLog={addTimeLog} deleteTimeLog={deleteTimeLog} wlCheckins={wlCheckins} wlEffects={wlEffects} wlEpisodes={wlEpisodes} />}
+        {tab==='records'     && <Insights />}
       </main>
 
       <SettingsDrawer
@@ -1658,7 +1752,8 @@ export default function App() {
         mobileCustomBg={mobileCustomBg} setMobileCustomBg={setMobileCustomBg}
         layout={layout} setLayout={setLayout} soundOn={soundOn} setSound={setSound}
         summary={summary} setSummary={setSummary}
-        effectsOn={effectsOn} setEffects={setEffects} />
+        effectsOn={effectsOn} setEffects={setEffects}
+        admin={admin} persistArt={persistArt} />
 
       <SearchOverlay
         open={searchOpen} onClose={() => setSearchOpen(false)}
