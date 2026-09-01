@@ -769,7 +769,10 @@ function TimelineBlock({ task, categories, status, now, prevColor, nextColor, ro
       {/* Time gutter */}
       <div style={{ width:52, flexShrink:0, paddingTop:16, textAlign:'right', paddingRight:10 }}>
         {timeMins!==null && (
-          <span data-mins={timeMins} style={{ fontSize:11, color:isCurrent?'var(--teal)':'var(--muted)', fontWeight:isCurrent?700:500, whiteSpace:'nowrap' }}>{fmtTimeLabel(timeMins)}</span>
+          // On the current task the wellness blob sits right here marking "now",
+          // so its gutter time reads as a duplicate — hide the text but keep the
+          // element (it's the rail's position anchor).
+          <span data-mins={timeMins} style={{ fontSize:11, color:isCurrent?'var(--teal)':'var(--muted)', fontWeight:isCurrent?700:500, whiteSpace:'nowrap', visibility: isCurrent ? 'hidden' : 'visible' }}>{fmtTimeLabel(timeMins)}</span>
         )}
       </div>
       {/* Colored duration pill + progress spine. The spine reads as a progress
@@ -870,7 +873,7 @@ function TimelineBlock({ task, categories, status, now, prevColor, nextColor, ro
           <div style={{ width:52, flexShrink:0, display:'flex', justifyContent:'center' }}>
             <div style={{ width:13, height:13, borderRadius:'50%', background:'white', border:'3px solid var(--teal)', boxShadow:'0 0 0 3px rgba(74,158,181,.16)' }} />
           </div>
-          {/* Time label omitted — the wellness blob marks "now" beside this. */}
+          <div style={{ marginLeft:6, fontSize:11, fontWeight:800, color:'var(--teal)', background:'var(--cream)', padding:'1px 7px', borderRadius:8, boxShadow:'0 1px 3px rgba(0,0,0,.14)', whiteSpace:'nowrap' }}>{fmtTimeLabel(now)}</div>
         </div>
       )}
     </div>
@@ -895,7 +898,7 @@ function NowMarker({ now, bandTint = null, bandOpacity = 0.5 }) {
       <div style={{ width:52, flexShrink:0, display:'flex', justifyContent:'center' }}>
         <div style={{ width:13, height:13, borderRadius:'50%', background:'white', border:'3px solid var(--teal)', boxShadow:'0 0 0 3px rgba(74,158,181,.16)' }} />
       </div>
-      {/* Time label omitted — the wellness blob marks "now" beside this. */}
+      <div style={{ marginLeft:6, fontSize:11, fontWeight:800, color:'var(--teal)', background:'var(--cream)', padding:'1px 7px', borderRadius:8, boxShadow:'0 1px 3px rgba(0,0,0,.14)', whiteSpace:'nowrap' }}>{fmtTimeLabel(now)}</div>
     </div>
   )
 }
