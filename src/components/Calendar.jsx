@@ -59,6 +59,17 @@ export default function Calendar({ commitments, vacations, events, log, categori
   }, [])
   const today = todayStr()
 
+  // ── Effective done, mirroring Today & Week ───────────────────
+  // A task that sits inside a time block, belongs to a routine, or opts in via
+  // autoComplete gets ticked once its window has passed WITHOUT storing a
+  // record (that's the whole point of clock-based completion). The Calendar used
+  // to read only the stored record, so those items — checked off on Today —
+  // still looked un-done here. These helpers reproduce that logic so the three
+  // views agree. An explicit tap (a stored record) always wins over the default.
+  const nowMins = (() => { const d = new Date(); return d.getHours() * 60 + d.getMinutes() })()
+  const routineIdSet = new Set((routines || []).map(r => r.id))
+  const hhmm = (t) => { if (!t) return null; const [h, m] = String(t).split(':').map(Number); return h * 60 + m }
+
   // Add a commitment on any date (long-term planning), with its own optional
   // duration + reminder times. Shows immediately on the calendar + Week.
   const handleAdd = (commitment, reminderMins) => {
@@ -131,6 +142,9 @@ export default function Calendar({ commitments, vacations, events, log, categori
         text: c.text,
         label: `${timeLabel}${c.text}`,
         done: c.done,
+        isRecurring: false,
+        _mins: c.time ? hhmm(c.time) : null, _dur: c.durationMins || null,
+        autoComplete: !!c.autoComplete, routine: c.routine || null,
         description: c.description, subtasks: Array.isArray(c.subtasks) ? c.subtasks : [],
         color: cat.color, icon: cat.icon, catLabel: cat.label,
       }
@@ -148,10 +162,38 @@ export default function Calendar({ commitments, vacations, events, log, categori
       id: o.id, date: dateStr, isRecurring: true,
       text: o.text, label: o.label, cat: o.cat,
       done: !!(todos && todos[`${dateStr}_${o.id}`]),
+      _mins: o._time ? hhmm(o._time) : null, _dur: o._dur || null,
+      autoComplete: !!o.autoComplete, routine: o.routine || null,
       color: cat.color, icon: cat.icon, catLabel: cat.label,
     }
   })
+
+  // Time blocks on a date (block commitments + repeating block occurrences), so
+  // a task sitting inside one auto-completes here just as it does on Today/Week.
+  const blocksOn = (dateStr) => [
+    ...recurringOccurrencesForDate(calendarRecurring, dateStr, recurringExceptions)
+      .filter(o => o.block && o._time && o._dur)
+      .map(o => ({ start: hhmm(o._time), end: hhmm(o._time) + o._dur })),
+    ...(commitments || [])
+      .filter(c => c.date === dateStr && c.block && c.time && c.durationMins)
+      .map(c => ({ start: hhmm(c.time), end: hhmm(c.time) + c.durationMins })),
+  ]
+  // The done-state actually shown: an explicit record (or a commitment's own
+  // stored done) wins; otherwise a block/routine/autoComplete task ticks once
+  // its window has passed (today) or the whole day is over (a past day).
+  const effectiveDone = (e, dateStr, dayBlocks) => {
+    const key = e.isRecurring ? `${dateStr}_${e.id}` : e.id
+    if (todos && key in todos) return !!todos[key]
+    if (!e.isRecurring && e.done) return true
+    const autoRoutine = e.routine && routineIdSet.has(e.routine)
+    const inBlock = e._mins != null && (dayBlocks || []).some(b => e._mins >= b.start && e._mins < b.end)
+    if ((e.autoComplete === true || autoRoutine || inBlock) && e._mins != null) {
+      return dateStr === today ? nowMins >= e._mins + (e._dur || 0) : dateStr < today
+    }
+    return false
+  }
   const selectedRecurring = selected ? recurringEventsOn(selected) : []
+  const selectedBlocks = selected ? blocksOn(selected) : []
 
   // Multi-day events covering a given date (for the colored bands + detail).
   const eventsOn = (dateStr) => (events || []).filter(ev => dateStr >= ev.startDate && dateStr <= ev.endDate)
@@ -195,6 +237,7 @@ export default function Calendar({ commitments, vacations, events, log, categori
             const day = i + 1
             const dateStr = ds(year, month, day)
             const evs = [...allEvents.filter(e => e.date === dateStr), ...recurringEventsOn(dateStr)]
+            const dayBlocks = blocksOn(dateStr)
             const spans = eventsOn(dateStr)
             const dow = new Date(dateStr+'T12:00:00').getDay()
             const isSel = dateStr === selected
@@ -225,12 +268,14 @@ export default function Calendar({ commitments, vacations, events, log, categori
                   )
                 })}
                 {spans.length > 2 && <div style={{ fontSize:8, color:'var(--muted)', marginTop:1 }}>+{spans.length-2} event(s)</div>}
-                {evs.slice(0,2).map((e, j) => (
+                {evs.slice(0,2).map((e, j) => {
+                  const done = effectiveDone(e, dateStr, dayBlocks)
+                  return (
                   <div key={j} className="cal-evt">
-                    <div className="cal-evt-dot" style={{ background: e.color, opacity: e.done ? .4 : 1 }} />
-                    <div className="cal-evt-label" style={{ textDecoration: e.done ? 'line-through' : 'none', opacity: e.done ? .5 : 1 }}>{e.label}</div>
+                    <div className="cal-evt-dot" style={{ background: e.color, opacity: done ? .4 : 1 }} />
+                    <div className="cal-evt-label" style={{ textDecoration: done ? 'line-through' : 'none', opacity: done ? .5 : 1 }}>{e.label}</div>
                   </div>
-                ))}
+                )})}
                 {evs.length > 2 && <div style={{ fontSize:8, color:'var(--muted)', marginTop:1 }}>+{evs.length-2}</div>}
                 {(doneByDate[dateStr]?.length > 0) && (
                   <div style={{ fontSize:8, color:'#52B788', marginTop:1, fontWeight:700 }}>✓ {doneByDate[dateStr].length}</div>
@@ -289,17 +334,19 @@ export default function Calendar({ commitments, vacations, events, log, categori
               )}
             </div>
           )})}
-          {selectedEvents.map((e, i) => (
-            <div key={i} style={{ padding:'9px 12px', borderRadius:8, marginBottom:6, background:`${e.color}14`, border:`1px solid ${e.color}44`, opacity: e.done ? .6 : 1 }}>
+          {selectedEvents.map((e, i) => {
+            const done = effectiveDone(e, selected, selectedBlocks)
+            return (
+            <div key={i} style={{ padding:'9px 12px', borderRadius:8, marginBottom:6, background:`${e.color}14`, border:`1px solid ${e.color}44`, opacity: done ? .6 : 1 }}>
               <div style={{ display:'flex', gap:10, alignItems:'center' }}>
-                <div onClick={() => syncToggle && syncToggle(e.id, e.text, e.raw.cat, null, !e.done)} role="checkbox" aria-checked={e.done} title={e.done ? 'Mark not done' : 'Mark done'}
-                  style={{ width:18, height:18, borderRadius:5, flexShrink:0, cursor:'pointer', border: e.done ? 'none' : `2px solid ${e.color}`, background: e.done ? e.color : 'transparent', display:'flex', alignItems:'center', justifyContent:'center' }}>
-                  {e.done && <span style={{ color:'white', fontSize:10, fontWeight:700 }}>✓</span>}
+                <div onClick={() => syncToggle && syncToggle(e.id, e.text, e.raw.cat, null, !done)} role="checkbox" aria-checked={done} title={done ? 'Mark not done' : 'Mark done'}
+                  style={{ width:18, height:18, borderRadius:5, flexShrink:0, cursor:'pointer', border: done ? 'none' : `2px solid ${e.color}`, background: done ? e.color : 'transparent', display:'flex', alignItems:'center', justifyContent:'center' }}>
+                  {done && <span style={{ color:'white', fontSize:10, fontWeight:700 }}>✓</span>}
                 </div>
                 <span style={{ display:'inline-flex', alignItems:'center', gap:4, fontSize:10, letterSpacing:1, textTransform:'uppercase', color:e.color, minWidth:70, fontWeight:600 }}>
                   {e.icon && <Icon value={e.icon} size={12} />}{e.catLabel}
                 </span>
-                <div style={{ flex:1, fontSize:13, color:'var(--text)', textDecoration: e.done ? 'line-through' : 'none' }}>{e.label}</div>
+                <div style={{ flex:1, fontSize:13, color:'var(--text)', textDecoration: done ? 'line-through' : 'none' }}>{e.label}</div>
                 <button onClick={() => setEditing(e.raw)} title="Edit"
                   style={{ background:'none', border:'none', cursor:'pointer', color:'#9CA3AF', fontSize:13, padding:'0 2px', flexShrink:0 }}>✎</button>
               </div>
@@ -320,26 +367,28 @@ export default function Calendar({ commitments, vacations, events, log, categori
                 </div>
               )}
             </div>
-          ))}
+          )})}
           {/* Recurring instances on this day — same items shown on Today/Week.
               The ✕ skips just this occurrence (synced to every view). */}
-          {selectedRecurring.map((e, i) => (
-            <div key={'rec'+i} style={{ display:'flex', gap:10, alignItems:'center', padding:'9px 12px', borderRadius:8, marginBottom:6, background:`${e.color}14`, border:`1px solid ${e.color}44`, opacity: e.done ? .6 : 1 }}>
-              <div onClick={() => syncToggle && syncToggle(e.id, e.text, e.cat, selected, !e.done)} role="checkbox" aria-checked={e.done} title={e.done ? 'Mark not done' : 'Mark done'}
-                style={{ width:18, height:18, borderRadius:5, flexShrink:0, cursor:'pointer', border: e.done ? 'none' : `2px solid ${e.color}`, background: e.done ? e.color : 'transparent', display:'flex', alignItems:'center', justifyContent:'center' }}>
-                {e.done && <span style={{ color:'white', fontSize:10, fontWeight:700 }}>✓</span>}
+          {selectedRecurring.map((e, i) => {
+            const done = effectiveDone(e, selected, selectedBlocks)
+            return (
+            <div key={'rec'+i} style={{ display:'flex', gap:10, alignItems:'center', padding:'9px 12px', borderRadius:8, marginBottom:6, background:`${e.color}14`, border:`1px solid ${e.color}44`, opacity: done ? .6 : 1 }}>
+              <div onClick={() => syncToggle && syncToggle(e.id, e.text, e.cat, selected, !done)} role="checkbox" aria-checked={done} title={done ? 'Mark not done' : 'Mark done'}
+                style={{ width:18, height:18, borderRadius:5, flexShrink:0, cursor:'pointer', border: done ? 'none' : `2px solid ${e.color}`, background: done ? e.color : 'transparent', display:'flex', alignItems:'center', justifyContent:'center' }}>
+                {done && <span style={{ color:'white', fontSize:10, fontWeight:700 }}>✓</span>}
               </div>
               <span style={{ display:'inline-flex', alignItems:'center', gap:4, fontSize:10, letterSpacing:1, textTransform:'uppercase', color:e.color, minWidth:70, fontWeight:600 }}>
                 {e.icon && <Icon value={e.icon} size={12} />}{e.catLabel}
               </span>
-              <div style={{ flex:1, fontSize:13, color:'var(--text)', textDecoration: e.done ? 'line-through' : 'none' }}>{e.label}</div>
+              <div style={{ flex:1, fontSize:13, color:'var(--text)', textDecoration: done ? 'line-through' : 'none' }}>{e.label}</div>
               <span style={{ fontSize:9, letterSpacing:.5, textTransform:'uppercase', color:'var(--muted)', flexShrink:0 }}>Repeats</span>
               <button onClick={() => { const t=(recurringTasks||[]).find(r=>r.id===e.id); if(t){ setEditingRecDate(selected); setEditingRec(t) } }} title="Edit"
                 style={{ background:'none', border:'none', cursor:'pointer', color:'#9CA3AF', fontSize:13, padding:'0 2px', flexShrink:0 }}>✎</button>
               <button onClick={() => skipRecurringOccurrence && skipRecurringOccurrence(e.id, selected)} title="Skip just this day"
                 style={{ background:'none', border:'none', cursor:'pointer', color:'#9CA3AF', fontSize:14, padding:'0 2px', flexShrink:0 }}>✕</button>
             </div>
-          ))}
+          )})}
           {/* Completed that day — history that persists even after deletion */}
           {(doneByDate[selected] || []).map((e, i) => (
             <div key={'done'+i} style={{ display:'flex', gap:10, alignItems:'center', padding:'7px 12px' }}>
