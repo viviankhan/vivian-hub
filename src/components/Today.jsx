@@ -473,9 +473,9 @@ function BlockBand({ seg, onEdit, onAdd, onCollapse }) {
         <div style={{ position:'absolute', top:0, bottom:0, left:44, right:0, background:seg.color, opacity: done?BLOCK_FILM_OPACITY*0.6:BLOCK_FILM_OPACITY, zIndex:-1, borderRadius:16 }} />
         <div style={{ position:'absolute', top:0, bottom:0, left:76.5, width:3, borderRadius:3, background:seg.color, opacity:.5, zIndex:-1 }} />
         <div style={{ position:'relative', display:'flex', alignItems:'center', minHeight:54 }}>
-          <div style={{ width:52, flexShrink:0, textAlign:'right', paddingRight:10 }}>
-            <span style={{ fontSize:11, color:'var(--muted)', fontWeight:500, whiteSpace:'nowrap' }}>{fmtTimeLabel(seg.start)}</span>
-          </div>
+          {/* Spine spacer — the block's start time isn't repeated here; its full
+              window already reads inline on the band. */}
+          <div style={{ width:52, flexShrink:0 }} />
           <div onClick={onCollapse} title="Expand time block"
             style={{ flex:1, minWidth:0, paddingLeft:11, paddingRight:8, display:'flex', alignItems:'center', gap:9, cursor:'pointer', minHeight:54 }}>
             <BandIcon icon={seg.icon} color={seg.color} onEdit={onEdit} />
@@ -501,12 +501,9 @@ function BlockBand({ seg, onEdit, onAdd, onCollapse }) {
           solid, not dashed, because a block is a real container, not empty gap. */}
       <div style={{ position:'absolute', top:0, bottom:0, left:76.5, width:3, borderRadius:3, background:seg.color, opacity:.5, zIndex:-1 }} />
       <div style={{ position:'relative', display:'flex' }}>
-        {/* Only the block's true top segment prints a gutter time — a tail
-            segment starts where a task ended, so its time would just echo that
-            task's own time right above it. */}
-        <div style={{ width:52, flexShrink:0, paddingTop:14, textAlign:'right', paddingRight:10 }}>
-          {seg.roundTop && <span style={{ fontSize:11, color:'var(--muted)', fontWeight:500, whiteSpace:'nowrap' }}>{fmtTimeLabel(seg.start)}</span>}
-        </div>
+        {/* Spine spacer — the block's window already reads inline on the band
+            (its range beside the label), so a gutter time here would be redundant. */}
+        <div style={{ width:52, flexShrink:0 }} />
         {seg.label && (
           <div style={{ paddingTop:9, paddingLeft:11, flex:1, minWidth:0, display:'flex', alignItems:'center', gap:8 }}>
             <BandIcon icon={seg.icon} color={seg.color} onEdit={onEdit} />
@@ -766,12 +763,10 @@ function TimelineBlock({ task, categories, status, now, prevColor, nextColor, ro
           {onBandCollapse && <span style={{ marginLeft:'auto', flexShrink:0 }}><BandChevron collapsed={false} onClick={onBandCollapse} /></span>}
         </div>
       )}
-      {/* Time gutter */}
-      <div style={{ width:52, flexShrink:0, paddingTop:16, textAlign:'right', paddingRight:10 }}>
-        {timeMins!==null && (
-          <span style={{ fontSize:11, color:isCurrent?'var(--teal)':'var(--muted)', fontWeight:isCurrent?700:500, whiteSpace:'nowrap' }}>{fmtTimeLabel(timeMins)}</span>
-        )}
-      </div>
+      {/* Spacer keeping the spine aligned with gaps + the now-marker. The task's
+          time isn't repeated here — the card already shows the full range, so a
+          gutter label would just be redundant. */}
+      <div style={{ width:52, flexShrink:0 }} />
       {/* Colored duration pill + progress spine. The spine reads as a progress
           bar: segments you've worked through are solid in the task's color,
           upcoming segments stay light gray. */}
