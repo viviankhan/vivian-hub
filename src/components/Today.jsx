@@ -2290,26 +2290,45 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
         onClose={()=>setEditing(null)} title="Edit task"/>}
       {editingRec&&<AddItemModal existingRecurring={editingRec} categories={categories} routines={routines}
         occurrenceDate={editingRecDate}
-        onSaveOccurrence={(date, occ, reminderMins)=>{
+        onSaveOccurrence={(origDate, occ, reminderMins)=>{
           const pivotId = editingRec.id
           const newMins = occ.time ? hhmmToMins(occ.time) : null
-          // Time-only change on the day we're looking at → just move it for today
+          // Time-only change that stays on the same day → just move it for today
           // and keep it in its series (so it still repeats and keeps its
           // delete-this/future/all menu), instead of detaching it into a one-off.
-          if (date === dateKey && newMins !== null && occurrenceOnlyMovedTime(editingRec, occ, reminderMins)) {
+          // A day change (occ.date !== origDate) always detaches so it can land
+          // on the new day and vacate the old one.
+          if (occ.date === origDate && origDate === dateKey && newMins !== null && occurrenceOnlyMovedTime(editingRec, occ, reminderMins)) {
             moveOccurrenceForDay(pivotId, newMins)
             setEditingRec(null); setEditingRecDate(null)
             maybePromptShift(pivotId, newMins)
             return
           }
           // A real per-occurrence content edit (new title, subtasks, per-day
-          // alert, …) still detaches: hide the series on this date and add a
-          // one-off commitment carrying the edits. Other days stay as-is.
-          skipRecurringOccurrence && skipRecurringOccurrence(editingRec.id, date)
+          // alert, moved to another day, …) detaches: hide the series on its
+          // ORIGINAL date and add a one-off commitment carrying the edits, on
+          // whatever day it now lands (occ.date). Other days stay as-is.
+          skipRecurringOccurrence && skipRecurringOccurrence(editingRec.id, origDate)
           if (addCommitment) addCommitment(occ)
           setItemReminders(occ.id, reminderMins)
           setEditingRec(null); setEditingRecDate(null)
           maybePromptShift(pivotId, newMins)
+        }}
+        onSaveFuture={(origDate, newSeries, reminderMins)=>{
+          // Split the series at this occurrence: end the old template the day
+          // before, and begin the edited one from here. Past days keep the old
+          // definition, so a change tonight never rewrites the showers you
+          // already did.
+          const tmpl=(recurringTasks||[]).find(t=>t.id===editingRec.id)
+          if (tmpl && updateRecurringTask) {
+            const x=new Date(origDate+'T12:00:00'); x.setDate(x.getDate()-1)
+            const endDate=`${x.getFullYear()}-${String(x.getMonth()+1).padStart(2,'0')}-${String(x.getDate()).padStart(2,'0')}`
+            updateRecurringTask(tmpl.id, { ...tmpl, endDate })
+          }
+          addRecurringTask && addRecurringTask(newSeries)
+          if (reminderMins != null) setItemReminders(newSeries.id, reminderMins)
+          setEditingRec(null); setEditingRecDate(null)
+          maybePromptShift(newSeries.id, parseTimeMins(newSeries.label))
         }}
         onSaveRecurring={t=>{ const pivotId=t.id; updateRecurringTask&&updateRecurringTask(t.id,t); setEditingRec(null); setEditingRecDate(null); maybePromptShift(pivotId, parseTimeMins(t.label)) }}
         onDeleteOccurrence={date=>{ skipRecurringOccurrence&&skipRecurringOccurrence(editingRec.id, date); setEditingRec(null); setEditingRecDate(null) }}

@@ -439,14 +439,29 @@ export default function Calendar({ commitments, vacations, events, log, categori
           occurrenceDate={editingRecDate}
           categories={categories}
           routines={routines}
-          onSaveOccurrence={(date, occ, reminderMins) => {
-            // Detach this one day: hide the series that day + add a one-off.
-            skipRecurringOccurrence && skipRecurringOccurrence(editingRec.id, date)
+          onSaveOccurrence={(origDate, occ, reminderMins) => {
+            // Detach this one day: hide the series on its ORIGINAL day and add a
+            // one-off on whatever day it now lands (occ.date) — so moving a single
+            // occurrence to another day vacates the old day and shows on the new.
+            skipRecurringOccurrence && skipRecurringOccurrence(editingRec.id, origDate)
             addCommitment && addCommitment(occ)
             // Carry over any custom reminders set on this occurrence — without
             // this, editing one day's reminders from the Calendar silently
             // dropped them (Today's occurrence editor already kept them).
             setItemReminders(occ.id, reminderMins)
+            setEditingRec(null); setEditingRecDate(null)
+          }}
+          onSaveFuture={(origDate, newSeries, reminderMins) => {
+            // Split the series here: cap the old template the day before this
+            // occurrence, start the edited one from here. Past days untouched.
+            const tmpl=(recurringTasks||[]).find(t=>t.id===editingRec.id)
+            if (tmpl && updateRecurringTask) {
+              const x=new Date(origDate+'T12:00:00'); x.setDate(x.getDate()-1)
+              const endDate=`${x.getFullYear()}-${String(x.getMonth()+1).padStart(2,'0')}-${String(x.getDate()).padStart(2,'0')}`
+              updateRecurringTask(tmpl.id, { ...tmpl, endDate })
+            }
+            addRecurringTask && addRecurringTask(newSeries)
+            if (reminderMins != null) setItemReminders(newSeries.id, reminderMins)
             setEditingRec(null); setEditingRecDate(null)
           }}
           onSaveRecurring={t => { updateRecurringTask && updateRecurringTask(t.id, t); setEditingRec(null); setEditingRecDate(null) }}
