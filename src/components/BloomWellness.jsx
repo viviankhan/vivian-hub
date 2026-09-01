@@ -4,9 +4,9 @@ import { Companion, MoodCloud, DayCloud, AlienSky } from '../lib/critters.jsx'
 import { bloomBurst } from '../lib/bloom.js'
 import {
   dayKey, keyToDate, MOODS, ENERGY, moodMeta, promptForDay,
-  COMPLEX_EMOTIONS, emotionMeta, checkinsForDay, daySegments, emotionWeights, pastDayKeys, effectOnDay,
+  selectableEmotions, emotionMeta, makeEmotion, EMOTION_PALETTE, checkinsForDay, daySegments, emotionWeights, pastDayKeys, effectOnDay,
   stageForLevel, nextStage, levelFromXp, liveStreak, applyCheckIn, awardPetals, REWARDS,
-  DEFAULT_EFFECTS, POSITIVE_EFFECTS, makeEffect,
+  DEFAULT_EFFECTS, POSITIVE_EFFECTS, makeEffect, EFFECT_COLORS, EFFECT_ICONS,
   activeEpisode, isActive, toggleEpisode, episodeMinutes, fmtDuration, effectTotals,
   buildDailyRecords, computeInsights, moodTrend, shareText,
 } from '../lib/wellness.js'
@@ -41,11 +41,6 @@ function fileToTreasure(file, max = 720) {
   })
 }
 
-// A soft swatch palette for custom conditions — muted, on-brand, all legible
-// with white or dark text (iconColorOn picks per swatch).
-const EFFECT_COLORS = ['#B5838D', '#C97A6D', '#D0956B', '#89B0AE', '#6F9F8B', '#7BB0A6', '#8896B0', '#9A8FB0', '#A79CB5', '#8FA9C0']
-// The glyphs offered when building a custom condition — drawn from the icon set.
-const EFFECT_ICONS = ['brain', 'droplet', 'battery', 'flame', 'cloud', 'rain', 'storm', 'sun', 'moon', 'heart', 'pulse', 'meditation', 'yoga', 'target', 'sparkle', 'bed', 'coffee', 'bulb', 'star', 'shield', 'flower', 'leaf']
 
 // ── Small building blocks ──────────────────────────────────────
 
@@ -172,6 +167,65 @@ function EffectEditor({ draft, onChange, onSave, onDelete, onClose }) {
         </div>
       </div>
     </div>
+  )
+}
+
+// The check-in emotion palette: tap to tag (up to 4), "＋" to add a unique
+// emotion with a chosen colour, long-press a chip for a faint ✕ that removes it
+// from the palette going forward (previously tagged clouds keep it).
+function EmotionPicker({ options, selected, onToggle, onAdd, onDelete }) {
+  const [armed, setArmed] = useState(null)
+  const [adding, setAdding] = useState(false)
+  const [name, setName] = useState('')
+  const [color, setColor] = useState(EMOTION_PALETTE[0])
+  const holdRef = useRef(null)
+  const longFired = useRef(false)
+  const startHold = (id) => { longFired.current = false; clearTimeout(holdRef.current); holdRef.current = setTimeout(() => { longFired.current = true; setArmed(id) }, 450) }
+  const endHold = () => clearTimeout(holdRef.current)
+  const chipClick = (id) => { if (longFired.current) { longFired.current = false; return } if (armed) { setArmed(null); return } onToggle(id) }
+  const openAdd = () => { setArmed(null); setColor(EMOTION_PALETTE[Math.floor(Math.random() * EMOTION_PALETTE.length)]); setAdding(true) }
+  const commit = () => { if (name.trim()) onAdd(name, color); setName(''); setAdding(false) }
+  return (
+    <>
+      <div className="wl-emotions" onClick={() => setArmed(null)}>
+        {options.map(e => {
+          const on = selected.includes(e.id)
+          return (
+            <span key={e.id} className="wl-emo-wrap">
+              <button className={`wl-emo ${on ? 'on' : ''} ${armed === e.id ? 'armed' : ''}`}
+                onClick={(ev) => { ev.stopPropagation(); chipClick(e.id) }}
+                onPointerDown={() => startHold(e.id)} onPointerUp={endHold} onPointerLeave={endHold}
+                onContextMenu={ev => ev.preventDefault()}
+                style={on ? { borderColor: e.color, background: e.color + '26', boxShadow: `0 0 0 3px ${e.color}33` } : {}}>
+                <span className="wl-emo-dot" style={{ background: e.color }} />
+                {e.name}
+              </button>
+              {armed === e.id && (
+                <button className="rail-emo-del" title="Remove this emotion"
+                  onClick={ev => { ev.stopPropagation(); onDelete(e.id); setArmed(null) }}>✕</button>
+              )}
+            </span>
+          )
+        })}
+        {!adding && <button className="rail-emo-add" title="Add a unique emotion" onClick={(ev) => { ev.stopPropagation(); openAdd() }}>＋</button>}
+      </div>
+      {adding && (
+        <div className="rail-emo-adder">
+          <div className="rail-emo-adder-row">
+            <span className="rail-emo-dot lg" style={{ background: color }} />
+            <input className="rail-emo-input" autoFocus value={name} maxLength={24}
+              placeholder="name a feeling…" onChange={ev => setName(ev.target.value)}
+              onKeyDown={ev => { if (ev.key === 'Enter') commit(); if (ev.key === 'Escape') { setName(''); setAdding(false) } }} />
+            <button className="rail-emo-ok" disabled={!name.trim()} onClick={commit}>Add</button>
+          </div>
+          <div className="rail-emo-swatches">
+            {EMOTION_PALETTE.map(c => (
+              <button key={c} className={`rail-swatch ${color === c ? 'on' : ''}`} style={{ background: c }} onClick={() => setColor(c)} aria-label={`Colour ${c}`} />
+            ))}
+          </div>
+        </div>
+      )}
+    </>
   )
 }
 
@@ -348,6 +402,7 @@ export default function BloomWellness({
   episodes, persistEpisodes,
   game, persistGame,
   treasures = [], persistTreasures,
+  emotionPrefs, persistEmotionPrefs,
   log = [],
 }) {
   const today = dayKey()
@@ -431,14 +486,30 @@ export default function BloomWellness({
   }
   const deleteEditor = () => {
     const base = (effects && effects.length) ? effects : DEFAULT_EFFECTS
-    persistEffects(base.filter(f => f.id !== editor.id))
+    // Hide rather than remove, so any episode already tagged with this condition
+    // still resolves (its name/colour) on the rail and in past-day detail.
+    persistEffects(base.map(f => f.id === editor.id ? { ...f, hidden: true } : f))
     setEditor(null)
+  }
+
+  // ── Emotions palette (add / delete / recolour) ───────────────
+  const emotionOptions = useMemo(() => selectableEmotions(), [emotionPrefs])
+  const addEmotion = (name, color) => {
+    const nm = (name || '').trim()
+    if (!nm) return
+    const prefs = emotionPrefs || { custom: [], hidden: [] }
+    if (emotionOptions.some(e => e.name.toLowerCase() === nm.toLowerCase())) return
+    persistEmotionPrefs?.({ custom: [...(prefs.custom || []), makeEmotion(nm, color)], hidden: prefs.hidden || [] })
+  }
+  const deleteEmotion = (id) => {
+    const prefs = emotionPrefs || { custom: [], hidden: [] }
+    persistEmotionPrefs?.({ custom: prefs.custom || [], hidden: [...new Set([...(prefs.hidden || []), id])] })
   }
 
   const activeNow = effectList.filter(fx => isActive(episodes, fx.id))
     .map(fx => ({ fx, since: episodeMinutes(activeEpisode(episodes, fx.id)) }))
-  const physical = effectList.filter(f => f.kind !== 'mental')
-  const mental = effectList.filter(f => f.kind === 'mental')
+  const physical = effectList.filter(f => f.kind !== 'mental' && !f.hidden)
+  const mental = effectList.filter(f => f.kind === 'mental' && !f.hidden)
 
   // ── Game/companion derived ───────────────────────────────────
   const lv = levelFromXp(game?.xp || 0)
@@ -511,18 +582,8 @@ export default function BloomWellness({
             </div>
 
             <div className="wl-ask">Any complex feelings? <span className="wl-optional">the cloud's lining · up to 4</span></div>
-            <div className="wl-emotions">
-              {COMPLEX_EMOTIONS.map(e => {
-                const on = emotionsSel.includes(e.id)
-                return (
-                  <button key={e.id} className={`wl-emo ${on ? 'on' : ''}`} onClick={() => toggleEmotion(e.id)}
-                    style={on ? { borderColor: e.color, background: e.color + '26', boxShadow: `0 0 0 3px ${e.color}33` } : {}}>
-                    <span className="wl-emo-dot" style={{ background: e.color }} />
-                    {e.name}
-                  </button>
-                )
-              })}
-            </div>
+            <EmotionPicker options={emotionOptions} selected={emotionsSel}
+              onToggle={toggleEmotion} onAdd={addEmotion} onDelete={deleteEmotion} />
 
             {/* Live preview — your cloud forming, with its emotion lining shimmering. */}
             {mood && (

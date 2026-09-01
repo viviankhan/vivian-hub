@@ -17,8 +17,8 @@ import { useState, useMemo, useEffect, useRef } from 'react'
 import { Glyph, iconColorOn } from '../lib/glyphs.jsx'
 import { GuideBlob, MoodCloud } from '../lib/critters.jsx'
 import {
-  dayKey, MOODS, moodMeta, COMPLEX_EMOTIONS, emotionMeta, checkinsForDay,
-  DEFAULT_EFFECTS, POSITIVE_EFFECTS, isActive, activeEpisode, startEpisode, endEpisode, setEpisodeNote,
+  dayKey, MOODS, moodMeta, selectableEmotions, makeEmotion, emotionMeta, EMOTION_PALETTE, checkinsForDay,
+  DEFAULT_EFFECTS, POSITIVE_EFFECTS, makeEffect, EFFECT_COLORS, EFFECT_ICONS, isActive, activeEpisode, startEpisode, endEpisode, setEpisodeNote,
   episodeMinutes, fmtDuration, applyCheckIn, awardPetals,
 } from '../lib/wellness.js'
 
@@ -42,6 +42,7 @@ function affirm(activeEffects) {
 export default function DayRail({
   checkins = [], persistCheckins, effects, persistEffects,
   episodes = [], persistEpisodes, game, persistGame,
+  emotionPrefs, persistEmotionPrefs,
 }) {
   const today = dayKey()
   const effectList = (effects && effects.length) ? effects : DEFAULT_EFFECTS
@@ -55,6 +56,10 @@ export default function DayRail({
   const nowFrac = fracOf(nowMs)
   const blobRef = useRef(null)
   const [anchor, setAnchor] = useState(null)       // blob centre in viewport px
+  // The emotions offered in the picker (built-ins + custom, minus hidden). The
+  // module registry is kept in sync by App on load and on every save, so this
+  // recomputes whenever the prefs blob changes.
+  const emotionOptions = useMemo(() => selectableEmotions(), [emotionPrefs])
   const closeAll = () => { setMenu(false); setSheet(null); setMoodDetail(null) }
   const openMenu = () => {
     const r = blobRef.current?.getBoundingClientRect()
@@ -117,6 +122,38 @@ export default function DayRail({
       }
     }
     persistEpisodes(endEpisode(episodes, effectId))
+  }
+
+  // Add a user-defined emotion to the palette (available to tag going forward),
+  // with an optional chosen colour for its cloud lining.
+  const addEmotion = (name, color) => {
+    const nm = (name || '').trim()
+    if (!nm) return
+    const prefs = emotionPrefs || { custom: [], hidden: [] }
+    // Reuse an existing option if the name already exists (case-insensitive).
+    if (emotionOptions.some(e => e.name.toLowerCase() === nm.toLowerCase())) return
+    const next = { custom: [...(prefs.custom || []), makeEmotion(nm, color)], hidden: prefs.hidden || [] }
+    persistEmotionPrefs?.(next)
+  }
+  // "Delete" an emotion = hide it from the picker. Its metadata is kept so any
+  // cloud already tagged with it still renders its lining and reads back by name.
+  const deleteEmotion = (id) => {
+    const prefs = emotionPrefs || { custom: [], hidden: [] }
+    const next = { custom: prefs.custom || [], hidden: [...new Set([...(prefs.hidden || []), id])] }
+    persistEmotionPrefs?.(next)
+  }
+
+  // Add a custom status condition (physical/mental) to the palette.
+  const addEffect = (draft) => {
+    if (!draft || !(draft.name || '').trim()) return
+    const base = (effects && effects.length) ? effects : DEFAULT_EFFECTS
+    persistEffects?.([...base, makeEffect(draft)])
+  }
+  // "Delete" a condition = hide it from the palette, keeping its definition so
+  // any episode already recorded against it still resolves on the rail.
+  const deleteEffect = (id) => {
+    const base = (effects && effects.length) ? effects : DEFAULT_EFFECTS
+    persistEffects?.(base.map(f => f.id === id ? { ...f, hidden: true } : f))
   }
 
   const activeEffects = effectList.filter(f => isActive(episodes, f.id))
@@ -183,10 +220,12 @@ export default function DayRail({
               <div className="rail-say">{affirm(activeEffects)}</div>
             </div>
           )}
-          {sheet === 'mood' && <MomentSheet onClose={closeAll} onLog={logMood} />}
+          {sheet === 'mood' && <MomentSheet onClose={closeAll} onLog={logMood}
+            emotions={emotionOptions} onAddEmotion={addEmotion} onDeleteEmotion={deleteEmotion} />}
           {sheet === 'status' && (
             <StatusSheet effects={effectList} episodes={episodes} byId={byId}
-              onAdd={addStatus} onEnd={(id) => endStatus(id, false)} onClose={closeAll} />
+              onAdd={addStatus} onEnd={(id) => endStatus(id, false)} onClose={closeAll}
+              onAddEffect={addEffect} onDeleteEffect={deleteEffect} />
           )}
           {moodDetail && <DetailPopover item={moodDetail} onClose={closeAll} />}
         </div>
@@ -196,14 +235,41 @@ export default function DayRail({
 }
 
 // ── Moment sheet — pick a mood, optionally say why ──────────────
-function MomentSheet({ onClose, onLog }) {
+function MomentSheet({ onClose, onLog, emotions: options = [], onAddEmotion, onDeleteEmotion }) {
   const [mood, setMood] = useState(null)
   const [emotions, setEmotions] = useState([])
   const [note, setNote] = useState('')
   const [noting, setNoting] = useState(false)
   const toggleEmo = (id) => setEmotions(p => p.includes(id) ? p.filter(x => x !== id) : (p.length < 4 ? [...p, id] : p))
+
+  // Long-press arms an emotion chip for deletion (shows a faint ✕); the "＋"
+  // chip reveals a small inline input for adding a unique emotion.
+  const [armed, setArmed] = useState(null)   // emotion id showing its delete ✕
+  const [adding, setAdding] = useState(false)
+  const [draft, setDraft] = useState('')
+  const [draftColor, setDraftColor] = useState(EMOTION_PALETTE[0])
+  const holdRef = useRef(null)
+  const longFired = useRef(false)
+  const startHold = (id) => {
+    longFired.current = false
+    clearTimeout(holdRef.current)
+    holdRef.current = setTimeout(() => { longFired.current = true; setArmed(id) }, 450)
+  }
+  const endHold = () => clearTimeout(holdRef.current)
+  const chipClick = (id) => {
+    if (longFired.current) { longFired.current = false; return }  // the press was a long-press
+    if (armed) { setArmed(null); return }                        // a tap elsewhere disarms
+    toggleEmo(id)
+  }
+  const openAdd = () => { setArmed(null); setDraftColor(EMOTION_PALETTE[Math.floor(Math.random() * EMOTION_PALETTE.length)]); setAdding(true) }
+  const commitAdd = () => {
+    const nm = draft.trim()
+    if (nm) onAddEmotion?.(nm, draftColor)
+    setDraft(''); setAdding(false)
+  }
+
   return (
-    <div className="rail-sheet" onClick={(e) => e.stopPropagation()}>
+    <div className="rail-sheet" onClick={(e) => { setArmed(null); e.stopPropagation() }}>
       <div className="rail-sheet-title">How are you, right now?</div>
       <div className="rail-moods">
         {MOODS.map(m => (
@@ -218,11 +284,43 @@ function MomentSheet({ onClose, onLog }) {
           {!noting
             ? <button className="rail-addnote" onClick={() => setNoting(true)}>＋ Say why (optional)</button>
             : <>
-                <div className="rail-emos">
-                  {COMPLEX_EMOTIONS.map(e => (
-                    <button key={e.id} className={`rail-emo ${emotions.includes(e.id) ? 'on' : ''}`} onClick={() => toggleEmo(e.id)}>{e.name}</button>
+                <div className="rail-emos" onClick={e => e.stopPropagation()}>
+                  {options.map(e => (
+                    <span key={e.id} className="rail-emo-wrap">
+                      <button
+                        className={`rail-emo ${emotions.includes(e.id) ? 'on' : ''} ${armed === e.id ? 'armed' : ''}`}
+                        style={emotions.includes(e.id) ? { borderColor: e.color, background: `color-mix(in srgb, ${e.color} 16%, #fff)` } : undefined}
+                        onClick={() => chipClick(e.id)}
+                        onPointerDown={() => startHold(e.id)}
+                        onPointerUp={endHold} onPointerLeave={endHold}
+                        onContextMenu={ev => ev.preventDefault()}>
+                        <span className="rail-emo-dot" style={{ background: e.color }} />{e.name}
+                      </button>
+                      {armed === e.id && (
+                        <button className="rail-emo-del" title="Remove this emotion"
+                          onClick={ev => { ev.stopPropagation(); onDeleteEmotion?.(e.id); setArmed(null) }}>✕</button>
+                      )}
+                    </span>
                   ))}
+                  {!adding && <button className="rail-emo-add" title="Add a unique emotion" onClick={openAdd}>＋</button>}
                 </div>
+                {adding && (
+                  <div className="rail-emo-adder" onClick={e => e.stopPropagation()}>
+                    <div className="rail-emo-adder-row">
+                      <span className="rail-emo-dot lg" style={{ background: draftColor }} />
+                      <input className="rail-emo-input" autoFocus value={draft} maxLength={24}
+                        placeholder="name a feeling…" onChange={ev => setDraft(ev.target.value)}
+                        onKeyDown={ev => { if (ev.key === 'Enter') commitAdd(); if (ev.key === 'Escape') { setDraft(''); setAdding(false) } }} />
+                      <button className="rail-emo-ok" disabled={!draft.trim()} onClick={commitAdd}>Add</button>
+                    </div>
+                    <div className="rail-emo-swatches">
+                      {EMOTION_PALETTE.map(c => (
+                        <button key={c} className={`rail-swatch ${draftColor === c ? 'on' : ''}`} style={{ background: c }}
+                          onClick={() => setDraftColor(c)} aria-label={`Colour ${c}`} />
+                      ))}
+                    </div>
+                  </div>
+                )}
                 <textarea className="rail-note" placeholder="What's behind this feeling? (only if you want to)" value={note} onChange={e => setNote(e.target.value)} rows={2} />
               </>}
           <button className="rail-log" onClick={() => onLog(mood, emotions, note)}>Log this moment</button>
@@ -233,12 +331,26 @@ function MomentSheet({ onClose, onLog }) {
 }
 
 // ── Status sheet — pick / describe / end a condition ────────────
-function StatusSheet({ effects, episodes, byId, onAdd, onEnd, onClose }) {
+function StatusSheet({ effects, episodes, byId, onAdd, onEnd, onClose, onAddEffect, onDeleteEffect }) {
   const [pick, setPick] = useState(null)
   const [note, setNote] = useState('')
   const active = effects.filter(f => isActive(episodes, f.id))
+  const options = effects.filter(f => !f.hidden)   // deleted conditions drop out of the picker
+
+  // Long-press a condition tile to arm its delete ✕; the "＋" tile opens a
+  // compact new-condition form (name · kind · colour · icon).
+  const [armed, setArmed] = useState(null)
+  const holdRef = useRef(null)
+  const longFired = useRef(false)
+  const startHold = (id) => { longFired.current = false; clearTimeout(holdRef.current); holdRef.current = setTimeout(() => { longFired.current = true; setArmed(id) }, 450) }
+  const endHold = () => clearTimeout(holdRef.current)
+
+  const [draft, setDraft] = useState(null)   // { name, kind, color, icon } while adding
+  const openAdd = () => { setArmed(null); setPick(null); setDraft({ name: '', kind: 'physical', color: EFFECT_COLORS[3], icon: 'sparkle' }) }
+  const commitAdd = () => { if (draft && draft.name.trim()) onAddEffect?.(draft); setDraft(null) }
+
   return (
-    <div className="rail-sheet" onClick={(e) => e.stopPropagation()}>
+    <div className="rail-sheet" onClick={(e) => { setArmed(null); e.stopPropagation() }}>
       <div className="rail-sheet-title">What are you feeling in your body or mind?</div>
       {active.length > 0 && (
         <div className="rail-active">
@@ -253,17 +365,62 @@ function StatusSheet({ effects, episodes, byId, onAdd, onEnd, onClose }) {
         </div>
       )}
       <div className="rail-fxgrid">
-        {effects.map(f => {
+        {options.map(f => {
           const on = isActive(episodes, f.id)
           return (
-            <button key={f.id} className={`rail-fxpick ${pick === f.id ? 'sel' : ''} ${on ? 'on' : ''}`} disabled={on}
-              onClick={() => setPick(f.id)} style={pick === f.id ? { borderColor: f.color, background: `color-mix(in srgb, ${f.color} 16%, #fff)` } : undefined}>
-              <span className="rail-fxpick-ico" style={{ background: f.color, color: iconColorOn(f.color) }}><Glyph id={f.icon} size={15} /></span>
-              <span>{f.name}</span>
-            </button>
+            <span key={f.id} className="rail-fxpick-wrap">
+              <button className={`rail-fxpick ${pick === f.id ? 'sel' : ''} ${on ? 'on' : ''} ${armed === f.id ? 'armed' : ''}`} disabled={on}
+                onClick={() => { if (longFired.current) { longFired.current = false; return } if (armed) { setArmed(null); return } setPick(f.id) }}
+                onPointerDown={() => !on && startHold(f.id)} onPointerUp={endHold} onPointerLeave={endHold}
+                onContextMenu={ev => ev.preventDefault()}
+                style={pick === f.id ? { borderColor: f.color, background: `color-mix(in srgb, ${f.color} 16%, #fff)` } : undefined}>
+                <span className="rail-fxpick-ico" style={{ background: f.color, color: iconColorOn(f.color) }}><Glyph id={f.icon} size={15} /></span>
+                <span>{f.name}</span>
+              </button>
+              {armed === f.id && (
+                <button className="rail-emo-del" title="Remove this condition"
+                  onClick={ev => { ev.stopPropagation(); onDeleteEffect?.(f.id); setArmed(null) }}>✕</button>
+              )}
+            </span>
           )
         })}
+        {!draft && (
+          <button className="rail-fxpick rail-fxpick-add" onClick={openAdd} title="Add a condition">
+            <span className="rail-fxpick-plus">＋</span>
+          </button>
+        )}
       </div>
+
+      {draft && (
+        <div className="rail-fx-adder" onClick={e => e.stopPropagation()}>
+          <div className="rail-emo-adder-row">
+            <span className="rail-fxpick-ico sm" style={{ background: draft.color, color: iconColorOn(draft.color) }}><Glyph id={draft.icon} size={14} /></span>
+            <input className="rail-emo-input" autoFocus value={draft.name} maxLength={24}
+              placeholder="name a condition…" onChange={ev => setDraft({ ...draft, name: ev.target.value })}
+              onKeyDown={ev => { if (ev.key === 'Enter') commitAdd(); if (ev.key === 'Escape') setDraft(null) }} />
+            <button className="rail-emo-ok" disabled={!draft.name.trim()} onClick={commitAdd}>Add</button>
+          </div>
+          <div className="rail-fx-seg">
+            {['physical', 'mental'].map(k => (
+              <button key={k} className={`rail-fx-seg-btn ${draft.kind === k ? 'on' : ''}`} onClick={() => setDraft({ ...draft, kind: k })}>{k === 'physical' ? 'Physical' : 'Mental'}</button>
+            ))}
+          </div>
+          <div className="rail-emo-swatches">
+            {EFFECT_COLORS.map(c => (
+              <button key={c} className={`rail-swatch ${draft.color === c ? 'on' : ''}`} style={{ background: c }} onClick={() => setDraft({ ...draft, color: c })} aria-label={`Colour ${c}`} />
+            ))}
+          </div>
+          <div className="rail-fx-icons">
+            {EFFECT_ICONS.map(ic => (
+              <button key={ic} className={`rail-fx-icon ${draft.icon === ic ? 'on' : ''}`} onClick={() => setDraft({ ...draft, icon: ic })}
+                style={draft.icon === ic ? { background: draft.color, color: iconColorOn(draft.color), borderColor: draft.color } : undefined} aria-label={`Icon ${ic}`}>
+                <Glyph id={ic} size={16} />
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       {pick && (
         <>
           <textarea className="rail-note" placeholder={`Describe the ${(byId.get(pick)?.name || '').toLowerCase()} — as much or as little as you like`} value={note} onChange={e => setNote(e.target.value)} rows={2} />

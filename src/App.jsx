@@ -23,12 +23,14 @@ import {
   getWellnessEffects, setWellnessEffects,
   getWellnessEpisodes, setWellnessEpisodes,
   getWellnessGame, setWellnessGame,
+  getWellnessEmotions, setWellnessEmotions,
   getWellnessTreasures, setWellnessTreasures,
   getWellnessSpace, setWellnessSpace,
   getArtOverrides, setArtOverrides,
   addCategory as dbAddCategory, updateCategory as dbUpdateCategory, deleteCategory as dbDeleteCategory,
 } from './lib/storage.js'
 import { occKey, recurringOccurrencesForDate } from './lib/occurrences.js'
+import { registerEmotionPrefs } from './lib/wellness.js'
 import { runMigrationIfNeeded, seedCategoriesIfNeeded } from './lib/migrate.js'
 import { DEFAULT_RECURRING_TASKS, DEFAULT_DAILY_TODOS } from './data/schedule.js'
 
@@ -608,6 +610,7 @@ export default function App() {
   const [wlEffects,        setWlEffects_]        = useState(null)   // null → seed defaults in the tab
   const [wlEpisodes,       setWlEpisodes_]       = useState([])
   const [wlGame,           setWlGame_]           = useState(null)
+  const [wlEmotions,       setWlEmotions_]       = useState({ custom: [], hidden: [] })
   const [wlTreasures,      setWlTreasures_]      = useState([])
   const [wlSpace,          setWlSpace_]          = useState(null)
   const [loading,          setLoading]          = useState(true)
@@ -615,14 +618,14 @@ export default function App() {
   useEffect(() => {
     async function load() {
       await runMigrationIfNeeded()
-      const [comp, l, n, fcp, fcs, sch, com, rt, vac, evs, cats, cmeta, rexc, rmeta, rout, tlogs, tpls, chist, wlc, wlfx, wlep, wlg, wltr, wlsp, artov] = await Promise.all([
+      const [comp, l, n, fcp, fcs, sch, com, rt, vac, evs, cats, cmeta, rexc, rmeta, rout, tlogs, tpls, chist, wlc, wlfx, wlep, wlg, wlem, wltr, wlsp, artov] = await Promise.all([
         getCompletions(), getLogEntries(), getNotes(),
         getFcProgress(), getFcStudied(), getScheduledTasks(),
         getCommitments(), getRecurringTasks(), getVacations(), getEvents(),
         seedCategoriesIfNeeded(), getCommitmentMeta(), getRecurringExceptions(), getRecurringMeta(),
         getRoutineGroups(), getTimeLogs(), getTaskTemplates(), getChangeHistory(),
         getWellnessCheckins(), getWellnessEffects(), getWellnessEpisodes(), getWellnessGame(),
-        getWellnessTreasures(), getWellnessSpace(), getArtOverrides(),
+        getWellnessEmotions(), getWellnessTreasures(), getWellnessSpace(), getArtOverrides(),
       ])
       setCompletions_(comp); setLog_(l); setNotes_(n)
       setFcProgress_(fcp); setFcStudied_(fcs); setScheduled_(sch)
@@ -635,6 +638,11 @@ export default function App() {
       setWlEffects_(Array.isArray(wlfx) ? wlfx : null)
       setWlEpisodes_(Array.isArray(wlep) ? wlep : [])
       setWlGame_(wlg && typeof wlg === 'object' ? wlg : null)
+      // Emotion palette: mirror the synced prefs into the module registers up
+      // front so custom/hidden emotions resolve on the very first render.
+      const emPrefs = { custom: (wlem && Array.isArray(wlem.custom)) ? wlem.custom : [], hidden: (wlem && Array.isArray(wlem.hidden)) ? wlem.hidden : [] }
+      registerEmotionPrefs(emPrefs)
+      setWlEmotions_(emPrefs)
       setWlTreasures_(Array.isArray(wltr) ? wltr : [])
       setWlSpace_(wlsp && typeof wlsp === 'object' ? wlsp : null)
       // Seed the custom-art override store from the synced blob so any uploaded
@@ -1458,6 +1466,7 @@ export default function App() {
   const persistWlEffects  = useCallback(next => { setWlEffects_(next);  setWellnessEffects(next).catch(reportSaveError) }, [])
   const persistWlEpisodes = useCallback(next => { setWlEpisodes_(next); setWellnessEpisodes(next).catch(reportSaveError) }, [])
   const persistWlGame     = useCallback(next => { setWlGame_(next);     setWellnessGame(next).catch(reportSaveError) }, [])
+  const persistWlEmotions = useCallback(next => { registerEmotionPrefs(next); setWlEmotions_(next); setWellnessEmotions(next).catch(reportSaveError) }, [])
   const persistWlTreasures = useCallback(next => { setWlTreasures_(next); setWellnessTreasures(next).catch(reportSaveError) }, [])
   const persistWlSpace     = useCallback(next => { setWlSpace_(next);     setWellnessSpace(next).catch(reportSaveError) }, [])
   // Custom-art uploads: the Art Studio mutates the in-memory override store
@@ -1669,6 +1678,7 @@ export default function App() {
           wlEffects={wlEffects} persistWlEffects={persistWlEffects}
           wlEpisodes={wlEpisodes} persistWlEpisodes={persistWlEpisodes}
           wlGame={wlGame} persistWlGame={persistWlGame} wlLog={log}
+          wlEmotions={wlEmotions} persistWlEmotions={persistWlEmotions}
           onOpenWellness={() => setTab('wellness')} />}
         {tab==='week'        && <ThisWeek    {...sharedProps} deleteCommitment={deleteCommitment} />}
         {tab==='taskmenu'    && <TaskMenu templates={taskTemplates} addTemplate={addTaskTemplate}
@@ -1691,6 +1701,7 @@ export default function App() {
           episodes={wlEpisodes} persistEpisodes={persistWlEpisodes}
           game={wlGame} persistGame={persistWlGame}
           treasures={wlTreasures} persistTreasures={persistWlTreasures}
+          emotionPrefs={wlEmotions} persistEmotionPrefs={persistWlEmotions}
           log={log} />}
         {tab==='voyage'      && <Voyage game={wlGame} persistGame={persistWlGame}
           space={wlSpace} persistSpace={persistWlSpace} checkins={wlCheckins} />}
