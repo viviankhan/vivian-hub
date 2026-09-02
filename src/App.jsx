@@ -102,11 +102,9 @@ const LEGACY_ROUTINE_TINTS = { morning: '#F9C9D9' }
 
 const TABS = [
   { id:'today',       label:'Today',       glyph:'list' },
-  { id:'week',        label:'Week',        glyph:'calendar' },
   { id:'taskmenu',    label:'Task Menu',    glyph:'clipboard' },
   { id:'calendar',    label:'Calendar',    glyph:'grid' },
   { id:'wellness',    label:'Wellness',    glyph:'flower' },
-  { id:'voyage',      label:'Rocket',      glyph:'rocket' },
   { id:'thoughts',    label:'Thoughts',    glyph:'bulb' },
   { id:'events',      label:'Events',      glyph:'ticket' },
   { id:'recurring',   label:'Recurring',   glyph:'repeat' },
