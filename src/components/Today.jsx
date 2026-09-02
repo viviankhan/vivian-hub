@@ -772,7 +772,10 @@ function TimelineBlock({ task, categories, status, now, prevColor, nextColor, ro
           upcoming segments stay light gray. */}
       <div style={{ width:52, flexShrink:0, display:'flex', flexDirection:'column', alignItems:'center' }}>
         <div style={{ width:3, height:14, borderRadius:3, background: prevColor ? `linear-gradient(to bottom, ${prevColor}, ${color})` : color }} />
-        <div style={{ position:'relative', overflow:'hidden', width:52, height:pillH, borderRadius:26, flexShrink:0, background:color, display:'flex', alignItems:'center', justifyContent:'center',
+        <div className="js-task-pill"
+          data-smin={timeMins != null ? timeMins : ''}
+          data-emin={(timeMins != null && task._dur) ? timeMins + task._dur : ''}
+          style={{ position:'relative', overflow:'hidden', width:52, height:pillH, borderRadius:26, flexShrink:0, background:color, display:'flex', alignItems:'center', justifyContent:'center',
           boxShadow:isCurrent?`0 0 0 4px ${color}33`:'none' }}>
           {/* Progress shade — lighter fill(s) marking how far along the task is:
               elapsed time while it's happening (and/or the share of subtasks

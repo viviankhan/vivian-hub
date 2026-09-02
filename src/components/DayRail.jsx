@@ -30,6 +30,9 @@ const fracOf = (d) => {
   const dt = new Date(d), h = dt.getHours() + dt.getMinutes() / 60
   return Math.max(0, Math.min(1, (h - DAY_START) / (DAY_END - DAY_START)))
 }
+// Minute-of-day for a timestamp — the unit the timeline's task pills are tagged
+// in, so the rail can map a moment onto the timeline's own geometry.
+const minsOf = (d) => { const dt = new Date(d); return dt.getHours() * 60 + dt.getMinutes() }
 
 // A kind line for the blob to speak, shaped by what you're carrying right now.
 function affirm(activeEffects) {
@@ -63,11 +66,6 @@ export default function DayRail({
   const blobRef = useRef(null)
   const railRef = useRef(null)
   const [anchor, setAnchor] = useState(null)       // blob centre in viewport px
-  // Where "now" actually sits on the timeline, as a fraction of the rail's
-  // height. The timeline lays tasks out proportionally (with minimums, blocks
-  // and gaps), so a pure clock fraction drifts from the on-screen now-marker.
-  // We measure the marker and ride the blob to it, keeping the two in sync.
-  const [nowAnchorFrac, setNowAnchorFrac] = useState(null)
   // The emotions offered in the picker (built-ins + custom, minus hidden). The
   // module registry is kept in sync by App on load and on every save, so this
   // recomputes whenever the prefs blob changes.
@@ -115,34 +113,72 @@ export default function DayRail({
     })
   }, [todayMoments, todayEpisodes])
 
-  // Ride the blob to the timeline's live now-marker. We read the marker's
-  // centre relative to the rail and express it as a fraction of the rail's
-  // height, re-measuring whenever the timeline re-lays-out (its height changes)
-  // or the clock ticks. Only today has a now-marker; other days fall back to
-  // nothing (the blob is hidden anyway).
+  // The timeline lays tasks out proportionally (with per-task minimums, blocks
+  // and gaps), so a clock fraction drifts from where a moment actually sits on
+  // screen. We read the timeline's own geometry — each task pill carries its
+  // start/end minute — and build a time→fraction map of the rail. Every rail
+  // element (moods, status trails, the blob) is then placed through the same
+  // map, so they stay locked to the timeline rather than to the clock.
+  const [timeMap, setTimeMap] = useState([])
   useLayoutEffect(() => {
-    if (!isToday) { setNowAnchorFrac(null); return }
     const rail = railRef.current
     const root = rail?.closest('.today-root')
     if (!rail || !root) return
     const measure = () => {
-      const dot = root.querySelector('.js-now-dot')
       const rr = rail.getBoundingClientRect()
-      if (!dot || !rr.height) { setNowAnchorFrac(null); return }
-      const dr = dot.getBoundingClientRect()
-      const frac = (dr.top + dr.height / 2 - rr.top) / rr.height
-      setNowAnchorFrac(Math.max(0, Math.min(1, frac)))
+      if (!rr.height) return
+      const anchors = []
+      const at = (px) => (px - rr.top) / rr.height
+      root.querySelectorAll('.js-task-pill').forEach(pl => {
+        const s = Number(pl.dataset.smin), e = Number(pl.dataset.emin)
+        const b = pl.getBoundingClientRect()
+        if (Number.isFinite(s)) anchors.push({ min: s, frac: at(b.top) })
+        if (Number.isFinite(e)) anchors.push({ min: e, frac: at(b.bottom) })
+      })
+      const dot = isToday ? root.querySelector('.js-now-dot') : null
+      if (dot) { const b = dot.getBoundingClientRect(); anchors.push({ min: minsOf(nowMs), frac: at(b.top + b.height / 2) }) }
+      // Pin the rail's ends to the waking-day window so out-of-range moments
+      // still land sensibly.
+      anchors.push({ min: DAY_START * 60, frac: 0 }, { min: DAY_END * 60, frac: 1 })
+      anchors.sort((a, b) => a.min - b.min)
+      // Keep it monotonic (measurement noise / minimums can nudge a frac back).
+      let prev = -Infinity
+      const clean = []
+      for (const a of anchors) {
+        if (clean.length && a.min === clean[clean.length - 1].min) continue
+        const f = Math.max(prev, Math.max(0, Math.min(1, a.frac)))
+        clean.push({ min: a.min, frac: f }); prev = f
+      }
+      setTimeMap(clean)
     }
     measure()
     const ro = new ResizeObserver(measure)
     ro.observe(root)
     window.addEventListener('resize', measure)
     return () => { ro.disconnect(); window.removeEventListener('resize', measure) }
-  }, [isToday, nowMs, markers])
+  }, [isToday, nowMs, markers, day])
 
-  // The blob's vertical home: the measured now-marker when we have it, else the
-  // plain clock fraction. Live status trails run down to meet it.
-  const blobFrac = nowAnchorFrac != null ? nowAnchorFrac : nowFrac
+  // Interpolate a minute-of-day to a rail fraction through the measured map;
+  // null until the map is ready, so callers can fall back to the clock.
+  const fracForMin = (min) => {
+    const a = timeMap
+    if (a.length < 2) return null
+    if (min <= a[0].min) return a[0].frac
+    if (min >= a[a.length - 1].min) return a[a.length - 1].frac
+    for (let i = 1; i < a.length; i++) {
+      if (min <= a[i].min) {
+        const p = a[i - 1], q = a[i], span = (q.min - p.min) || 1
+        return p.frac + ((min - p.min) / span) * (q.frac - p.frac)
+      }
+    }
+    return a[a.length - 1].frac
+  }
+  // A timestamp → rail fraction, mapped through the timeline, else the clock.
+  const railFrac = (ts) => { const f = fracForMin(minsOf(ts)); return f != null ? f : fracOf(ts) }
+
+  // The blob's vertical home: "now" placed through the same map, so it sits on
+  // the timeline's now-marker. Live status trails run down to meet it.
+  const blobFrac = (() => { const f = fracForMin(minsOf(nowMs)); return f != null ? f : nowFrac })()
 
   // ── Actions ──────────────────────────────────────────────
   const logMood = (mood, emotions, note) => {
@@ -215,8 +251,9 @@ export default function DayRail({
       {todayEpisodes.map(e => {
         // A still-running episode's trail runs down to the blob (today) or to
         // the day's end (a past day); a closed one stops at its recorded end.
-        const top = fracOf(e.start)
-        const bottom = e.end ? fracOf(e.end) : (isToday ? blobFrac : 1)
+        // Placed through the timeline map so the trail meets the blob exactly.
+        const top = railFrac(e.start)
+        const bottom = e.end ? railFrac(e.end) : (isToday ? blobFrac : 1)
         const h = Math.max(0, bottom - top)
         return (
           <button key={'t' + e.id} className="rail-trail" title={`${e.fx.name}${e.note ? ' · ' + e.note : ''} · tap to end`}
@@ -228,10 +265,13 @@ export default function DayRail({
       {/* Markers — mood clouds + status icons, fanned when they crowd. */}
       {markers.map(m => {
         const dx = m.cluster * 13, scale = m.cluster ? 0.72 : 1
+        // Position through the timeline map (clustering above still uses the
+        // clock — it only needs to know which marks share a moment).
+        const top = railFrac(m.type === 'mood' ? m.data.ts : m.data.start)
         if (m.type === 'mood') {
           const c = m.data
           return (
-            <button key={m.key} className="rail-mark rail-mood" style={{ top: `${m.frac * 100}%`, transform: `translate(${dx}px,-50%) scale(${scale})` }}
+            <button key={m.key} className="rail-mark rail-mood" style={{ top: `${top * 100}%`, transform: `translate(${dx}px,-50%) scale(${scale})` }}
               title={`${moodMeta(c.mood).label} · ${clockTime(c.ts)}`} onClick={() => setMoodDetail(c)}>
               <MoodCloud v={c.mood} size={30} emotions={c.emotions} />
             </button>
@@ -239,7 +279,7 @@ export default function DayRail({
         }
         const e = m.data
         return (
-          <button key={m.key} className={`rail-mark rail-fx ${e.end ? '' : 'live'}`} style={{ top: `${m.frac * 100}%`, transform: `translate(${dx}px,-50%) scale(${scale})`, background: e.fx.color, color: iconColorOn(e.fx.color) }}
+          <button key={m.key} className={`rail-mark rail-fx ${e.end ? '' : 'live'}`} style={{ top: `${top * 100}%`, transform: `translate(${dx}px,-50%) scale(${scale})`, background: e.fx.color, color: iconColorOn(e.fx.color) }}
             title={`${e.fx.name}${e.note ? ' · ' + e.note : ''} · ${clockTime(e.start)}${e.end ? '' : ' · tap to end'}`}
             onClick={() => e.end ? setMoodDetail({ fx: e.fx, note: e.note, ts: e.start, isFx: true }) : endStatus(e.effectId)}>
             <Glyph id={e.fx.icon} size={15} />
