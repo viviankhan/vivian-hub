@@ -18,7 +18,7 @@ import { Glyph, iconColorOn } from '../lib/glyphs.jsx'
 import { GuideBlob, MoodCloud } from '../lib/critters.jsx'
 import ColorPickRow from './ColorPickRow.jsx'
 import {
-  dayKey, MOODS, moodMeta, selectableEmotions, makeEmotion, emotionMeta, EMOTION_PALETTE, checkinsForDay,
+  dayKey, keyToDate, MOODS, moodMeta, selectableEmotions, makeEmotion, emotionMeta, EMOTION_PALETTE, checkinsForDay,
   DEFAULT_EFFECTS, POSITIVE_EFFECTS, makeEffect, EFFECT_COLORS, EFFECT_ICONS, isActive, activeEpisode, startEpisode, endEpisode, setEpisodeNote,
   episodeMinutes, fmtDuration, applyCheckIn, awardPetals,
 } from '../lib/wellness.js'
@@ -26,8 +26,12 @@ import {
 // The waking-day window the rail spans, in hours. 6am → midnight.
 const DAY_START = 6, DAY_END = 24
 const clockTime = (ts) => { try { return new Date(ts).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) } catch { return '' } }
-const fracOf = (d) => {
-  const dt = new Date(d), h = dt.getHours() + dt.getMinutes() / 60
+// Fraction (0..1) of a timestamp within the visible window of a *given* day.
+// Measured from that day's local midnight, so a marker or episode that belongs
+// to a past day — or an open episode still running past the window — clamps to
+// the day's edges instead of mis-reading its clock time onto the wrong day.
+const fracInDay = (ms, dayStartMs) => {
+  const h = (ms - dayStartMs) / 3600000
   return Math.max(0, Math.min(1, (h - DAY_START) / (DAY_END - DAY_START)))
 }
 
@@ -44,8 +48,12 @@ export default function DayRail({
   checkins = [], persistCheckins, effects, persistEffects,
   episodes = [], persistEpisodes, game, persistGame,
   emotionPrefs, persistEmotionPrefs,
+  dateKey = dayKey(), isToday = true,
 }) {
-  const today = dayKey()
+  // The day this rail represents. Today is interactive (the blob logs new
+  // moments); a past day is a read-only record of what was tracked then.
+  const today = dateKey
+  const dayStartMs = useMemo(() => { const d = keyToDate(dateKey); d.setHours(0, 0, 0, 0); return d.getTime() }, [dateKey])
   const effectList = (effects && effects.length) ? effects : DEFAULT_EFFECTS
   const byId = useMemo(() => new Map(effectList.map(f => [f.id, f])), [effectList])
   const [nowMs, setNowMs] = useState(Date.now())
@@ -54,9 +62,37 @@ export default function DayRail({
   const [menu, setMenu] = useState(false)          // radial open
   const [sheet, setSheet] = useState(null)         // 'mood' | 'status' | null
   const [moodDetail, setMoodDetail] = useState(null)   // a tapped cloud
-  const nowFrac = fracOf(nowMs)
+  const nowFrac = fracInDay(nowMs, dayStartMs)
   const blobRef = useRef(null)
+  const railRef = useRef(null)
   const [anchor, setAnchor] = useState(null)       // blob centre in viewport px
+  // Ride the blob on the timeline's live "now" nodule when it's on screen so the
+  // two read as one synchronized element, instead of a separate 6am→midnight
+  // scale. Measured against the DOM because the nodule flows in the timeline
+  // while the rail is positioned beside it. Falls back to the fractional scale
+  // (e.g. an empty schedule). Only today has a nodule.
+  const [blobTop, setBlobTop] = useState(null)
+  useEffect(() => {
+    if (!isToday) { setBlobTop(null); return }
+    const measure = () => {
+      const rail = railRef.current
+      if (!rail) return
+      const nod = document.querySelector('[data-now-nodule]')
+      const rr = rail.getBoundingClientRect()
+      if (!nod || !rr.height) { setBlobTop(null); return }
+      const nr = nod.getBoundingClientRect()
+      setBlobTop((nr.top + nr.height / 2) - rr.top)
+    }
+    measure()
+    const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(measure) : null
+    const host = railRef.current?.parentElement
+    if (ro && host) ro.observe(host)
+    window.addEventListener('resize', measure)
+    // The nodule hops between tasks as time passes / items complete without the
+    // container resizing, so poll gently as a backstop.
+    const t = setInterval(measure, 2000)
+    return () => { ro && ro.disconnect(); window.removeEventListener('resize', measure); clearInterval(t) }
+  }, [isToday, nowMs, checkins, episodes])
   // The emotions offered in the picker (built-ins + custom, minus hidden). The
   // module registry is kept in sync by App on load and on every save, so this
   // recomputes whenever the prefs blob changes.
@@ -71,22 +107,24 @@ export default function DayRail({
   const todayMoments = useMemo(() => checkinsForDay(checkins, today), [checkins, today])
   const lastMood = todayMoments.length ? todayMoments[todayMoments.length - 1].mood : 4
 
-  // Today's status episodes (any that touch today), resolved with their effect.
+  // The viewed day's status episodes (any span that touches it), resolved with
+  // their effect. An open episode is capped at "now" today, or at the day's end
+  // on a past day — so a past day keeps the trails exactly as they were tracked.
+  const dayEndMs = dayStartMs + 86400000
+  const openCap = isToday ? nowMs : dayEndMs
   const todayEpisodes = useMemo(() => {
-    const start = new Date(); start.setHours(0, 0, 0, 0)
-    const dayStartMs = start.getTime(), dayEndMs = dayStartMs + 86400000
     return (episodes || []).filter(e => {
-      const s = Date.parse(e.start), en = e.end ? Date.parse(e.end) : nowMs
+      const s = Date.parse(e.start), en = e.end ? Date.parse(e.end) : openCap
       return en >= dayStartMs && s < dayEndMs
     }).map(e => ({ ...e, fx: byId.get(e.effectId) })).filter(e => e.fx)
-  }, [episodes, byId, nowMs])
+  }, [episodes, byId, openCap, dayStartMs, dayEndMs])
 
   // Markers that share a moment fan out diagonally and shrink so a cloud + an
   // effect at the same time read as one slot.
   const markers = useMemo(() => {
     const list = [
-      ...todayMoments.map(c => ({ type: 'mood', key: c.id, frac: fracOf(c.ts), data: c })),
-      ...todayEpisodes.map(e => ({ type: 'fx', key: e.id, frac: fracOf(e.start), data: e })),
+      ...todayMoments.map(c => ({ type: 'mood', key: c.id, frac: fracInDay(Date.parse(c.ts), dayStartMs), data: c })),
+      ...todayEpisodes.map(e => ({ type: 'fx', key: e.id, frac: fracInDay(Date.parse(e.start), dayStartMs), data: e })),
     ].sort((a, b) => a.frac - b.frac)
     let cluster = -1, prev = -Infinity
     return list.map(m => {
@@ -94,7 +132,7 @@ export default function DayRail({
       prev = m.frac
       return { ...m, cluster }
     })
-  }, [todayMoments, todayEpisodes])
+  }, [todayMoments, todayEpisodes, dayStartMs])
 
   // ── Actions ──────────────────────────────────────────────
   const logMood = (mood, emotions, note) => {
@@ -162,15 +200,17 @@ export default function DayRail({
 
   return (
     <>
-      <div className="day-rail">
+      <div className="day-rail" ref={railRef}>
       {/* Status-effect trails (behind everything; run down to the blob). */}
       {todayEpisodes.map(e => {
-        const top = fracOf(e.start), bottom = e.end ? fracOf(e.end) : nowFrac
+        const top = fracInDay(Date.parse(e.start), dayStartMs)
+        const bottom = e.end ? fracInDay(Date.parse(e.end), dayStartMs) : (isToday ? nowFrac : 1)
         const h = Math.max(0, bottom - top)
+        const endable = isToday && !e.end
         return (
-          <button key={'t' + e.id} className="rail-trail" title={`${e.fx.name}${e.note ? ' · ' + e.note : ''} · tap to end`}
-            onClick={() => e.end ? null : endStatus(e.effectId)}
-            style={{ top: `${top * 100}%`, height: `${h * 100}%`, background: `linear-gradient(${e.fx.color}, color-mix(in srgb, ${e.fx.color} 55%, transparent))`, cursor: e.end ? 'default' : 'pointer' }} />
+          <button key={'t' + e.id} className="rail-trail" title={`${e.fx.name}${e.note ? ' · ' + e.note : ''}${endable ? ' · tap to end' : ''}`}
+            onClick={() => endable ? endStatus(e.effectId) : null}
+            style={{ top: `${top * 100}%`, height: `${h * 100}%`, background: `linear-gradient(${e.fx.color}, color-mix(in srgb, ${e.fx.color} 55%, transparent))`, cursor: endable ? 'pointer' : 'default' }} />
         )
       })}
 
@@ -187,21 +227,26 @@ export default function DayRail({
           )
         }
         const e = m.data
+        const endable = isToday && !e.end
         return (
           <button key={m.key} className={`rail-mark rail-fx ${e.end ? '' : 'live'}`} style={{ top: `${m.frac * 100}%`, transform: `translate(${dx}px,-50%) scale(${scale})`, background: e.fx.color, color: iconColorOn(e.fx.color) }}
-            title={`${e.fx.name}${e.note ? ' · ' + e.note : ''} · ${clockTime(e.start)}${e.end ? '' : ' · tap to end'}`}
-            onClick={() => e.end ? setMoodDetail({ fx: e.fx, note: e.note, ts: e.start, isFx: true }) : endStatus(e.effectId)}>
+            title={`${e.fx.name}${e.note ? ' · ' + e.note : ''} · ${clockTime(e.start)}${endable ? ' · tap to end' : ''}`}
+            onClick={() => endable ? endStatus(e.effectId) : setMoodDetail({ fx: e.fx, note: e.note, ts: e.start, isFx: true })}>
             <Glyph id={e.fx.icon} size={15} />
           </button>
         )
       })}
 
-      {/* The mind blob — rides the current time, taps open the radial menu. */}
-      <div className="rail-blob" style={{ top: `${nowFrac * 100}%` }}>
-        <button ref={blobRef} className="rail-blob-btn" onClick={() => (menu ? closeAll() : openMenu())} aria-label="Wellness">
-          <GuideBlob size={54} tint="#8FB0D8" speaking={menu} />
-        </button>
-      </div>
+      {/* The mind blob — only on today. It centres on the timeline's live "now"
+          nodule when one is on screen, else on the fractional day scale. A past
+          day is a read-only record, so it shows its markers without the blob. */}
+      {isToday && (
+        <div className="rail-blob" style={blobTop != null ? { top: `${blobTop}px`, transform: 'translateY(-50%)' } : { top: `${nowFrac * 100}%`, transform: 'translateY(-50%)' }}>
+          <button ref={blobRef} className="rail-blob-btn" onClick={() => (menu ? closeAll() : openMenu())} aria-label="Wellness">
+            <GuideBlob size={54} tint="#8FB0D8" speaking={menu} />
+          </button>
+        </div>
+      )}
       </div>
 
       {/* One fixed overlay holds the accent film AND everything that must sit on

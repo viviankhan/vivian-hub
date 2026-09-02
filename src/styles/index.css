@@ -1365,17 +1365,18 @@ textarea { resize: vertical; min-height: 160px; line-height: 1.6; }
 
 /* ── Wellness day-rail (Today tab) ────────────────────────────── */
 .today-root { position: relative; }
-.today-root.has-rail { padding-left: 48px; }
+.today-root.has-rail { padding-left: 42px; }
 /* status-effect colour trails running down the rail */
-.rail-trail { position: absolute; left: 24px; width: 7px; border: none; padding: 0; border-radius: 5px;
+.rail-trail { position: absolute; left: 32px; width: 7px; border: none; padding: 0; border-radius: 5px;
   transform: translateX(-50%); z-index: 8; opacity: .9; box-shadow: 0 1px 4px rgba(0,0,0,.12); }
 .rail-trail.live, .rail-trail:hover { opacity: 1; }
 /* markers — mood clouds + status icons floating by the timeline */
-.rail-mark { position: absolute; left: 24px; margin-left: -15px; border: none; background: none; padding: 0; cursor: pointer; z-index: 14; transform-origin: center; }
+.rail-mark { position: absolute; left: 32px; margin-left: -15px; border: none; background: none; padding: 0; cursor: pointer; z-index: 14; transform-origin: center; }
 .rail-fx { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; box-shadow: 0 2px 7px rgba(0,0,0,.2); }
 .rail-fx.live { box-shadow: 0 0 0 3px rgba(255,255,255,.6), 0 2px 8px rgba(0,0,0,.24); }
-/* the mind blob riding the current time */
-.rail-blob { position: absolute; left: 0; z-index: 20; }
+/* the mind blob riding the current time — nudged toward the timeline so it and
+   the markers sit closer to the spine (kept in sync with the marks above). */
+.rail-blob { position: absolute; left: 8px; z-index: 20; }
 .rail-blob-btn { border: none; background: none; padding: 0; cursor: pointer; display: block; filter: drop-shadow(0 3px 8px rgba(80,110,150,.3)); }
 /* One fixed overlay carries the film + the menu, so the blob and bubbles are
    always above the film regardless of any ancestor stacking context. */
