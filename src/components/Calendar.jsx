@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { Icon } from './IconPicker.jsx'
 import AddItemModal from './AddItemModal.jsx'
 import { setItemReminders } from '../lib/notifications.js'
-import { recurringOccurrencesForDate } from '../lib/occurrences.js'
+import { recurringOccurrencesForDate, recurringActiveOn, occKey } from '../lib/occurrences.js'
 import { iconColorOn } from '../lib/glyphs.jsx'
 import RecurringFilter from './RecurringFilter.jsx'
 import { getRecurringFilter, RECURRING_FILTER_EVENT, visibleRecurring } from '../lib/viewFilter.js'
@@ -439,14 +439,36 @@ export default function Calendar({ commitments, vacations, events, log, categori
           occurrenceDate={editingRecDate}
           categories={categories}
           routines={routines}
-          onSaveOccurrence={(date, occ, reminderMins) => {
-            // Detach this one day: hide the series that day + add a one-off.
-            skipRecurringOccurrence && skipRecurringOccurrence(editingRec.id, date)
+          onSaveOccurrence={(origDate, occ, reminderMins) => {
+            // Detach this one day: hide the series on its ORIGINAL day and add a
+            // one-off on whatever day it now lands (occ.date) — so moving a single
+            // occurrence to another day vacates the old day and shows on the new.
+            skipRecurringOccurrence && skipRecurringOccurrence(editingRec.id, origDate)
+            // If it moved onto a day the series already lands on, skip that day's
+            // instance too, so the moved copy doesn't sit next to a duplicate.
+            if (occ.date !== origDate && skipRecurringOccurrence &&
+                recurringActiveOn(editingRec, occ.date) &&
+                !(recurringExceptions || {})[occKey(editingRec.id, occ.date)]) {
+              skipRecurringOccurrence(editingRec.id, occ.date)
+            }
             addCommitment && addCommitment(occ)
             // Carry over any custom reminders set on this occurrence — without
             // this, editing one day's reminders from the Calendar silently
             // dropped them (Today's occurrence editor already kept them).
             setItemReminders(occ.id, reminderMins)
+            setEditingRec(null); setEditingRecDate(null)
+          }}
+          onSaveFuture={(origDate, newSeries, reminderMins) => {
+            // Split the series here: cap the old template the day before this
+            // occurrence, start the edited one from here. Past days untouched.
+            const tmpl=(recurringTasks||[]).find(t=>t.id===editingRec.id)
+            if (tmpl && updateRecurringTask) {
+              const x=new Date(origDate+'T12:00:00'); x.setDate(x.getDate()-1)
+              const endDate=`${x.getFullYear()}-${String(x.getMonth()+1).padStart(2,'0')}-${String(x.getDate()).padStart(2,'0')}`
+              updateRecurringTask(tmpl.id, { ...tmpl, endDate })
+            }
+            addRecurringTask && addRecurringTask(newSeries)
+            if (reminderMins != null) setItemReminders(newSeries.id, reminderMins)
             setEditingRec(null); setEditingRecDate(null)
           }}
           onSaveRecurring={t => { updateRecurringTask && updateRecurringTask(t.id, t); setEditingRec(null); setEditingRecDate(null) }}

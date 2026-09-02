@@ -11,7 +11,19 @@ const USE_SUPABASE = !!(SUPABASE_URL && SUPABASE_KEY)
 const noCacheFetch = (url, options) => fetch(url, { ...options, cache: 'no-store' })
 
 export const supabase = USE_SUPABASE
-  ? createClient(SUPABASE_URL, SUPABASE_KEY, { global: { fetch: noCacheFetch } })
+  ? createClient(SUPABASE_URL, SUPABASE_KEY, {
+      global: { fetch: noCacheFetch },
+      // Stay signed in across app restarts: keep the session in localStorage and
+      // refresh the token automatically. These are the library defaults, pinned
+      // here so a re-login is never a config accident. (No custom storageKey —
+      // changing it would log everyone out once, and the default key is already
+      // stable per project.)
+      auth: {
+        persistSession: true,
+        autoRefreshToken: true,
+        detectSessionInUrl: true,
+      },
+    })
   : null
 export const isUsingSupabase = USE_SUPABASE
 
@@ -47,9 +59,21 @@ export function stableSignature(str) {
 // blob that hasn't actually changed since the last write — including the
 // once-per-load pref re-push, which was writing the identical ui_prefs blob on
 // every single app open. See dbSet.
+// Namespaced by the signed-in user's id (below), so one account's "already
+// wrote this" signatures never make another account skip a needed write when
+// two people use the same browser.
 const WSIG_PREFIX = 'vivian_wsig_'
-const wsigGet = (k) => { try { return localStorage.getItem(WSIG_PREFIX + k) } catch { return null } }
-const wsigSet = (k, v) => { try { localStorage.setItem(WSIG_PREFIX + k, v) } catch {} }
+const wsigGet = (k) => { try { return localStorage.getItem(WSIG_PREFIX + kvNs() + k) } catch { return null } }
+const wsigSet = (k, v) => { try { localStorage.setItem(WSIG_PREFIX + kvNs() + k, v) } catch {} }
+
+// ── Current account (set by src/lib/auth.js) ────────────────────
+// kv_store is keyed per (user_id, key), so a write must carry the owner and its
+// upsert must resolve conflicts on the composite key. auth.js calls
+// setStorageUser() whenever the session changes; storage.js never imports auth
+// (that would be a cycle). 'local' is the implicit single user without Supabase.
+let kvUid = USE_SUPABASE ? null : 'local'
+const kvNs = () => (kvUid ? kvUid + ':' : '')
+export function setStorageUser(uid) { kvUid = uid || (USE_SUPABASE ? null : 'local') }
 
 // ── In-flight write tracking ────────────────────────────────────
 // Cloud writes are async — refreshing or closing the tab right after an edit
@@ -132,7 +156,14 @@ export async function dbSet(key, value) {
     const thisWrite = prevWrite.then(async () => {
       pendingWrites++
       try {
-        const { error } = await supabase.from('kv_store').upsert({ key, value, updated_at: new Date().toISOString() })
+        // kv_store's primary key is (user_id, key) once accounts are on, so the
+        // owner is written explicitly and the upsert resolves on that composite
+        // key. Falls back to a bare row (single-key PK) when user_id is null,
+        // which is the pre-migration schema.
+        const row = kvUid ? { user_id: kvUid, key, value, updated_at: new Date().toISOString() }
+                          : { key, value, updated_at: new Date().toISOString() }
+        const opts = kvUid ? { onConflict: 'user_id,key' } : undefined
+        const { error } = await supabase.from('kv_store').upsert(row, opts)
         if (error) throw new Error(`Cloud save failed for "${key}": ${error.message}`)
         wsigSet(key, sig)
       } finally {
@@ -351,6 +382,33 @@ export const setChangeHistory = v  => dbSet('change_history', v)
 //   { id, text, durationMins, cat, cats, color, icon, description, subtasks, person, createdAt }
 export const getTaskTemplates = () => dbGet('task_templates').then(v => Array.isArray(v) ? v : [])
 export const setTaskTemplates = v  => dbSet('task_templates', v)
+
+// ── Trackers (custom folders in the Insights tab) ───────────────
+// User-created record folders — a B&B, a rental, freelance work, mileage… Each
+// folder holds hours worked and money spent, attributed to people, so it can be
+// summarized and exported (PDF / CSV) for tax records. Stored as per-user
+// kv_store blobs (arrays) — low-volume, edited a few entries at a time, so a
+// whole-array write per change is fine (same pattern as time_logs / thoughts)
+// and it needs no new tables beyond the accounts migration. Shapes:
+// The user defines each folder's OWN fields (a driving trip can carry a money-out
+// for gas, a time value, and a mileage number all in one entry), and can set a
+// money + time budget so the summary shows profit, spend, and what's left.
+//   folder: { id, name, icon, color, createdAt, fields:[{id,type,name}], budgetMoney, budgetHours }
+//   person: { id, folderId, name, role, color, createdAt }
+//   entry:  { id, folderId, date, values:{ [fieldId]: value }, createdAt }
+// A `receipt`-type field's value is a small downscaled JPEG data URL (see
+// lib/trackers.js compressImage). Field types: moneyIn, moneyOut, hours, number,
+// category, text, person, receipt (see lib/trackers.js FIELD_TYPES).
+export const getTrackerFolders = () => dbGet('tracker_folders').then(v => Array.isArray(v) ? v : [])
+export const setTrackerFolders = v  => dbSet('tracker_folders', v)
+export const getTrackerPeople  = () => dbGet('tracker_people').then(v => Array.isArray(v) ? v : [])
+export const setTrackerPeople  = v  => dbSet('tracker_people', v)
+export const getTrackerEntries = () => dbGet('tracker_entries').then(v => Array.isArray(v) ? v : [])
+export const setTrackerEntries = v  => dbSet('tracker_entries', v)
+// Remembered field values the user has typed, so text/category inputs can offer
+// them again. Shape: { [folderId]: { [fieldId]: string[] } }
+export const getTrackerCats = () => dbGet('tracker_cats').then(v => (v && typeof v === 'object') ? v : {})
+export const setTrackerCats = v  => dbSet('tracker_cats', v)
 
 // ── Wellness (mood check-ins, status effects, companion game) ───
 // The gamified mental-health + physical-condition tab. Four synced kv_store

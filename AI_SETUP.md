@@ -40,6 +40,17 @@ supabase functions deploy parse-event
 That's it. Open the app, tap **✨** on Today, paste something, and tap
 **"Read it into a task."**
 
+### Same key also powers receipt scanning
+
+The **B&B** tab's "Scan a receipt" feature reuses this exact key. To turn it on,
+deploy one more function with the secret you already set:
+
+```bash
+supabase functions deploy parse-receipt
+```
+
+See `RECEIPTS.md` for the B&B tracker.
+
 ## Notes
 
 - **Cost:** free within Gemini's free tier. If you ever hit the rate limit, the

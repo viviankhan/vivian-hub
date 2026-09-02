@@ -27,7 +27,10 @@ export async function seedCategoriesIfNeeded() {
       if (error) throw new Error(error.message)
       if (data && data.length > 0) return data.map(r => ({ id:r.id, label:r.label, color:r.color, sortOrder:r.sort_order }))
       const rows = DEFAULT_CATEGORIES.map(c => ({ id:c.id, label:c.label, color:c.color, sort_order:c.sortOrder }))
-      const { error: insErr } = await supabase.from('categories').upsert(rows, { onConflict: 'id' })
+      // Categories are keyed per (user_id, id) once accounts are on (see
+      // supabase_auth_migration.sql) — so each account seeds its own copy of the
+      // fixed-id defaults without colliding. user_id fills from its column default.
+      const { error: insErr } = await supabase.from('categories').upsert(rows, { onConflict: 'user_id,id' })
       if (insErr) throw new Error(insErr.message)
       return DEFAULT_CATEGORIES
     } catch (e) {

@@ -44,12 +44,14 @@ import RecurringTasksManager from './components/RecurringTasksManager.jsx'
 import CategoriesManager from './components/CategoriesManager.jsx'
 import EventsManager from './components/EventsManager.jsx'
 import ExternalCalendars from './components/ExternalCalendars.jsx'
+import Insights from './components/Insights.jsx'
 import Informatics from './components/Informatics.jsx'
 import BloomWellness from './components/BloomWellness.jsx'
 import Voyage from './components/Voyage.jsx'
 import ArtStudio from './components/ArtStudio.jsx'
 import { loadOverrides, isAdmin } from './lib/art.js'
 import TaskMenu from './components/TaskMenu.jsx'
+import { authEnabled, getCurrentUser, signOut } from './lib/auth.js'
 import { refreshCalendar, loadCachedCalendar, clearCachedCalendar, eventsToSpans } from './lib/calendars.js'
 import { importedKey } from './lib/importedTasks.js'
 import ThoughtsBoard from './components/ThoughtsBoard.jsx'
@@ -111,6 +113,7 @@ const TABS = [
   { id:'events',      label:'Events',      glyph:'ticket' },
   { id:'recurring',   label:'Recurring',   glyph:'repeat' },
   { id:'informatics', label:'Insights',    glyph:'chart' },
+  { id:'records',     label:'Records',     glyph:'book' },
 ]
 
 // On the desktop top bar these tabs are tucked under a single "More" dropdown
@@ -150,6 +153,34 @@ function saveBottomBar(items) {
   try { localStorage.setItem(BOTTOM_BAR_KEY, JSON.stringify(items)) } catch {}
 }
 
+// ── Account panel (Settings → Account) ─────────────────────────
+// Shows who's signed in and a sign-out button. Only rendered when Supabase-
+// backed accounts are enabled (see src/lib/auth.js).
+function AccountPanel() {
+  const user = getCurrentUser()
+  const [busy, setBusy] = useState(false)
+  const out = async () => {
+    if (busy) return
+    setBusy(true)
+    try { await signOut() } catch (e) { alert(e?.message || 'Could not sign out.'); setBusy(false) }
+    // On success the auth listener swaps the app for the login screen.
+  }
+  return (
+    <div>
+      <div style={{ fontSize:13, color:'var(--text)', marginBottom:6 }}>Signed in as</div>
+      <div style={{ fontSize:15, fontWeight:700, color:'var(--forest)', marginBottom:16, overflowWrap:'anywhere' }}>{user?.email || 'your account'}</div>
+      <button onClick={out} disabled={busy}
+        style={{ padding:'12px 20px', borderRadius:12, border:'1px solid var(--border)', background:'white', color:'var(--coral)',
+          cursor: busy ? 'default' : 'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:700, fontSize:14 }}>
+        {busy ? 'Signing out…' : 'Sign out'}
+      </button>
+      <div style={{ fontSize:11.5, color:'var(--muted)', marginTop:14, lineHeight:1.5 }}>
+        Your planner, hours and expense records are private to this account.
+      </div>
+    </div>
+  )
+}
+
 // ── Settings Drawer ────────────────────────────────────────────
 function SettingsDrawer({ open, onClose, settingsTab, setSettingsTab, notes, updateNotes, categories, addCategory, updateCategory, deleteCategory, events, commitments, recurring, locatedCount, changeHistory, undoChange, clearChangeHistory, externalCalendars, calendarStatuses, addCalendar, toggleCalendar, removeCalendar, refreshOneCalendar, updateCalendar, font, setFont, theme, setTheme, season, setSeason, customColor, setCustom, background, setBackground, customBg, setCustomBg, mobileBackground, setMobileBackground, mobileCustomBg, setMobileCustomBg, layout, setLayout, soundOn, setSound, summary, setSummary, effectsOn, setEffects, admin, persistArt }) {
   if (!open) return null
@@ -161,6 +192,7 @@ function SettingsDrawer({ open, onClose, settingsTab, setSettingsTab, notes, upd
     ['notes','Notes','book'],
     ['history','History','clock'],
     ['edits','Edits','sparkle'],
+    ...(authEnabled ? [['account','Account','idcard']] : []),
     // Owner-only: upload custom art to replace the code-drawn creatures/props.
     ...(admin ? [['artstudio','Art','rocket']] : []),
   ]
@@ -185,6 +217,7 @@ function SettingsDrawer({ open, onClose, settingsTab, setSettingsTab, notes, upd
             {settingsTab==='notes'      && <Notes notes={notes} updateNotes={updateNotes} />}
             {settingsTab==='history'    && <History history={changeHistory} onUndo={undoChange} onClear={clearChangeHistory} />}
             {settingsTab==='edits'      && <Edits />}
+            {settingsTab==='account'    && <AccountPanel />}
             {settingsTab==='artstudio' && admin && <ArtStudio persistArt={persistArt} />}
           </div>
           <div style={{ padding:'4px 24px 20px', textAlign:'center', fontSize:11, color:'var(--muted)' }}>
@@ -1706,6 +1739,7 @@ export default function App() {
         {tab==='voyage'      && <Voyage game={wlGame} persistGame={persistWlGame}
           space={wlSpace} persistSpace={persistWlSpace} checkins={wlCheckins} />}
         {tab==='informatics' && <Informatics commitments={commitmentsView} recurringTasks={recurringTasksEnriched} completions={completions} log={log} categories={categories} timeLogs={timeLogs} addTimeLog={addTimeLog} deleteTimeLog={deleteTimeLog} wlCheckins={wlCheckins} wlEffects={wlEffects} wlEpisodes={wlEpisodes} />}
+        {tab==='records'     && <Insights />}
       </main>
 
       <SettingsDrawer
