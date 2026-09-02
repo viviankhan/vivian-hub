@@ -12,6 +12,21 @@ import { authEnabled, initAuth, onAuth } from './lib/auth.js'
 // app from mounting.
 try { applySavedAppearance() } catch (e) { console.error('[Bloom] appearance init failed:', e) }
 
+// Ask the browser to keep our storage durable. Supabase keeps the signed-in
+// session in localStorage; when the OS evicts a web app's storage (iOS/WebKit
+// does this under storage pressure or its script-writable-storage timer), that
+// session goes with it and the next open lands on the login screen. Requesting
+// persistent storage is the one web-platform lever against that eviction — it's
+// honored on Android/desktop installed PWAs, a harmless no-op where it isn't.
+// Best-effort: never let it block startup.
+try {
+  if (navigator.storage?.persist) {
+    navigator.storage.persisted?.().then(already => {
+      if (!already) navigator.storage.persist().catch(() => {})
+    }).catch(() => {})
+  }
+} catch (e) { /* storage API unavailable — ignore */ }
+
 // ── Account gate ────────────────────────────────────────────────
 // Without Supabase (local dev / localStorage mode) there are no accounts — the
 // app just opens. With Supabase configured, the app is gated behind a real
