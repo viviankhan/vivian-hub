@@ -16,6 +16,7 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
 import { Glyph, iconColorOn } from '../lib/glyphs.jsx'
 import { GuideBlob, MoodCloud } from '../lib/critters.jsx'
+import ColorPickRow from './ColorPickRow.jsx'
 import {
   dayKey, MOODS, moodMeta, selectableEmotions, makeEmotion, emotionMeta, EMOTION_PALETTE, checkinsForDay,
   DEFAULT_EFFECTS, POSITIVE_EFFECTS, makeEffect, EFFECT_COLORS, EFFECT_ICONS, isActive, activeEpisode, startEpisode, endEpisode, setEpisodeNote,
@@ -313,12 +314,7 @@ function MomentSheet({ onClose, onLog, emotions: options = [], onAddEmotion, onD
                         onKeyDown={ev => { if (ev.key === 'Enter') commitAdd(); if (ev.key === 'Escape') { setDraft(''); setAdding(false) } }} />
                       <button className="rail-emo-ok" disabled={!draft.trim()} onClick={commitAdd}>Add</button>
                     </div>
-                    <div className="rail-emo-swatches">
-                      {EMOTION_PALETTE.map(c => (
-                        <button key={c} className={`rail-swatch ${draftColor === c ? 'on' : ''}`} style={{ background: c }}
-                          onClick={() => setDraftColor(c)} aria-label={`Colour ${c}`} />
-                      ))}
-                    </div>
+                    <ColorPickRow colors={EMOTION_PALETTE} value={draftColor} onChange={setDraftColor} />
                   </div>
                 )}
                 <textarea className="rail-note" placeholder="What's behind this feeling? (only if you want to)" value={note} onChange={e => setNote(e.target.value)} rows={2} />
@@ -405,11 +401,7 @@ function StatusSheet({ effects, episodes, byId, onAdd, onEnd, onClose, onAddEffe
               <button key={k} className={`rail-fx-seg-btn ${draft.kind === k ? 'on' : ''}`} onClick={() => setDraft({ ...draft, kind: k })}>{k === 'physical' ? 'Physical' : 'Mental'}</button>
             ))}
           </div>
-          <div className="rail-emo-swatches">
-            {EFFECT_COLORS.map(c => (
-              <button key={c} className={`rail-swatch ${draft.color === c ? 'on' : ''}`} style={{ background: c }} onClick={() => setDraft({ ...draft, color: c })} aria-label={`Colour ${c}`} />
-            ))}
-          </div>
+          <ColorPickRow colors={EFFECT_COLORS} value={draft.color} onChange={(c) => setDraft({ ...draft, color: c })} />
           <div className="rail-fx-icons">
             {EFFECT_ICONS.map(ic => (
               <button key={ic} className={`rail-fx-icon ${draft.icon === ic ? 'on' : ''}`} onClick={() => setDraft({ ...draft, icon: ic })}

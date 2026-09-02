@@ -1,6 +1,7 @@
 import { useState, useMemo, useRef, useEffect } from 'react'
 import { Glyph, iconColorOn } from '../lib/glyphs.jsx'
 import { Companion, MoodCloud, DayCloud, AlienSky } from '../lib/critters.jsx'
+import ColorPickRow from './ColorPickRow.jsx'
 import { bloomBurst } from '../lib/bloom.js'
 import {
   dayKey, keyToDate, MOODS, ENERGY, moodMeta, promptForDay,
@@ -141,12 +142,7 @@ function EffectEditor({ draft, onChange, onSave, onDelete, onClose }) {
         </div>
 
         <label className="wl-field-label">Color</label>
-        <div className="wl-swatches">
-          {EFFECT_COLORS.map(c => (
-            <button key={c} className={`wl-swatch ${draft.color === c ? 'on' : ''}`} style={{ background: c }}
-              onClick={() => onChange({ ...draft, color: c })} aria-label={`Color ${c}`} />
-          ))}
-        </div>
+        <ColorPickRow colors={EFFECT_COLORS} value={draft.color} onChange={(c) => onChange({ ...draft, color: c })} />
 
         <label className="wl-field-label">Icon</label>
         <div className="wl-icon-grid">
@@ -218,11 +214,7 @@ function EmotionPicker({ options, selected, onToggle, onAdd, onDelete }) {
               onKeyDown={ev => { if (ev.key === 'Enter') commit(); if (ev.key === 'Escape') { setName(''); setAdding(false) } }} />
             <button className="rail-emo-ok" disabled={!name.trim()} onClick={commit}>Add</button>
           </div>
-          <div className="rail-emo-swatches">
-            {EMOTION_PALETTE.map(c => (
-              <button key={c} className={`rail-swatch ${color === c ? 'on' : ''}`} style={{ background: c }} onClick={() => setColor(c)} aria-label={`Colour ${c}`} />
-            ))}
-          </div>
+          <ColorPickRow colors={EMOTION_PALETTE} value={color} onChange={setColor} />
         </div>
       )}
     </>

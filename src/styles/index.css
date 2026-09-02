@@ -1431,6 +1431,15 @@ textarea { resize: vertical; min-height: 160px; line-height: 1.6; }
 .rail-emo-swatches { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 10px; }
 .rail-swatch { width: 22px; height: 22px; border-radius: 50%; cursor: pointer; padding: 0; border: 2px solid transparent; box-shadow: 0 0 0 1px rgba(0,0,0,.12); }
 .rail-swatch.on { border-color: #fff; box-shadow: 0 0 0 2px var(--forest); }
+/* Shared color row: preset swatches + a custom-color wheel (ColorPickRow). */
+.cpick { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; align-items: center; margin-top: 10px; }
+.cpick-sw { width: 22px; height: 22px; border-radius: 50%; cursor: pointer; padding: 0; border: 2px solid transparent; box-shadow: 0 0 0 1px rgba(0,0,0,.12); }
+.cpick-sw.on { border-color: #fff; box-shadow: 0 0 0 2px var(--forest); }
+.cpick-wheel { position: relative; overflow: hidden; display: inline-block; width: 22px; height: 22px; border-radius: 50%; cursor: pointer;
+  border: 2px solid transparent; box-shadow: 0 0 0 1px rgba(0,0,0,.12);
+  background: conic-gradient(from 90deg, #EF6B6B, #E0A33E, #52B788, #4A9EB5, #7C3AED, #EC6F9C, #EF6B6B); }
+.cpick-wheel.on { border-color: #fff; box-shadow: 0 0 0 2px var(--forest); }
+.cpick-wheel input { position: absolute; top: -40%; left: -40%; width: 180%; height: 180%; opacity: 0; cursor: pointer; border: none; padding: 0; }
 .rail-note { width: 100%; box-sizing: border-box; border: 1.5px solid var(--border); border-radius: 14px; padding: 10px 12px; font-size: 13px; font-family: inherit; resize: vertical; margin: 12px 0 0; background: #fff; color: var(--text); }
 .rail-log { display: block; width: 100%; margin-top: 14px; border: none; border-radius: 14px; padding: 13px; font-size: 14px; font-weight: 700; cursor: pointer; font-family: inherit; background: var(--forest); color: var(--green-light); }
 .rail-active { display: flex; flex-direction: column; gap: 7px; margin-bottom: 14px; }
