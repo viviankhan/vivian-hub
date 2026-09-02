@@ -13,12 +13,12 @@
 // behind it) while still active. Tapping a trail ends that effect (asking, the
 // first time). Markers that crowd the same time shrink and fan diagonally.
 // ─────────────────────────────────────────────────────────────
-import { useState, useMemo, useEffect, useRef } from 'react'
+import { useState, useMemo, useEffect, useLayoutEffect, useRef } from 'react'
 import { Glyph, iconColorOn } from '../lib/glyphs.jsx'
 import { GuideBlob, MoodCloud } from '../lib/critters.jsx'
 import ColorPickRow from './ColorPickRow.jsx'
 import {
-  dayKey, MOODS, moodMeta, selectableEmotions, makeEmotion, emotionMeta, EMOTION_PALETTE, checkinsForDay,
+  dayKey, keyToDate, MOODS, moodMeta, selectableEmotions, makeEmotion, emotionMeta, EMOTION_PALETTE, checkinsForDay,
   DEFAULT_EFFECTS, POSITIVE_EFFECTS, makeEffect, EFFECT_COLORS, EFFECT_ICONS, isActive, activeEpisode, startEpisode, endEpisode, setEpisodeNote,
   episodeMinutes, fmtDuration, applyCheckIn, awardPetals,
 } from '../lib/wellness.js'
@@ -41,11 +41,16 @@ function affirm(activeEffects) {
 }
 
 export default function DayRail({
+  dateKey, isToday = true,
   checkins = [], persistCheckins, effects, persistEffects,
   episodes = [], persistEpisodes, game, persistGame,
   emotionPrefs, persistEmotionPrefs,
 }) {
   const today = dayKey()
+  // The day this rail is drawn for. New moments are always logged against the
+  // real today (the blob only shows then), but past days keep displaying what
+  // was tracked on them.
+  const day = dateKey || today
   const effectList = (effects && effects.length) ? effects : DEFAULT_EFFECTS
   const byId = useMemo(() => new Map(effectList.map(f => [f.id, f])), [effectList])
   const [nowMs, setNowMs] = useState(Date.now())
@@ -56,7 +61,13 @@ export default function DayRail({
   const [moodDetail, setMoodDetail] = useState(null)   // a tapped cloud
   const nowFrac = fracOf(nowMs)
   const blobRef = useRef(null)
+  const railRef = useRef(null)
   const [anchor, setAnchor] = useState(null)       // blob centre in viewport px
+  // Where "now" actually sits on the timeline, as a fraction of the rail's
+  // height. The timeline lays tasks out proportionally (with minimums, blocks
+  // and gaps), so a pure clock fraction drifts from the on-screen now-marker.
+  // We measure the marker and ride the blob to it, keeping the two in sync.
+  const [nowAnchorFrac, setNowAnchorFrac] = useState(null)
   // The emotions offered in the picker (built-ins + custom, minus hidden). The
   // module registry is kept in sync by App on load and on every save, so this
   // recomputes whenever the prefs blob changes.
@@ -68,18 +79,26 @@ export default function DayRail({
     setMenu(true)
   }
 
-  const todayMoments = useMemo(() => checkinsForDay(checkins, today), [checkins, today])
+  const todayMoments = useMemo(() => checkinsForDay(checkins, day), [checkins, day])
   const lastMood = todayMoments.length ? todayMoments[todayMoments.length - 1].mood : 4
 
-  // Today's status episodes (any that touch today), resolved with their effect.
+  // The viewed day's window, so past days keep showing what was tracked then.
+  const { dayStartMs, dayEndMs } = useMemo(() => {
+    const start = keyToDate(day); start.setHours(0, 0, 0, 0)
+    const s = start.getTime()
+    return { dayStartMs: s, dayEndMs: s + 86400000 }
+  }, [day])
+
+  // The viewed day's status episodes (any that touch it), resolved with their
+  // effect. A still-running episode trails to "now" on today, or to the end of
+  // the day on a past day.
   const todayEpisodes = useMemo(() => {
-    const start = new Date(); start.setHours(0, 0, 0, 0)
-    const dayStartMs = start.getTime(), dayEndMs = dayStartMs + 86400000
+    const openEnd = isToday ? nowMs : dayEndMs
     return (episodes || []).filter(e => {
-      const s = Date.parse(e.start), en = e.end ? Date.parse(e.end) : nowMs
+      const s = Date.parse(e.start), en = e.end ? Date.parse(e.end) : openEnd
       return en >= dayStartMs && s < dayEndMs
     }).map(e => ({ ...e, fx: byId.get(e.effectId) })).filter(e => e.fx)
-  }, [episodes, byId, nowMs])
+  }, [episodes, byId, nowMs, isToday, dayStartMs, dayEndMs])
 
   // Markers that share a moment fan out diagonally and shrink so a cloud + an
   // effect at the same time read as one slot.
@@ -95,6 +114,35 @@ export default function DayRail({
       return { ...m, cluster }
     })
   }, [todayMoments, todayEpisodes])
+
+  // Ride the blob to the timeline's live now-marker. We read the marker's
+  // centre relative to the rail and express it as a fraction of the rail's
+  // height, re-measuring whenever the timeline re-lays-out (its height changes)
+  // or the clock ticks. Only today has a now-marker; other days fall back to
+  // nothing (the blob is hidden anyway).
+  useLayoutEffect(() => {
+    if (!isToday) { setNowAnchorFrac(null); return }
+    const rail = railRef.current
+    const root = rail?.closest('.today-root')
+    if (!rail || !root) return
+    const measure = () => {
+      const dot = root.querySelector('.js-now-dot')
+      const rr = rail.getBoundingClientRect()
+      if (!dot || !rr.height) { setNowAnchorFrac(null); return }
+      const dr = dot.getBoundingClientRect()
+      const frac = (dr.top + dr.height / 2 - rr.top) / rr.height
+      setNowAnchorFrac(Math.max(0, Math.min(1, frac)))
+    }
+    measure()
+    const ro = new ResizeObserver(measure)
+    ro.observe(root)
+    window.addEventListener('resize', measure)
+    return () => { ro.disconnect(); window.removeEventListener('resize', measure) }
+  }, [isToday, nowMs, markers])
+
+  // The blob's vertical home: the measured now-marker when we have it, else the
+  // plain clock fraction. Live status trails run down to meet it.
+  const blobFrac = nowAnchorFrac != null ? nowAnchorFrac : nowFrac
 
   // ── Actions ──────────────────────────────────────────────
   const logMood = (mood, emotions, note) => {
@@ -162,10 +210,13 @@ export default function DayRail({
 
   return (
     <>
-      <div className="day-rail">
+      <div className="day-rail" ref={railRef}>
       {/* Status-effect trails (behind everything; run down to the blob). */}
       {todayEpisodes.map(e => {
-        const top = fracOf(e.start), bottom = e.end ? fracOf(e.end) : nowFrac
+        // A still-running episode's trail runs down to the blob (today) or to
+        // the day's end (a past day); a closed one stops at its recorded end.
+        const top = fracOf(e.start)
+        const bottom = e.end ? fracOf(e.end) : (isToday ? blobFrac : 1)
         const h = Math.max(0, bottom - top)
         return (
           <button key={'t' + e.id} className="rail-trail" title={`${e.fx.name}${e.note ? ' · ' + e.note : ''} · tap to end`}
@@ -196,12 +247,16 @@ export default function DayRail({
         )
       })}
 
-      {/* The mind blob — rides the current time, taps open the radial menu. */}
-      <div className="rail-blob" style={{ top: `${nowFrac * 100}%` }}>
-        <button ref={blobRef} className="rail-blob-btn" onClick={() => (menu ? closeAll() : openMenu())} aria-label="Wellness">
-          <GuideBlob size={54} tint="#8FB0D8" speaking={menu} />
-        </button>
-      </div>
+      {/* The mind blob — rides the live now-marker, taps open the radial menu.
+          It belongs to "now", so it only appears on today; past days keep their
+          logged clouds and trails without it. */}
+      {isToday && (
+        <div className="rail-blob" style={{ top: `${blobFrac * 100}%` }}>
+          <button ref={blobRef} className="rail-blob-btn" onClick={() => (menu ? closeAll() : openMenu())} aria-label="Wellness">
+            <GuideBlob size={54} tint="#8FB0D8" speaking={menu} />
+          </button>
+        </div>
+      )}
       </div>
 
       {/* One fixed overlay holds the accent film AND everything that must sit on

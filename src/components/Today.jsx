@@ -863,7 +863,7 @@ function TimelineBlock({ task, categories, status, now, prevColor, nextColor, ro
         <div style={{ position:'absolute', top:`${14 + nowFrac * pillH}px`, left:0, transform:'translateY(-50%)', display:'flex', alignItems:'center', zIndex:4, pointerEvents:'none' }}>
           <div style={{ width:52, flexShrink:0 }} />
           <div style={{ width:52, flexShrink:0, display:'flex', justifyContent:'center' }}>
-            <div style={{ width:13, height:13, borderRadius:'50%', background:'white', border:'3px solid var(--teal)', boxShadow:'0 0 0 3px rgba(74,158,181,.16)' }} />
+            <div className="js-now-dot" style={{ width:13, height:13, borderRadius:'50%', background:'white', border:'3px solid var(--teal)', boxShadow:'0 0 0 3px rgba(74,158,181,.16)' }} />
           </div>
           <div style={{ marginLeft:6, fontSize:11, fontWeight:800, color:'var(--teal)', background:'var(--cream)', padding:'1px 7px', borderRadius:8, boxShadow:'0 1px 3px rgba(0,0,0,.14)', whiteSpace:'nowrap' }}>{fmtTimeLabel(now)}</div>
         </div>
@@ -888,7 +888,7 @@ function NowMarker({ now, bandTint = null, bandOpacity = 0.5 }) {
       )}
       <div style={{ width:52, flexShrink:0 }} />
       <div style={{ width:52, flexShrink:0, display:'flex', justifyContent:'center' }}>
-        <div style={{ width:13, height:13, borderRadius:'50%', background:'white', border:'3px solid var(--teal)', boxShadow:'0 0 0 3px rgba(74,158,181,.16)' }} />
+        <div className="js-now-dot" style={{ width:13, height:13, borderRadius:'50%', background:'white', border:'3px solid var(--teal)', boxShadow:'0 0 0 3px rgba(74,158,181,.16)' }} />
       </div>
       <div style={{ marginLeft:6, fontSize:11, fontWeight:800, color:'var(--teal)', background:'var(--cream)', padding:'1px 7px', borderRadius:8, boxShadow:'0 1px 3px rgba(0,0,0,.14)', whiteSpace:'nowrap' }}>{fmtTimeLabel(now)}</div>
     </div>
@@ -1958,17 +1958,16 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
   }
 
   return (
-    <div className={isToday ? 'today-root has-rail' : 'today-root'}>
+    <div className="today-root has-rail">
       {/* The wellness day-rail: the mind blob rides the current time down the
           left edge; mood moments and status effects land beside their time. */}
-      {isToday && (
-        <DayRail
-          checkins={wlCheckins} persistCheckins={persistWlCheckins}
-          effects={wlEffects} persistEffects={persistWlEffects}
-          episodes={wlEpisodes} persistEpisodes={persistWlEpisodes}
-          game={wlGame} persistGame={persistWlGame}
-          emotionPrefs={wlEmotions} persistEmotionPrefs={persistWlEmotions} />
-      )}
+      <DayRail
+        dateKey={dateKey} isToday={isToday}
+        checkins={wlCheckins} persistCheckins={persistWlCheckins}
+        effects={wlEffects} persistEffects={persistWlEffects}
+        episodes={wlEpisodes} persistEpisodes={persistWlEpisodes}
+        game={wlGame} persistGame={persistWlGame}
+        emotionPrefs={wlEmotions} persistEmotionPrefs={persistWlEmotions} />
       {/* Structured-style header: big date + week strip + progress bar */}
       <WeekStrip
         viewDate={viewDate} setViewDate={setViewDate}
