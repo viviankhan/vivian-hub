@@ -11,7 +11,19 @@ const USE_SUPABASE = !!(SUPABASE_URL && SUPABASE_KEY)
 const noCacheFetch = (url, options) => fetch(url, { ...options, cache: 'no-store' })
 
 export const supabase = USE_SUPABASE
-  ? createClient(SUPABASE_URL, SUPABASE_KEY, { global: { fetch: noCacheFetch } })
+  ? createClient(SUPABASE_URL, SUPABASE_KEY, {
+      global: { fetch: noCacheFetch },
+      // Stay signed in across app restarts: keep the session in localStorage and
+      // refresh the token automatically. These are the library defaults, pinned
+      // here so a re-login is never a config accident. (No custom storageKey —
+      // changing it would log everyone out once, and the default key is already
+      // stable per project.)
+      auth: {
+        persistSession: true,
+        autoRefreshToken: true,
+        detectSessionInUrl: true,
+      },
+    })
   : null
 export const isUsingSupabase = USE_SUPABASE
 
