@@ -73,7 +73,47 @@ export const COMPLEX_EMOTIONS = [
   { id: 'contentment', name: 'Contentment', color: '#F2B7CB' },
   { id: 'pride',       name: 'Pride',       color: '#F0C06A' },
 ]
-export function emotionMeta(id) { return COMPLEX_EMOTIONS.find(e => e.id === id) || null }
+
+// Custom emotions the user has added, and the ids they've hidden, live in a
+// synced blob (see storage.js: wellness_emotions). They're mirrored into these
+// module-level registers so emotionMeta() — which is called deep inside the
+// cloud art, well away from the React tree — can resolve a custom emotion's
+// name and colour everywhere the built-ins resolve, with no prop threading.
+//   • Hiding an emotion only removes it from the *selectable* palette; its
+//     metadata is kept so clouds already tagged with it still render correctly.
+let CUSTOM_EMOTIONS = []
+let HIDDEN_EMOTIONS = new Set()
+// A soft palette a freshly-added emotion borrows its cloud-lining colour from,
+// and the swatch set both pickers offer for choosing one.
+export const EMOTION_PALETTE = [
+  '#8E9BC4', '#F4B24C', '#9E8AA6', '#8FB27A', '#DB8A73', '#7FA8C9',
+  '#9FD3C2', '#EAD79A', '#B0A0C8', '#97A9B8', '#F2B7CB', '#F0C06A',
+]
+// Sync the registers from the persisted prefs blob { custom:[{id,name,color}], hidden:[id] }.
+export function registerEmotionPrefs(prefs) {
+  const p = prefs || {}
+  CUSTOM_EMOTIONS = Array.isArray(p.custom) ? p.custom.filter(e => e && e.id && e.name) : []
+  HIDDEN_EMOTIONS = new Set(Array.isArray(p.hidden) ? p.hidden : [])
+}
+// The emotions offered in a picker: built-ins + custom, minus the hidden ones.
+export function selectableEmotions() {
+  return [...COMPLEX_EMOTIONS, ...CUSTOM_EMOTIONS].filter(e => !HIDDEN_EMOTIONS.has(e.id))
+}
+// Mint a new custom emotion. Colour is optional; otherwise one is borrowed from
+// the palette so its cloud lining reads distinctly.
+export function makeEmotion(name, color) {
+  return {
+    id: 'emo-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5),
+    name: (name || 'Emotion').trim().slice(0, 24) || 'Emotion',
+    color: color || EMOTION_PALETTE[Math.floor(Math.random() * EMOTION_PALETTE.length)],
+    custom: true,
+  }
+}
+// Resolve an id to its metadata — built-in first, then any custom emotion.
+// Hidden emotions still resolve here, so previously tagged clouds never break.
+export function emotionMeta(id) {
+  return COMPLEX_EMOTIONS.find(e => e.id === id) || CUSTOM_EMOTIONS.find(e => e.id === id) || null
+}
 
 // A rotating set of gentle reflection prompts — the "story"/therapist nudge that
 // gives a check-in something to answer beyond a number. Seeded by day so the
@@ -224,6 +264,13 @@ export const DEFAULT_EFFECTS = [
 // A couple of effects read as "good" — used only to phrase insights kindly and
 // to tint the chip; it never changes the math.
 export const POSITIVE_EFFECTS = new Set(['fx-rested', 'fx-calm', 'fx-focused'])
+
+// A soft swatch palette for custom conditions — muted, on-brand, all legible
+// with white or dark text (iconColorOn picks per swatch). Shared by both the
+// rail's quick-add and the wellness tab's full editor.
+export const EFFECT_COLORS = ['#B5838D', '#C97A6D', '#D0956B', '#89B0AE', '#6F9F8B', '#7BB0A6', '#8896B0', '#9A8FB0', '#A79CB5', '#8FA9C0']
+// The glyphs offered when building a custom condition — drawn from the icon set.
+export const EFFECT_ICONS = ['brain', 'droplet', 'battery', 'flame', 'cloud', 'rain', 'storm', 'sun', 'moon', 'heart', 'pulse', 'meditation', 'yoga', 'target', 'sparkle', 'bed', 'coffee', 'bulb', 'star', 'shield', 'flower', 'leaf']
 
 export function makeEffect({ name, icon, color, kind }) {
   return {

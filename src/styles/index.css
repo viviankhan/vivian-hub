@@ -972,6 +972,9 @@ textarea { resize: vertical; min-height: 160px; line-height: 1.6; }
 .wl-emotions { display: flex; flex-wrap: wrap; gap: 7px; }
 .wl-emo { display: inline-flex; align-items: center; gap: 6px; border: 1.5px solid var(--border); background: var(--cream); border-radius: 999px; padding: 6px 12px 6px 10px; font-size: 12.5px; font-weight: 600; color: var(--text); cursor: pointer; font-family: inherit; transition: box-shadow .15s, background .15s, border-color .15s; }
 .wl-emo-dot { width: 11px; height: 11px; border-radius: 50%; flex-shrink: 0; }
+.wl-emo-wrap { position: relative; display: inline-flex; }
+.wl-emo.armed { border-color: #d98a8a; }
+.wl-emotions { align-items: center; }
 
 /* Live cloud preview while checking in */
 .wl-preview { display: flex; flex-direction: column; align-items: center; gap: 4px; margin: 16px 0 4px; }
@@ -1407,6 +1410,36 @@ textarea { resize: vertical; min-height: 160px; line-height: 1.6; }
 .rail-emos { display: flex; flex-wrap: wrap; gap: 6px; margin: 14px 0 10px; justify-content: center; }
 .rail-emo { border: 1.5px solid var(--border); background: #fff; border-radius: 999px; padding: 5px 11px; font-size: 12px; font-weight: 600; color: var(--text); cursor: pointer; font-family: inherit; }
 .rail-emo.on { border-color: var(--teal); background: var(--green-light); color: var(--teal); }
+.rail-emo.armed { border-color: #d98a8a; }
+.rail-emo-wrap { position: relative; display: inline-flex; }
+.rail-emo { display: inline-flex; align-items: center; gap: 6px; }
+.rail-emo-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; box-shadow: 0 0 0 1px rgba(0,0,0,.06); }
+.rail-emo-dot.lg { width: 15px; height: 15px; }
+/* The faint ✕ a long-press reveals to remove an emotion from the palette. */
+.rail-emo-del { position: absolute; top: -7px; right: -7px; width: 18px; height: 18px; border-radius: 50%;
+  border: none; background: #d98a8a; color: #fff; font-size: 10px; line-height: 1; cursor: pointer; opacity: .82;
+  display: grid; place-items: center; box-shadow: 0 1px 3px rgba(0,0,0,.2); padding: 0; font-family: inherit; }
+.rail-emo-add { color: var(--teal); border: none; background: none; padding: 5px 8px; font-size: 17px; font-weight: 800; line-height: 1; cursor: pointer; font-family: inherit; }
+/* Compact "add an emotion" row: colour dot + name + confirm, then a swatch row. */
+.rail-emo-adder { margin: 2px 0 10px; }
+.rail-emo-adder-row { display: flex; align-items: center; gap: 8px; }
+.rail-emo-input { flex: 1; min-width: 0; border: 1.5px solid var(--teal); border-radius: 999px; padding: 6px 12px; font-size: 12.5px;
+  font-weight: 600; color: var(--text); font-family: inherit; outline: none; background: #fff; }
+.rail-emo-ok { border: none; background: var(--forest); color: var(--green-light); border-radius: 999px; padding: 6px 14px;
+  font-size: 12.5px; font-weight: 700; cursor: pointer; font-family: inherit; flex-shrink: 0; }
+.rail-emo-ok:disabled { opacity: .45; cursor: default; }
+.rail-emo-swatches { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 10px; }
+.rail-swatch { width: 22px; height: 22px; border-radius: 50%; cursor: pointer; padding: 0; border: 2px solid transparent; box-shadow: 0 0 0 1px rgba(0,0,0,.12); }
+.rail-swatch.on { border-color: #fff; box-shadow: 0 0 0 2px var(--forest); }
+/* Shared color row: preset swatches + a custom-color wheel (ColorPickRow). */
+.cpick { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; align-items: center; margin-top: 10px; }
+.cpick-sw { width: 22px; height: 22px; border-radius: 50%; cursor: pointer; padding: 0; border: 2px solid transparent; box-shadow: 0 0 0 1px rgba(0,0,0,.12); }
+.cpick-sw.on { border-color: #fff; box-shadow: 0 0 0 2px var(--forest); }
+.cpick-wheel { position: relative; overflow: hidden; display: inline-block; width: 22px; height: 22px; border-radius: 50%; cursor: pointer;
+  border: 2px solid transparent; box-shadow: 0 0 0 1px rgba(0,0,0,.12);
+  background: conic-gradient(from 90deg, #EF6B6B, #E0A33E, #52B788, #4A9EB5, #7C3AED, #EC6F9C, #EF6B6B); }
+.cpick-wheel.on { border-color: #fff; box-shadow: 0 0 0 2px var(--forest); }
+.cpick-wheel input { position: absolute; top: -40%; left: -40%; width: 180%; height: 180%; opacity: 0; cursor: pointer; border: none; padding: 0; }
 .rail-note { width: 100%; box-sizing: border-box; border: 1.5px solid var(--border); border-radius: 14px; padding: 10px 12px; font-size: 13px; font-family: inherit; resize: vertical; margin: 12px 0 0; background: #fff; color: var(--text); }
 .rail-log { display: block; width: 100%; margin-top: 14px; border: none; border-radius: 14px; padding: 13px; font-size: 14px; font-weight: 700; cursor: pointer; font-family: inherit; background: var(--forest); color: var(--green-light); }
 .rail-active { display: flex; flex-direction: column; gap: 7px; margin-bottom: 14px; }
@@ -1415,7 +1448,21 @@ textarea { resize: vertical; min-height: 160px; line-height: 1.6; }
 .rail-fxgrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
 .rail-fxpick { display: flex; flex-direction: column; align-items: center; gap: 6px; border: 1.5px solid var(--border); background: #fff; border-radius: 14px; padding: 11px 6px 9px; font-size: 11.5px; font-weight: 600; color: var(--text); cursor: pointer; font-family: inherit; }
 .rail-fxpick:disabled { opacity: .45; cursor: default; }
+.rail-fxpick.armed { border-color: #d98a8a; }
 .rail-fxpick-ico { width: 30px; height: 30px; border-radius: 9px; display: grid; place-items: center; }
+.rail-fxpick-ico.sm { width: 26px; height: 26px; border-radius: 8px; flex-shrink: 0; }
+.rail-fxpick-wrap { position: relative; display: flex; }
+.rail-fxpick-wrap > .rail-fxpick { width: 100%; }
+/* A plain "+" tile that matches the condition grid but reads as an add affordance. */
+.rail-fxpick-add { border-style: dashed; justify-content: center; color: var(--teal); }
+.rail-fxpick-plus { font-size: 22px; font-weight: 800; line-height: 1; color: var(--teal); }
+/* Compact "new condition" form inside the status sheet. */
+.rail-fx-adder { margin-top: 12px; }
+.rail-fx-seg { display: flex; gap: 6px; margin-top: 10px; }
+.rail-fx-seg-btn { flex: 1; border: 1.5px solid var(--border); background: #fff; border-radius: 10px; padding: 7px; font-size: 12px; font-weight: 600; color: var(--muted); cursor: pointer; font-family: inherit; }
+.rail-fx-seg-btn.on { border-color: var(--teal); background: var(--green-light); color: var(--teal); }
+.rail-fx-icons { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; justify-content: center; }
+.rail-fx-icon { width: 32px; height: 32px; border-radius: 9px; border: 1.5px solid var(--border); background: #fff; display: grid; place-items: center; cursor: pointer; color: var(--muted); padding: 0; }
 
 /* ── Marker detail popover ────────────────────────────────────── */
 .rail-detail { position: fixed; left: 50%; top: 50%; transform: translate(-50%,-50%); z-index: 340;

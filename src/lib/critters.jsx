@@ -320,7 +320,10 @@ function Mouth({ kind }) {
 //   colors: [{ color, weight }] — the emotion tints and how often each appears,
 //           so the PROPORTION of each coloured particle matches that emotion's
 //           presence over the day. Weights are treated as relative.
-function StarMist({ colors = [], count = 44, seed = 1, twinkle = true }) {
+// `markScale` enlarges every particle: a cloud rendered small (e.g. the 30px
+// day-rail moods) needs bigger, brighter points or the mist falls below a pixel
+// and the emotion lining reads as if it were missing entirely.
+function StarMist({ colors = [], count = 44, seed = 1, twinkle = true, markScale = 1, minOpacity = 0.3 }) {
   if (!colors.length) return null
   const light = colors.map(c => ({ color: lighten(c.color, 0.6), weight: Math.max(0.0001, c.weight || 1) }))
   const totalW = light.reduce((a, c) => a + c.weight, 0)
@@ -340,10 +343,10 @@ function StarMist({ colors = [], count = 44, seed = 1, twinkle = true }) {
     const x = cx + Math.cos(ang) * rr * 1.1
     const y = cy + Math.sin(ang) * rr * 0.9 - 2
     if (Math.abs(x - 50) < 15 && y > 42 && y < 66) continue   // keep the face clear
-    const size = 0.3 + rnd() * rnd() * 1.5             // mostly tiny, a few bigger
+    const size = (0.3 + rnd() * rnd() * 1.5) * markScale      // mostly tiny, a few bigger
     marks.push({
       x, y, size,
-      op: 0.3 + rnd() * 0.6,
+      op: Math.min(0.95, minOpacity + rnd() * 0.6),
       col: rnd() < 0.42 ? '#ffffff' : pickColor(rnd()),   // ~58% coloured, by weight
       star: rnd() < 0.22,
       tw: twinkle && rnd() < 0.85,
@@ -395,6 +398,10 @@ export function MoodCloud({ v = 3, size = 40, emotions = [], animate = false }) 
   const puffs = cloudPuffs(SHAPES[v] || SHAPES[3])
   const reduced = prefersReduced()
   const blurId = `bs-${uid}`, clipId = `bc-${uid}`
+  // At small render sizes the mist particles round to sub-pixel and disappear;
+  // scale them up (and lift their opacity floor) so the emotion lining stays
+  // visible on the little day-rail clouds as well as the big summary ones.
+  const mistScale = Math.max(1, 78 / size)
   return (
     <svg viewBox="0 0 100 100" width={size} height={size} aria-hidden="true" style={{ display: 'block', overflow: 'visible' }}>
       <defs>
@@ -406,7 +413,7 @@ export function MoodCloud({ v = 3, size = 40, emotions = [], animate = false }) 
         <Watercolor clipId={clipId} blurId={blurId} top={lighten(b.fill, 0.32)} pool={b.pool} cheek={b.cheek} cheekO={b.cheekO} />
         <Eyes kind={b.eyes} />
         <Mouth kind={b.mouth} />
-        <StarMist colors={mistColors(emotions)} count={16} seed={v * 7 + 1} />
+        <StarMist colors={mistColors(emotions)} count={16} seed={v * 7 + 1} markScale={mistScale} minOpacity={mistScale > 1.2 ? 0.5 : 0.3} />
       </g>
     </svg>
   )

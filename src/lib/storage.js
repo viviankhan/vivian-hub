@@ -426,6 +426,14 @@ export const getWellnessEpisodes = () => dbGet('wellness_episodes').then(v => Ar
 export const setWellnessEpisodes = v  => dbSet('wellness_episodes', v)
 export const getWellnessGame     = () => dbGet('wellness_game').then(v => (v && typeof v === 'object') ? v : null)
 export const setWellnessGame     = v  => dbSet('wellness_game', v)
+// The user's emotion palette customisations: { custom:[{id,name,color}], hidden:[id] }.
+// `custom` are emotions they've added; `hidden` are ids removed from the picker
+// (built-in or custom) — kept as a list so tagged clouds still resolve them.
+export const getWellnessEmotions = () => dbGet('wellness_emotions').then(v => ({
+  custom: (v && Array.isArray(v.custom)) ? v.custom : [],
+  hidden: (v && Array.isArray(v.hidden)) ? v.hidden : [],
+}))
+export const setWellnessEmotions = v  => dbSet('wellness_emotions', v)
 // "Treasures" — a keepsake photo + description the user pins to a day, shown
 // with that day's cloud. One synced kv_store blob (array); images are stored
 // downscaled as data URLs. Each: { id, date, image, desc, ts }.
