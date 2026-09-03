@@ -1384,13 +1384,17 @@ textarea { resize: vertical; min-height: 160px; line-height: 1.6; }
    (--held-a, fanned across an arc when several are held) and only settles onto
    the rail once the blob's body has drifted past its moment. The inner
    counter-rotation keeps the cloud upright; the bob is a slow idle float. */
-.rail-mood.held { z-index: 22; animation: rail-hover 4.5s ease-in-out infinite; }
+.rail-mark.held { z-index: 22;
+  /* Static placement, so the marker is correctly parked even before/without the
+     animation (a positive animation-delay otherwise leaves it untransformed). */
+  transform: translateY(-50%) rotate(var(--held-a, -90deg)) translateX(34px) rotate(calc(-1 * var(--held-a, -90deg)));
+  animation: rail-hover 4.5s ease-in-out infinite both; }
 @keyframes rail-hover {
   0%, 100% { transform: translateY(-50%) rotate(var(--held-a, -90deg)) translateX(34px) rotate(calc(-1 * var(--held-a, -90deg))) translateY(0); }
   50%      { transform: translateY(-50%) rotate(var(--held-a, -90deg)) translateX(34px) rotate(calc(-1 * var(--held-a, -90deg))) translateY(-4px); }
 }
 @media (prefers-reduced-motion: reduce) {
-  .rail-mood.held { animation: none;
+  .rail-mark.held { animation: none;
     transform: translateY(-50%) rotate(var(--held-a, -90deg)) translateX(34px) rotate(calc(-1 * var(--held-a, -90deg))); }
 }
 .rail-fx { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; box-shadow: 0 2px 7px rgba(0,0,0,.2); }

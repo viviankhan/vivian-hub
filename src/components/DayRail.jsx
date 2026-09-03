@@ -196,10 +196,10 @@ export default function DayRail({
     })
   }, [todayMoments, todayEpisodes, dayStartMs])
 
-  // The clouds the blob is currently holding, so each gets its own angle.
-  const heldClouds = markers
-    .filter(m => m.type === 'mood' && heldAloft(Date.parse(m.data.ts)))
-    .map(m => m.key)
+  // Everything the blob is currently holding — moods and status icons alike —
+  // so each gets its own angle on the crown.
+  const markerAt = (m) => Date.parse(m.type === 'mood' ? m.data.ts : m.data.start)
+  const heldMarks = markers.filter(m => heldAloft(markerAt(m))).map(m => m.key)
 
   // ── Actions ──────────────────────────────────────────────
   const logMood = (mood, emotions, note) => {
@@ -288,23 +288,23 @@ export default function DayRail({
         const dx = m.cluster * 13, scale = m.cluster ? 0.72 : 1
         // Position through the timeline map (clustering only needs to know
         // which marks share a moment, so it stays on the clock scale).
-        const top = railFrac(Date.parse(m.type === 'mood' ? m.data.ts : m.data.start))
+        const top = railFrac(markerAt(m))
+        // Fan whatever the blob is holding over its crown: a lone marker sits
+        // straight up and each extra one steps out to alternating sides, so
+        // they stay gathered on top instead of sliding down the flanks. The
+        // step tightens once there are enough to reach the flanks anyway.
+        const hi = heldMarks.indexOf(m.key)
+        const held = hi >= 0
+        const n = heldMarks.length
+        const step = n > 1 ? Math.min(40, 150 / (n - 1)) : 0
+        const ang = -90 + (hi - (n - 1) / 2) * step
+        const heldStyle = { top: `${blobFrac * 100}%`, '--held-a': `${Math.round(ang)}deg`, animationDelay: `${(hi * -0.6).toFixed(2)}s` }
+        const restStyle = { top: `${top * 100}%`, transform: `translate(${dx}px,-50%) scale(${scale})` }
         if (m.type === 'mood') {
           const c = m.data
-          const hi = heldClouds.indexOf(m.key)
-          const held = hi >= 0
-          // Fan the held clouds over the blob's crown: a lone cloud sits
-          // straight up and each extra one steps out to alternating sides, so
-          // they stay gathered on top instead of sliding down the flanks. The
-          // step tightens once there are enough to reach the flanks anyway.
-          const n = heldClouds.length
-          const step = n > 1 ? Math.min(40, 150 / (n - 1)) : 0
-          const ang = -90 + (hi - (n - 1) / 2) * step
           return (
             <button key={m.key} className={`rail-mark rail-mood ${held ? 'held' : ''}`}
-              style={held
-                ? { top: `${blobFrac * 100}%`, '--held-a': `${Math.round(ang)}deg`, animationDelay: `${(hi * 0.6).toFixed(2)}s` }
-                : { top: `${top * 100}%`, transform: `translate(${dx}px,-50%) scale(${scale})` }}
+              style={held ? heldStyle : restStyle}
               title={`${moodMeta(c.mood).label} · ${clockTime(c.ts)}`} onClick={() => setMoodDetail(c)}>
               <MoodCloud v={c.mood} size={30} emotions={c.emotions} />
             </button>
@@ -313,7 +313,8 @@ export default function DayRail({
         const e = m.data
         const endable = isToday && !e.end
         return (
-          <button key={m.key} className={`rail-mark rail-fx ${e.end ? '' : 'live'}`} style={{ top: `${top * 100}%`, transform: `translate(${dx}px,-50%) scale(${scale})`, background: e.fx.color, color: iconColorOn(e.fx.color) }}
+          <button key={m.key} className={`rail-mark rail-fx ${e.end ? '' : 'live'} ${held ? 'held' : ''}`}
+            style={{ ...(held ? heldStyle : restStyle), background: e.fx.color, color: iconColorOn(e.fx.color) }}
             title={`${e.fx.name}${e.note ? ' · ' + e.note : ''} · ${clockTime(e.start)}${endable ? ' · tap to end' : ''}`}
             onClick={() => endable ? endStatus(e.effectId) : setMoodDetail({ fx: e.fx, note: e.note, ts: e.start, isFx: true })}>
             <EffectIcon icon={e.fx.icon} size={15} />
