@@ -149,11 +149,12 @@ export default function DayRail({
   const blobFrac = (() => { const f = fracForMin((nowMs - dayStartMs) / 60000); return f != null ? f : nowFrac })()
 
   // A moment logged "now" lands exactly where the blob is, so it would sit
-  // buried under its body. Instead those clouds float radially around the blob
-  // and only settle onto the rail once the blob has drifted past the time they
-  // were logged at — i.e. once its whole body clears that point.
+  // buried under its body. Instead those clouds hover just above the blob —
+  // fanned radially around its crown — and only settle onto the rail once the
+  // blob has drifted past the time they were logged at, i.e. once its whole
+  // body clears that point.
   const BLOB_R = 30                       // half the blob's 54px body, plus a hair
-  const orbitHeld = (ms) => isToday && railH > 0 && (blobFrac - BLOB_R / railH) <= railFrac(ms)
+  const heldAloft = (ms) => isToday && railH > 0 && (blobFrac - BLOB_R / railH) <= railFrac(ms)
   // The emotions offered in the picker (built-ins + custom, minus hidden). The
   // module registry is kept in sync by App on load and on every save, so this
   // recomputes whenever the prefs blob changes.
@@ -195,9 +196,9 @@ export default function DayRail({
     })
   }, [todayMoments, todayEpisodes, dayStartMs])
 
-  // The clouds currently in orbit, so each can be given its own angle.
-  const orbiters = markers
-    .filter(m => m.type === 'mood' && orbitHeld(Date.parse(m.data.ts)))
+  // The clouds the blob is currently holding, so each gets its own angle.
+  const heldClouds = markers
+    .filter(m => m.type === 'mood' && heldAloft(Date.parse(m.data.ts)))
     .map(m => m.key)
 
   // ── Actions ──────────────────────────────────────────────
@@ -290,12 +291,19 @@ export default function DayRail({
         const top = railFrac(Date.parse(m.type === 'mood' ? m.data.ts : m.data.start))
         if (m.type === 'mood') {
           const c = m.data
-          const oi = orbiters.indexOf(m.key)
-          const orbiting = oi >= 0
+          const hi = heldClouds.indexOf(m.key)
+          const held = hi >= 0
+          // Fan the held clouds over the blob's crown: a lone cloud sits
+          // straight up and each extra one steps out to alternating sides, so
+          // they stay gathered on top instead of sliding down the flanks. The
+          // step tightens once there are enough to reach the flanks anyway.
+          const n = heldClouds.length
+          const step = n > 1 ? Math.min(40, 150 / (n - 1)) : 0
+          const ang = -90 + (hi - (n - 1) / 2) * step
           return (
-            <button key={m.key} className={`rail-mark rail-mood ${orbiting ? 'orbit' : ''}`}
-              style={orbiting
-                ? { top: `${blobFrac * 100}%`, '--orbit-a': `${Math.round((oi / Math.max(1, orbiters.length)) * 360)}deg` }
+            <button key={m.key} className={`rail-mark rail-mood ${held ? 'held' : ''}`}
+              style={held
+                ? { top: `${blobFrac * 100}%`, '--held-a': `${Math.round(ang)}deg`, animationDelay: `${(hi * 0.6).toFixed(2)}s` }
                 : { top: `${top * 100}%`, transform: `translate(${dx}px,-50%) scale(${scale})` }}
               title={`${moodMeta(c.mood).label} · ${clockTime(c.ts)}`} onClick={() => setMoodDetail(c)}>
               <MoodCloud v={c.mood} size={30} emotions={c.emotions} />
