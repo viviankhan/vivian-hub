@@ -904,6 +904,9 @@ textarea { resize: vertical; min-height: 160px; line-height: 1.6; }
 .wl-swatch { width: 30px; height: 30px; border-radius: 50%; border: 2px solid transparent; cursor: pointer; }
 .wl-swatch.on { border-color: var(--forest); box-shadow: 0 0 0 2px #fff inset; }
 .wl-icon-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 7px; }
+/* "Choose an icon…" row that opens the searchable icon sheet (wellness editor). */
+.wl-iconpick { display: flex; align-items: center; gap: 10px; width: 100%; border: 1.5px solid var(--border); background: var(--cream); border-radius: 12px; padding: 8px 12px; font-size: 13px; font-weight: 600; color: var(--text); cursor: pointer; font-family: inherit; }
+.wl-iconpick-ico { width: 34px; height: 34px; border-radius: 9px; display: grid; place-items: center; flex-shrink: 0; }
 .wl-icon-btn { aspect-ratio: 1; display: flex; align-items: center; justify-content: center; border: 1.5px solid var(--border); background: var(--cream); border-radius: 11px; cursor: pointer; color: var(--text); }
 .wl-modal-actions { display: flex; align-items: center; gap: 8px; margin-top: 20px; }
 
@@ -1462,8 +1465,8 @@ textarea { resize: vertical; min-height: 160px; line-height: 1.6; }
 .rail-fx-seg { display: flex; gap: 6px; margin-top: 10px; }
 .rail-fx-seg-btn { flex: 1; border: 1.5px solid var(--border); background: #fff; border-radius: 10px; padding: 7px; font-size: 12px; font-weight: 600; color: var(--muted); cursor: pointer; font-family: inherit; }
 .rail-fx-seg-btn.on { border-color: var(--teal); background: var(--green-light); color: var(--teal); }
-.rail-fx-icons { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; justify-content: center; }
-.rail-fx-icon { width: 32px; height: 32px; border-radius: 9px; border: 1.5px solid var(--border); background: #fff; display: grid; place-items: center; cursor: pointer; color: var(--muted); padding: 0; }
+/* "Choose an icon…" row that opens the searchable icon sheet (rail add-form). */
+.rail-fx-iconbtn { display: flex; align-items: center; gap: 9px; width: 100%; margin-top: 10px; border: 1.5px solid var(--border); background: #fff; border-radius: 12px; padding: 7px 10px; font-size: 12.5px; font-weight: 600; color: var(--text); cursor: pointer; font-family: inherit; }
 
 /* ── Marker detail popover ────────────────────────────────────── */
 .rail-detail { position: fixed; left: 50%; top: 50%; transform: translate(-50%,-50%); z-index: 340;

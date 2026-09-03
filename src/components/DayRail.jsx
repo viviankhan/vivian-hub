@@ -17,9 +17,11 @@ import { useState, useMemo, useEffect, useRef } from 'react'
 import { Glyph, iconColorOn } from '../lib/glyphs.jsx'
 import { GuideBlob, MoodCloud } from '../lib/critters.jsx'
 import ColorPickRow from './ColorPickRow.jsx'
+import { EffectIcon } from './IconPicker.jsx'
+import IconSearchSheet from './IconSearchSheet.jsx'
 import {
   dayKey, keyToDate, MOODS, moodMeta, selectableEmotions, makeEmotion, emotionMeta, EMOTION_PALETTE, checkinsForDay,
-  DEFAULT_EFFECTS, POSITIVE_EFFECTS, makeEffect, EFFECT_COLORS, EFFECT_ICONS, isActive, activeEpisode, startEpisode, endEpisode, setEpisodeNote,
+  DEFAULT_EFFECTS, POSITIVE_EFFECTS, makeEffect, EFFECT_COLORS, isActive, activeEpisode, startEpisode, endEpisode, setEpisodeNote,
   episodeMinutes, fmtDuration, applyCheckIn, awardPetals,
 } from '../lib/wellness.js'
 
@@ -232,7 +234,7 @@ export default function DayRail({
           <button key={m.key} className={`rail-mark rail-fx ${e.end ? '' : 'live'}`} style={{ top: `${m.frac * 100}%`, transform: `translate(${dx}px,-50%) scale(${scale})`, background: e.fx.color, color: iconColorOn(e.fx.color) }}
             title={`${e.fx.name}${e.note ? ' · ' + e.note : ''} · ${clockTime(e.start)}${endable ? ' · tap to end' : ''}`}
             onClick={() => endable ? endStatus(e.effectId) : setMoodDetail({ fx: e.fx, note: e.note, ts: e.start, isFx: true })}>
-            <Glyph id={e.fx.icon} size={15} />
+            <EffectIcon icon={e.fx.icon} size={15} />
           </button>
         )
       })}
@@ -387,6 +389,7 @@ function StatusSheet({ effects, episodes, byId, onAdd, onEnd, onClose, onAddEffe
   const endHold = () => clearTimeout(holdRef.current)
 
   const [draft, setDraft] = useState(null)   // { name, kind, color, icon } while adding
+  const [pickIcon, setPickIcon] = useState(false)   // icon-search sheet open
   const openAdd = () => { setArmed(null); setPick(null); setDraft({ name: '', kind: 'physical', color: EFFECT_COLORS[3], icon: 'sparkle' }) }
   const commitAdd = () => { if (draft && draft.name.trim()) onAddEffect?.(draft); setDraft(null) }
 
@@ -399,7 +402,7 @@ function StatusSheet({ effects, episodes, byId, onAdd, onEnd, onClose, onAddEffe
             const ep = activeEpisode(episodes, f.id)
             return (
               <button key={f.id} className="rail-active-chip" style={{ background: f.color, color: iconColorOn(f.color) }} onClick={() => onEnd(f.id)}>
-                <Glyph id={f.icon} size={14} /> {f.name} · {fmtDuration(episodeMinutes(ep))} <span className="rail-x">✕ end</span>
+                <EffectIcon icon={f.icon} size={14} /> {f.name} · {fmtDuration(episodeMinutes(ep))} <span className="rail-x">✕ end</span>
               </button>
             )
           })}
@@ -415,7 +418,7 @@ function StatusSheet({ effects, episodes, byId, onAdd, onEnd, onClose, onAddEffe
                 onPointerDown={() => !on && startHold(f.id)} onPointerUp={endHold} onPointerLeave={endHold}
                 onContextMenu={ev => ev.preventDefault()}
                 style={pick === f.id ? { borderColor: f.color, background: `color-mix(in srgb, ${f.color} 16%, #fff)` } : undefined}>
-                <span className="rail-fxpick-ico" style={{ background: f.color, color: iconColorOn(f.color) }}><Glyph id={f.icon} size={15} /></span>
+                <span className="rail-fxpick-ico" style={{ background: f.color, color: iconColorOn(f.color) }}><EffectIcon icon={f.icon} size={15} /></span>
                 <span>{f.name}</span>
               </button>
               {armed === f.id && (
@@ -435,7 +438,10 @@ function StatusSheet({ effects, episodes, byId, onAdd, onEnd, onClose, onAddEffe
       {draft && (
         <div className="rail-fx-adder" onClick={e => e.stopPropagation()}>
           <div className="rail-emo-adder-row">
-            <span className="rail-fxpick-ico sm" style={{ background: draft.color, color: iconColorOn(draft.color) }}><Glyph id={draft.icon} size={14} /></span>
+            <button className="rail-fxpick-ico sm" title="Choose an icon" onClick={() => setPickIcon(true)}
+              style={{ background: draft.color, color: iconColorOn(draft.color), border: 'none', cursor: 'pointer', flexShrink: 0 }}>
+              <EffectIcon icon={draft.icon} size={15} />
+            </button>
             <input className="rail-emo-input" autoFocus value={draft.name} maxLength={24}
               placeholder="name a condition…" onChange={ev => setDraft({ ...draft, name: ev.target.value })}
               onKeyDown={ev => { if (ev.key === 'Enter') commitAdd(); if (ev.key === 'Escape') setDraft(null) }} />
@@ -447,15 +453,15 @@ function StatusSheet({ effects, episodes, byId, onAdd, onEnd, onClose, onAddEffe
             ))}
           </div>
           <ColorPickRow colors={EFFECT_COLORS} value={draft.color} onChange={(c) => setDraft({ ...draft, color: c })} />
-          <div className="rail-fx-icons">
-            {EFFECT_ICONS.map(ic => (
-              <button key={ic} className={`rail-fx-icon ${draft.icon === ic ? 'on' : ''}`} onClick={() => setDraft({ ...draft, icon: ic })}
-                style={draft.icon === ic ? { background: draft.color, color: iconColorOn(draft.color), borderColor: draft.color } : undefined} aria-label={`Icon ${ic}`}>
-                <Glyph id={ic} size={16} />
-              </button>
-            ))}
-          </div>
+          <button className="rail-fx-iconbtn" onClick={() => setPickIcon(true)}>
+            <span className="rail-fxpick-ico sm" style={{ background: draft.color, color: iconColorOn(draft.color) }}><EffectIcon icon={draft.icon} size={15} /></span>
+            Choose an icon…
+          </button>
         </div>
+      )}
+      {pickIcon && draft && (
+        <IconSearchSheet icon={draft.icon} tint={draft.color}
+          onPick={(v) => setDraft(d => ({ ...d, icon: v }))} onClose={() => setPickIcon(false)} />
       )}
 
       {pick && (
@@ -473,7 +479,7 @@ function DetailPopover({ item, onClose }) {
   if (item.isFx) {
     return (
       <div className="rail-detail" onClick={(e) => e.stopPropagation()}>
-        <div className="rail-detail-head"><span className="rail-detail-ico" style={{ background: item.fx.color, color: iconColorOn(item.fx.color) }}><Glyph id={item.fx.icon} size={16} /></span><b>{item.fx.name}</b></div>
+        <div className="rail-detail-head"><span className="rail-detail-ico" style={{ background: item.fx.color, color: iconColorOn(item.fx.color) }}><EffectIcon icon={item.fx.icon} size={16} /></span><b>{item.fx.name}</b></div>
         <div className="rail-detail-time">{clockTime(item.ts)}</div>
         {item.note ? <p className="rail-detail-note">{item.note}</p> : <p className="rail-detail-note muted">No description.</p>}
         <button className="rail-log" onClick={onClose}>Close</button>

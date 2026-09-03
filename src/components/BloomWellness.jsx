@@ -2,12 +2,14 @@ import { useState, useMemo, useRef, useEffect } from 'react'
 import { Glyph, iconColorOn } from '../lib/glyphs.jsx'
 import { Companion, MoodCloud, DayCloud, AlienSky } from '../lib/critters.jsx'
 import ColorPickRow from './ColorPickRow.jsx'
+import { EffectIcon } from './IconPicker.jsx'
+import IconSearchSheet from './IconSearchSheet.jsx'
 import { bloomBurst } from '../lib/bloom.js'
 import {
   dayKey, keyToDate, MOODS, ENERGY, moodMeta, promptForDay,
   selectableEmotions, emotionMeta, makeEmotion, EMOTION_PALETTE, checkinsForDay, daySegments, emotionWeights, pastDayKeys, effectOnDay,
   stageForLevel, nextStage, levelFromXp, liveStreak, applyCheckIn, awardPetals, REWARDS,
-  DEFAULT_EFFECTS, POSITIVE_EFFECTS, makeEffect, EFFECT_COLORS, EFFECT_ICONS,
+  DEFAULT_EFFECTS, POSITIVE_EFFECTS, makeEffect, EFFECT_COLORS,
   activeEpisode, isActive, toggleEpisode, episodeMinutes, fmtDuration, effectTotals,
   buildDailyRecords, computeInsights, moodTrend, shareText,
 } from '../lib/wellness.js'
@@ -104,7 +106,7 @@ function EffectChip({ effect, active, since, onToggle, onEdit }) {
       title={active ? `Active for ${fmtDuration(since)} — tap to end` : `Tap to start${good ? '' : ' tracking'}`}
       style={{ background: bg, color: fg, borderColor: active ? effect.color : 'var(--border)' }}>
       <span className="fx-chip-icon" style={{ background: active ? 'rgba(255,255,255,.22)' : effect.color + '22', color: active ? fg : effect.color }}>
-        <Glyph id={effect.icon} size={18} />
+        <EffectIcon icon={effect.icon} size={18} />
       </span>
       <span className="fx-chip-body">
         <span className="fx-chip-name">{effect.name}</span>
@@ -124,6 +126,7 @@ function EffectChip({ effect, active, since, onToggle, onEdit }) {
 // The create/edit sheet for a custom condition.
 function EffectEditor({ draft, onChange, onSave, onDelete, onClose }) {
   const canSave = (draft.name || '').trim().length > 0
+  const [pickIcon, setPickIcon] = useState(false)
   return (
     <div className="wl-modal-scrim" onClick={onClose}>
       <div className="wl-modal" onClick={(e) => e.stopPropagation()}>
@@ -145,15 +148,14 @@ function EffectEditor({ draft, onChange, onSave, onDelete, onClose }) {
         <ColorPickRow colors={EFFECT_COLORS} value={draft.color} onChange={(c) => onChange({ ...draft, color: c })} />
 
         <label className="wl-field-label">Icon</label>
-        <div className="wl-icon-grid">
-          {EFFECT_ICONS.map(ic => (
-            <button key={ic} className={`wl-icon-btn ${draft.icon === ic ? 'on' : ''}`}
-              onClick={() => onChange({ ...draft, icon: ic })} aria-label={`Icon ${ic}`}
-              style={draft.icon === ic ? { background: draft.color, color: iconColorOn(draft.color), borderColor: draft.color } : {}}>
-              <Glyph id={ic} size={20} />
-            </button>
-          ))}
-        </div>
+        <button className="wl-iconpick" onClick={() => setPickIcon(true)}>
+          <span className="wl-iconpick-ico" style={{ background: draft.color, color: iconColorOn(draft.color) }}><EffectIcon icon={draft.icon} size={20} /></span>
+          <span>Choose an icon…</span>
+        </button>
+        {pickIcon && (
+          <IconSearchSheet icon={draft.icon} tint={draft.color}
+            onPick={(v) => onChange({ ...draft, icon: v })} onClose={() => setPickIcon(false)} />
+        )}
 
         <div className="wl-modal-actions">
           {draft.id && <button className="wl-btn ghost danger" onClick={onDelete}>Delete</button>}
@@ -702,7 +704,7 @@ export default function BloomWellness({
           <div className="wl-active-list">
             {activeNow.map(({ fx, since }) => (
               <button key={fx.id} className="wl-active-pill" style={{ background: fx.color, color: iconColorOn(fx.color) }} onClick={() => toggleEffect(fx.id)}>
-                <Glyph id={fx.icon} size={14} color={iconColorOn(fx.color)} /> {fx.name}
+                <EffectIcon icon={fx.icon} size={14} color={iconColorOn(fx.color)} /> {fx.name}
                 <b>{fmtDuration(since)}</b>
                 <span className="wl-active-x">✕</span>
               </button>

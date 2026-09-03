@@ -269,7 +269,9 @@ export const POSITIVE_EFFECTS = new Set(['fx-rested', 'fx-calm', 'fx-focused'])
 // with white or dark text (iconColorOn picks per swatch). Shared by both the
 // rail's quick-add and the wellness tab's full editor.
 export const EFFECT_COLORS = ['#B5838D', '#C97A6D', '#D0956B', '#89B0AE', '#6F9F8B', '#7BB0A6', '#8896B0', '#9A8FB0', '#A79CB5', '#8FA9C0']
-// The glyphs offered when building a custom condition — drawn from the icon set.
+// Legacy default-condition icon ids (bare hand-drawn glyphs). Kept so the
+// built-in DEFAULT_EFFECTS still resolve; custom conditions now pick from the
+// full searchable icon set (see IconSearchSheet) and store "glyph:<id>" values.
 export const EFFECT_ICONS = ['brain', 'droplet', 'battery', 'flame', 'cloud', 'rain', 'storm', 'sun', 'moon', 'heart', 'pulse', 'meditation', 'yoga', 'target', 'sparkle', 'bed', 'coffee', 'bulb', 'star', 'shield', 'flower', 'leaf']
 
 export function makeEffect({ name, icon, color, kind }) {

@@ -40,6 +40,15 @@ export function Icon({ value, size = 18, color, style }) {
   return <span style={{ fontSize:size, lineHeight:1, ...style }}>{value}</span>
 }
 
+// Render a status-condition icon. New picks are "glyph:<id>" (a searchable
+// Material icon) or an uploaded image; legacy conditions stored a bare
+// hand-drawn glyph id (e.g. "brain"), so fall back to <Glyph> for those.
+export function EffectIcon({ icon, size = 16, color }) {
+  if (!icon) return null
+  if (isGlyphIcon(icon) || isImageIcon(icon)) return <Icon value={icon} size={size} color={color} />
+  return <Glyph id={icon} size={size} color={color || 'currentColor'} />
+}
+
 // Resize/compress an uploaded image to a small PNG data URI (keeps alpha).
 export function fileToIconDataUri(file, maxSize = 96) {
   return new Promise((resolve, reject) => {
