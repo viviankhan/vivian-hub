@@ -68,11 +68,6 @@ export default function DayRail({
   const blobRef = useRef(null)
   const railRef = useRef(null)
   const [anchor, setAnchor] = useState(null)       // blob centre in viewport px
-  // Ride the blob on the timeline's live "now" nodule when it's on screen so the
-  // two read as one synchronized element, instead of a separate 6am→midnight
-  // scale. Measured against the DOM because the nodule flows in the timeline
-  // while the rail is positioned beside it. Falls back to the fractional scale
-  // (e.g. an empty schedule). Only today has a nodule.
   // The timeline lays tasks out proportionally (per-task minimums, blocks and
   // capped gaps), so a plain 6am→midnight scale drifts from where a moment
   // actually sits on screen. Read the timeline's own geometry — each task pill
@@ -80,6 +75,8 @@ export default function DayRail({
   // time→fraction map of the rail. Every rail element (moods, trails, the blob)
   // is placed through it, so they stay locked to the timeline, not the clock.
   const [timeMap, setTimeMap] = useState([])
+  // Rail height in px, so the blob's body size can be expressed as a fraction.
+  const [railH, setRailH] = useState(0)
   useEffect(() => {
     const measure = () => {
       const rail = railRef.current
@@ -113,6 +110,7 @@ export default function DayRail({
         const f = Math.max(prev, Math.max(0, Math.min(1, a.frac)))
         clean.push({ min: a.min, frac: f }); prev = f
       }
+      setRailH(rr.height)
       setTimeMap(clean)
     }
     measure()
@@ -149,6 +147,13 @@ export default function DayRail({
   // Where the blob sits: "now" through the same map, so it centres on the
   // timeline's nodule and every trail runs true to it.
   const blobFrac = (() => { const f = fracForMin((nowMs - dayStartMs) / 60000); return f != null ? f : nowFrac })()
+
+  // A moment logged "now" lands exactly where the blob is, so it would sit
+  // buried under its body. Instead those clouds float radially around the blob
+  // and only settle onto the rail once the blob has drifted past the time they
+  // were logged at — i.e. once its whole body clears that point.
+  const BLOB_R = 30                       // half the blob's 54px body, plus a hair
+  const orbitHeld = (ms) => isToday && railH > 0 && (blobFrac - BLOB_R / railH) <= railFrac(ms)
   // The emotions offered in the picker (built-ins + custom, minus hidden). The
   // module registry is kept in sync by App on load and on every save, so this
   // recomputes whenever the prefs blob changes.
@@ -189,6 +194,11 @@ export default function DayRail({
       return { ...m, cluster }
     })
   }, [todayMoments, todayEpisodes, dayStartMs])
+
+  // The clouds currently in orbit, so each can be given its own angle.
+  const orbiters = markers
+    .filter(m => m.type === 'mood' && orbitHeld(Date.parse(m.data.ts)))
+    .map(m => m.key)
 
   // ── Actions ──────────────────────────────────────────────
   const logMood = (mood, emotions, note) => {
@@ -280,8 +290,13 @@ export default function DayRail({
         const top = railFrac(Date.parse(m.type === 'mood' ? m.data.ts : m.data.start))
         if (m.type === 'mood') {
           const c = m.data
+          const oi = orbiters.indexOf(m.key)
+          const orbiting = oi >= 0
           return (
-            <button key={m.key} className="rail-mark rail-mood" style={{ top: `${top * 100}%`, transform: `translate(${dx}px,-50%) scale(${scale})` }}
+            <button key={m.key} className={`rail-mark rail-mood ${orbiting ? 'orbit' : ''}`}
+              style={orbiting
+                ? { top: `${blobFrac * 100}%`, '--orbit-a': `${Math.round((oi / Math.max(1, orbiters.length)) * 360)}deg` }
+                : { top: `${top * 100}%`, transform: `translate(${dx}px,-50%) scale(${scale})` }}
               title={`${moodMeta(c.mood).label} · ${clockTime(c.ts)}`} onClick={() => setMoodDetail(c)}>
               <MoodCloud v={c.mood} size={30} emotions={c.emotions} />
             </button>

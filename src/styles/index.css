@@ -1379,6 +1379,19 @@ textarea { resize: vertical; min-height: 160px; line-height: 1.6; }
 .rail-trail.live, .rail-trail:hover { opacity: 1; }
 /* markers — mood clouds + status icons floating by the timeline */
 .rail-mark { position: absolute; left: 51px; margin-left: -15px; border: none; background: none; padding: 0; cursor: pointer; z-index: 14; transform-origin: center; }
+/* A mood logged "now" would sit buried under the blob, so it floats radially
+   around it instead — each cloud on its own start angle (--orbit-a) — and only
+   settles onto the rail once the blob's body has drifted past its moment. The
+   inner counter-rotation keeps the cloud upright while it circles. */
+.rail-mood.orbit { z-index: 22; animation: rail-orbit 16s linear infinite; }
+@keyframes rail-orbit {
+  from { transform: translateY(-50%) rotate(var(--orbit-a, 0deg)) translateX(34px) rotate(calc(-1 * var(--orbit-a, 0deg))); }
+  to   { transform: translateY(-50%) rotate(calc(var(--orbit-a, 0deg) + 360deg)) translateX(34px) rotate(calc(-1 * var(--orbit-a, 0deg) - 360deg)); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .rail-mood.orbit { animation: none;
+    transform: translateY(-50%) rotate(var(--orbit-a, 0deg)) translateX(34px) rotate(calc(-1 * var(--orbit-a, 0deg))); }
+}
 .rail-fx { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; box-shadow: 0 2px 7px rgba(0,0,0,.2); }
 .rail-fx.live { box-shadow: 0 0 0 3px rgba(255,255,255,.6), 0 2px 8px rgba(0,0,0,.24); }
 /* the mind blob riding the current time — nudged toward the timeline so it and
