@@ -73,17 +73,47 @@ export default function DayRail({
   // scale. Measured against the DOM because the nodule flows in the timeline
   // while the rail is positioned beside it. Falls back to the fractional scale
   // (e.g. an empty schedule). Only today has a nodule.
-  const [blobTop, setBlobTop] = useState(null)
+  // The timeline lays tasks out proportionally (per-task minimums, blocks and
+  // capped gaps), so a plain 6am→midnight scale drifts from where a moment
+  // actually sits on screen. Read the timeline's own geometry — each task pill
+  // carries its start/end minute, plus the live "now" nodule — and build one
+  // time→fraction map of the rail. Every rail element (moods, trails, the blob)
+  // is placed through it, so they stay locked to the timeline, not the clock.
+  const [timeMap, setTimeMap] = useState([])
   useEffect(() => {
-    if (!isToday) { setBlobTop(null); return }
     const measure = () => {
       const rail = railRef.current
       if (!rail) return
-      const nod = document.querySelector('[data-now-nodule]')
       const rr = rail.getBoundingClientRect()
-      if (!nod || !rr.height) { setBlobTop(null); return }
-      const nr = nod.getBoundingClientRect()
-      setBlobTop((nr.top + nr.height / 2) - rr.top)
+      if (!rr.height) return
+      const at = (px) => (px - rr.top) / rr.height
+      const anchors = []
+      document.querySelectorAll('[data-task-span]').forEach(pl => {
+        const sm = Number(pl.dataset.smin), em = Number(pl.dataset.emin)
+        const b = pl.getBoundingClientRect()
+        if (Number.isFinite(sm) && pl.dataset.smin !== '') anchors.push({ min: sm, frac: at(b.top) })
+        if (Number.isFinite(em) && pl.dataset.emin !== '') anchors.push({ min: em, frac: at(b.bottom) })
+      })
+      const nod = isToday ? document.querySelector('[data-now-nodule]') : null
+      if (nod) {
+        const nr = nod.getBoundingClientRect()
+        anchors.push({ min: (nowMs - dayStartMs) / 60000, frac: at(nr.top + nr.height / 2) })
+      }
+      // Pin the rail's ends to the waking-day window so moments outside the
+      // scheduled range still land sensibly.
+      anchors.push({ min: DAY_START * 60, frac: 0 }, { min: DAY_END * 60, frac: 1 })
+      anchors.sort((a, b) => a.min - b.min)
+      // Keep it monotonic: two tasks can share a start time (or a short task can
+      // be drawn below a longer one that ends later), which would otherwise make
+      // the map run backwards.
+      let prev = -Infinity
+      const clean = []
+      for (const a of anchors) {
+        if (clean.length && a.min === clean[clean.length - 1].min) continue
+        const f = Math.max(prev, Math.max(0, Math.min(1, a.frac)))
+        clean.push({ min: a.min, frac: f }); prev = f
+      }
+      setTimeMap(clean)
     }
     measure()
     const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(measure) : null
@@ -94,7 +124,31 @@ export default function DayRail({
     // container resizing, so poll gently as a backstop.
     const t = setInterval(measure, 2000)
     return () => { ro && ro.disconnect(); window.removeEventListener('resize', measure); clearInterval(t) }
-  }, [isToday, nowMs, checkins, episodes])
+  }, [isToday, nowMs, dayStartMs, checkins, episodes])
+
+  // Interpolate a minute-of-day onto the rail through the measured map; null
+  // until it is ready, so callers fall back to the fractional day scale.
+  const fracForMin = (min) => {
+    const a = timeMap
+    if (a.length < 2) return null
+    if (min <= a[0].min) return a[0].frac
+    if (min >= a[a.length - 1].min) return a[a.length - 1].frac
+    for (let i = 1; i < a.length; i++) {
+      if (min <= a[i].min) {
+        const p = a[i - 1], q = a[i], span = (q.min - p.min) || 1
+        return p.frac + ((min - p.min) / span) * (q.frac - p.frac)
+      }
+    }
+    return a[a.length - 1].frac
+  }
+  // A timestamp → rail fraction, mapped through the timeline where possible.
+  const railFrac = (ms) => {
+    const f = fracForMin((ms - dayStartMs) / 60000)
+    return f != null ? f : fracInDay(ms, dayStartMs)
+  }
+  // Where the blob sits: "now" through the same map, so it centres on the
+  // timeline's nodule and every trail runs true to it.
+  const blobFrac = (() => { const f = fracForMin((nowMs - dayStartMs) / 60000); return f != null ? f : nowFrac })()
   // The emotions offered in the picker (built-ins + custom, minus hidden). The
   // module registry is kept in sync by App on load and on every save, so this
   // recomputes whenever the prefs blob changes.
@@ -205,8 +259,10 @@ export default function DayRail({
       <div className="day-rail" ref={railRef}>
       {/* Status-effect trails (behind everything; run down to the blob). */}
       {todayEpisodes.map(e => {
-        const top = fracInDay(Date.parse(e.start), dayStartMs)
-        const bottom = e.end ? fracInDay(Date.parse(e.end), dayStartMs) : (isToday ? nowFrac : 1)
+        // Placed through the timeline map, so a running trail's foot meets the
+        // blob exactly instead of drifting off on the clock scale.
+        const top = railFrac(Date.parse(e.start))
+        const bottom = e.end ? railFrac(Date.parse(e.end)) : (isToday ? blobFrac : 1)
         const h = Math.max(0, bottom - top)
         const endable = isToday && !e.end
         return (
@@ -219,10 +275,13 @@ export default function DayRail({
       {/* Markers — mood clouds + status icons, fanned when they crowd. */}
       {markers.map(m => {
         const dx = m.cluster * 13, scale = m.cluster ? 0.72 : 1
+        // Position through the timeline map (clustering only needs to know
+        // which marks share a moment, so it stays on the clock scale).
+        const top = railFrac(Date.parse(m.type === 'mood' ? m.data.ts : m.data.start))
         if (m.type === 'mood') {
           const c = m.data
           return (
-            <button key={m.key} className="rail-mark rail-mood" style={{ top: `${m.frac * 100}%`, transform: `translate(${dx}px,-50%) scale(${scale})` }}
+            <button key={m.key} className="rail-mark rail-mood" style={{ top: `${top * 100}%`, transform: `translate(${dx}px,-50%) scale(${scale})` }}
               title={`${moodMeta(c.mood).label} · ${clockTime(c.ts)}`} onClick={() => setMoodDetail(c)}>
               <MoodCloud v={c.mood} size={30} emotions={c.emotions} />
             </button>
@@ -231,7 +290,7 @@ export default function DayRail({
         const e = m.data
         const endable = isToday && !e.end
         return (
-          <button key={m.key} className={`rail-mark rail-fx ${e.end ? '' : 'live'}`} style={{ top: `${m.frac * 100}%`, transform: `translate(${dx}px,-50%) scale(${scale})`, background: e.fx.color, color: iconColorOn(e.fx.color) }}
+          <button key={m.key} className={`rail-mark rail-fx ${e.end ? '' : 'live'}`} style={{ top: `${top * 100}%`, transform: `translate(${dx}px,-50%) scale(${scale})`, background: e.fx.color, color: iconColorOn(e.fx.color) }}
             title={`${e.fx.name}${e.note ? ' · ' + e.note : ''} · ${clockTime(e.start)}${endable ? ' · tap to end' : ''}`}
             onClick={() => endable ? endStatus(e.effectId) : setMoodDetail({ fx: e.fx, note: e.note, ts: e.start, isFx: true })}>
             <EffectIcon icon={e.fx.icon} size={15} />
@@ -243,7 +302,7 @@ export default function DayRail({
           nodule when one is on screen, else on the fractional day scale. A past
           day is a read-only record, so it shows its markers without the blob. */}
       {isToday && (
-        <div className="rail-blob" style={blobTop != null ? { top: `${blobTop}px`, transform: 'translateY(-50%)' } : { top: `${nowFrac * 100}%`, transform: 'translateY(-50%)' }}>
+        <div className="rail-blob" style={{ top: `${blobFrac * 100}%`, transform: 'translateY(-50%)' }}>
           <button ref={blobRef} className="rail-blob-btn" onClick={() => (menu ? closeAll() : openMenu())} aria-label="Wellness">
             <GuideBlob size={54} tint="#8FB0D8" speaking={menu} />
           </button>
