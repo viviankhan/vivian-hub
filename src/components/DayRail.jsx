@@ -173,13 +173,17 @@ export default function DayRail({
   // their effect. An open episode is capped at "now" today, or at the day's end
   // on a past day — so a past day keeps the trails exactly as they were tracked.
   const dayEndMs = dayStartMs + 86400000
-  const openCap = isToday ? nowMs : dayEndMs
+  // An episode belongs to the day it began. Matching on "any span touching this
+  // day" meant a condition you never explicitly ended haunted every day after
+  // it — and since its start sits outside this day's window, its marker clamped
+  // to the top of the rail still wearing yesterday's clock time. Scoping to the
+  // start day keeps each day's rail a record of what was logged on it.
   const todayEpisodes = useMemo(() => {
     return (episodes || []).filter(e => {
-      const s = Date.parse(e.start), en = e.end ? Date.parse(e.end) : openCap
-      return en >= dayStartMs && s < dayEndMs
+      const s = Date.parse(e.start)
+      return s >= dayStartMs && s < dayEndMs
     }).map(e => ({ ...e, fx: byId.get(e.effectId) })).filter(e => e.fx)
-  }, [episodes, byId, openCap, dayStartMs, dayEndMs])
+  }, [episodes, byId, dayStartMs, dayEndMs])
 
   // Markers that share a moment fan out diagonally and shrink so a cloud + an
   // effect at the same time read as one slot.
