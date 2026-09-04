@@ -7,6 +7,27 @@ plans the changes against your current tasks, shows you the plan, and applies it
 only after you tap **Apply**. It can create tasks, add/check subtasks on an
 existing task, mark tasks complete, and reschedule.
 
+### Scheduling from a picture
+
+You can also just hand it a **photo or screenshot** — an emailed seminar
+announcement, a flyer, an invitation, a photo of a printed schedule. Tap
+**📷 Add a photo or screenshot** in the assistant sheet (or paste a screenshot
+straight into the text box), leave the text box empty, and tap **Plan it**.
+
+It reads the picture and drafts the event for you:
+
+- the date, even when written as "next Wednesday (9/9)" — an explicit date in
+  the image wins over the relative phrase;
+- the time in **your** time zone when several are listed ("10:00 a.m. CT/8:00
+  a.m. MT" schedules at 8:00 for someone on Mountain time);
+- an hour long by default for a seminar or meeting with no end time shown;
+- room numbers, buildings, the video-call link, meeting ID and passcode, copied
+  into the task's description exactly as printed.
+
+You can type alongside the photo to steer it ("just the Zoom details, no
+travel time"). As always, the draft appears for review first — nothing is
+scheduled until you tap **Apply**.
+
 It runs on **Google Gemini's free tier**. The AI key stays on the server (a
 Supabase Edge Function), never in the app's public code. You just do this once.
 
@@ -55,8 +76,10 @@ See `RECEIPTS.md` for the B&B tracker.
 
 - **Cost:** free within Gemini's free tier. If you ever hit the rate limit, the
   app shows a friendly "try again in a moment" message.
-- **Privacy:** the text you paste is sent to Google Gemini to be structured.
-  Nothing is saved to your planner until you review the draft and tap Save.
+- **Privacy:** the text you paste — and any photo you attach — is sent to Google
+  Gemini to be structured. Photos are downscaled in the browser first and are
+  not stored anywhere; nothing is saved to your planner until you review the
+  draft and tap Save.
 - **Model:** `gemini-2.0-flash`. To change it, edit `MODEL` in
   `supabase/functions/parse-event/index.ts` and redeploy.
 - **If the ✨ button does nothing / errors:** it means the function isn't

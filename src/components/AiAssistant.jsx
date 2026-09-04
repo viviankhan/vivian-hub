@@ -1,10 +1,12 @@
 // src/components/AiAssistant.jsx
 // The AI assistant sheet: type an instruction ("add these to my orgo task and
 // check them off", "reschedule the dentist to Friday 3pm", "make a task for…"),
-// it plans the actions against your current tasks, shows the plan for you to
-// confirm, then the parent applies it. Nothing changes until you tap Apply.
+// and/or attach a photo or screenshot of an invitation, email or flyer. It plans
+// the actions against your current tasks, shows the plan for you to confirm,
+// then the parent applies it. Nothing changes until you tap Apply.
 import { useState } from 'react'
 import { runAssistant } from '../lib/parseEvent.js'
+import { compressImage, dataUrlToBase64 } from '../lib/trackers.js'
 
 function fmt12(t) {
   if (!t) return ''
@@ -49,6 +51,30 @@ export default function AiAssistant({ categories = [], tasks = [], onApply, onCl
   const [busy, setBusy]       = useState(false)
   const [err, setErr]         = useState('')
   const [plan, setPlan]       = useState(null)   // { summary, actions }
+  const [photo, setPhoto]     = useState('')     // downscaled JPEG data URL
+  const [reading, setReading] = useState(false)  // downscaling the picked file
+
+  // Take a picked or pasted image down to something small enough to send, and
+  // keep the result as the on-screen preview too.
+  const attachPhoto = async (file) => {
+    if (!file || !file.type?.startsWith('image/')) return
+    setErr(''); setReading(true)
+    try {
+      setPhoto(await compressImage(file, { maxDim: 1400, quality: 0.82 }))
+    } catch {
+      setErr('Couldn’t read that image — try a different photo.')
+    } finally { setReading(false) }
+  }
+
+  // Screenshots are usually on the clipboard, so let a paste into the box
+  // attach one instead of dropping it.
+  const onPaste = (e) => {
+    const item = Array.from(e.clipboardData?.items || []).find(i => i.type?.startsWith('image/'))
+    const file = item && item.getAsFile()
+    if (!file) return
+    e.preventDefault()
+    attachPhoto(file)
+  }
 
   const titleOf = (id) => (tasks.find(t => t.id === id) || {}).title
   const labelsOf = (ids) => (Array.isArray(ids) ? ids : [])
@@ -57,10 +83,10 @@ export default function AiAssistant({ categories = [], tasks = [], onApply, onCl
 
   const plated = async () => {
     const c = command.trim()
-    if (!c || busy) return
+    if ((!c && !photo) || busy || reading) return
     setBusy(true); setErr('')
     try {
-      const res = await runAssistant(c, { categories, tasks })
+      const res = await runAssistant(c, { categories, tasks, image: photo ? dataUrlToBase64(photo) : '' })
       setPlan(res)
     } catch (e) {
       setErr((e && e.message) || 'Something went wrong.')
@@ -85,34 +111,59 @@ export default function AiAssistant({ categories = [], tasks = [], onApply, onCl
           </div>
           <div style={{ fontSize:20, fontWeight:800, color:'#17313f', marginTop:8, fontFamily:'DM Sans,sans-serif' }}>✨ Tell me what to do</div>
           <div style={{ fontSize:12.5, color:'rgba(0,0,0,.62)', marginTop:4, lineHeight:1.5 }}>
-            Add a task, paste an event, or give an instruction about your existing tasks — I’ll show you the plan before anything changes.
+            Add a task, snap or paste a photo of an invitation, or give an instruction about your existing tasks — I’ll show you the plan before anything changes.
           </div>
         </div>
 
         <div style={{ padding:'16px 14px calc(20px + env(safe-area-inset-bottom))' }}>
           {!plan ? (<>
             <div style={{ position:'relative' }}>
-              <textarea value={command} onChange={e => setCommand(e.target.value)} autoFocus
-                placeholder={"e.g. Add the Aug 17 assignments to my Orgo task’s subtasks and check them off. Or: Dentist next Tue 3pm, bring insurance card."}
+              <textarea value={command} onChange={e => setCommand(e.target.value)} onPaste={onPaste} autoFocus
+                placeholder={"e.g. Add the Aug 17 assignments to my Orgo task’s subtasks and check them off. Or: Dentist next Tue 3pm, bring insurance card.\n\nOr attach a photo of an invite below — you can leave this empty."}
                 style={{ width:'100%', fontSize:14, padding:'12px 14px', borderRadius:12, border:'1px solid var(--border)', fontFamily:'DM Sans,sans-serif', outline:'none', lineHeight:1.55, resize:'vertical', minHeight:140, background:'white', color:'var(--text)', boxSizing:'border-box' }} />
               {command && (
                 <button type="button" onClick={() => { setCommand(''); setErr('') }} aria-label="Clear"
                   style={{ position:'absolute', top:8, right:8, height:26, padding:'0 10px', borderRadius:13, border:'1px solid var(--border)', background:'rgba(255,255,255,.9)', color:'var(--muted)', fontSize:12, fontWeight:600, cursor:'pointer', fontFamily:'DM Sans,sans-serif' }}>Clear</button>
               )}
             </div>
+            {/* Photo / screenshot of an invite, email or flyer */}
+            <div style={{ display:'flex', alignItems:'center', gap:10, marginTop:10, flexWrap:'wrap' }}>
+              <input id="ai-photo" type="file" accept="image/*" style={{ display:'none' }}
+                onChange={e => { attachPhoto(e.target.files?.[0]); e.target.value = '' }} />
+              <label htmlFor="ai-photo"
+                style={{ display:'inline-block', padding:'9px 14px', borderRadius:12, border:'1px solid var(--border)', background:'white', color:'var(--forest)', fontSize:13, fontWeight:700, fontFamily:'DM Sans,sans-serif', cursor:(busy||reading)?'default':'pointer', opacity:(busy||reading)?.6:1, pointerEvents:(busy||reading)?'none':'auto' }}>
+                📷 {photo ? 'Replace photo' : 'Add a photo or screenshot'}
+              </label>
+              {photo && (
+                <span style={{ position:'relative', display:'inline-flex' }}>
+                  <img src={photo} alt="Attached" style={{ height:52, borderRadius:8, border:'1px solid var(--border)' }} />
+                  <button type="button" onClick={() => setPhoto('')} aria-label="Remove photo"
+                    style={{ position:'absolute', top:-7, right:-7, width:22, height:22, borderRadius:'50%', border:'1px solid var(--border)', background:'white', color:'var(--muted)', fontSize:11, lineHeight:1, cursor:'pointer', padding:0 }}>✕</button>
+                </span>
+              )}
+              {reading && <span style={{ fontSize:12, color:'var(--muted)' }}>Preparing photo…</span>}
+            </div>
             {err && <div style={{ fontSize:12, color:'#B42318', background:'#FEF3F2', border:'1px solid #FECDCA', borderRadius:10, padding:'9px 12px', marginTop:10, lineHeight:1.45 }}>{err}</div>}
-            <button onClick={plated} disabled={!command.trim() || busy}
-              style={{ width:'100%', marginTop:12, padding:'14px', borderRadius:14, border:'none',
-                background:(!command.trim()||busy)?'#E1E1E6':'var(--forest)', color:(!command.trim()||busy)?'#9CA3AF':'var(--green-light)',
-                cursor:(!command.trim()||busy)?'default':'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:700, fontSize:15 }}>
-              {busy ? 'Thinking…' : 'Plan it'}
-            </button>
+            {(() => {
+              const ready = (!!command.trim() || !!photo) && !busy && !reading
+              return (
+                <button onClick={plated} disabled={!ready}
+                  style={{ width:'100%', marginTop:12, padding:'14px', borderRadius:14, border:'none',
+                    background:ready?'var(--forest)':'#E1E1E6', color:ready?'var(--green-light)':'#9CA3AF',
+                    cursor:ready?'pointer':'default', fontFamily:'DM Sans,sans-serif', fontWeight:700, fontSize:15 }}>
+                  {busy ? (photo ? 'Reading the photo…' : 'Thinking…') : 'Plan it'}
+                </button>
+              )
+            })()}
             <div style={{ fontSize:10.5, color:'var(--muted)', marginTop:10, textAlign:'center', lineHeight:1.5 }}>
-              Uses a free AI model — your text and a list of your task titles are sent to Google Gemini. Nothing changes until you review and tap Apply.
+              Uses a free AI model — your text, any photo you attach and a list of your task titles are sent to Google Gemini. Nothing changes until you review and tap Apply.
             </div>
           </>) : (<>
             {/* Plan review */}
-            <div style={{ fontSize:14, fontWeight:700, color:'var(--text)', marginBottom:4 }}>Here’s the plan</div>
+            <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:4 }}>
+              {photo && <img src={photo} alt="What I read" style={{ height:46, borderRadius:8, border:'1px solid var(--border)' }} />}
+              <div style={{ fontSize:14, fontWeight:700, color:'var(--text)' }}>Here’s the plan</div>
+            </div>
             {plan.summary && <div style={{ fontSize:13, color:'var(--muted)', lineHeight:1.5, marginBottom:12 }}>{plan.summary}</div>}
             {plan.actions.length === 0 ? (
               <div style={{ ...card, color:'var(--muted)', fontSize:13 }}>No changes to make.</div>
