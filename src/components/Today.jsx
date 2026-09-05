@@ -2256,7 +2256,7 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
       {/* AI assistant button, stacked above the + FAB. Only shown when the AI
           function can be reached (Supabase configured). */}
       {aiScheduleAvailable && (
-        <button onClick={()=>setPasterOpen(true)} className="today-fab-ai" title="AI assistant" aria-label="AI assistant"
+        <button onClick={()=>setPasterOpen(true)} className="today-fab-ai" title="AI assistant — type it or add a photo" aria-label="AI assistant"
           style={{position:'fixed',width:44,height:44,borderRadius:'50%',border:'none',
             background:'linear-gradient(135deg,#7BBFD4,#C8BFDF)',color:'#17313f',fontSize:19,cursor:'pointer',
             boxShadow:'0 4px 16px rgba(0,0,0,.22)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:100}}>
