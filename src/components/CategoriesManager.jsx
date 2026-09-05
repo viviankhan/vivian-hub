@@ -10,11 +10,18 @@
 //
 // Used in two places — Settings → Labels, and the top of the Task Menu — so
 // labels can be added and deleted wherever you're already working.
+//
+// The list is also the label chain in order: drag a row by its grip (or focus
+// the grip and press the arrow keys) to move a label up or down, and the ones
+// you use most sit first everywhere labels are shown — here, on the Task Menu,
+// and on the row of chips on every add-task sheet.
 import { useState } from 'react'
 import { IconPicker, Icon } from './IconPicker.jsx'
 import ColorSwatchRow from './ColorSwatchRow.jsx'
 import { Glyph } from '../lib/glyphs.jsx'
 import { FIELD_TYPES, fieldType, makeField } from '../lib/labels.js'
+import { nextSortOrder, reorderLabels, canReorderLabels } from '../lib/labelOrder.js'
+import { useDragReorder } from '../lib/reorder.js'
 import { incomeCategories, expenseCategories } from '../lib/trackers.js'
 
 function slugify(label) {
@@ -151,8 +158,19 @@ function RecordPanel({ cat, meta, folders, onMeta }) {
   )
 }
 
+// The grip you drag a label by. Deliberately quiet — it's only a handle.
+function Grip({ label, dragging, ...rest }) {
+  return (
+    <button type="button" aria-label={`Reorder ${label}`} title="Drag to reorder — or use the arrow keys"
+      {...rest}
+      style={{ ...rest.style, border: 'none', background: 'none', padding: '0 2px', flexShrink: 0, fontSize: 14, lineHeight: 1, color: dragging ? 'var(--teal)' : '#C3C9D2', touchAction: 'none' }}>
+      ⠿
+    </button>
+  )
+}
+
 export default function CategoriesManager({
-  categories, addCategory, updateCategory, deleteCategory,
+  categories, addCategory, updateCategory, deleteCategory, reorderCategories = null,
   labelMeta = {}, updateLabelMeta = () => {}, trackerFolders = [],
   compact = false,
 }) {
@@ -165,13 +183,26 @@ export default function CategoriesManager({
 
   const existingIds = new Set((categories || []).map(c => c.id))
 
+  // ── The chain, in the order you put it in ─────────────────────
+  // Reordering is a real save (it renumbers the label rows), so the list is
+  // only draggable where that save is available — as a prop here, or through
+  // the register App fills in.
+  const commitOrder = reorderCategories || (canReorderLabels() ? reorderLabels : null)
+  const catIds = (categories || []).map(c => c.id)
+  const drag = useDragReorder({
+    ids: catIds,
+    onReorder: next => commitOrder && commitOrder(next),
+    disabled: !commitOrder || catIds.length < 2,
+  })
+  const byId = new Map((categories || []).map(c => [c.id, c]))
+  const rows = drag.order.map(id => byId.get(id)).filter(Boolean)
+
   const handleAdd = async () => {
     const label = newLabel.trim()
     if (!label) return
     let id = slugify(label) || 'cat'
     if (existingIds.has(id)) id = `${id}-${Date.now().toString().slice(-4)}`
-    const sortOrder = (categories || []).reduce((m, c) => Math.max(m, c.sortOrder ?? 0), 0) + 1
-    await addCategory({ id, label, color: newColor, icon: newIcon, sortOrder })
+    await addCategory({ id, label, color: newColor, icon: newIcon, sortOrder: nextSortOrder(categories || []) })
     setNewLabel(''); setNewIcon('')
   }
   const removeLabel = (id) => {
@@ -188,16 +219,26 @@ export default function CategoriesManager({
         <div className="page-sub">Your own tags for tasks and commitments. Give each an emoji or uploaded image — and link the ones you keep books on to a record folder, so a tagged task writes itself into your records.</div>
       </>}
 
+      {!drag.disabled && (
+        <div style={{ fontSize: 11.5, color: 'var(--muted)', lineHeight: 1.5, marginBottom: 10 }}>
+          Drag a label by its <span style={{ color: '#C3C9D2' }}>⠿</span> handle to move it up or down — the order here is the order you'll see everywhere labels are offered, so put the ones you use most at the top.
+        </div>
+      )}
+
       {/* Existing labels */}
       <div style={{ marginBottom: 18 }}>
-        {(categories || []).map(cat => {
+        {rows.map(cat => {
           const meta = labelMeta[cat.id] || { folders: [], fields: [] }
           const linkCount = (meta.folders || []).length
           const fieldCount = (meta.fields || []).length
           const open = recordOpen === cat.id
+          const lifted = drag.dragId === cat.id
           return (
-            <div key={cat.id} style={{ background: 'white', border: '1px solid var(--border)', borderRadius: 11, padding: '9px 12px', marginBottom: 7 }}>
+            <div key={cat.id} {...drag.measureProps(cat.id)}
+              style={{ background: 'white', border: `1px solid ${lifted ? 'var(--teal)' : 'var(--border)'}`, borderRadius: 11, padding: '9px 12px', marginBottom: 7,
+                boxShadow: lifted ? '0 6px 18px rgba(26,58,78,.16)' : 'none', opacity: drag.dragging && !lifted ? .75 : 1, transition: 'box-shadow .12s ease, opacity .12s ease' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                {!drag.disabled && <Grip label={cat.label} dragging={lifted} {...drag.handleProps(cat.id)} />}
                 <IconPicker value={cat.icon} onChange={v => updateCategory(cat.id, { icon: v })} allowClear size={32} />
                 <button onClick={() => setColorOpen(o => o === cat.id ? null : cat.id)} title="Change color"
                   style={{ width: 28, height: 28, borderRadius: 8, border: colorOpen === cat.id ? '2px solid var(--text)' : '1px solid rgba(0,0,0,.12)', background: cat.color, cursor: 'pointer', padding: 0, flexShrink: 0 }} />

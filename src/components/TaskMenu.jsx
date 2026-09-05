@@ -13,6 +13,8 @@ import { getDurationPresets, setDurationPresets, resetDurationPresets, parseDura
 import ColorSwatchRow from './ColorSwatchRow.jsx'
 import CategoriesManager from './CategoriesManager.jsx'
 import { labelMetaFor } from '../lib/labels.js'
+import { nextSortOrder, reorderLabels, canReorderLabels } from '../lib/labelOrder.js'
+import { useDragReorder } from '../lib/reorder.js'
 
 const DEFAULT_CATEGORIES = [{ id:'other', label:'Other', color:'#8899AA' }]
 
@@ -55,7 +57,7 @@ function hexToBg(hex) {
 // A trimmed-down cousin of the Add sheet: everything that can be preset on a
 // task WITHOUT a date or time. No scheduling, repeat, reminders or location —
 // those belong to the moment you actually place the task on a day.
-function TemplateEditor({ existing = null, categories = [], onSave, onClose, addCategory = null, deleteCategory = null }) {
+function TemplateEditor({ existing = null, categories = [], onSave, onClose, addCategory = null, deleteCategory = null, reorderCategories = null }) {
   const cats = (categories && categories.length) ? categories : DEFAULT_CATEGORIES
   const isEdit = !!existing
 
@@ -101,8 +103,7 @@ function TemplateEditor({ existing = null, categories = [], onSave, onClose, add
     if (!text || !addCategory) return
     let id = text.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '').slice(0, 24) || 'label'
     if (cats.some(c => c.id === id)) id = `${id}-${Date.now().toString().slice(-4)}`
-    const sortOrder = cats.reduce((m, c) => Math.max(m, c.sortOrder ?? 0), 0) + 1
-    await addCategory({ id, label: text, color: newLabelColor, icon: '', sortOrder })
+    await addCategory({ id, label: text, color: newLabelColor, icon: '', sortOrder: nextSortOrder(cats) })
     setSelectedCats(prev => [...prev, id])
     setNewLabelText(''); setAddingLabel(false)
   }
@@ -111,6 +112,16 @@ function TemplateEditor({ existing = null, categories = [], onSave, onClose, add
     setSelectedCats(prev => prev.filter(c => c !== id))
     setConfirmLabel(null)
   }
+  // Press and hold a label chip to carry it up or down the chain; the new order
+  // is saved, so it's the order you'll meet everywhere. A plain tap still just
+  // picks the label — the drag only arms once you've held it still for a moment.
+  const commitLabelOrder = reorderCategories || (canReorderLabels() ? reorderLabels : null)
+  const labelDrag = useDragReorder({
+    ids: cats.map(c => c.id),
+    onReorder: next => commitLabelOrder && commitLabelOrder(next),
+    disabled: !commitLabelOrder || editingLabels || cats.length < 2,
+  })
+  const chainCats = labelDrag.order.map(id => cats.find(c => c.id === id)).filter(Boolean)
 
   const applyDuration = (mins) => { if (!mins) return; setManualDur(mins); setDurText('') }
   const onDurTextChange = (v) => {
@@ -269,10 +280,11 @@ function TemplateEditor({ existing = null, categories = [], onSave, onClose, add
               )}
             </div>
             <div style={{ display:'flex', gap:6, flexWrap:'wrap', alignItems:'center' }}>
-              {cats.map(c => {
+              {chainCats.map(c => {
                 const on = selectedCats.includes(c.id)
                 const primary = selectedCats[0] === c.id
                 const records = labelMetaFor(c.id).folders.length > 0
+                const lifted = labelDrag.dragId === c.id
                 if (editingLabels) {
                   const confirming = confirmLabel === c.id
                   return (
@@ -282,9 +294,13 @@ function TemplateEditor({ existing = null, categories = [], onSave, onClose, add
                     </button>
                   )
                 }
+                const itemProps = labelDrag.disabled ? {} : labelDrag.itemProps(c.id)
                 return (
-                  <button key={c.id} onClick={() => toggleCat(c.id)}
-                    style={{ display:'inline-flex', alignItems:'center', gap:5, fontSize:11, padding:'5px 12px', borderRadius:20, border: on ? 'none' : '1px solid var(--border)', background: on ? c.color : 'white', color: on ? 'white' : 'var(--muted)', cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight: on ? 600 : 400, boxShadow: primary ? '0 0 0 2px rgba(0,0,0,.16)' : 'none' }}>
+                  <button key={c.id} onClick={() => toggleCat(c.id)} {...itemProps}
+                    style={{ display:'inline-flex', alignItems:'center', gap:5, fontSize:11, padding:'5px 12px', borderRadius:20, border: on ? 'none' : '1px solid var(--border)', background: on ? c.color : 'white', color: on ? 'white' : 'var(--muted)', cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight: on ? 600 : 400,
+                      boxShadow: lifted ? '0 4px 14px rgba(26,58,78,.28)' : (primary ? '0 0 0 2px rgba(0,0,0,.16)' : 'none'),
+                      opacity: labelDrag.dragging && !lifted ? .6 : 1,
+                      ...(itemProps.style || {}) }}>
                     {on ? '✓ ' : ''}{c.label}{records && <span title="Files into a record folder" style={{ opacity:.8 }}>◈</span>}
                   </button>
                 )
@@ -318,6 +334,7 @@ function TemplateEditor({ existing = null, categories = [], onSave, onClose, add
               {editingLabels ? 'Tap a label to delete it — tasks that used it simply lose the tag.'
                 : labelNames.length > 1 ? 'The outlined label is the primary — it sets the color. ◈ marks a label that records into a folder.'
                 : 'Optional — pick one or more. ◈ marks a label that records into a folder.'}
+              {!labelDrag.disabled && !editingLabels && ' Press and hold a label to drag it up or down the chain — that order is kept everywhere.'}
             </div>
           </div>
 
@@ -433,7 +450,7 @@ function TemplateCard({ t, categories, onEdit, onDelete }) {
 // ── Main ───────────────────────────────────────────────────────
 export default function TaskMenu({
   templates = [], addTemplate, updateTemplate, deleteTemplate, categories = [],
-  addCategory = null, updateCategory = null, deleteCategory = null,
+  addCategory = null, updateCategory = null, deleteCategory = null, reorderCategories = null,
   labelMeta = {}, updateLabelMeta = () => {}, trackerFolders = [],
 }) {
   const [editing, setEditing] = useState(null)  // template object being edited
@@ -483,6 +500,7 @@ export default function TaskMenu({
               </div>
               <CategoriesManager compact
                 categories={categories} addCategory={addCategory} updateCategory={updateCategory} deleteCategory={deleteCategory}
+                reorderCategories={reorderCategories}
                 labelMeta={labelMeta} updateLabelMeta={updateLabelMeta} trackerFolders={trackerFolders} />
             </div>
           )}
@@ -511,6 +529,7 @@ export default function TaskMenu({
           categories={categories}
           addCategory={addCategory}
           deleteCategory={deleteCategory}
+          reorderCategories={reorderCategories}
           onSave={handleSave}
           onClose={() => { setEditing(null); setAdding(false) }} />
       )}

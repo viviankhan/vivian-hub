@@ -24,6 +24,8 @@ import { geolocationSupported, getCurrentLocation, searchPlaces, reverseGeocode,
 import { getSavedPlaces, getRecentPlaces, rememberPlace } from '../lib/places.js'
 import { activeAccent } from '../lib/appearance.js'
 import { fieldType, fieldsForCats, recordLinksForCats, hasValue } from '../lib/labels.js'
+import { reorderLabels, canReorderLabels } from '../lib/labelOrder.js'
+import { useDragReorder } from '../lib/reorder.js'
 import { compressImage } from '../lib/trackers.js'
 import { getTaskMenu, taskMenuRow, TASK_MENU_EVENT } from '../lib/taskMenuPrefs.js'
 
@@ -362,6 +364,17 @@ export default function AddItemModal({ existing = null, existingRecurring = null
       return base.includes(id) ? base.filter(c => c !== id) : [...base, id]
     })
   }
+  // The label chain is rearrangeable right here, where you actually notice
+  // which labels you reach for: press and hold one and drag it up or down. The
+  // new order is saved against the labels themselves (App registers the save —
+  // see lib/labelOrder.js), so it holds in Settings and on every other sheet.
+  // A plain tap is untouched: the drag only arms after a short hold.
+  const labelDrag = useDragReorder({
+    ids: cats.map(c => c.id),
+    onReorder: reorderLabels,
+    disabled: !canReorderLabels() || !(categories || []).length || cats.length < 2,
+  })
+  const chainCats = labelDrag.order.map(id => cats.find(c => c.id === id)).filter(Boolean)
   const [description, setDescription] = useState(existing?.description ?? rec?.note ?? presetDescription ?? '')
   const [subtasks, setSubtasks]   = useState(() =>
     Array.isArray(existing?.subtasks) ? existing.subtasks
@@ -892,12 +905,17 @@ export default function AddItemModal({ existing = null, existingRecurring = null
         hint={usingPrediction ? 'Predicted' : (effectiveCats.length > 1 ? `${effectiveCats.length}` : null)}
         open={expanded==='labels'} onClick={() => toggleRow('labels')}>
         <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
-          {cats.map(c => {
+          {chainCats.map(c => {
             const on = effectiveCats.includes(c.id)
             const primary = effectiveCats[0] === c.id
+            const lifted = labelDrag.dragId === c.id
+            const dragProps = labelDrag.disabled ? {} : labelDrag.itemProps(c.id)
             return (
-              <button key={c.id} onClick={() => toggleCat(c.id)}
-                style={{ fontSize:11, padding:'5px 12px', borderRadius:20, border: on ? 'none' : '1px solid var(--border)', background: on ? c.color : 'white', color: on ? 'white' : 'var(--muted)', cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight: on ? 600 : 400, boxShadow: primary ? '0 0 0 2px rgba(0,0,0,.16)' : 'none' }}>
+              <button key={c.id} onClick={() => toggleCat(c.id)} {...dragProps}
+                style={{ fontSize:11, padding:'5px 12px', borderRadius:20, border: on ? 'none' : '1px solid var(--border)', background: on ? c.color : 'white', color: on ? 'white' : 'var(--muted)', cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight: on ? 600 : 400,
+                  boxShadow: lifted ? '0 4px 14px rgba(26,58,78,.28)' : (primary ? '0 0 0 2px rgba(0,0,0,.16)' : 'none'),
+                  opacity: labelDrag.dragging && !lifted ? .6 : 1,
+                  ...(dragProps.style || {}) }}>
                 {on ? '✓ ' : ''}{c.label}
               </button>
             )
@@ -911,6 +929,9 @@ export default function AddItemModal({ existing = null, existingRecurring = null
         )}
         {effectiveCats.length > 1 && (
           <div style={{ fontSize:10.5, color:'var(--muted)', marginTop:7 }}>The outlined label is the primary — it sets the color and scheduling.</div>
+        )}
+        {!labelDrag.disabled && (
+          <div style={{ fontSize:10.5, color:'var(--muted)', marginTop:7 }}>Press and hold a label to drag it up or down the chain — the ones you use most can sit first, here and everywhere else.</div>
         )}
       </DetailRow>
     ),

@@ -6,8 +6,8 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "node tests/offline.test.mjs && node tests/storage.test.mjs",
-    "test:browser": "npm run build && node tests/browser.test.mjs"
+    "test": "node tests/offline.test.mjs && node tests/storage.test.mjs && node tests/labelOrder.test.mjs",
+    "test:browser": "npm run build && node tests/browser.test.mjs && node tests/labels.browser.test.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.39.0",

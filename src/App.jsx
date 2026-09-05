@@ -38,6 +38,7 @@ import {
   registerLabelMeta, registerRecordFolders, normalizeLabelMeta,
   syncTaskEntries, removeTaskEntries, mergeFolders as mergeRecordFolders, remapLabelFolders,
 } from './lib/labels.js'
+import { sortLabels, applyOrder, orderChanges, registerLabelReorder } from './lib/labelOrder.js'
 import { ACCENT_COLORS } from './lib/trackers.js'
 import TaskMenuSettings from './components/TaskMenuSettings.jsx'
 
@@ -196,7 +197,7 @@ function AccountPanel() {
 }
 
 // ── Settings Drawer ────────────────────────────────────────────
-function SettingsDrawer({ open, onClose, settingsTab, setSettingsTab, notes, updateNotes, categories, addCategory, updateCategory, deleteCategory, labelMeta, updateLabelMeta, trackerFolders, events, commitments, recurring, locatedCount, changeHistory, undoChange, clearChangeHistory, externalCalendars, calendarStatuses, addCalendar, toggleCalendar, removeCalendar, refreshOneCalendar, updateCalendar, font, setFont, theme, setTheme, season, setSeason, customColor, setCustom, background, setBackground, customBg, setCustomBg, mobileBackground, setMobileBackground, mobileCustomBg, setMobileCustomBg, layout, setLayout, soundOn, setSound, summary, setSummary, effectsOn, setEffects, admin, persistArt }) {
+function SettingsDrawer({ open, onClose, settingsTab, setSettingsTab, notes, updateNotes, categories, addCategory, updateCategory, deleteCategory, reorderCategories, labelMeta, updateLabelMeta, trackerFolders, events, commitments, recurring, locatedCount, changeHistory, undoChange, clearChangeHistory, externalCalendars, calendarStatuses, addCalendar, toggleCalendar, removeCalendar, refreshOneCalendar, updateCalendar, font, setFont, theme, setTheme, season, setSeason, customColor, setCustom, background, setBackground, customBg, setCustomBg, mobileBackground, setMobileBackground, mobileCustomBg, setMobileCustomBg, layout, setLayout, soundOn, setSound, summary, setSummary, effectsOn, setEffects, admin, persistArt }) {
   if (!open) return null
   const SECTIONS = [
     ['customize','Look','sun'],
@@ -228,7 +229,7 @@ function SettingsDrawer({ open, onClose, settingsTab, setSettingsTab, notes, upd
 
             {settingsTab==='reminders'  && <NotificationsSettings events={events} commitments={commitments} recurring={recurring} locatedCount={locatedCount} />}
             {settingsTab==='calendars'  && <ExternalCalendars calendars={externalCalendars} statuses={calendarStatuses} onAdd={addCalendar} onToggle={toggleCalendar} onRemove={removeCalendar} onRefresh={refreshOneCalendar} onUpdate={updateCalendar} />}
-            {settingsTab==='categories' && <CategoriesManager categories={categories} addCategory={addCategory} updateCategory={updateCategory} deleteCategory={deleteCategory}
+            {settingsTab==='categories' && <CategoriesManager categories={categories} addCategory={addCategory} updateCategory={updateCategory} deleteCategory={deleteCategory} reorderCategories={reorderCategories}
               labelMeta={labelMeta} updateLabelMeta={updateLabelMeta} trackerFolders={trackerFolders} />}
             {settingsTab==='taskmenu'   && <TaskMenuSettings />}
             {settingsTab==='notes'      && <Notes notes={notes} updateNotes={updateNotes} />}
@@ -703,7 +704,7 @@ export default function App() {
       setCompletions_(comp); setLog_(l); setNotes_(n)
       setFcProgress_(fcp); setFcStudied_(fcs); setScheduled_(sch)
       setCommitments_(com); setRecurringTaskRows(rt); setVacations_(vac); setEvents_(evs)
-      setCategories_(cats); setCommitmentMeta_(cmeta); setRecurringExceptions_(rexc); setRecurringMeta_(rmeta)
+      setCategories_(sortLabels(cats)); setCommitmentMeta_(cmeta); setRecurringExceptions_(rexc); setRecurringMeta_(rmeta)
       setTimeLogs_(Array.isArray(tlogs) ? tlogs : [])
       setTaskTemplates_(Array.isArray(tpls) ? tpls : [])
       setChangeHistory_(Array.isArray(chist) ? chist : [])
@@ -1166,19 +1167,38 @@ export default function App() {
   const addCategoryFn = useCallback(async cat => {
     try {
       const created = await dbAddCategory(cat)
-      setCategories_(prev => [...prev, created])
+      setCategories_(prev => sortLabels([...prev, created]))
     } catch (e) { reportSaveError(e) }
   }, [])
   const updateCategoryFn = useCallback(async (id, changes) => {
     try {
       const updated = await dbUpdateCategory(id, changes)
-      setCategories_(prev => prev.map(c => c.id===id ? { ...c, ...updated } : c))
+      setCategories_(prev => sortLabels(prev.map(c => c.id===id ? { ...c, ...updated } : c)))
     } catch (e) { reportSaveError(e) }
   }, [])
   const deleteCategoryFn = useCallback(async id => {
     setCategories_(prev => prev.filter(c => c.id !== id))
     try { await dbDeleteCategory(id) } catch (e) { reportSaveError(e) }
   }, [])
+  // Dragging a label up or down the chain. The new order shows immediately —
+  // it's the answer to a gesture, so it can't wait on a round trip — and then
+  // only the rows whose place actually changed are written, each through the
+  // same update path any other label edit takes (so it queues and replays if
+  // the drag happened offline).
+  const reorderCategoriesFn = useCallback(async orderedIds => {
+    const before = categoriesRef.current
+    const changes = orderChanges(before, orderedIds)
+    if (!changes.length) return
+    const next = applyOrder(before, orderedIds)
+    categoriesRef.current = next
+    setCategories_(next)
+    try {
+      for (const ch of changes) await dbUpdateCategory(ch.id, { sortOrder: ch.sortOrder })
+    } catch (e) { reportSaveError(e) }
+  }, [])
+  // The add-task sheet is opened from a dozen places that never see label CRUD,
+  // so the chain there reaches for the commit through the register.
+  useEffect(() => { registerLabelReorder(reorderCategoriesFn); return () => registerLabelReorder(null) }, [reorderCategoriesFn])
 
   // ── Routine groups CRUD (one synced kv blob) ─────────────────
   // The whole list is one blob, so each op writes the next array. Deleting a
@@ -1957,6 +1977,7 @@ export default function App() {
         {tab==='taskmenu'    && <TaskMenu templates={taskTemplates} addTemplate={addTaskTemplate}
           updateTemplate={updateTaskTemplate} deleteTemplate={deleteTaskTemplate} categories={categories}
           addCategory={addCategoryFn} updateCategory={updateCategoryFn} deleteCategory={deleteCategoryFn}
+          reorderCategories={reorderCategoriesFn}
           labelMeta={labelMeta} updateLabelMeta={saveLabelMeta} trackerFolders={trackerFolders} />}
         {tab==='calendar'    && <Calendar    {...sharedProps} jumpTo={jumpTo} />}
         {tab==='thoughts'    && <ThoughtsBoard addCommitment={addCommitment} addRecurringTask={addRecurringTaskFn}
@@ -1994,6 +2015,7 @@ export default function App() {
         notes={notes} updateNotes={updateNotes}
         categories={categories} addCategory={addCategoryFn}
         updateCategory={updateCategoryFn} deleteCategory={deleteCategoryFn}
+        reorderCategories={reorderCategoriesFn}
         labelMeta={labelMeta} updateLabelMeta={saveLabelMeta} trackerFolders={trackerFolders}
         events={events} commitments={commitments}
         recurring={recurringReminderItems} locatedCount={locatedTaskCount}
