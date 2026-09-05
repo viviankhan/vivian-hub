@@ -31,7 +31,6 @@ import {
 import { occKey, recurringOccurrencesForDate } from './lib/occurrences.js'
 import { registerEmotionPrefs } from './lib/wellness.js'
 import { runMigrationIfNeeded, seedCategoriesIfNeeded } from './lib/migrate.js'
-import { DEFAULT_RECURRING_TASKS, DEFAULT_DAILY_TODOS } from './data/schedule.js'
 
 import Today       from './components/Today.jsx'
 import Calendar    from './components/Calendar.jsx'
@@ -1717,8 +1716,7 @@ export default function App() {
           addRecurringTask={addRecurringTaskFn} updateRecurringTask={updateRecurringTaskFn}
           deleteRecurringTask={deleteRecurringTaskFn} clearRecurringTasks={clearRecurringTasksFn}
           categories={categories} taskTemplates={taskTemplates} labelModel={labelModel}
-          routines={routines} addRoutine={addRoutineFn} updateRoutine={updateRoutineFn} deleteRoutine={deleteRoutineFn}
-          defaultWeekTasks={DEFAULT_RECURRING_TASKS} defaultDailyTodos={DEFAULT_DAILY_TODOS} />}
+          routines={routines} addRoutine={addRoutineFn} updateRoutine={updateRoutineFn} deleteRoutine={deleteRoutineFn} />}
         {tab==='wellness'    && <BloomWellness
           checkins={wlCheckins} persistCheckins={persistWlCheckins}
           effects={wlEffects} persistEffects={persistWlEffects}

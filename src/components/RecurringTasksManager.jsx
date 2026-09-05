@@ -1,6 +1,5 @@
 import { useState, useMemo } from 'react'
 import { Icon } from './IconPicker.jsx'
-import DateField from './DateField.jsx'
 import TimeField from './TimeField.jsx'
 import AddItemModal from './AddItemModal.jsx'
 import ColorSwatchRow from './ColorSwatchRow.jsx'
@@ -18,12 +17,11 @@ function fmt12Mins(mins) {
   const h = Math.floor(mins / 60), m = mins % 60
   return `${h % 12 || 12}:${String(m).padStart(2, '0')} ${h >= 12 ? 'PM' : 'AM'}`
 }
-// The field that carries a task's display text (and its time prefix): 'week'
-// tasks store it in `text`, 'today' tasks in `label`.
-function labelField(task) { return task.type === 'week' ? 'text' : 'label' }
 // Minutes-since-midnight of a task's time prefix, or null if it has none.
+// A task's display text (and its time prefix) lives in `label`; `text` is only
+// still read for tasks saved before the Week/Today split was removed.
 function taskTimeMins(task) {
-  const { time } = splitTimePrefix(task[labelField(task)] || task.label || task.text || '')
+  const { time } = splitTimePrefix(task.label || task.text || '')
   if (!time) return null
   const [h, m] = time.split(':').map(Number)
   return h * 60 + m
@@ -53,53 +51,7 @@ function resolveCat(id, categories) {
 const JS_DAY_TO_NAME = ['sunday','monday','tuesday','wednesday','thursday','friday','saturday']
 function todayName() { return JS_DAY_TO_NAME[new Date().getDay()] }
 
-// ── Convert old per-day format → flat array ────────────────────
-export function migrateLegacyTasks(recurringTasks) {
-  if (!recurringTasks) return null
-  // Already migrated
-  if (Array.isArray(recurringTasks.tasks)) return recurringTasks
-  const tasks = []
-  const wt = recurringTasks.weekTasks  || {}
-  const dt = recurringTasks.dailyTodos || {}
-  DAYS.forEach(day => {
-    ;(wt[day]||[]).forEach(t => {
-      tasks.push({ ...t, type:'week',  days:[day], startDate:null, endDate:null })
-    })
-    ;(dt[day]||[]).forEach(t => {
-      tasks.push({ ...t, type:'today', days:[day], startDate:null, endDate:null })
-    })
-  })
-  return { tasks }
-}
-
-// ── Convert flat array → per-day (for schedule engine) ─────────
-export function flatToPerDay(flat, dateStr) {
-  if (!flat?.tasks) return null
-  const today = dateStr ? new Date(dateStr+'T12:00:00') : new Date()
-  const weekTasks  = {}
-  const dailyTodos = {}
-  DAYS.forEach(d => { weekTasks[d] = []; dailyTodos[d] = [] })
-  flat.tasks.forEach(task => {
-    // Check date range
-    if (task.startDate) {
-      const start = new Date(task.startDate+'T00:00:00')
-      if (today < start) return
-    }
-    if (task.endDate) {
-      const end = new Date(task.endDate+'T23:59:59')
-      if (today > end) return
-    }
-    ;(task.days||[]).forEach(day => {
-      const { type, days, startDate, endDate, ...rest } = task
-      if (type === 'week')  weekTasks[day]  = [...(weekTasks[day]||[]),  rest]
-      else                  dailyTodos[day] = [...(dailyTodos[day]||[]), rest]
-    })
-  })
-  return { weekTasks, dailyTodos }
-}
-
 // ── Helpers ────────────────────────────────────────────────────
-function slugify(t) { return t.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/(^-|-$)/g,'').slice(0,28) }
 // "Jul 27, 2026" — matches the month/day/year style used elsewhere (Events, etc.)
 // rather than the raw 07/27/2026 slashes.
 function fmtDate(d) {
@@ -119,145 +71,6 @@ function dateRangeText(startDate, endDate) {
 function Tag({ label, color, icon }) {
   const c = color || '#9CA3AF'
   return <span style={{ display:'inline-flex', alignItems:'center', gap:3, fontSize:9, padding:'2px 6px', borderRadius:6, background:`${c}20`, color:c, fontWeight:700, letterSpacing:.8, textTransform:'uppercase' }}>{icon && <Icon value={icon} size={11} />}{label}</span>
-}
-function TypeBadge({ type }) {
-  return <span style={{ fontSize:9, padding:'2px 6px', borderRadius:6,
-    background:type==='week'?'#E0F2FE':'#FEF9C3', color:type==='week'?'#0369A1':'#854D0E',
-    fontWeight:700, letterSpacing:.8, textTransform:'uppercase' }}>{type==='week'?'Week':'Today'}</span>
-}
-function DayPill({ day, active, onClick }) {
-  return (
-    <button onClick={onClick} style={{ fontSize:10, padding:'4px 9px', borderRadius:16,
-      border:`1.5px solid ${active?'var(--forest)':'var(--border)'}`,
-      background:active?'var(--forest)':'white', color:active?'var(--green-light)':'var(--muted)',
-      cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:600 }}>
-      {DAY_SHORT[day]}
-    </button>
-  )
-}
-
-// ── Task editor modal ──────────────────────────────────────────
-function TaskModal({ initial, onSave, onDelete, onClose, categories }) {
-  const isNew = !initial
-  const catList = (categories && categories.length) ? categories : [{ id:'other', label:'Other', color:'#8899AA' }]
-  const [text,      setText]      = useState(initial?.text||initial?.label||'')
-  const [note,      setNote]      = useState(initial?.note||'')
-  const [type,      setType]      = useState(initial?.type||'week')
-  const [cat,       setCat]       = useState(initial?.cat||initial?.tag||catList[0].id)
-  const [carry,     setCarry]     = useState(initial?.carry||false)
-  const [days,      setDays]      = useState(initial?.days||['monday'])
-  const [startDate, setStartDate] = useState(initial?.startDate||'')
-  const [endDate,   setEndDate]   = useState(initial?.endDate||'')
-  const [noEnd,     setNoEnd]     = useState(!initial?.endDate)
-
-  const toggleDay = (d) => setDays(prev => prev.includes(d) ? prev.filter(x=>x!==d) : [...prev,d])
-
-  const save = () => {
-    if (!text.trim() || days.length===0) return
-    const id = initial?.id || `${days[0].slice(0,3)}-${slugify(text)}`
-    const base = { id, days, type, cat, startDate:startDate||null, endDate:(!noEnd&&endDate)||null }
-    if (type==='week')  onSave({ ...base, text:text.trim(), carry })
-    else                onSave({ ...base, label:text.trim(), note:note.trim(), tag:cat })
-  }
-
-  const inp = { width:'100%', fontSize:13, padding:'9px 12px', borderRadius:10, border:'1px solid var(--border)', fontFamily:'DM Sans,sans-serif', outline:'none', boxSizing:'border-box', marginBottom:10, background:'white', color:'var(--text)' }
-
-  return (
-    <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.5)', zIndex:600, display:'flex', alignItems:'center', justifyContent:'center', padding:16 }}>
-      <div style={{ background:'white', borderRadius:18, maxWidth:420, width:'100%', boxShadow:'0 24px 64px rgba(0,0,0,.25)', overflow:'hidden' }}>
-
-        {/* Modal header */}
-        <div style={{ background:'var(--forest)', padding:'18px 20px', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
-          <div className="serif" style={{ color:'var(--green-light)', fontSize:18, fontWeight:600 }}>{isNew ? 'New Recurring Task' : 'Edit Task'}</div>
-          <button onClick={onClose} style={{ background:'rgba(255,255,255,.1)', border:'none', color:'var(--green-light)', borderRadius:8, width:30, height:30, cursor:'pointer', fontSize:16 }}>✕</button>
-        </div>
-
-        <div style={{ padding:'18px 20px' }}>
-          {/* Type toggle */}
-          <div style={{ fontSize:10, color:'var(--muted)', letterSpacing:1.5, textTransform:'uppercase', marginBottom:6 }}>Appears in</div>
-          <div style={{ display:'flex', gap:0, marginBottom:14, borderRadius:10, overflow:'hidden', border:'1px solid var(--border)', width:'fit-content' }}>
-            {[['week','Week tab'],['today','Today tab']].map(([v,l])=>(
-              <button key={v} onClick={()=>setType(v)}
-                style={{ fontSize:12, padding:'7px 16px', border:'none', cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:600,
-                  background:type===v?'var(--forest)':'white', color:type===v?'var(--green-light)':'var(--muted)' }}>{l}</button>
-            ))}
-          </div>
-
-          {/* Text */}
-          <input value={text} onChange={e=>setText(e.target.value)} autoFocus
-            placeholder={type==='today'?'Label (e.g. 9:50 AM — Coral Reef class)…':'Task description…'}
-            style={inp} />
-
-          {/* Note (Today only) */}
-          {type==='today' && (
-            <input value={note} onChange={e=>setNote(e.target.value)} placeholder="Note (optional sub-text)…"
-              style={{ ...inp, color:'var(--muted)', fontSize:12 }} />
-          )}
-
-          {/* Category */}
-          <div style={{ display:'flex', gap:8, alignItems:'center', marginBottom:14, flexWrap:'wrap' }}>
-            <select value={cat} onChange={e=>setCat(e.target.value)}
-              style={{ fontSize:12, padding:'7px 10px', borderRadius:9, border:'1px solid var(--border)', fontFamily:'DM Sans,sans-serif', background:'white', cursor:'pointer' }}>
-              {catList.map(c=><option key={c.id} value={c.id}>{c.label}</option>)}
-            </select>
-            {type==='week' && (
-              <label style={{ display:'flex', alignItems:'center', gap:5, fontSize:12, color:'var(--muted)', cursor:'pointer' }}>
-                <input type="checkbox" checked={carry} onChange={e=>setCarry(e.target.checked)} />
-                carry forward if undone
-              </label>
-            )}
-          </div>
-
-          {/* Days */}
-          <div style={{ fontSize:10, color:'var(--muted)', letterSpacing:1.5, textTransform:'uppercase', marginBottom:8 }}>Repeats on</div>
-          <div style={{ display:'flex', gap:5, flexWrap:'wrap', marginBottom:14 }}>
-            {DAYS.map(d=>(
-              <DayPill key={d} day={d} active={days.includes(d)} onClick={()=>toggleDay(d)} />
-            ))}
-          </div>
-          {days.length===0 && <div style={{ fontSize:11, color:'#EF4444', marginBottom:10 }}>Select at least one day.</div>}
-
-          {/* Date range */}
-          <div style={{ display:'flex', gap:8, marginBottom:4 }}>
-            <div style={{ flex:1, minWidth:0 }}>
-              <div style={{ fontSize:10, color:'var(--muted)', letterSpacing:1, textTransform:'uppercase', marginBottom:4 }}>Start date</div>
-              <DateField value={startDate} onChange={setStartDate}
-                style={{ ...inp, marginBottom:0, fontSize:12 }} />
-            </div>
-            <div style={{ flex:1, minWidth:0 }}>
-              <div style={{ fontSize:10, color:'var(--muted)', letterSpacing:1, textTransform:'uppercase', marginBottom:4 }}>End date</div>
-              <DateField value={endDate} onChange={setEndDate} disabled={noEnd}
-                style={{ ...inp, marginBottom:0, fontSize:12, opacity:noEnd?.45:1 }} />
-            </div>
-          </div>
-          <label style={{ display:'flex', alignItems:'center', gap:5, fontSize:11, color:'var(--muted)', cursor:'pointer', marginBottom:16 }}>
-            <input type="checkbox" checked={noEnd} onChange={e=>setNoEnd(e.target.checked)} />
-            No end date — repeats indefinitely
-          </label>
-
-          {/* Actions */}
-          <div style={{ display:'flex', gap:8, justifyContent:'space-between' }}>
-            <div style={{ display:'flex', gap:8 }}>
-              <button onClick={save} disabled={!text.trim()||days.length===0}
-                style={{ fontSize:13, padding:'10px 20px', borderRadius:10, border:'none', background:'var(--forest)', color:'var(--green-light)', cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:600, opacity:(!text.trim()||days.length===0)?.5:1 }}>
-                {isNew ? 'Add Task' : 'Save Changes'}
-              </button>
-              <button onClick={onClose}
-                style={{ fontSize:13, padding:'10px 14px', borderRadius:10, border:'1px solid var(--border)', background:'white', color:'var(--muted)', cursor:'pointer', fontFamily:'DM Sans,sans-serif' }}>
-                Cancel
-              </button>
-            </div>
-            {!isNew && (
-              <button onClick={onDelete}
-                style={{ fontSize:12, padding:'8px 12px', borderRadius:10, border:'1px solid #FECACA', background:'white', color:'#EF4444', cursor:'pointer', fontFamily:'DM Sans,sans-serif' }}>
-                Delete
-              </button>
-            )}
-          </div>
-        </div>
-      </div>
-    </div>
-  )
 }
 
 // ── Task list row ──────────────────────────────────────────────
@@ -371,8 +184,7 @@ function RoutinesView({ routines, tasks, categories, today, onEditTask, updateRe
     items.forEach(task => {
       const cur = taskTimeMins(task)
       if (cur == null) return
-      const f = labelField(task)
-      updateRecurringTask(task.id, { ...task, [f]: setLabelTime(task[f], cur + d) })
+      updateRecurringTask(task.id, { ...task, label: setLabelTime(task.label, cur + d) })
     })
   }
 
@@ -440,7 +252,7 @@ function RoutinesView({ routines, tasks, categories, today, onEditTask, updateRe
                 {items.length===0 ? (
                   <div style={{ fontSize:12, color:'var(--muted)', padding:'4px 2px 6px', fontStyle:'italic' }}>No tasks yet — open a task and pick this routine.</div>
                 ) : items.map(task => (
-                  <TaskListRow key={task.id+task.type+(task.days||[]).join('')} task={task} onEdit={()=>onEditTask(task)} today={today} categories={categories} routines={routines} />
+                  <TaskListRow key={task.id+(task.days||[]).join('')} task={task} onEdit={()=>onEditTask(task)} today={today} categories={categories} routines={routines} />
                 ))}
               </div>
             </>}
@@ -453,7 +265,7 @@ function RoutinesView({ routines, tasks, categories, today, onEditTask, updateRe
         <div style={{ marginBottom:18 }}>
           <div style={{ fontSize:15, fontWeight:700, color:'var(--muted)', marginBottom:8 }}>No routine</div>
           {unassigned.map(task => (
-            <TaskListRow key={task.id+task.type+(task.days||[]).join('')} task={task} onEdit={()=>onEditTask(task)} today={today} categories={categories} routines={routines} />
+            <TaskListRow key={task.id+(task.days||[]).join('')} task={task} onEdit={()=>onEditTask(task)} today={today} categories={categories} routines={routines} />
           ))}
         </div>
       )}
@@ -463,33 +275,34 @@ function RoutinesView({ routines, tasks, categories, today, onEditTask, updateRe
 }
 
 // ── Main ───────────────────────────────────────────────────────
-export default function RecurringTasksManager({ recurringTasks, addRecurringTask, updateRecurringTask, deleteRecurringTask, clearRecurringTasks, categories, routines = [], taskTemplates = [], labelModel = null, addRoutine, updateRoutine, deleteRoutine, defaultWeekTasks, defaultDailyTodos }) {
+export default function RecurringTasksManager({ recurringTasks, addRecurringTask, updateRecurringTask, deleteRecurringTask, clearRecurringTasks, categories, routines = [], taskTemplates = [], labelModel = null, addRoutine, updateRoutine, deleteRoutine }) {
   const [editing,     setEditing]     = useState(null) // null | 'new' | task object
   const [view,        setView]        = useState('schedule') // 'schedule' | 'routines'
   const [filterDay,   setFilterDay]   = useState(todayName())
-  const [filterType,  setFilterType]  = useState('all')
   const [confirmClear, setConfirmClear] = useState(false)
   const [clearing,     setClearing]     = useState(false)
   const today = todayName()
 
-  // Build flat tasks array — migrate legacy format if needed
-  // Deduplicates tasks with the same text+type into one entry with merged days
+  // Build flat tasks array — expand the legacy per-day shape if that's what's
+  // still stored. Deduplicates tasks with the same text into one entry with
+  // merged days.
   const flatData = useMemo(() => {
     if (Array.isArray(recurringTasks?.tasks)) return recurringTasks.tasks
 
-    // Build raw list from defaults or legacy per-day format
+    // Build raw list from the legacy per-day format. Its two buckets are no
+    // longer different kinds of task, so both land in the same list.
     const raw = []
-    const wt = recurringTasks?.weekTasks  || defaultWeekTasks
-    const dt = recurringTasks?.dailyTodos || defaultDailyTodos
+    const wt = recurringTasks?.weekTasks  || {}
+    const dt = recurringTasks?.dailyTodos || {}
     DAYS.forEach(day => {
-      ;(wt[day]||[]).forEach(t => raw.push({ ...t, type:'week',  days:[day], startDate:null, endDate:null }))
-      ;(dt[day]||[]).forEach(t => raw.push({ ...t, type:'today', days:[day], startDate:null, endDate:null }))
+      ;[...(wt[day]||[]), ...(dt[day]||[])].forEach(t =>
+        raw.push({ ...t, days:[day], startDate:null, endDate:null }))
     })
 
-    // Deduplicate: group by (text|label) + type + cat/tag → merge days arrays
+    // Deduplicate: group by (text|label) + cat/tag → merge days arrays
     const map = new Map()
     raw.forEach(task => {
-      const key = `${task.text||task.label}||${task.type}||${task.cat||task.tag}`
+      const key = `${task.text||task.label}||${task.cat||task.tag}`
       if (map.has(key)) {
         const existing = map.get(key)
         const merged = [...new Set([...existing.days, ...task.days])]
@@ -552,7 +365,6 @@ export default function RecurringTasksManager({ recurringTasks, addRecurringTask
   // Daily and monthly tasks no longer clutter every weekday column; each shows
   // once, in its own bucket.
   const visible = flatData.filter(t => {
-    if (filterType !== 'all' && t.type !== filterType) return false
     const bucket = freqBucket(t)
     if (filterDay === 'all')     return true
     if (filterDay === 'daily')   return bucket === 'daily'
@@ -560,15 +372,14 @@ export default function RecurringTasksManager({ recurringTasks, addRecurringTask
     return bucket === 'weekly' && (t.days||[]).includes(filterDay)   // a weekday
   })
 
-  // Sort: by first day, then type
+  // Sort: by first day
   const dayOrder = Object.fromEntries(DAYS.map((d,i)=>[d,i]))
-  const byDayThenType = (a,b)=>{
+  const byDay = (a,b)=>{
     const da = Math.min(...(a.days||[]).map(d=>dayOrder[d]??99))
     const db = Math.min(...(b.days||[]).map(d=>dayOrder[d]??99))
-    if (da!==db) return da-db
-    return (a.type==='week'?0:1)-(b.type==='week'?0:1)
+    return da-db
   }
-  const sorted = [...visible].sort(byDayThenType)
+  const sorted = [...visible].sort(byDay)
   // "All days" splits the list into labeled sections so a daily habit reads once
   // under "Every day" and a monthly task once under "Monthly", never repeated
   // down each weekday. A specific filter collapses to just its own section.
@@ -630,14 +441,6 @@ export default function RecurringTasksManager({ recurringTasks, addRecurringTask
         })}
         <button onClick={()=>setFilterDay(filterDay==='monthly'?'all':'monthly')} style={filterPill(filterDay==='monthly')}>Monthly</button>
       </div>
-      <div style={{ display:'flex', gap:5, marginBottom:16 }}>
-        {[['all','All types'],['week','Week only'],['today','Today only']].map(([v,l])=>(
-          <button key={v} onClick={()=>setFilterType(v)}
-            style={{ fontSize:10, padding:'4px 11px', borderRadius:16, border:`1.5px solid ${filterType===v?'var(--teal)':'var(--border)'}`,
-              background:filterType===v?'#F0FDFB':'white', color:filterType===v?'var(--teal)':'var(--muted)',
-              cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:600, letterSpacing:.5 }}>{l}</button>
-        ))}
-      </div>
 
       {/* Task list — sectioned by frequency (Every day / Weekly / Monthly) so a
           daily habit reads once and a monthly task only under Monthly. */}
@@ -653,7 +456,7 @@ export default function RecurringTasksManager({ recurringTasks, addRecurringTask
             </div>
           )}
           {sec.items.map(task=>(
-            <TaskListRow key={task.id+task.type+(task.days||[]).join('')} task={task} onEdit={()=>setEditing(task)} today={today} categories={categories} routines={routines} />
+            <TaskListRow key={task.id+(task.days||[]).join('')} task={task} onEdit={()=>setEditing(task)} today={today} categories={categories} routines={routines} />
           ))}
         </div>
       ))}
