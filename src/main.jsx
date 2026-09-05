@@ -50,10 +50,23 @@ function Root() {
   useEffect(() => {
     if (!authEnabled) return
     let alive = true
-    initAuth().then(() => { if (alive) setReady(true) })
+    // Nothing below this screen can be reached until `ready` flips, so it must
+    // never be the last word. initAuth caps how long it will wait on Supabase,
+    // but it also touches this device's storage on the way — and a browser
+    // whose storage never answers would otherwise leave everyone parked on the
+    // splash forever. Past this deadline we show the gate anyway: signing in
+    // still works, and a session that resolves late still lands the user
+    // straight in their planner.
+    const deadline = setTimeout(() => {
+      if (!alive) return
+      console.warn('[Bloom] the session took too long to load — opening the sign-in screen')
+      setReady(true)
+    }, 12000)
+    const open = () => { clearTimeout(deadline); if (alive) setReady(true) }
+    initAuth().then(open, open)
     // onAuth fires immediately with the current user, then on every change.
     const off = onAuth(user => { if (alive) setUid(user?.id || null) })
-    return () => { alive = false; off() }
+    return () => { alive = false; clearTimeout(deadline); off() }
   }, [])
 
   if (!ready) {

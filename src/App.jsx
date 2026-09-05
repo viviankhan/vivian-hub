@@ -679,8 +679,13 @@ export default function App() {
   // again once the offline outbox drains: at that moment the cloud has just
   // changed under us, so what's on screen has to be reconciled with it (and
   // with anything the user's other devices did while this one was away).
+  //
+  // Wrapped end to end: `loading` gates the whole app, so anything that throws
+  // in here without being caught leaves every user looking at "Loading…" with
+  // no way forward. Whatever fails, the app opens — on the offline mirror, or
+  // on empty state — which is always more use than a screen that never moves.
   const loadAll = useCallback(async ({ migrate = false } = {}) => {
-    {
+    try {
       if (migrate) await runMigrationIfNeeded()
       const [comp, l, n, fcp, fcs, sch, com, rt, vac, evs, cats, cmeta, rexc, rmeta, rout, tlogs, tpls, chist, wlc, wlfx, wlep, wlg, wlem, wltr, artov, lmeta, tfolders, tpeople, tentries] = await Promise.all([
         getCompletions(), getLogEntries(), getNotes(),
@@ -738,6 +743,9 @@ export default function App() {
         setRoutines_(upgraded)
         if (changed) setRoutineGroups(upgraded).catch(() => {})
       } else setRoutineGroups(DEFAULT_ROUTINES).catch(() => {})
+    } catch (e) {
+      console.error('[Bloom] loading your data failed:', e)
+    } finally {
       setLoading(false)
     }
   }, [])
