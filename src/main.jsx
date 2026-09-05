@@ -6,6 +6,7 @@ import ErrorBoundary from './components/ErrorBoundary.jsx'
 import './styles/index.css'
 import { applySavedAppearance } from './lib/appearance.js'
 import { authEnabled, initAuth, onAuth } from './lib/auth.js'
+import { registerServiceWorker } from './lib/notifications.js'
 
 // Apply the saved font + accent theme before the first paint, so the app never
 // flashes the default look on load. Guarded so a bad saved value can't stop the
@@ -26,6 +27,13 @@ try {
     }).catch(() => {})
   }
 } catch (e) { /* storage API unavailable — ignore */ }
+
+// Register the service worker at startup rather than from inside <App>. The
+// worker is what caches the app itself (index.html + the hashed bundles), so it
+// has to be installed before the first time the network is gone — including on
+// the very first visit, and whether or not anyone is signed in yet. It's
+// memoized, so the later call from the notifications panel joins this one.
+try { registerServiceWorker() } catch (e) { console.warn('[Bloom] service worker registration failed:', e) }
 
 // ── Account gate ────────────────────────────────────────────────
 // Without Supabase (local dev / localStorage mode) there are no accounts — the
@@ -55,6 +63,9 @@ function Root() {
       </div>
     )
   }
+  // `uid` is set from a remembered account when there's no network to confirm
+  // the session with (see initAuth), so an offline launch lands in the app on
+  // cached data instead of on a login screen the user couldn't get past anyway.
   if (authEnabled && !uid) return <Auth />
   return <App key={uid || 'local'} />
 }

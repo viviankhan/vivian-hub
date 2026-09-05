@@ -273,7 +273,16 @@ export async function requestPermission() {
 // swaps to the new bundle. Without this, an installed PWA (especially on
 // iOS) can keep showing a stale version after a deploy.
 let reloadingForUpdate = false
-export async function registerServiceWorker() {
+// Registration is now kicked off at startup (main.jsx) so the offline shell is
+// cached whether or not anyone is signed in, and it's still called from the
+// notifications panel. Memoized so the second caller joins the first rather
+// than stacking a duplicate set of update listeners and heartbeats.
+let registerPromise = null
+export function registerServiceWorker() {
+  if (!registerPromise) registerPromise = doRegisterServiceWorker()
+  return registerPromise
+}
+async function doRegisterServiceWorker() {
   if (!('serviceWorker' in navigator)) return null
   try {
     // Whether this page was already controlled by a worker when it loaded. On a

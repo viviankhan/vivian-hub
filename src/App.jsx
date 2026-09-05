@@ -48,13 +48,15 @@ import BloomWellness from './components/BloomWellness.jsx'
 import ArtStudio from './components/ArtStudio.jsx'
 import { loadOverrides, isAdmin } from './lib/art.js'
 import TaskMenu from './components/TaskMenu.jsx'
-import { authEnabled, getCurrentUser, signOut } from './lib/auth.js'
+import { authEnabled, getCurrentUser, isSessionUnverified, signOut } from './lib/auth.js'
 import { refreshCalendar, loadCachedCalendar, clearCachedCalendar, eventsToSpans } from './lib/calendars.js'
 import { importedKey } from './lib/importedTasks.js'
 import ThoughtsBoard from './components/ThoughtsBoard.jsx'
 import NotificationsSettings from './components/NotificationsSettings.jsx'
 import SearchOverlay, { SearchIcon } from './components/SearchOverlay.jsx'
 import { registerServiceWorker, syncReminders, notifyArrival, getDefaultLeads } from './lib/notifications.js'
+import SyncStatus from './components/SyncStatus.jsx'
+import { isOnline } from './lib/offline.js'
 import { ensureBackgroundPush, syncScheduledPushesDebounced } from './lib/push.js'
 import { buildLabelModel, historyFromData } from './lib/predictLabel.js'
 import { geolocationSupported, watchArrivals } from './lib/geofence.js'
@@ -154,6 +156,10 @@ function saveBottomBar(items) {
 function AccountPanel() {
   const user = getCurrentUser()
   const [busy, setBusy] = useState(false)
+  // True when we're running on the account this device remembers, because there
+  // was no connection to confirm the session with. Worth saying plainly — the
+  // app is fully usable, it just hasn't checked in with the server yet.
+  const unverified = isSessionUnverified()
   const out = async () => {
     if (busy) return
     setBusy(true)
@@ -163,7 +169,12 @@ function AccountPanel() {
   return (
     <div>
       <div style={{ fontSize:13, color:'var(--text)', marginBottom:6 }}>Signed in as</div>
-      <div style={{ fontSize:15, fontWeight:700, color:'var(--forest)', marginBottom:16, overflowWrap:'anywhere' }}>{user?.email || 'your account'}</div>
+      <div style={{ fontSize:15, fontWeight:700, color:'var(--forest)', marginBottom: unverified ? 10 : 16, overflowWrap:'anywhere' }}>{user?.email || 'your account'}</div>
+      {unverified && (
+        <div style={{ fontSize:12, color:'#8A5A00', background:'#FFF4E5', border:'1px solid #F5D9AE', borderRadius:10, padding:'9px 12px', marginBottom:16, lineHeight:1.45 }}>
+          Working offline from this device’s saved sign-in. Everything you do is kept here and syncs when you’re back online.
+        </div>
+      )}
       <button onClick={out} disabled={busy}
         style={{ padding:'12px 20px', borderRadius:12, border:'1px solid var(--border)', background:'white', color:'var(--coral)',
           cursor: busy ? 'default' : 'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:700, fontSize:14 }}>
@@ -642,9 +653,13 @@ export default function App() {
   const [wlTreasures,      setWlTreasures_]      = useState([])
   const [loading,          setLoading]          = useState(true)
 
-  useEffect(() => {
-    async function load() {
-      await runMigrationIfNeeded()
+  // Pull everything out of storage and into React state. Runs at launch, and
+  // again once the offline outbox drains: at that moment the cloud has just
+  // changed under us, so what's on screen has to be reconciled with it (and
+  // with anything the user's other devices did while this one was away).
+  const loadAll = useCallback(async ({ migrate = false } = {}) => {
+    {
+      if (migrate) await runMigrationIfNeeded()
       const [comp, l, n, fcp, fcs, sch, com, rt, vac, evs, cats, cmeta, rexc, rmeta, rout, tlogs, tpls, chist, wlc, wlfx, wlep, wlg, wlem, wltr, artov] = await Promise.all([
         getCompletions(), getLogEntries(), getNotes(),
         getFcProgress(), getFcStudied(), getScheduledTasks(),
@@ -693,14 +708,28 @@ export default function App() {
       } else setRoutineGroups(DEFAULT_ROUTINES).catch(() => {})
       setLoading(false)
     }
-    load()
   }, [])
+
+  useEffect(() => { loadAll({ migrate: true }) }, [loadAll])
+
+  // Queued offline changes just finished uploading — re-read so the app shows
+  // the reconciled result rather than only this device's optimistic copy.
+  useEffect(() => {
+    const onFlushed = () => { loadAll().catch(e => console.warn('[Bloom] post-sync refresh failed:', e)) }
+    window.addEventListener('bloom-sync-flushed', onFlushed)
+    return () => window.removeEventListener('bloom-sync-flushed', onFlushed)
+  }, [loadAll])
 
   // ── Subscribed (external) calendars ──────────────────────────
   // Sync one subscription: fetch + parse its .ics, map the events to read-only
   // spans, and record the outcome. On failure we keep whatever was last cached
   // so the calendar doesn't blink empty on a flaky connection.
   const syncCalendar = useCallback(async (sub) => {
+    // With no network there's nothing to fetch, and the cached events are still
+    // the best answer there is — so leave them, and leave the calendar's status
+    // alone rather than flipping a working subscription to a red error just
+    // because the device is offline. The reconnect handler below retries.
+    if (!isOnline()) return
     setCalStatuses_(prev => ({ ...prev, [sub.id]: { ...(prev[sub.id] || {}), state: 'syncing' } }))
     try {
       const { events: parsed, fetchedAt } = await refreshCalendar(sub)
@@ -736,6 +765,14 @@ export default function App() {
     getImportedAdoptions().then(map => { if (alive && map && typeof map === 'object') setImportedAdoptions_(map) })
     return () => { alive = false }
   }, [syncCalendar])
+
+  // Subscribed feeds skipped their refresh while offline — pick them up as soon
+  // as there's a connection again.
+  useEffect(() => {
+    const onBack = () => extCalendars.filter(s => s.enabled !== false).forEach(s => syncCalendar(s))
+    window.addEventListener('online', onBack)
+    return () => window.removeEventListener('online', onBack)
+  }, [extCalendars, syncCalendar])
 
   // Each subscription-list change is mirrored to the synced kv blob so a
   // calendar you add on one device shows up on the others. A cloud-save failure
@@ -1104,7 +1141,7 @@ export default function App() {
   const updateCategoryFn = useCallback(async (id, changes) => {
     try {
       const updated = await dbUpdateCategory(id, changes)
-      setCategories_(prev => prev.map(c => c.id===id ? updated : c))
+      setCategories_(prev => prev.map(c => c.id===id ? { ...c, ...updated } : c))
     } catch (e) { reportSaveError(e) }
   }, [])
   const deleteCategoryFn = useCallback(async id => {
@@ -1308,7 +1345,9 @@ export default function App() {
     try {
       if (Object.keys(core).length) {
         const updated = await dbUpdateCommitment(id, core)
-        setCommitments_(prev => prev.map(c => c.id===id ? updated : c))
+        // Merge rather than replace: an edit made offline resolves to the
+        // changed fields, so swapping the whole row in would blank the rest.
+        setCommitments_(prev => prev.map(c => c.id===id ? { ...c, ...updated } : c))
       }
       if (description !== undefined || subtasks !== undefined || cats !== undefined || color !== undefined || icon !== undefined || location !== undefined || startedAt !== undefined || block !== undefined || routine !== undefined || autoComplete !== undefined) {
         setCommitmentMeta_(prev => {
@@ -1838,6 +1877,10 @@ export default function App() {
           </div>
         )
       })()}
+
+      {/* Quietly reports the connection and anything still waiting to upload.
+          Renders nothing at all when online with an empty queue. */}
+      <SyncStatus />
     </div>
   )
 }
