@@ -23,8 +23,3 @@ export function getFixedBlocksForDate(date) {
 
 // ── Calendar events — empty (add one-offs via Commitments) ────
 export const CALENDAR_EVENTS = []
-
-// ── Morning / night routines — empty defaults ─────────────────
-// Build your own in Settings → Routines.
-export const MORNING_ROUTINE = []
-export const NIGHT_ROUTINE = []

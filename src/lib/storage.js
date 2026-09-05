@@ -593,9 +593,6 @@ export async function uploadFile(weekId, file) {
   await lsSet('files_'+weekId, [...all, record])
   return record
 }
-// ── Routines (editable, persisted) ────────────────────────────
-export const getRoutines      = () => dbGet('routines').then(v => v ?? { morning: null, night: null })
-export const setRoutines      = v  => dbSet('routines', v)
 export const getRoutineLog    = () => dbGet('routine_log').then(v => v ?? {})
 export const setRoutineLog    = v  => dbSet('routine_log', v)
 

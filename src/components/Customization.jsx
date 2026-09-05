@@ -261,8 +261,8 @@ export default function Customization({ font, onFont, theme, onTheme, season, on
         })}
       </div>
       <div style={help}>
-        <i>Simplified</i> and <i>Minimal</i> hide certain elements — routine cards,
-        then the free-time gaps on the timeline — to make the day less distracting.
+        <i>Minimal</i> hides the free-time gaps on the timeline, to make the day
+        less distracting.
       </div>
 
       {/* ── Summary Display ───────────────────────────────────── */}
