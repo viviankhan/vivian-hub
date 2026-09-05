@@ -54,7 +54,13 @@ export function sameOrder(a = [], b = []) {
 // ── The hook ────────────────────────────────────────────────────
 // `ids` is the list as it stands; `onReorder(nextIds)` is called once, on
 // release, with the list as the user left it.
-export function useDragReorder({ ids = [], onReorder = () => {}, disabled = false, holdMs = HOLD_MS }) {
+//
+// `groupOf(id)` is for a list shown in sections — the task sheet shows the
+// chain split by record folder. Two things in different sections never swap
+// with each other (dropping one on the other would move it somewhere it isn't
+// even displayed), but the order handed back is still the whole chain, so one
+// order is kept no matter which section it was rearranged in.
+export function useDragReorder({ ids = [], onReorder = () => {}, disabled = false, holdMs = HOLD_MS, groupOf = null }) {
   const [dragId, setDragId]   = useState(null)
   const [preview, setPreview] = useState(null)   // the live order under the finger
   const els        = useRef(new Map())           // id → element, for hit-testing
@@ -139,6 +145,7 @@ export function useDragReorder({ ids = [], onReorder = () => {}, disabled = fals
     p.moved = true
     const over = idAt(e.clientX, e.clientY)
     if (!over || over === p.id) return
+    if (groupOf && groupOf(over) !== groupOf(p.id)) return
     const base = previewRef.current || orderRef.current
     const next = moveOver(base, p.id, over)
     if (!sameOrder(next, base)) applyPreview(next)

@@ -23,9 +23,10 @@ import { predictLabel } from '../lib/predictLabel.js'
 import { geolocationSupported, getCurrentLocation, searchPlaces, reverseGeocode, RADIUS_OPTIONS, radiusLabel } from '../lib/geofence.js'
 import { getSavedPlaces, getRecentPlaces, rememberPlace } from '../lib/places.js'
 import { activeAccent } from '../lib/appearance.js'
-import { fieldType, fieldsForCats, recordLinksForCats, hasValue } from '../lib/labels.js'
+import { fieldType, fieldsForCats, recordLinksForCats, hasValue, recordFolders, labelMetaFor } from '../lib/labels.js'
 import { reorderLabels, canReorderLabels } from '../lib/labelOrder.js'
 import { useDragReorder } from '../lib/reorder.js'
+import { Glyph } from '../lib/glyphs.jsx'
 import { compressImage } from '../lib/trackers.js'
 import { getTaskMenu, taskMenuRow, TASK_MENU_EVENT } from '../lib/taskMenuPrefs.js'
 
@@ -365,13 +366,17 @@ export default function AddItemModal({ existing = null, existingRecurring = null
     })
   }
   // The label chain is rearrangeable right here, where you actually notice
-  // which labels you reach for: press and hold one and drag it up or down. The
-  // new order is saved against the labels themselves (App registers the save —
-  // see lib/labelOrder.js), so it holds in Settings and on every other sheet.
-  // A plain tap is untouched: the drag only arms after a short hold.
+  // which labels you reach for: press and hold a chip and drag it up or down
+  // its list. The new order is saved against the labels themselves (App
+  // registers the save — see lib/labelOrder.js), so it holds in Settings and on
+  // every other sheet. A plain tap is untouched: the drag only arms after a
+  // short hold. A chip stays inside the section it's shown in — a folder's
+  // labels rearrange among themselves, and so do the ones under "Other labels".
+  const labelSection = (id) => labelMetaFor(id).folders.length ? 'records' : 'plain'
   const labelDrag = useDragReorder({
     ids: cats.map(c => c.id),
     onReorder: reorderLabels,
+    groupOf: labelSection,
     disabled: !canReorderLabels() || !(categories || []).length || cats.length < 2,
   })
   const chainCats = labelDrag.order.map(id => cats.find(c => c.id === id)).filter(Boolean)
@@ -401,6 +406,12 @@ export default function AddItemModal({ existing = null, existingRecurring = null
   const [recordValues, setRecordValues] = useState(() =>
     (existing?.recordValues && typeof existing.recordValues === 'object') ? { ...existing.recordValues } : {})
   const setRecordValue = (id, v) => setRecordValues(prev => ({ ...prev, [id]: v }))
+  // Which record folder is open in the label menu (see the Labels row below).
+  // Opening the row with a record label already picked shows that folder open,
+  // so what the task is being recorded under is never hidden behind a button.
+  const [openFolder, setOpenFolder] = useState(null)
+  const [folderTouched, setFolderTouched] = useState(false)
+  const chooseFolder = (id) => { setFolderTouched(true); setOpenFolder(id) }
 
   // ── Your own task menu ───────────────────────────────────────
   // Which rows show first and which tuck under "More options" is a setting
@@ -881,6 +892,35 @@ export default function AddItemModal({ existing = null, existingRecurring = null
   // Which folders the chosen labels file into, and the fields those labels ask
   // for. Recurring templates have no single day to record, so the row is only
   // offered for a real one-off task.
+  // ── The label menu, grouped by record folder ─────────────────
+  // Your record folders come first, as buttons: tap one and it opens the
+  // labels that keep its books, so choosing "the Rental one" starts from the
+  // folder you think in rather than a flat list of every tag you own.
+  const labelFolderGroups = recordFolders()
+    .map(f => ({ folder: f, labels: chainCats.filter(c => labelMetaFor(c.id).folders.some(l => l.folderId === f.id)) }))
+    .filter(g => g.labels.length > 0)
+  const groupedLabelIds = new Set(labelFolderGroups.flatMap(g => g.labels.map(c => c.id)))
+  const plainCats = chainCats.filter(c => !groupedLabelIds.has(c.id))
+  const autoFolder = labelFolderGroups.find(g => g.labels.some(c => effectiveCats.includes(c.id)))?.folder.id ?? null
+  const shownFolder = folderTouched ? openFolder : (openFolder ?? autoFolder)
+  const openGroup = labelFolderGroups.find(g => g.folder.id === shownFolder) || null
+  // One label chip, shared by the folder groups and the plain list below them.
+  const labelChip = (c) => {
+    const on = effectiveCats.includes(c.id)
+    const primary = effectiveCats[0] === c.id
+    const lifted = labelDrag.dragId === c.id
+    const dragProps = labelDrag.disabled ? {} : labelDrag.itemProps(c.id)
+    return (
+      <button key={c.id} onClick={() => toggleCat(c.id)} {...dragProps}
+        style={{ fontSize:11, padding:'5px 12px', borderRadius:20, border: on ? 'none' : '1px solid var(--border)', background: on ? c.color : 'white', color: on ? 'white' : 'var(--muted)', cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight: on ? 600 : 400,
+          boxShadow: lifted ? '0 4px 14px rgba(26,58,78,.28)' : (primary ? '0 0 0 2px rgba(0,0,0,.16)' : 'none'),
+          opacity: labelDrag.dragging && !lifted ? .6 : 1,
+          ...(dragProps.style || {}) }}>
+        {on ? '✓ ' : ''}{c.label}
+      </button>
+    )
+  }
+
   const recordLinks  = (!!onSave && !repeatOn) ? recordLinksForCats(effectiveCats) : []
   const recordFields = recordLinks.length ? fieldsForCats(effectiveCats, cats) : []
   const recordFolderNames = [...new Set(recordLinks.map(l => l.folder.name))]
@@ -904,23 +944,42 @@ export default function AddItemModal({ existing = null, existingRecurring = null
         text={labelNames.length ? labelNames.join(', ') : 'No label'} textMuted={!labelNames.length}
         hint={usingPrediction ? 'Predicted' : (effectiveCats.length > 1 ? `${effectiveCats.length}` : null)}
         open={expanded==='labels'} onClick={() => toggleRow('labels')}>
-        <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
-          {chainCats.map(c => {
-            const on = effectiveCats.includes(c.id)
-            const primary = effectiveCats[0] === c.id
-            const lifted = labelDrag.dragId === c.id
-            const dragProps = labelDrag.disabled ? {} : labelDrag.itemProps(c.id)
-            return (
-              <button key={c.id} onClick={() => toggleCat(c.id)} {...dragProps}
-                style={{ fontSize:11, padding:'5px 12px', borderRadius:20, border: on ? 'none' : '1px solid var(--border)', background: on ? c.color : 'white', color: on ? 'white' : 'var(--muted)', cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight: on ? 600 : 400,
-                  boxShadow: lifted ? '0 4px 14px rgba(26,58,78,.28)' : (primary ? '0 0 0 2px rgba(0,0,0,.16)' : 'none'),
-                  opacity: labelDrag.dragging && !lifted ? .6 : 1,
-                  ...(dragProps.style || {}) }}>
-                {on ? '✓ ' : ''}{c.label}
-              </button>
-            )
-          })}
-        </div>
+        {/* Record folders first — a button each, opening the labels that keep
+            that folder's books. */}
+        {labelFolderGroups.length > 0 && <>
+          <div style={{ ...fieldLabel, marginBottom:6 }}>Record folders</div>
+          <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
+            {labelFolderGroups.map(g => {
+              const picked = g.labels.filter(c => effectiveCats.includes(c.id)).length
+              const isOpen = shownFolder === g.folder.id
+              const tint = g.folder.color || ROW_ACCENT
+              return (
+                <button key={g.folder.id} onClick={() => chooseFolder(isOpen ? null : g.folder.id)}
+                  style={{ display:'inline-flex', alignItems:'center', gap:6, fontSize:11.5, padding:'6px 12px', borderRadius:20, cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight: (isOpen || picked) ? 700 : 600,
+                    border: (isOpen || picked) ? 'none' : `1px solid ${tint}66`,
+                    background: isOpen ? tint : (picked ? `${tint}22` : 'white'),
+                    color: isOpen ? iconColorOn(tint) : tint }}>
+                  <Glyph id={g.folder.icon || 'briefcase'} size={13} color="currentColor" />
+                  {g.folder.name}
+                  {picked > 0 && <span style={{ opacity:.85 }}>· {picked}</span>}
+                  <span style={{ fontSize:9, opacity:.8 }}>{isOpen ? '▲' : '▼'}</span>
+                </button>
+              )
+            })}
+          </div>
+          {openGroup && (
+            <div style={{ marginTop:9, padding:'11px 12px', borderRadius:12, background:`${openGroup.folder.color || ROW_ACCENT}12`, border:`1px solid ${openGroup.folder.color || ROW_ACCENT}33` }}>
+              <div style={{ fontSize:10.5, color:'var(--muted)', marginBottom:8, lineHeight:1.5 }}>
+                Labels that keep <b style={{ color:'var(--text)' }}>{openGroup.folder.name}</b>’s books. Pick one and this task is recorded in there — the fields it asks for appear below.
+              </div>
+              <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>{openGroup.labels.map(labelChip)}</div>
+            </div>
+          )}
+          {plainCats.length > 0 && <div style={{ ...fieldLabel, margin:'14px 0 6px' }}>Other labels</div>}
+        </>}
+        {plainCats.length > 0 && (
+          <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>{plainCats.map(labelChip)}</div>
+        )}
         {usingPrediction && (
           <div style={{ fontSize:10.5, color:'var(--muted)', marginTop:7 }}>Predicted from your past tasks — tap to change, or tap it again to leave this task unlabeled.</div>
         )}
@@ -931,7 +990,7 @@ export default function AddItemModal({ existing = null, existingRecurring = null
           <div style={{ fontSize:10.5, color:'var(--muted)', marginTop:7 }}>The outlined label is the primary — it sets the color and scheduling.</div>
         )}
         {!labelDrag.disabled && (
-          <div style={{ fontSize:10.5, color:'var(--muted)', marginTop:7 }}>Press and hold a label to drag it up or down the chain — the ones you use most can sit first, here and everywhere else.</div>
+          <div style={{ fontSize:10.5, color:'var(--muted)', marginTop:7 }}>Press and hold a label to drag it up or down its list — the ones you use most can sit first, here and everywhere else.</div>
         )}
       </DetailRow>
     ),

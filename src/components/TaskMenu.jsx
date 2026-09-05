@@ -11,7 +11,6 @@ import { suggestGlyph, iconColorOn } from '../lib/glyphs.jsx'
 import { activeAccent } from '../lib/appearance.js'
 import { getDurationPresets, setDurationPresets, resetDurationPresets, parseDuration, durationLabel } from '../lib/durations.js'
 import ColorSwatchRow from './ColorSwatchRow.jsx'
-import CategoriesManager from './CategoriesManager.jsx'
 import { labelMetaFor } from '../lib/labels.js'
 import { nextSortOrder, reorderLabels, canReorderLabels } from '../lib/labelOrder.js'
 import { useDragReorder } from '../lib/reorder.js'
@@ -450,17 +449,11 @@ function TemplateCard({ t, categories, onEdit, onDelete }) {
 // ── Main ───────────────────────────────────────────────────────
 export default function TaskMenu({
   templates = [], addTemplate, updateTemplate, deleteTemplate, categories = [],
-  addCategory = null, updateCategory = null, deleteCategory = null, reorderCategories = null,
-  labelMeta = {}, updateLabelMeta = () => {}, trackerFolders = [],
+  addCategory = null, deleteCategory = null, reorderCategories = null,
 }) {
   const [editing, setEditing] = useState(null)  // template object being edited
   const [adding, setAdding] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(null)
-  // Labels come first here, the way they come first on the task sheet — this is
-  // where they're made, renamed, deleted, and pointed at a record folder.
-  const [labelsOpen, setLabelsOpen] = useState(false)
-  const canManageLabels = !!(addCategory && updateCategory && deleteCategory)
-  const recordLabelCount = (categories || []).filter(c => ((labelMeta[c.id] || {}).folders || []).length > 0).length
 
   const handleSave = (tpl) => {
     if (editing) updateTemplate(tpl.id, tpl)
@@ -475,37 +468,6 @@ export default function TaskMenu({
     <div>
       <div className="page-title">Task Menu</div>
       <div className="page-sub">A library of reusable tasks — set the duration, tags, notes and look here, with no date. When you add a task anywhere, pick one off the menu and it all fills in; you just choose a start time.</div>
-
-      {/* ── Labels ─────────────────────────────────────────────── */}
-      {/* First on the sheet, so first here: add one, delete one, and link the
-          ones you keep books on to a folder in Records. */}
-      {canManageLabels && (
-        <div style={{ background:'white', borderRadius:12, border:'1px solid var(--border)', marginBottom:12, overflow:'hidden' }}>
-          <button onClick={() => setLabelsOpen(o => !o)}
-            style={{ display:'flex', alignItems:'center', gap:10, width:'100%', padding:'13px 16px', border:'none', background:'none', cursor:'pointer', fontFamily:'DM Sans,sans-serif', textAlign:'left' }}>
-            <span style={{ width:30, height:30, borderRadius:'50%', flexShrink:0, background:`${ROW_ACCENT}20`, color:ROW_ACCENT, display:'inline-flex', alignItems:'center', justifyContent:'center', fontSize:15 }}>🏷</span>
-            <span style={{ flex:1, minWidth:0 }}>
-              <span style={{ display:'block', fontSize:14.5, fontWeight:600, color:'var(--text)' }}>Labels</span>
-              <span style={{ display:'block', fontSize:11.5, color:'var(--muted)', marginTop:1 }}>
-                {categories.length} label{categories.length === 1 ? '' : 's'}
-                {recordLabelCount > 0 ? ` · ${recordLabelCount} record into a folder` : ' · none linked to a record folder yet'}
-              </span>
-            </span>
-            <span style={{ flexShrink:0, fontSize:12, fontWeight:700, color:'var(--teal)' }}>{labelsOpen ? 'Done' : 'Manage'}</span>
-          </button>
-          {labelsOpen && (
-            <div style={{ padding:'0 16px 16px', borderTop:'1px solid #F1EDF2' }}>
-              <div style={{ fontSize:12, color:'var(--muted)', lineHeight:1.55, margin:'12px 0 14px' }}>
-                Link a label to a folder in Records and any task you tag with it files itself into that folder — with whatever fields you add here asked for on the task itself.
-              </div>
-              <CategoriesManager compact
-                categories={categories} addCategory={addCategory} updateCategory={updateCategory} deleteCategory={deleteCategory}
-                reorderCategories={reorderCategories}
-                labelMeta={labelMeta} updateLabelMeta={updateLabelMeta} trackerFolders={trackerFolders} />
-            </div>
-          )}
-        </div>
-      )}
 
       <button onClick={() => setAdding(true)}
         style={{ width:'100%', background:'linear-gradient(135deg, #7BBFD4, #C8BFDF)', border:'none', borderRadius:14, padding:'14px 18px', cursor:'pointer', display:'flex', alignItems:'center', gap:10, marginBottom:16 }}>
