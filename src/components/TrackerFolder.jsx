@@ -504,25 +504,41 @@ function EntryRow({ entry, folder, people, onDelete, last }) {
 // not somewhere else in the app.
 function FolderLabels({ folder, categories = [], labelMeta = {}, updateLabelMeta, onAddLabel, entries = [], taggedTasks = [] }) {
   const [openId, setOpenId] = useState(null)       // label whose details are expanded
-  const [adding, setAdding] = useState(false)
+  const [adding, setAdding] = useState(false)      // the new-label form
+  const [picking, setPicking] = useState(false)    // the existing-label picker
+  const [query, setQuery] = useState('')
   const [newName, setNewName] = useState('')
   const [newColor, setNewColor] = useState(folder.color || '#4A9EB5')
 
   const metaOf = (id) => labelMeta[id] || { folders: [], fields: [] }
   const linkOf = (id) => (metaOf(id).folders || []).find(l => l.folderId === folder.id) || null
   const on = (id) => !!linkOf(id)
-  const chosen = categories.filter(c => on(c.id))
   const inc = incomeCategories(folder), exp = expenseCategories(folder)
 
-  // Toggling a label on/off for this folder. Off also removes what it recorded
-  // here, because the label was the only reason those entries existed.
-  const toggle = (cat) => {
+  // Only the labels this folder actually keeps books on. The rest of your tags
+  // — Sleep, Social, Fitness — have no business in a ledger, so they aren't
+  // shown here; they're one search away in the picker when you do want one.
+  const chosen = categories.filter(c => on(c.id))
+  const unattached = categories.filter(c => !on(c.id))
+  // When you go looking, the labels that already keep books somewhere else are
+  // the likely ones — they're the record-keeping half of your labels.
+  const keepsBooksElsewhere = (c) => (metaOf(c.id).folders || []).length > 0
+  const q = query.trim().toLowerCase()
+  const matches = (c) => !q || c.label.toLowerCase().includes(q)
+  const suggested = unattached.filter(c => keepsBooksElsewhere(c) && matches(c))
+  const others = unattached.filter(c => !keepsBooksElsewhere(c) && matches(c))
+
+  const attach = (cat) => {
     const meta = metaOf(cat.id)
-    const folders = on(cat.id)
-      ? meta.folders.filter(l => l.folderId !== folder.id)
-      : [...(meta.folders || []), { folderId: folder.id, categoryId: (exp[0] || inc[0])?.id || '' }]
-    updateLabelMeta(cat.id, { ...meta, folders })
-    if (!on(cat.id)) setOpenId(cat.id)
+    updateLabelMeta(cat.id, { ...meta, folders: [...(meta.folders || []), { folderId: folder.id, categoryId: '' }] })
+    setOpenId(cat.id); setPicking(false); setQuery('')
+  }
+  // Detaching also takes back what the label recorded here — it was the only
+  // reason those entries existed.
+  const detach = (cat) => {
+    const meta = metaOf(cat.id)
+    updateLabelMeta(cat.id, { ...meta, folders: (meta.folders || []).filter(l => l.folderId !== folder.id) })
+    if (openId === cat.id) setOpenId(null)
   }
   const setLinkCategory = (id, categoryId) => {
     const meta = metaOf(id)
@@ -538,50 +554,52 @@ function FolderLabels({ folder, categories = [], labelMeta = {}, updateLabelMeta
     if (categories.some(c => c.id === id)) id = `${id}-${Date.now().toString().slice(-4)}`
     const sortOrder = categories.reduce((m, c) => Math.max(m, c.sortOrder ?? 0), 0) + 1
     await onAddLabel({ id, label: text, color: newColor, icon: '', sortOrder })
-    updateLabelMeta(id, { folders: [{ folderId: folder.id, categoryId: (exp[0] || inc[0])?.id || '' }], fields: [] })
+    updateLabelMeta(id, { folders: [{ folderId: folder.id, categoryId: '' }], fields: [] })
     setNewName(''); setAdding(false); setOpenId(id)
   }
 
   const taggedFor = (id) => taggedTasks.filter(t => taskLabelIds(t).includes(id)).length
+  const pickChip = (c) => (
+    <button key={c.id} onClick={() => attach(c)}
+      style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, padding: '7px 13px', borderRadius: 18, cursor: 'pointer', fontFamily: 'DM Sans,sans-serif', fontWeight: 600,
+        border: `1px solid ${c.color}55`, background: 'white', color: 'var(--text)' }}>
+      <span style={{ width: 9, height: 9, borderRadius: '50%', background: c.color, flexShrink: 0 }} />
+      {c.icon && <Icon value={c.icon} size={13} />}{c.label}
+    </button>
+  )
+  const addBtn = (label, active, onClick) => (
+    <button onClick={onClick}
+      style={{ fontSize: 12.5, padding: '9px 15px', borderRadius: 10, cursor: 'pointer', fontFamily: 'DM Sans,sans-serif', fontWeight: 700,
+        border: active ? 'none' : '1px dashed var(--teal)', background: active ? 'var(--forest)' : 'white', color: active ? 'var(--green-light)' : 'var(--teal)' }}>
+      {label}
+    </button>
+  )
 
   if (!updateLabelMeta) return <Empty text="Labels can't be edited here." />
 
   return (
     <>
       <div style={card}>
-        <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', marginBottom: 4 }}>Labels that record into {folder.name}</div>
+        <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', marginBottom: 4 }}>
+          Labels that record into {folder.name}
+        </div>
         <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 13, lineHeight: 1.55 }}>
-          Pick the labels this folder keeps books on. Tag a task with one and it files itself in here — on the day <i>and</i> on the record. Tap a chosen label to say which category it counts as, and what it should ask you for when you make the task.
+          Just the labels this folder keeps books on — not your whole list. Tag a task with one and it files itself in here, on the day <i>and</i> on the record.
         </div>
 
-        {categories.length === 0 ? (
-          <div style={{ fontSize: 12.5, color: 'var(--muted)', marginBottom: 12 }}>You have no labels yet — make your first one below.</div>
-        ) : (
-          <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>
-            {categories.map(c => {
-              const sel = on(c.id)
-              const fieldCount = (metaOf(c.id).fields || []).length
-              return (
-                <button key={c.id} onClick={() => toggle(c)}
-                  style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, padding: '7px 13px', borderRadius: 18, cursor: 'pointer', fontFamily: 'DM Sans,sans-serif', fontWeight: sel ? 700 : 500,
-                    border: sel ? 'none' : '1px solid var(--border)', background: sel ? c.color : 'white', color: sel ? 'white' : 'var(--muted)' }}>
-                  {c.icon && <Icon value={c.icon} size={13} />}
-                  <span>{sel ? '✓ ' : ''}{c.label}</span>
-                  {sel && fieldCount > 0 && <span style={{ opacity: .8, fontWeight: 600 }}>· {fieldCount}</span>}
-                </button>
-              )
-            })}
-            {onAddLabel && !adding && (
-              <button onClick={() => setAdding(true)}
-                style={{ fontSize: 12, padding: '7px 13px', borderRadius: 18, border: '1px dashed var(--teal)', background: 'white', color: 'var(--teal)', cursor: 'pointer', fontFamily: 'DM Sans,sans-serif', fontWeight: 700 }}>
-                ＋ New label
-              </button>
-            )}
+        {chosen.length === 0 && (
+          <div style={{ fontSize: 12.5, color: 'var(--muted)', marginBottom: 13, lineHeight: 1.55 }}>
+            None yet. Make one for this folder, or bring across a label you already use.
           </div>
         )}
 
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          {onAddLabel && addBtn('＋ New label', adding, () => { setAdding(a => !a); setPicking(false) })}
+          {unattached.length > 0 && addBtn('Add an existing label', picking, () => { setPicking(p => !p); setAdding(false); setQuery('') })}
+        </div>
+
         {adding && (
-          <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid #F1EEF3' }}>
+          <div style={{ marginTop: 13, paddingTop: 13, borderTop: '1px solid #F1EEF3' }}>
             <label style={labelStyle}>New label — attached to this folder straight away</label>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 10 }}>
               <span style={{ width: 26, height: 26, borderRadius: 8, background: newColor, flexShrink: 0, boxShadow: '0 0 0 1px rgba(0,0,0,.12)' }} />
@@ -597,11 +615,38 @@ function FolderLabels({ folder, categories = [], labelMeta = {}, updateLabelMeta
             </div>
           </div>
         )}
+
+        {/* The picker — deliberately behind a tap, and searchable, so the
+            folder never becomes a dump of every tag you own. */}
+        {picking && (
+          <div style={{ marginTop: 13, paddingTop: 13, borderTop: '1px solid #F1EEF3' }}>
+            <label style={labelStyle}>Bring across a label you already use</label>
+            {unattached.length > 6 && (
+              <input value={query} autoFocus onChange={e => setQuery(e.target.value)}
+                placeholder="Search your labels…" style={{ ...inputStyle, marginBottom: 11 }} />
+            )}
+            {suggested.length > 0 && (
+              <>
+                <div style={{ fontSize: 10.5, color: 'var(--muted)', letterSpacing: 1, textTransform: 'uppercase', fontWeight: 700, marginBottom: 7 }}>Already keeps books elsewhere</div>
+                <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap', marginBottom: 14 }}>{suggested.map(pickChip)}</div>
+              </>
+            )}
+            {others.length > 0 && (
+              <>
+                {suggested.length > 0 && <div style={{ fontSize: 10.5, color: 'var(--muted)', letterSpacing: 1, textTransform: 'uppercase', fontWeight: 700, marginBottom: 7 }}>Your other labels</div>}
+                <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>{others.map(pickChip)}</div>
+              </>
+            )}
+            {suggested.length === 0 && others.length === 0 && (
+              <div style={{ fontSize: 12.5, color: 'var(--muted)' }}>
+                {q ? `No label matches “${query}”.` : 'Every label you have already records into this folder.'}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
-      {chosen.length === 0 ? (
-        <Empty text="No label files into this folder yet. Choose one above and every task you tag with it will land here." />
-      ) : chosen.map(c => {
+      {chosen.map(c => {
         const meta = metaOf(c.id)
         const link = linkOf(c.id)
         const open = openId === c.id
@@ -614,11 +659,14 @@ function FolderLabels({ folder, categories = [], labelMeta = {}, updateLabelMeta
               <span style={{ width: 12, height: 12, borderRadius: 4, background: c.color, flexShrink: 0 }} />
               <span style={{ flex: 1, minWidth: 0 }}>
                 <span style={{ display: 'block', fontSize: 14, fontWeight: 700, color: 'var(--text)' }}>{c.label}</span>
-                <span style={{ display: 'block', fontSize: 11.5, color: 'var(--muted)', marginTop: 2 }}>
-                  Files as {link?.categoryId ? categoryName(folder, link.categoryId) : 'Uncategorized'}
-                  {kind ? ` · money ${kind === 'income' ? 'in' : 'out'}` : ''}
-                  {(meta.fields || []).length ? ` · asks for ${meta.fields.length} thing${meta.fields.length > 1 ? 's' : ''}` : ' · asks for nothing extra'}
-                  {tagged ? ` · ${tagged} task${tagged > 1 ? 's' : ''} tagged` : ''}
+                <span style={{ display: 'block', fontSize: 11.5, color: link?.categoryId ? 'var(--muted)' : 'var(--coral)', marginTop: 2 }}>
+                  {link?.categoryId
+                    ? `Files as ${categoryName(folder, link.categoryId)}${kind ? ` · money ${kind === 'income' ? 'in' : 'out'}` : ''}`
+                    : 'Choose what it counts as →'}
+                  <span style={{ color: 'var(--muted)' }}>
+                    {(meta.fields || []).length ? ` · asks for ${meta.fields.length} thing${meta.fields.length > 1 ? 's' : ''}` : ' · asks for nothing extra'}
+                    {tagged ? ` · ${tagged} task${tagged > 1 ? 's' : ''} tagged` : ''}
+                  </span>
                 </span>
               </span>
               <span style={{ flexShrink: 0, fontSize: 12, fontWeight: 700, color: 'var(--teal)' }}>{open ? 'Done' : 'Edit'}</span>
@@ -632,8 +680,10 @@ function FolderLabels({ folder, categories = [], labelMeta = {}, updateLabelMeta
                     {inc.length > 0 && <optgroup label="Income">{inc.map(x => <option key={x.id} value={x.id}>{x.name}</option>)}</optgroup>}
                     {exp.length > 0 && <optgroup label="Expense">{exp.map(x => <option key={x.id} value={x.id}>{x.name}</option>)}</optgroup>}
                   </select>
-                  <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 6, lineHeight: 1.5 }}>
-                    This is what decides whether an amount is money in or money out. Add categories on the Setup tab.
+                  <div style={{ fontSize: 11, color: link?.categoryId ? 'var(--muted)' : 'var(--coral)', marginTop: 6, lineHeight: 1.5 }}>
+                    {link?.categoryId
+                      ? 'This is what decides whether an amount is money in or money out. Add categories on the Setup tab.'
+                      : 'Pick one — it’s what decides whether an amount is money in or money out. Until you do, amounts on these tasks aren’t counted either way.'}
                   </div>
                 </div>
                 <div style={{ fontSize: 10, color: 'var(--muted)', letterSpacing: 1, textTransform: 'uppercase', fontWeight: 700, margin: '18px 0 8px' }}>
@@ -643,6 +693,10 @@ function FolderLabels({ folder, categories = [], labelMeta = {}, updateLabelMeta
                 <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 12, lineHeight: 1.55 }}>
                   These appear on the add-task sheet the moment you tag a task “{c.label}”, and land straight on its record here.
                 </div>
+                <button onClick={() => { if (confirm(`Stop recording “${c.label}” in ${folder.name}? The label itself stays; what it recorded here is removed.`)) detach(c) }}
+                  style={{ marginTop: 16, fontSize: 12, padding: '8px 14px', borderRadius: 10, border: '1px solid var(--border)', background: 'white', color: 'var(--coral)', cursor: 'pointer', fontFamily: 'DM Sans,sans-serif', fontWeight: 700 }}>
+                  Stop recording this in {folder.name}
+                </button>
               </div>
             )}
           </div>
