@@ -63,17 +63,22 @@ async function migrateVacations() {
   if (error) throw new Error(`Migrate vacations failed: ${error.message}`)
 }
 
-// Mirrors migrateLegacyTasks() in RecurringTasksManager.jsx — expands the old
-// per-day {weekTasks,dailyTodos} shape into flat rows if that's what's stored.
+// Expands the old per-day {weekTasks,dailyTodos} shape into flat rows if that's
+// what's stored. The two buckets are no longer separate kinds of task, so both
+// land as plain tasks — a week entry's `text` just becomes its label.
 function flattenLegacyRecurringTasks(old) {
   if (Array.isArray(old.tasks)) return old.tasks
   if (!old.weekTasks && !old.dailyTodos) return []
   const flat = []
   const wt = old.weekTasks || {}
   const dt = old.dailyTodos || {}
+  const flatten = (t) => {
+    const { text, carry, ...rest } = t
+    return { ...rest, label: t.label != null ? t.label : (text || '') }
+  }
   LEGACY_DAYS.forEach(day => {
-    ;(wt[day] || []).forEach(t => flat.push({ ...t, type:'week', days:[day], startDate:null, endDate:null }))
-    ;(dt[day] || []).forEach(t => flat.push({ ...t, type:'today', days:[day], startDate:null, endDate:null }))
+    ;[...(wt[day] || []), ...(dt[day] || [])].forEach(t =>
+      flat.push({ ...flatten(t), days:[day], startDate:null, endDate:null }))
   })
   return flat
 }
