@@ -744,26 +744,30 @@ export async function deleteEvent(id) {
   await lsSet('events', all.filter(e => e.id !== id))
 }
 
-// ── Recurring Tasks (editable weekly schedule templates) ────────
-// One row per task — "text" (week type) vs "label"+"note" (today type) both
-// map onto a single "label"/"note" pair of columns; "tag" is kept as an alias
-// of "cat" on the returned object since some UI code reads either name.
+// ── Recurring Tasks (editable schedule templates) ───────────────
+// One row per task. Every task is a plain "label"+"note" pair; "tag" is kept
+// as an alias of "cat" on the returned object since some UI code reads either
+// name. The table's `type` and `carry` columns are leftovers from the old
+// Week-tab split (a week task kept its text in `text`, with a carry-forward
+// flag) — the app no longer distinguishes the two, so reads ignore both and
+// writes always send the one surviving shape. Rows still tagged 'week' from
+// before read back as ordinary tasks: their text is already in `label`.
 function recurringTaskFromDb(row) {
-  const base = {
-    id: row.id, type: row.type, days: row.days || [], cat: row.cat, tag: row.cat,
+  return {
+    id: row.id, days: row.days || [], cat: row.cat, tag: row.cat,
     startDate: row.start_date, endDate: row.end_date,
+    label: row.label, note: row.note || '',
   }
-  return row.type === 'week'
-    ? { ...base, text: row.label, carry: row.carry }
-    : { ...base, label: row.label, note: row.note || '' }
 }
 export function recurringTaskToDb(task) {
   return {
-    id: task.id, type: task.type, cat: task.cat || task.tag || 'lab',
+    id: task.id, type: 'today', cat: task.cat || task.tag || 'lab',
     days: task.days || [], start_date: task.startDate || null, end_date: task.endDate || null,
-    label: task.type === 'week' ? task.text : task.label,
-    note: task.type === 'week' ? null : (task.note || null),
-    carry: task.type === 'week' ? !!task.carry : false,
+    // `text` covers legacy week-shaped items still coming from the one-time
+    // localStorage migration; everything in the app writes `label`.
+    label: task.label != null ? task.label : (task.text || ''),
+    note: task.note || null,
+    carry: false,
   }
 }
 export async function getRecurringTasks() {

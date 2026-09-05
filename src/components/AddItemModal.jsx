@@ -691,7 +691,6 @@ export default function AddItemModal({ existing = null, existingRecurring = null
     const primaryCatId = effectiveCats[0] || null
     return {
       id,
-      type: 'today',
       freq: repeatFreq,
       interval: Math.max(1, repeatInterval),
       days: repeatFreq === 'weekly' ? WEEKDAY_ORDER.filter(d => repeatDays.includes(d)) : [],

@@ -111,7 +111,7 @@ export function recursDaily(task) {
 }
 
 // Normalize one recurring template into a concrete occurrence on a date. The
-// shape is a superset of what Today/Week/Calendar already read from their rows
+// shape is a superset of what Today/Calendar already read from their rows
 // (label, text, title, tag, cat, note, _time), plus flags so each view can
 // tell a recurring instance apart from a real commitment.
 export function recurringOccurrence(task, dateStr) {
@@ -124,7 +124,6 @@ export function recurringOccurrence(task, dateStr) {
     date: dateStr,
     isRecurring: true,
     isCommitment: false,
-    type: task.type || 'today',
     cat,
     tag: cat,
     text: title,
