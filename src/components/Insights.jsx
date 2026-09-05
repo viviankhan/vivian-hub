@@ -28,7 +28,7 @@ export default function Insights({
   addFolder: onAddFolder, updateFolder, deleteFolder: onDeleteFolder, mergeFolders: onMergeFolders,
   addEntry, addEntries, deleteEntry,
   addPerson, updatePerson, deletePerson,
-  commitments = [], categories = [], labelMeta = {},
+  commitments = [], categories = [], labelMeta = {}, addCategory, updateLabelMeta,
 }) {
   const [openId, setOpenId] = useState(null)
   const [preset, setPreset] = useState('this-month')
@@ -82,6 +82,7 @@ export default function Insights({
           onDelete={() => deleteFolder(openId)}
           onBack={() => setOpenId(null)}
           commitments={commitments} categories={categories} labelMeta={labelMeta}
+          addCategory={addCategory} updateLabelMeta={updateLabelMeta}
           otherFolders={folders.filter(f => f.id !== openId)}
           onMergeInto={targetId => runMerge(openId, targetId)}
         />
