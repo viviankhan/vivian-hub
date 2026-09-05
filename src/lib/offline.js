@@ -42,20 +42,46 @@ const memCache = new Map()
 let memOutbox = []
 let memSeq = 1
 
+// How long to wait for the database to open before giving up on it. Opening a
+// local database is a millisecond operation, so this is pure headroom — it
+// exists only to put a ceiling on the pathological case below.
+const OPEN_TIMEOUT_MS = 3000
+
 function openDb() {
   if (!hasIDB) return Promise.resolve(null)
   if (dbPromise) return dbPromise
   dbPromise = new Promise(resolve => {
     let req
+    let timer = null
+    let settled = false
+    const done = (v) => { if (settled) return; settled = true; if (timer) clearTimeout(timer); resolve(v) }
+
     try { req = indexedDB.open(DB_NAME, DB_VERSION) } catch { resolve(null); return }
+
+    // An open request that answers with NOTHING — no success, no error, not
+    // even blocked — is not a theoretical worry: WebKit has shipped that bug
+    // more than once, and a tab wedged mid-upgrade can sit on it indefinitely.
+    // Startup waits on this (auth reads the session mirror, App's first load
+    // reads every mirrored table), so an unanswered open isn't a degraded
+    // mirror — it's every user stuck on a splash screen with no way into their
+    // own planner. Give it a deadline and carry on in memory: what a hung
+    // database costs is this session's durability, never the app itself.
+    timer = setTimeout(() => {
+      console.warn('[offline] IndexedDB did not open in time — falling back to memory')
+      // If it does open eventually, let the connection go rather than leave it
+      // holding the database open against a later upgrade.
+      req.onsuccess = () => { try { req.result.close() } catch {} }
+      done(null)
+    }, OPEN_TIMEOUT_MS)
+
     req.onupgradeneeded = () => {
       const db = req.result
       if (!db.objectStoreNames.contains(CACHE_STORE)) db.createObjectStore(CACHE_STORE)
       if (!db.objectStoreNames.contains(OUTBOX_STORE)) db.createObjectStore(OUTBOX_STORE, { keyPath: 'seq' })
     }
-    req.onsuccess = () => resolve(req.result)
-    req.onerror = () => { console.warn('[offline] IndexedDB unavailable — falling back to memory'); resolve(null) }
-    req.onblocked = () => resolve(null)
+    req.onsuccess = () => done(req.result)
+    req.onerror = () => { console.warn('[offline] IndexedDB unavailable — falling back to memory'); done(null) }
+    req.onblocked = () => done(null)
   })
   return dbPromise
 }
@@ -136,7 +162,10 @@ export function ready() {
       seqCounter = queue.length ? queue[queue.length - 1].seq : 0
     } catch { queue = [] }
     notify()
-  })()
+    // Every read in the app waits on this promise, so it must always settle —
+    // and settle as fulfilled. A rejection here would propagate into all of
+    // them at once.
+  })().catch(e => { console.warn('[offline] startup read of the queue failed:', e && e.message); queue = [] })
   return readyPromise
 }
 
@@ -271,6 +300,16 @@ export function isOnline() {
   return !suspectedDown
 }
 
+// The browser's own answer, without the `suspectedDown` heuristic layered on
+// top. That heuristic is inferred from Bloom's DATA requests, and only a
+// successful data request clears it — which a signed-out app never makes. So
+// the login screen has to ask this instead: gating sign-in on the heuristic is
+// how a network blip turns into a permanently dead "Waiting for a connection…"
+// button in front of someone who is, in fact, online.
+export function isBrowserOnline() {
+  return !hasWindow || navigator.onLine !== false
+}
+
 // Called by storage.js around every cloud call, so the banner reflects what the
 // network is actually doing rather than what the OS claims.
 export function noteFailure(e) {
@@ -288,6 +327,7 @@ const listeners = new Set()
 export function getStatus() {
   return {
     online: isOnline(),
+    browserOnline: isBrowserOnline(),
     pending: queue.length,
     syncing,
     lastSyncAt,

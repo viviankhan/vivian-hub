@@ -4,7 +4,7 @@
 // auth listener in App swaps this out for the app itself.
 import { useEffect, useState } from 'react'
 import { signIn, signUp, sendPasswordReset } from '../lib/auth.js'
-import { subscribe, isOnline } from '../lib/offline.js'
+import { subscribe, isBrowserOnline } from '../lib/offline.js'
 
 const MODES = { in: 'Sign in', up: 'Create account', reset: 'Reset password' }
 
@@ -19,8 +19,13 @@ export default function Auth() {
   // front rather than letting the user type a password into a form that can't
   // submit. (Once signed in, this screen isn't seen again — the session is
   // remembered and the app opens offline; see src/lib/auth.js.)
-  const [online, setOnline] = useState(isOnline)
-  useEffect(() => subscribe(s => setOnline(s.online)), [])
+  //
+  // The browser's own online flag, not the app's `suspectedDown` heuristic:
+  // that one is inferred from data requests and is only cleared by a
+  // successful one, which a signed-out app never makes — so a blip before the
+  // session ended would leave this button dead for someone who is online.
+  const [online, setOnline] = useState(isBrowserOnline)
+  useEffect(() => subscribe(s => setOnline(s.browserOnline)), [])
 
   const submit = async (e) => {
     e.preventDefault()
