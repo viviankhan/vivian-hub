@@ -25,7 +25,6 @@ import {
   getWellnessGame, setWellnessGame,
   getWellnessEmotions, setWellnessEmotions,
   getWellnessTreasures, setWellnessTreasures,
-  getWellnessSpace, setWellnessSpace,
   getArtOverrides, setArtOverrides,
   addCategory as dbAddCategory, updateCategory as dbUpdateCategory, deleteCategory as dbDeleteCategory,
 } from './lib/storage.js'
@@ -35,7 +34,6 @@ import { runMigrationIfNeeded, seedCategoriesIfNeeded } from './lib/migrate.js'
 import { DEFAULT_RECURRING_TASKS, DEFAULT_DAILY_TODOS } from './data/schedule.js'
 
 import Today       from './components/Today.jsx'
-import ThisWeek    from './components/ThisWeek.jsx'
 import Calendar    from './components/Calendar.jsx'
 import Notes       from './components/Notes.jsx'
 import Edits       from './components/Edits.jsx'
@@ -47,7 +45,6 @@ import ExternalCalendars from './components/ExternalCalendars.jsx'
 import Insights from './components/Insights.jsx'
 import Informatics from './components/Informatics.jsx'
 import BloomWellness from './components/BloomWellness.jsx'
-import Voyage from './components/Voyage.jsx'
 import ArtStudio from './components/ArtStudio.jsx'
 import { loadOverrides, isAdmin } from './lib/art.js'
 import TaskMenu from './components/TaskMenu.jsx'
@@ -104,11 +101,9 @@ const LEGACY_ROUTINE_TINTS = { morning: '#F9C9D9' }
 
 const TABS = [
   { id:'today',       label:'Today',       glyph:'list' },
-  { id:'week',        label:'Week',        glyph:'calendar' },
   { id:'taskmenu',    label:'Task Menu',    glyph:'clipboard' },
   { id:'calendar',    label:'Calendar',    glyph:'grid' },
   { id:'wellness',    label:'Wellness',    glyph:'flower' },
-  { id:'voyage',      label:'Rocket',      glyph:'rocket' },
   { id:'thoughts',    label:'Thoughts',    glyph:'bulb' },
   { id:'events',      label:'Events',      glyph:'ticket' },
   { id:'recurring',   label:'Recurring',   glyph:'repeat' },
@@ -645,20 +640,19 @@ export default function App() {
   const [wlGame,           setWlGame_]           = useState(null)
   const [wlEmotions,       setWlEmotions_]       = useState({ custom: [], hidden: [] })
   const [wlTreasures,      setWlTreasures_]      = useState([])
-  const [wlSpace,          setWlSpace_]          = useState(null)
   const [loading,          setLoading]          = useState(true)
 
   useEffect(() => {
     async function load() {
       await runMigrationIfNeeded()
-      const [comp, l, n, fcp, fcs, sch, com, rt, vac, evs, cats, cmeta, rexc, rmeta, rout, tlogs, tpls, chist, wlc, wlfx, wlep, wlg, wlem, wltr, wlsp, artov] = await Promise.all([
+      const [comp, l, n, fcp, fcs, sch, com, rt, vac, evs, cats, cmeta, rexc, rmeta, rout, tlogs, tpls, chist, wlc, wlfx, wlep, wlg, wlem, wltr, artov] = await Promise.all([
         getCompletions(), getLogEntries(), getNotes(),
         getFcProgress(), getFcStudied(), getScheduledTasks(),
         getCommitments(), getRecurringTasks(), getVacations(), getEvents(),
         seedCategoriesIfNeeded(), getCommitmentMeta(), getRecurringExceptions(), getRecurringMeta(),
         getRoutineGroups(), getTimeLogs(), getTaskTemplates(), getChangeHistory(),
         getWellnessCheckins(), getWellnessEffects(), getWellnessEpisodes(), getWellnessGame(),
-        getWellnessEmotions(), getWellnessTreasures(), getWellnessSpace(), getArtOverrides(),
+        getWellnessEmotions(), getWellnessTreasures(), getArtOverrides(),
       ])
       setCompletions_(comp); setLog_(l); setNotes_(n)
       setFcProgress_(fcp); setFcStudied_(fcs); setScheduled_(sch)
@@ -677,7 +671,6 @@ export default function App() {
       registerEmotionPrefs(emPrefs)
       setWlEmotions_(emPrefs)
       setWlTreasures_(Array.isArray(wltr) ? wltr : [])
-      setWlSpace_(wlsp && typeof wlsp === 'object' ? wlsp : null)
       // Seed the custom-art override store from the synced blob so any uploaded
       // images replace their code-drawn defaults on first paint.
       loadOverrides(artov)
@@ -1501,7 +1494,6 @@ export default function App() {
   const persistWlGame     = useCallback(next => { setWlGame_(next);     setWellnessGame(next).catch(reportSaveError) }, [])
   const persistWlEmotions = useCallback(next => { registerEmotionPrefs(next); setWlEmotions_(next); setWellnessEmotions(next).catch(reportSaveError) }, [])
   const persistWlTreasures = useCallback(next => { setWlTreasures_(next); setWellnessTreasures(next).catch(reportSaveError) }, [])
-  const persistWlSpace     = useCallback(next => { setWlSpace_(next);     setWellnessSpace(next).catch(reportSaveError) }, [])
   // Custom-art uploads: the Art Studio mutates the in-memory override store
   // (lib/art.js) for an instant re-render, then hands us the whole map to sync.
   const persistArt         = useCallback(map  => { setArtOverrides(map).catch(reportSaveError) }, [])
@@ -1713,7 +1705,6 @@ export default function App() {
           wlGame={wlGame} persistWlGame={persistWlGame} wlLog={log}
           wlEmotions={wlEmotions} persistWlEmotions={persistWlEmotions}
           onOpenWellness={() => setTab('wellness')} />}
-        {tab==='week'        && <ThisWeek    {...sharedProps} deleteCommitment={deleteCommitment} />}
         {tab==='taskmenu'    && <TaskMenu templates={taskTemplates} addTemplate={addTaskTemplate}
           updateTemplate={updateTaskTemplate} deleteTemplate={deleteTaskTemplate} categories={categories} />}
         {tab==='calendar'    && <Calendar    {...sharedProps} jumpTo={jumpTo} />}
@@ -1736,8 +1727,6 @@ export default function App() {
           treasures={wlTreasures} persistTreasures={persistWlTreasures}
           emotionPrefs={wlEmotions} persistEmotionPrefs={persistWlEmotions}
           log={log} />}
-        {tab==='voyage'      && <Voyage game={wlGame} persistGame={persistWlGame}
-          space={wlSpace} persistSpace={persistWlSpace} checkins={wlCheckins} />}
         {tab==='informatics' && <Informatics commitments={commitmentsView} recurringTasks={recurringTasksEnriched} completions={completions} log={log} categories={categories} timeLogs={timeLogs} addTimeLog={addTimeLog} deleteTimeLog={deleteTimeLog} wlCheckins={wlCheckins} wlEffects={wlEffects} wlEpisodes={wlEpisodes} />}
         {tab==='records'     && <Insights />}
       </main>
