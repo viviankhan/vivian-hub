@@ -73,9 +73,9 @@ export const FONTS = [
   { id:'dyslexic', label:'OpenDyslexic', family:"'OpenDyslexic', 'DM Sans', sans-serif" },
 ]
 
-// Layout density — how much supporting UI shows on the timeline. Simplified and
-// Minimal hide progressively more (routine cards, then free-time gap rows) to
-// make the day less busy. Driven by a class on <html> + CSS in index.css.
+// Layout density — how much supporting UI shows on the timeline. Minimal hides
+// the free-time gap rows to make the day less busy. Driven by a class on
+// <html> + CSS in index.css.
 export const LAYOUTS = [
   { id:'full',       label:'Full' },
   { id:'simplified', label:'Simplified' },

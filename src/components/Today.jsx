@@ -1,8 +1,6 @@
 import { useState, useEffect, useRef, useMemo, useLayoutEffect } from 'react'
 import { recurringOccurrencesForDate, taskSegments, occKey, recurringActiveOn } from '../lib/occurrences.js'
 import { findSlots } from '../lib/scheduler.js'
-import { getRoutines } from '../lib/storage.js'
-import { normalizeRoutineItems, sortByTime, to12 } from './Routines.jsx'
 import { Icon } from './IconPicker.jsx'
 import { iconColorOn, suggestGlyph } from '../lib/glyphs.jsx'
 import { bloomBurst } from '../lib/bloom.js'
@@ -101,67 +99,6 @@ function shiftLabelTime(label, newMins) {
   const newTime = fmtTimeLabel(newMins)
   // Replace leading time pattern like "9:50 AM — " or "~9:50 AM — "
   return label.replace(/~?\d{1,2}:\d{2}\s*(?:AM|PM)\s*(?:—\s*)?/i, newTime + ' — ')
-}
-
-// ── Routine card — unified morning/night, explicit per-item times ──
-function RoutineCard({ title, icon, items, prefix, open, setOpen, routineDone, toggleRoutine }) {
-  const sorted = sortByTime(items)
-  const doneCount = sorted.filter(item => routineDone[prefix+'-'+item.id]).length
-  const withT = sorted.filter(i => i.time)
-  const range = withT.length
-    ? (to12(withT[0].time) === to12(withT[withT.length-1].time)
-        ? to12(withT[0].time)
-        : `${to12(withT[0].time)} – ${to12(withT[withT.length-1].time)}`)
-    : ''
-  return (
-    <div className="routine-card" style={{background:'white',borderRadius:12,border:'1px solid var(--border)',marginBottom:20,overflow:'hidden'}}>
-      <div onClick={()=>setOpen(o=>!o)}
-        style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'12px 16px',cursor:'pointer',userSelect:'none'}}>
-        <div style={{display:'flex',alignItems:'center',gap:10}}>
-          <span style={{display:'flex',color:'var(--teal)'}}><Icon value={icon} size={20} /></span>
-          <div>
-            <div className="serif" style={{fontSize:15,fontWeight:600}}>{title}</div>
-            <div style={{fontSize:11,color:'var(--muted)',marginTop:1}}>
-              {range && `${range} · `}{doneCount}/{sorted.length} done · {open?'collapse':'expand'}
-            </div>
-          </div>
-        </div>
-        <span style={{color:'var(--muted)',fontSize:13,transform:open?'rotate(180deg)':'',transition:'transform .2s'}}>▾</span>
-      </div>
-      {open&&(
-        <div onClick={e=>e.stopPropagation()} style={{borderTop:'1px solid var(--border)',padding:'6px 16px 14px'}}>
-          {sorted.length===0 && (
-            <div style={{fontSize:12,color:'var(--muted)',padding:'10px 0',fontStyle:'italic'}}>
-              No items yet — add them in Settings ⚙️ → Routines.
-            </div>
-          )}
-          {sorted.map(item=>{
-            const key=prefix+'-'+item.id
-            const done=!!routineDone[key]
-            return (
-              <div key={item.id}
-                style={{display:'flex',gap:12,alignItems:'flex-start',padding:'10px 0',borderBottom:'1px solid #F5F3EF',opacity:done?.4:1,transition:'opacity .2s'}}>
-                <div onClick={()=>toggleRoutine(key)}
-                  style={{width:20,height:20,borderRadius:'50%',flexShrink:0,marginTop:2,cursor:'pointer',
-                    border:done?'none':`2px solid ${item.color||'#D1D5DB'}`, background:done?(item.color||'#52B788'):'transparent',
-                    display:'flex',alignItems:'center',justifyContent:'center',transition:'all .2s'}}>
-                  {done&&<span style={{color:'white',fontSize:11,fontWeight:700}}>✓</span>}
-                </div>
-                <div style={{minWidth:24,textAlign:'center'}}><Icon value={item.icon} size={18} /></div>
-                <div style={{flex:1}}>
-                  <div style={{display:'flex',alignItems:'baseline',gap:8,flexWrap:'wrap'}}>
-                    {item.time && <span style={{fontSize:10,color:item.color||'var(--muted)',fontWeight:600}}>{to12(item.time)}</span>}
-                    <span className="serif" style={{fontSize:14,color:'var(--text)',fontWeight:600,textDecoration:done?'line-through':'none'}}>{item.label}</span>
-                  </div>
-                  {item.detail && <div style={{fontSize:11,color:'var(--muted)',marginTop:2,lineHeight:1.4}}>{item.detail}</div>}
-                </div>
-              </div>
-            )
-          })}
-        </div>
-      )}
-    </div>
-  )
 }
 
 // ── Manage modal with smart scheduling ────────────────────────
@@ -1076,8 +1013,6 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
   const [addingTask,  setAddingTask]  = useState(false)
   const [addPreset,   setAddPreset]   = useState(null)  // {time, cat} when adding inside a block
   const [pasterOpen,  setPasterOpen]  = useState(false) // AI assistant sheet
-  const [morningOpen, setMorningOpen] = useState(false)
-  const [nightOpen,   setNightOpen]   = useState(false)
   const [expandedRoutines, setExpandedRoutines] = useState({})  // routineId → show its done tasks individually
   // Explicit collapse overrides for time blocks (keyed by block id). A stored
   // true/false is the user's choice; NO entry means "auto" — a block folds up on
@@ -1102,25 +1037,6 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
   const [timeOverrides, setTimeOverrides] = useState(()=>{
     try { return JSON.parse(localStorage.getItem('vivian_timeshift_'+todayKey())||'{}') } catch { return {} }
   })
-  // routine completion tracking
-  const [routineDone, setRoutineDone] = useState(()=>{
-    try { return JSON.parse(localStorage.getItem('vivian_routine_'+todayKey())||'{}') } catch { return {} }
-  })
-
-  // Load routines from storage
-  const [morningItems, setMorningItems] = useState([])
-  const [nightItems,   setNightItems]   = useState([])
-  const [morningEnabled, setMorningEnabled] = useState(true)
-  const [nightEnabled,   setNightEnabled]   = useState(true)
-
-  useEffect(()=>{
-    getRoutines().then(r => {
-      setMorningItems(normalizeRoutineItems(r?.morning))
-      setNightItems(normalizeRoutineItems(r?.night))
-      setMorningEnabled(r?.morningEnabled !== false)
-      setNightEnabled(r?.nightEnabled !== false)
-    })
-  }, [])
 
   useEffect(()=>{ const t=setInterval(()=>setNow(nowMins()),30000); return ()=>clearInterval(t) },[])
 
@@ -1131,25 +1047,16 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
   const dateKey = viewDate
   const isToday = viewDate === todayKey()
 
-  // Per-day local collections (custom tasks, deletions, time overrides, routine
-  // ticks) are keyed by date in localStorage — reload them whenever the viewed
-  // day changes so navigating the week strip shows the right day's state.
+  // Per-day local collections (custom tasks, deletions, time overrides) are
+  // keyed by date in localStorage — reload them whenever the viewed day
+  // changes so navigating the week strip shows the right day's state.
   useEffect(() => {
     const ra = k => { try { return JSON.parse(localStorage.getItem(k) || '[]') } catch { return [] } }
     const ro = k => { try { return JSON.parse(localStorage.getItem(k) || '{}') } catch { return {} } }
     setCustomTasks(ra('vivian_custom_' + viewDate))
     setDeleted(ra('vivian_deleted_' + viewDate))
     setTimeOverrides(ro('vivian_timeshift_' + viewDate))
-    setRoutineDone(ro('vivian_routine_' + viewDate))
   }, [viewDate])
-
-  const toggleRoutine = (key) => {
-    setRoutineDone(prev=>{
-      const next={...prev,[key]:!prev[key]}
-      localStorage.setItem('vivian_routine_'+dateKey, JSON.stringify(next))
-      return next
-    })
-  }
 
   // Recurring instances for this day come from the SAME shared computation the
   // Week and Calendar use, so all three agree. Legacy per-date localStorage
@@ -2007,15 +1914,6 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
         </div>
       )}
       <div className={hasAnytime ? 'today-split-main' : undefined}>
-      {/* Morning routine */}
-      {morningEnabled && (
-        <RoutineCard
-          title="Morning Routine" icon="glyph:sun"
-          items={morningItems} prefix="morning"
-          open={morningOpen} setOpen={setMorningOpen}
-          routineDone={routineDone} toggleRoutine={toggleRoutine} />
-      )}
-
       {/* Timeline */}
       {renderTimed.length===0 && blockSegments.length===0 ? (
         hasAnytime ? null : (
@@ -2234,14 +2132,6 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
         })()
       )}
 
-      {/* Night routine — end of day */}
-      {nightEnabled && (
-        <RoutineCard
-          title="Night Routine" icon="glyph:moon"
-          items={nightItems} prefix="night"
-          open={nightOpen} setOpen={setNightOpen}
-          routineDone={routineDone} toggleRoutine={toggleRoutine} />
-      )}
       </div>{/* /today-split-main */}
       </div>{/* /today-split */}
 
@@ -2256,7 +2146,7 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
       {/* AI assistant button, stacked above the + FAB. Only shown when the AI
           function can be reached (Supabase configured). */}
       {aiScheduleAvailable && (
-        <button onClick={()=>setPasterOpen(true)} className="today-fab-ai" title="AI assistant" aria-label="AI assistant"
+        <button onClick={()=>setPasterOpen(true)} className="today-fab-ai" title="AI assistant — type it or add a photo" aria-label="AI assistant"
           style={{position:'fixed',width:44,height:44,borderRadius:'50%',border:'none',
             background:'linear-gradient(135deg,#7BBFD4,#C8BFDF)',color:'#17313f',fontSize:19,cursor:'pointer',
             boxShadow:'0 4px 16px rgba(0,0,0,.22)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:100}}>

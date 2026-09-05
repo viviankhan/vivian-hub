@@ -15,6 +15,9 @@ import {
   getTimeLogs, setTimeLogs,
   getChangeHistory, setChangeHistory,
   getTaskTemplates, setTaskTemplates,
+  getLabelMeta, setLabelMeta,
+  getTrackerFolders, setTrackerFolders, getTrackerPeople, setTrackerPeople,
+  getTrackerEntries, setTrackerEntries,
   getRecurringTasks, addRecurringTask, updateRecurringTask, deleteRecurringTask, clearRecurringTasks,
   getRecurringExceptions, setRecurringExceptions,
   getRecurringMeta, setRecurringMeta,
@@ -31,7 +34,12 @@ import {
 import { occKey, recurringOccurrencesForDate } from './lib/occurrences.js'
 import { registerEmotionPrefs } from './lib/wellness.js'
 import { runMigrationIfNeeded, seedCategoriesIfNeeded } from './lib/migrate.js'
-import { DEFAULT_RECURRING_TASKS, DEFAULT_DAILY_TODOS } from './data/schedule.js'
+import {
+  registerLabelMeta, registerRecordFolders, normalizeLabelMeta,
+  syncTaskEntries, removeTaskEntries, mergeFolders as mergeRecordFolders, remapLabelFolders,
+} from './lib/labels.js'
+import { ACCENT_COLORS } from './lib/trackers.js'
+import TaskMenuSettings from './components/TaskMenuSettings.jsx'
 
 import Today       from './components/Today.jsx'
 import Calendar    from './components/Calendar.jsx'
@@ -188,13 +196,14 @@ function AccountPanel() {
 }
 
 // ── Settings Drawer ────────────────────────────────────────────
-function SettingsDrawer({ open, onClose, settingsTab, setSettingsTab, notes, updateNotes, categories, addCategory, updateCategory, deleteCategory, events, commitments, recurring, locatedCount, changeHistory, undoChange, clearChangeHistory, externalCalendars, calendarStatuses, addCalendar, toggleCalendar, removeCalendar, refreshOneCalendar, updateCalendar, font, setFont, theme, setTheme, season, setSeason, customColor, setCustom, background, setBackground, customBg, setCustomBg, mobileBackground, setMobileBackground, mobileCustomBg, setMobileCustomBg, layout, setLayout, soundOn, setSound, summary, setSummary, effectsOn, setEffects, admin, persistArt }) {
+function SettingsDrawer({ open, onClose, settingsTab, setSettingsTab, notes, updateNotes, categories, addCategory, updateCategory, deleteCategory, labelMeta, updateLabelMeta, trackerFolders, events, commitments, recurring, locatedCount, changeHistory, undoChange, clearChangeHistory, externalCalendars, calendarStatuses, addCalendar, toggleCalendar, removeCalendar, refreshOneCalendar, updateCalendar, font, setFont, theme, setTheme, season, setSeason, customColor, setCustom, background, setBackground, customBg, setCustomBg, mobileBackground, setMobileBackground, mobileCustomBg, setMobileCustomBg, layout, setLayout, soundOn, setSound, summary, setSummary, effectsOn, setEffects, admin, persistArt }) {
   if (!open) return null
   const SECTIONS = [
     ['customize','Look','sun'],
     ['reminders','Reminders','bell'],
     ['calendars','Calendars','calendar'],
-    ['categories','Categories','grid'],
+    ['categories','Labels','grid'],
+    ['taskmenu','Task menu','clipboard'],
     ['notes','Notes','book'],
     ['history','History','clock'],
     ['edits','Edits','sparkle'],
@@ -219,7 +228,9 @@ function SettingsDrawer({ open, onClose, settingsTab, setSettingsTab, notes, upd
 
             {settingsTab==='reminders'  && <NotificationsSettings events={events} commitments={commitments} recurring={recurring} locatedCount={locatedCount} />}
             {settingsTab==='calendars'  && <ExternalCalendars calendars={externalCalendars} statuses={calendarStatuses} onAdd={addCalendar} onToggle={toggleCalendar} onRemove={removeCalendar} onRefresh={refreshOneCalendar} onUpdate={updateCalendar} />}
-            {settingsTab==='categories' && <CategoriesManager categories={categories} addCategory={addCategory} updateCategory={updateCategory} deleteCategory={deleteCategory} />}
+            {settingsTab==='categories' && <CategoriesManager categories={categories} addCategory={addCategory} updateCategory={updateCategory} deleteCategory={deleteCategory}
+              labelMeta={labelMeta} updateLabelMeta={updateLabelMeta} trackerFolders={trackerFolders} />}
+            {settingsTab==='taskmenu'   && <TaskMenuSettings />}
             {settingsTab==='notes'      && <Notes notes={notes} updateNotes={updateNotes} />}
             {settingsTab==='history'    && <History history={changeHistory} onUndo={undoChange} onClear={clearChangeHistory} />}
             {settingsTab==='edits'      && <Edits />}
@@ -644,6 +655,16 @@ export default function App() {
   const [timeLogs,         setTimeLogs_]        = useState([])   // manual hours logged on the Informatics page
   const [taskTemplates,    setTaskTemplates_]   = useState([])   // reusable date-less task presets (the Task Menu)
   const [routines,         setRoutines_]         = useState(DEFAULT_ROUTINES)
+  // ── Labels & records ──────────────────────────────────────────
+  // `labelMeta` is what turns a plain label into a record label: the folders it
+  // files into and the fields it adds to the add-task sheet (see lib/labels.js).
+  // The tracker folders/people/entries used to load inside the Records tab;
+  // they live here now because a task saved anywhere in the app has to be able
+  // to write itself into the folders its labels point at.
+  const [labelMeta,        setLabelMeta_]        = useState({})
+  const [trackerFolders,   setTrackerFolders_]   = useState([])
+  const [trackerPeople,    setTrackerPeople_]    = useState([])
+  const [trackerEntries,   setTrackerEntries_]   = useState([])
   // ── Wellness (mood check-ins, DnD-style status effects, companion game) ──
   const [wlCheckins,       setWlCheckins_]       = useState([])
   const [wlEffects,        setWlEffects_]        = useState(null)   // null → seed defaults in the tab
@@ -660,7 +681,7 @@ export default function App() {
   const loadAll = useCallback(async ({ migrate = false } = {}) => {
     {
       if (migrate) await runMigrationIfNeeded()
-      const [comp, l, n, fcp, fcs, sch, com, rt, vac, evs, cats, cmeta, rexc, rmeta, rout, tlogs, tpls, chist, wlc, wlfx, wlep, wlg, wlem, wltr, artov] = await Promise.all([
+      const [comp, l, n, fcp, fcs, sch, com, rt, vac, evs, cats, cmeta, rexc, rmeta, rout, tlogs, tpls, chist, wlc, wlfx, wlep, wlg, wlem, wltr, artov, lmeta, tfolders, tpeople, tentries] = await Promise.all([
         getCompletions(), getLogEntries(), getNotes(),
         getFcProgress(), getFcStudied(), getScheduledTasks(),
         getCommitments(), getRecurringTasks(), getVacations(), getEvents(),
@@ -668,7 +689,17 @@ export default function App() {
         getRoutineGroups(), getTimeLogs(), getTaskTemplates(), getChangeHistory(),
         getWellnessCheckins(), getWellnessEffects(), getWellnessEpisodes(), getWellnessGame(),
         getWellnessEmotions(), getWellnessTreasures(), getArtOverrides(),
+        getLabelMeta(), getTrackerFolders(), getTrackerPeople(), getTrackerEntries(),
       ])
+      // Mirror the label/record wiring into the module registers before the
+      // first render, so an add sheet opened straight away already knows which
+      // labels record into which folder (same trick as the emotion palette).
+      const cleanMeta = normalizeLabelMeta(lmeta)
+      registerLabelMeta(cleanMeta); registerRecordFolders(tfolders)
+      setLabelMeta_(cleanMeta)
+      setTrackerFolders_(Array.isArray(tfolders) ? tfolders : [])
+      setTrackerPeople_(Array.isArray(tpeople) ? tpeople : [])
+      setTrackerEntries_(Array.isArray(tentries) ? tentries : [])
       setCompletions_(comp); setLog_(l); setNotes_(n)
       setFcProgress_(fcp); setFcStudied_(fcs); setScheduled_(sch)
       setCommitments_(com); setRecurringTaskRows(rt); setVacations_(vac); setEvents_(evs)
@@ -1256,7 +1287,7 @@ export default function App() {
   }, [])
 
   const addCommitment = useCallback(async (c, opts = {}) => {
-    const { description, subtasks, cats, color, icon, location, startedAt, block, routine, autoComplete, ...core } = c
+    const { description, subtasks, cats, color, icon, location, startedAt, block, routine, autoComplete, recordValues, ...core } = c
     // Scheduling an item onto a day that's already passed means it happened —
     // land it already checked off (a real completion that counts toward
     // progress), unless it's a time block or the caller already set done.
@@ -1278,14 +1309,20 @@ export default function App() {
       pushUndo('added “' + (created.text || 'task') + '”', () => deleteCommitment(created.id))
       if (!opts.silent) recordChange({ kind: 'add', entity: 'task', label: 'Added “' + (created.text || 'task') + '”', inverse: { op: 'delete', entity: 'task', id: created.id } })
       const hasCats = Array.isArray(cats) && cats.length > 1
-      const extra = { ...(hasCats ? { cats } : {}), ...(color ? { color } : {}), ...(icon ? { icon } : {}), ...(location ? { location } : {}), ...(startedAt ? { startedAt } : {}), ...(block ? { block: true } : {}), ...(routine ? { routine } : {}), ...(autoComplete ? { autoComplete: true } : {}) }
-      if ((description && description.trim()) || (subtasks && subtasks.length) || hasCats || color || icon || location || startedAt || block || routine || autoComplete) {
+      const hasRecord = recordValues && Object.keys(recordValues).length > 0
+      const extra = { ...(hasCats ? { cats } : {}), ...(color ? { color } : {}), ...(icon ? { icon } : {}), ...(location ? { location } : {}), ...(startedAt ? { startedAt } : {}), ...(block ? { block: true } : {}), ...(routine ? { routine } : {}), ...(autoComplete ? { autoComplete: true } : {}), ...(hasRecord ? { recordValues } : {}) }
+      if ((description && description.trim()) || (subtasks && subtasks.length) || hasCats || color || icon || location || startedAt || block || routine || autoComplete || hasRecord) {
         setCommitmentMeta_(prev => {
           const next = { ...prev, [created.id]: { description: description || '', subtasks: subtasks || [], ...extra } }
           setCommitmentMeta(next).catch(reportSaveError)
           return next
         })
       }
+      // File it into any record folder its labels point at. The task lands on
+      // the day AND in the books, from one save — and in every folder it's
+      // tagged for, not just the first.
+      recordTask({ id: created.id, text: created.text, date: created.date, durationMins: created.durationMins },
+        (Array.isArray(cats) && cats.length) ? cats : (core.cat ? [core.cat] : []), recordValues || {})
     } catch (e) { reportSaveError(e) }
   }, [])
 
@@ -1320,7 +1357,7 @@ export default function App() {
     })
   }, [importedAdoptions, addCommitment])
   const updateCommitment = useCallback(async (id, changes, opts = {}) => {
-    const { description, subtasks, cats, color, icon, location, startedAt, block, routine, autoComplete, ...core } = changes
+    const { description, subtasks, cats, color, icon, location, startedAt, block, routine, autoComplete, recordValues, ...core } = changes
     // Snapshot the prior values of exactly the fields being changed, so this
     // edit can be reversed later. Pure check-offs (only `done`) and pure subtask
     // check-offs (same subtask count) are skipped — they're not "edits".
@@ -1349,7 +1386,7 @@ export default function App() {
         // changed fields, so swapping the whole row in would blank the rest.
         setCommitments_(prev => prev.map(c => c.id===id ? { ...c, ...updated } : c))
       }
-      if (description !== undefined || subtasks !== undefined || cats !== undefined || color !== undefined || icon !== undefined || location !== undefined || startedAt !== undefined || block !== undefined || routine !== undefined || autoComplete !== undefined) {
+      if (description !== undefined || subtasks !== undefined || cats !== undefined || color !== undefined || icon !== undefined || location !== undefined || startedAt !== undefined || block !== undefined || routine !== undefined || autoComplete !== undefined || recordValues !== undefined) {
         setCommitmentMeta_(prev => {
           const merged = { ...(prev[id] || {}) }
           if (description !== undefined) merged.description = description
@@ -1386,6 +1423,10 @@ export default function App() {
             if (autoComplete) merged.autoComplete = true
             else delete merged.autoComplete
           }
+          if (recordValues !== undefined) {
+            if (recordValues && Object.keys(recordValues).length) merged.recordValues = recordValues
+            else delete merged.recordValues
+          }
           const next = { ...prev, [id]: merged }
           setCommitmentMeta(next).catch(reportSaveError)
           return next
@@ -1405,6 +1446,14 @@ export default function App() {
         })
       }
       if (!opts.silent && meaningful) recordChange({ kind: 'edit', entity: 'task', label: 'Edited “' + (beforeC.text || 'task') + '”', inverse: { op: 'update', entity: 'task', id, before } })
+      // Keep the books in step with the edit: re-file the task into the folders
+      // its labels point at now, and drop the entries a removed label orphaned.
+      const after = { ...beforeC, ...core }
+      const nextCats = cats !== undefined
+        ? (cats || [])
+        : ((Array.isArray(beforeMeta.cats) && beforeMeta.cats.length) ? beforeMeta.cats : (after.cat ? [after.cat] : []))
+      const nextValues = recordValues !== undefined ? (recordValues || {}) : (beforeMeta.recordValues || {})
+      recordTask({ id, text: after.text, date: after.date, durationMins: after.durationMins }, nextCats, nextValues)
     } catch (e) { reportSaveError(e) }
   }, [])
   const deleteCommitment = useCallback(async (id, opts = {}) => {
@@ -1427,9 +1476,16 @@ export default function App() {
           const created = await dbAddCommitment(c)   // c keeps its id → same row back
           setCommitments_(prev => [created, ...prev.filter(x => x.id !== created.id)])
           if (meta) setCommitmentMeta_(prev => { const n = { ...prev, [created.id]: meta }; setCommitmentMeta(n).catch(reportSaveError); return n })
+          // …and so does whatever it had written into the record folders.
+          recordTask({ id: created.id, text: created.text, date: created.date, durationMins: created.durationMins },
+            (Array.isArray(meta?.cats) && meta.cats.length) ? meta.cats : (created.cat ? [created.cat] : []),
+            meta?.recordValues || {})
         } catch (e) { reportSaveError(e) }
       })
     }
+    // Whatever this task had written into the record folders goes with it.
+    const trimmed = removeTaskEntries(trackerEntriesRef.current, id)
+    if (trimmed !== trackerEntriesRef.current) saveTrackerEntries(trimmed)
     try { await Promise.all([dbDeleteCommitment(id), setCompletion(id, false)]) }
     catch (e) { reportSaveError(e) }
   }, [])
@@ -1508,6 +1564,159 @@ export default function App() {
   const deleteTimeLog = useCallback(id => {
     setTimeLogs_(prev => { const next = prev.filter(t => t.id !== id); setTimeLogs(next).catch(reportSaveError); return next })
   }, [])
+
+  // ── Labels ↔ record folders ──────────────────────────────────
+  // Everything that lets a tagged task write itself into a record folder. The
+  // label wiring and the tracker blobs are mirrored into refs (and into the
+  // lib/labels.js registers) so the dep-stable commitment CRUD below can read
+  // the latest values without being rebuilt on every edit.
+  const labelMetaRef      = useRef({})
+  const categoriesRef     = useRef([])
+  const trackerFoldersRef = useRef([])
+  const trackerPeopleRef  = useRef([])
+  const trackerEntriesRef = useRef([])
+  const commitmentsLiveRef = useRef([])
+  useEffect(() => { labelMetaRef.current = labelMeta; registerLabelMeta(labelMeta) }, [labelMeta])
+  useEffect(() => { categoriesRef.current = categories }, [categories])
+  useEffect(() => { trackerFoldersRef.current = trackerFolders; registerRecordFolders(trackerFolders) }, [trackerFolders])
+  useEffect(() => { trackerPeopleRef.current = trackerPeople }, [trackerPeople])
+  useEffect(() => { trackerEntriesRef.current = trackerEntries }, [trackerEntries])
+  useEffect(() => { commitmentsLiveRef.current = commitments }, [commitments])
+
+  // Each tracker blob is written whole, like the routine groups and time logs.
+  // The ref is updated alongside the state so a second change in the same tick
+  // (a task recording into two folders at once) builds on the first.
+  const saveTrackerFolders = useCallback(next => {
+    trackerFoldersRef.current = next; registerRecordFolders(next)
+    setTrackerFolders_(next); setTrackerFolders(next).catch(reportSaveError)
+  }, [])
+  const saveTrackerPeople = useCallback(next => {
+    trackerPeopleRef.current = next
+    setTrackerPeople_(next); setTrackerPeople(next).catch(reportSaveError)
+  }, [])
+  const saveTrackerEntries = useCallback(next => {
+    trackerEntriesRef.current = next
+    setTrackerEntries_(next); setTrackerEntries(next).catch(reportSaveError)
+  }, [])
+
+  // Write (or clear) one label's record wiring. Passing null forgets it — used
+  // when the label itself is deleted.
+  const updateLabelMeta = useCallback((labelId, next) => {
+    const merged = { ...labelMetaRef.current }
+    if (next && ((next.folders || []).length || (next.fields || []).length)) merged[labelId] = { folders: next.folders || [], fields: next.fields || [] }
+    else delete merged[labelId]
+    const clean = normalizeLabelMeta(merged)
+    labelMetaRef.current = clean
+    registerLabelMeta(clean)
+    setLabelMeta_(clean)
+    setLabelMeta(clean).catch(reportSaveError)
+  }, [])
+
+  // Find (or quietly create) the person a record field named, inside one
+  // folder. Newly created people are returned so the caller can persist them in
+  // one write rather than one per field.
+  const makePersonResolver = (pending) => (folderId, name) => {
+    const wanted = (name || '').trim().toLowerCase()
+    if (!wanted) return null
+    const all = [...trackerPeopleRef.current, ...pending]
+    const found = all.find(p => p.folderId === folderId && (p.name || '').trim().toLowerCase() === wanted)
+    if (found) return found.id
+    const person = {
+      id: 'p-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5),
+      folderId, name: name.trim(),
+      color: ACCENT_COLORS[all.filter(p => p.folderId === folderId).length % ACCENT_COLORS.length],
+      createdAt: new Date().toISOString(),
+    }
+    pending.push(person)
+    return person.id
+  }
+
+  // File one task into every record folder its labels link to — creating,
+  // refreshing or removing its entries so the books always match the task. A
+  // no-op when nothing changed, so it's safe to call on every save.
+  const recordTask = useCallback((task, catIds, values) => {
+    if (!task?.id) return
+    const pending = []
+    const next = syncTaskEntries({
+      entries: trackerEntriesRef.current, task,
+      catIds: catIds || [], values: values || {},
+      categories: categoriesRef.current,
+      resolvePerson: makePersonResolver(pending),
+    })
+    if (pending.length) saveTrackerPeople([...trackerPeopleRef.current, ...pending])
+    if (next !== trackerEntriesRef.current) saveTrackerEntries(next)
+  }, [saveTrackerEntries, saveTrackerPeople])
+
+  // Re-file every task carrying a label whose record wiring just changed. This
+  // is what makes tagging first and linking later work: link "Rental" to the
+  // Rental folder and the tasks already tagged with it appear in that folder.
+  const resyncLabel = useCallback((labelId) => {
+    const meta = commitmentMetaRef.current
+    for (const c of commitmentsLiveRef.current) {
+      const m = meta[c.id] || {}
+      const catIds = (Array.isArray(m.cats) && m.cats.length) ? m.cats : (c.cat ? [c.cat] : [])
+      if (!catIds.includes(labelId)) continue
+      recordTask({ id: c.id, text: c.text, date: c.date, durationMins: c.durationMins }, catIds, m.recordValues || {})
+    }
+  }, [recordTask])
+  const saveLabelMeta = useCallback((labelId, next) => {
+    updateLabelMeta(labelId, next)
+    // Let the register settle before re-filing, so the sync reads the new links.
+    setTimeout(() => resyncLabel(labelId), 0)
+  }, [updateLabelMeta, resyncLabel])
+
+  // ── Record folders (the Records tab's trackers) ──────────────
+  const addTrackerFolder = useCallback(folder => { saveTrackerFolders([...trackerFoldersRef.current, folder]) }, [saveTrackerFolders])
+  const updateTrackerFolder = useCallback((id, changes) => {
+    saveTrackerFolders(trackerFoldersRef.current.map(f => f.id === id ? { ...f, ...changes } : f))
+  }, [saveTrackerFolders])
+  const deleteTrackerFolder = useCallback(id => {
+    saveTrackerFolders(trackerFoldersRef.current.filter(f => f.id !== id))
+    saveTrackerEntries(trackerEntriesRef.current.filter(e => e.folderId !== id))
+    saveTrackerPeople(trackerPeopleRef.current.filter(p => p.folderId !== id))
+    // Any label that filed into it stops pointing at a folder that's gone.
+    const meta = labelMetaRef.current
+    const cleaned = {}
+    let touched = false
+    for (const [k, v] of Object.entries(meta)) {
+      const folders = (v.folders || []).filter(l => l.folderId !== id)
+      if (folders.length !== (v.folders || []).length) touched = true
+      cleaned[k] = { ...v, folders }
+    }
+    if (touched) {
+      const clean = normalizeLabelMeta(cleaned)
+      labelMetaRef.current = clean; registerLabelMeta(clean)
+      setLabelMeta_(clean); setLabelMeta(clean).catch(reportSaveError)
+    }
+  }, [saveTrackerFolders, saveTrackerEntries, saveTrackerPeople])
+
+  // Merge one record folder into another. Categories, people and entries move
+  // across; labels that pointed at the old folder now point at the new one; and
+  // a task that had been recorded in both folders collapses back into a single
+  // entry, so it reads as one task again rather than two records of it.
+  const mergeTrackerFolders = useCallback((sourceId, targetId) => {
+    const res = mergeRecordFolders({
+      folders: trackerFoldersRef.current, entries: trackerEntriesRef.current,
+      people: trackerPeopleRef.current, sourceId, targetId,
+    })
+    if (!res) return null
+    saveTrackerFolders(res.folders); saveTrackerPeople(res.people); saveTrackerEntries(res.entries)
+    const remapped = normalizeLabelMeta(remapLabelFolders(labelMetaRef.current, sourceId, targetId))
+    labelMetaRef.current = remapped; registerLabelMeta(remapped)
+    setLabelMeta_(remapped); setLabelMeta(remapped).catch(reportSaveError)
+    return res
+  }, [saveTrackerFolders, saveTrackerPeople, saveTrackerEntries])
+
+  const addTrackerEntry = useCallback(entry => { saveTrackerEntries([...trackerEntriesRef.current, entry]) }, [saveTrackerEntries])
+  const addTrackerEntries = useCallback(list => { saveTrackerEntries([...trackerEntriesRef.current, ...list]) }, [saveTrackerEntries])
+  const deleteTrackerEntry = useCallback(id => { saveTrackerEntries(trackerEntriesRef.current.filter(e => e.id !== id)) }, [saveTrackerEntries])
+  const addTrackerPerson = useCallback(p => {
+    const person = { id: 'p-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), color: ACCENT_COLORS[trackerPeopleRef.current.length % ACCENT_COLORS.length], createdAt: new Date().toISOString(), ...p }
+    saveTrackerPeople([...trackerPeopleRef.current, person])
+    return person
+  }, [saveTrackerPeople])
+  const updateTrackerPerson = useCallback((id, ch) => { saveTrackerPeople(trackerPeopleRef.current.map(p => p.id === id ? { ...p, ...ch } : p)) }, [saveTrackerPeople])
+  const deleteTrackerPerson = useCallback(id => { saveTrackerPeople(trackerPeopleRef.current.filter(p => p.id !== id)) }, [saveTrackerPeople])
 
   // ── Task Menu templates (one synced kv blob) ─────────────────
   // Reusable, date-less task presets. Each op writes the whole next array, like
@@ -1625,6 +1834,7 @@ export default function App() {
     block: commitmentMeta[c.id]?.block ?? false,
     routine: commitmentMeta[c.id]?.routine ?? null,
     autoComplete: commitmentMeta[c.id]?.autoComplete ?? false,
+    recordValues: commitmentMeta[c.id]?.recordValues ?? null,
   }))
 
   const sharedProps = {
@@ -1745,7 +1955,9 @@ export default function App() {
           wlEmotions={wlEmotions} persistWlEmotions={persistWlEmotions}
           onOpenWellness={() => setTab('wellness')} />}
         {tab==='taskmenu'    && <TaskMenu templates={taskTemplates} addTemplate={addTaskTemplate}
-          updateTemplate={updateTaskTemplate} deleteTemplate={deleteTaskTemplate} categories={categories} />}
+          updateTemplate={updateTaskTemplate} deleteTemplate={deleteTaskTemplate} categories={categories}
+          addCategory={addCategoryFn} updateCategory={updateCategoryFn} deleteCategory={deleteCategoryFn}
+          labelMeta={labelMeta} updateLabelMeta={saveLabelMeta} trackerFolders={trackerFolders} />}
         {tab==='calendar'    && <Calendar    {...sharedProps} jumpTo={jumpTo} />}
         {tab==='thoughts'    && <ThoughtsBoard addCommitment={addCommitment} addRecurringTask={addRecurringTaskFn}
           categories={categories} routines={routines} taskTemplates={taskTemplates} labelModel={labelModel}
@@ -1756,8 +1968,7 @@ export default function App() {
           addRecurringTask={addRecurringTaskFn} updateRecurringTask={updateRecurringTaskFn}
           deleteRecurringTask={deleteRecurringTaskFn} clearRecurringTasks={clearRecurringTasksFn}
           categories={categories} taskTemplates={taskTemplates} labelModel={labelModel}
-          routines={routines} addRoutine={addRoutineFn} updateRoutine={updateRoutineFn} deleteRoutine={deleteRoutineFn}
-          defaultWeekTasks={DEFAULT_RECURRING_TASKS} defaultDailyTodos={DEFAULT_DAILY_TODOS} />}
+          routines={routines} addRoutine={addRoutineFn} updateRoutine={updateRoutineFn} deleteRoutine={deleteRoutineFn} />}
         {tab==='wellness'    && <BloomWellness
           checkins={wlCheckins} persistCheckins={persistWlCheckins}
           effects={wlEffects} persistEffects={persistWlEffects}
@@ -1767,7 +1978,13 @@ export default function App() {
           emotionPrefs={wlEmotions} persistEmotionPrefs={persistWlEmotions}
           log={log} />}
         {tab==='informatics' && <Informatics commitments={commitmentsView} recurringTasks={recurringTasksEnriched} completions={completions} log={log} categories={categories} timeLogs={timeLogs} addTimeLog={addTimeLog} deleteTimeLog={deleteTimeLog} wlCheckins={wlCheckins} wlEffects={wlEffects} wlEpisodes={wlEpisodes} />}
-        {tab==='records'     && <Insights />}
+        {tab==='records'     && <Insights
+          folders={trackerFolders} people={trackerPeople} entries={trackerEntries}
+          addFolder={addTrackerFolder} updateFolder={updateTrackerFolder} deleteFolder={deleteTrackerFolder}
+          mergeFolders={mergeTrackerFolders}
+          addEntry={addTrackerEntry} addEntries={addTrackerEntries} deleteEntry={deleteTrackerEntry}
+          addPerson={addTrackerPerson} updatePerson={updateTrackerPerson} deletePerson={deleteTrackerPerson}
+          commitments={commitmentsView} categories={categories} labelMeta={labelMeta} />}
       </main>
 
       <SettingsDrawer
@@ -1777,6 +1994,7 @@ export default function App() {
         notes={notes} updateNotes={updateNotes}
         categories={categories} addCategory={addCategoryFn}
         updateCategory={updateCategoryFn} deleteCategory={deleteCategoryFn}
+        labelMeta={labelMeta} updateLabelMeta={saveLabelMeta} trackerFolders={trackerFolders}
         events={events} commitments={commitments}
         recurring={recurringReminderItems} locatedCount={locatedTaskCount}
         externalCalendars={extCalendars} calendarStatuses={calStatuses}

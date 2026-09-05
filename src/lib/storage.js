@@ -605,6 +605,14 @@ export const setChangeHistory = v  => dbSet('change_history', v)
 export const getTaskTemplates = () => dbGet('task_templates').then(v => Array.isArray(v) ? v : [])
 export const setTaskTemplates = v  => dbSet('task_templates', v)
 
+// ── Label meta (record-folder links + custom task fields) ───────
+// The extras that turn a plain label into a record label: which tracker
+// folders it files into, and the fields it adds to the add-task sheet. Keyed by
+// label (category) id, in one synced kv_store blob so it needs no migration of
+// the categories table. See src/lib/labels.js for the shape and helpers.
+export const getLabelMeta = () => dbGet('label_meta').then(v => (v && typeof v === 'object') ? v : {})
+export const setLabelMeta = v  => dbSet('label_meta', v)
+
 // ── Trackers (custom folders in the Insights tab) ───────────────
 // User-created record folders — a B&B, a rental, freelance work, mileage… Each
 // folder holds hours worked and money spent, attributed to people, so it can be
@@ -939,9 +947,6 @@ export async function uploadFile(weekId, file) {
   await lsSet('files_'+weekId, [...all, record])
   return record
 }
-// ── Routines (editable, persisted) ────────────────────────────
-export const getRoutines      = () => dbGet('routines').then(v => v ?? { morning: null, night: null })
-export const setRoutines      = v  => dbSet('routines', v)
 export const getRoutineLog    = () => dbGet('routine_log').then(v => v ?? {})
 export const setRoutineLog    = v  => dbSet('routine_log', v)
 
@@ -1178,26 +1183,30 @@ export async function deleteEvent(id) {
   await lsSet('events', all.filter(e => e.id !== id))
 }
 
-// ── Recurring Tasks (editable weekly schedule templates) ────────
-// One row per task — "text" (week type) vs "label"+"note" (today type) both
-// map onto a single "label"/"note" pair of columns; "tag" is kept as an alias
-// of "cat" on the returned object since some UI code reads either name.
+// ── Recurring Tasks (editable schedule templates) ───────────────
+// One row per task. Every task is a plain "label"+"note" pair; "tag" is kept
+// as an alias of "cat" on the returned object since some UI code reads either
+// name. The table's `type` and `carry` columns are leftovers from the old
+// Week-tab split (a week task kept its text in `text`, with a carry-forward
+// flag) — the app no longer distinguishes the two, so reads ignore both and
+// writes always send the one surviving shape. Rows still tagged 'week' from
+// before read back as ordinary tasks: their text is already in `label`.
 function recurringTaskFromDb(row) {
-  const base = {
-    id: row.id, type: row.type, days: row.days || [], cat: row.cat, tag: row.cat,
+  return {
+    id: row.id, days: row.days || [], cat: row.cat, tag: row.cat,
     startDate: row.start_date, endDate: row.end_date,
+    label: row.label, note: row.note || '',
   }
-  return row.type === 'week'
-    ? { ...base, text: row.label, carry: row.carry }
-    : { ...base, label: row.label, note: row.note || '' }
 }
 export function recurringTaskToDb(task) {
   return {
-    id: task.id, type: task.type, cat: task.cat || task.tag || 'lab',
+    id: task.id, type: 'today', cat: task.cat || task.tag || 'lab',
     days: task.days || [], start_date: task.startDate || null, end_date: task.endDate || null,
-    label: task.type === 'week' ? task.text : task.label,
-    note: task.type === 'week' ? null : (task.note || null),
-    carry: task.type === 'week' ? !!task.carry : false,
+    // `text` covers legacy week-shaped items still coming from the one-time
+    // localStorage migration; everything in the app writes `label`.
+    label: task.label != null ? task.label : (task.text || ''),
+    note: task.note || null,
+    carry: false,
   }
 }
 async function cloudRecurringInsert(task) {

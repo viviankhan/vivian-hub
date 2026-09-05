@@ -10,6 +10,7 @@ import { Glyph } from '../lib/glyphs.jsx'
 import { inputStyle, labelStyle, card, primaryBtn, Field, HmInput, Empty, Stat, RangeBar } from './trackerUi.jsx'
 import { TrendColumns, RankedBars, MoneyCascade, abbrMoney, abbrHours } from './TrackerCharts.jsx'
 import { scanReceipt, receiptScanAvailable } from '../lib/parseReceipt.js'
+import { recordLinksForCats, fieldsForCats, buildTaskEntry, taskEntryId } from '../lib/labels.js'
 import {
   DEFAULT_MILEAGE_RATE, DEFAULT_TAX_RATE, CATEGORY_COLORS, makeCategory,
   todayStr, fmtHours, decimalHours, fmtMoney, fmtNumber, fmtDays, num, inRange, prettyDate,
@@ -18,21 +19,39 @@ import {
   spendByCategory, incomeByCategory, hoursByCategory, spendByPerson,
   canUseFixedCosts, missingFixedCosts, makeFixedEntry,
   compressImage, dataUrlToBase64, entryColumns, buildReportHtml, printReport, buildCsv, downloadFile, safeFileName,
+  extraText, decimalHours as toDecimalHours,
 } from '../lib/trackers.js'
 
 const SUBTABS = [['summary', 'Summary'], ['entries', 'Entries'], ['setup', 'Setup']]
+
+// Which labels a task carries — the extra `cats` list when it has one, else its
+// single primary label.
+export function taskLabelIds(task) {
+  if (Array.isArray(task?.cats) && task.cats.length) return task.cats
+  return task?.cat ? [task.cat] : []
+}
 
 export default function TrackerFolder({
   folder, people, entries,
   preset, setPreset, custom, setCustom, range, rangeText, prevWindow,
   addEntry, addManyEntries, deleteEntry, addPerson, updatePerson, deletePerson,
   onRename, onDelete, onUpdateFolder, onBack,
+  commitments = [], categories = [], labelMeta = {}, otherFolders = [], onMergeInto = null,
 }) {
   // A brand-new / empty tracker opens on Entries so you can log right away.
   const [sub, setSub] = useState(entries.length === 0 ? 'entries' : 'summary')
   const [exportOpen, setExportOpen] = useState(false)
   const fEntries = useMemo(() => entries.filter(e => inRange(e.date, range)), [entries, range])
   const prevEntries = useMemo(() => prevWindow ? entries.filter(e => inRange(e.date, prevWindow)) : null, [entries, prevWindow])
+
+  // Every task tagged with a label that files into this folder — the tasks and
+  // events this folder is entitled to, whether or not they've been written up
+  // as an entry yet.
+  const taggedTasks = useMemo(() => {
+    const mine = (task) => taskLabelIds(task).some(id => ((labelMeta[id] || {}).folders || []).some(l => l.folderId === folder.id))
+    return commitments.filter(mine).sort((a, b) => (b.date || '').localeCompare(a.date || ''))
+  }, [commitments, labelMeta, folder.id])
+  const recordedTaskIds = useMemo(() => new Set(entries.filter(e => e.taskId).map(e => e.taskId)), [entries])
 
   const addCategory = (cat) => onUpdateFolder({ categories: [...(folder.categories || []), cat] })
   const updateCategory = (id, ch) => onUpdateFolder({ categories: (folder.categories || []).map(c => c.id === id ? { ...c, ...ch } : c) })
@@ -65,12 +84,14 @@ export default function TrackerFolder({
           right={<button onClick={() => setExportOpen(true)} style={{ ...primaryBtn(), padding: '7px 14px', fontSize: 12.5 }}>⬇ Export</button>} />
       )}
 
-      {sub === 'summary' && <FolderSummary folder={folder} entries={fEntries} allEntries={entries} people={people} rangeText={rangeText} prevEntries={prevEntries} />}
+      {sub === 'summary' && <FolderSummary folder={folder} entries={fEntries} allEntries={entries} people={people} rangeText={rangeText} prevEntries={prevEntries} taggedTasks={taggedTasks} recordedTaskIds={recordedTaskIds} />}
       {sub === 'entries' && <EntriesView folder={folder} entries={fEntries} allEntries={entries} people={people}
-        onAdd={addEntry} onAddMany={addManyEntries} onDelete={deleteEntry} addCategory={addCategory} addPerson={addPerson} />}
+        onAdd={addEntry} onAddMany={addManyEntries} onDelete={deleteEntry} addCategory={addCategory} addPerson={addPerson}
+        taggedTasks={taggedTasks} recordedTaskIds={recordedTaskIds} categories={categories} />}
       {sub === 'setup' && <Setup folder={folder} onUpdateFolder={onUpdateFolder} people={people} entries={entries}
         addCategory={addCategory} updateCategory={updateCategory} deleteCategory={deleteCategory}
-        addPerson={addPerson} updatePerson={updatePerson} deletePerson={deletePerson} />}
+        addPerson={addPerson} updatePerson={updatePerson} deletePerson={deletePerson}
+        otherFolders={otherFolders} onMergeInto={onMergeInto} labelMeta={labelMeta} categories={categories} />}
 
       {exportOpen && <ExportModal folder={folder} entries={fEntries} people={people} rangeText={rangeText} onClose={() => setExportOpen(false)} />}
     </div>
@@ -78,7 +99,7 @@ export default function TrackerFolder({
 }
 
 // ── Summary ─────────────────────────────────────────────────────
-function FolderSummary({ folder, entries, allEntries, people, rangeText, prevEntries }) {
+function FolderSummary({ folder, entries, allEntries, people, rangeText, prevEntries, taggedTasks = [], recordedTaskIds = new Set() }) {
   const s = summarize(entries, folder)
   const sym = folder.currency || '$'
   const $ = v => fmtMoney(v, sym)
@@ -90,8 +111,19 @@ function FolderSummary({ folder, entries, allEntries, people, rangeText, prevEnt
   const paid = useMemo(() => spendByPerson(entries, folder, people), [entries, folder, people])
   const monthsHaveData = months.some(m => m.moneyIn || m.moneyOut || m.mins)
 
+  // What the tagged tasks contribute to this period — the tasks are part of the
+  // folder's picture, not a separate list off to one side.
+  const fromTasks = entries.filter(e => e.taskId)
+  const taskStats = summarize(fromTasks, folder)
+  const unrecorded = taggedTasks.filter(t => !recordedTaskIds.has(t.id)).length
+
   if ((folder.categories || []).length === 0) return <Empty text="This tracker has no categories yet. Open Setup to add a few (like Bookings, Supplies, Utilities), then log entries." />
-  if (s.count === 0) return <Empty text={`Nothing logged for ${rangeText} yet. Add entries in the Entries tab.`} />
+  if (s.count === 0) return (
+    <>
+      <Empty text={`Nothing logged for ${rangeText} yet. Add entries in the Entries tab.`} />
+      {unrecorded > 0 && <Empty text={`${unrecorded} task${unrecorded > 1 ? 's are' : ' is'} tagged for this folder but not written up yet — open Entries and tap one to fill the form from it.`} />}
+    </>
+  )
 
   const moneyLeft = folder.budgetMoney > 0 ? folder.budgetMoney - s.moneyOut : null
   const timeLeft = folder.budgetHours > 0 ? folder.budgetHours - s.mins : null
@@ -109,6 +141,20 @@ function FolderSummary({ folder, entries, allEntries, people, rangeText, prevEnt
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 14 }}>
           {moneyLeft != null && <BudgetBar label="Budget" used={s.moneyOut} total={folder.budgetMoney} left={moneyLeft} fmt={$} />}
           {timeLeft != null && <BudgetBar label="Time budget" used={s.mins} total={folder.budgetHours} left={timeLeft} fmt={fmtHours} />}
+        </div>
+      )}
+      {fromTasks.length > 0 && (
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 14 }}>
+          <Stat label="From your tasks" value={String(fromTasks.length)}
+            sub={`of ${s.count} ${s.count === 1 ? 'entry' : 'entries'}${taskStats.mins ? ` · ${toDecimalHours(taskStats.mins)}h` : ''}`} />
+          {(taskStats.moneyIn > 0 || taskStats.moneyOut > 0) && (
+            <Stat label="Tagged task money" value={$(taskStats.moneyIn - taskStats.moneyOut)} sub="in − out, from tagged tasks" />
+          )}
+        </div>
+      )}
+      {unrecorded > 0 && (
+        <div style={{ ...card, background: '#F0FDFB', border: '1px solid #cdeae6', fontSize: 12.5, color: 'var(--teal)', lineHeight: 1.5 }}>
+          {unrecorded} task{unrecorded > 1 ? 's are' : ' is'} tagged for this folder but not on the record yet — the Entries tab can fill a form straight from any of them.
         </div>
       )}
       {highlights.length > 0 && <Highlights items={highlights} />}
@@ -150,8 +196,8 @@ export function Highlights({ items }) {
 }
 
 // ── Entries (category-first form + list) ────────────────────────
-const blankEntry = () => ({ categoryId: '', amount: '', date: todayStr(), personId: '', yourMins: 0, workStart: '', workEnd: '', miles: '', note: '', bill: '' })
-function EntriesView({ folder, entries, allEntries, people, onAdd, onAddMany, onDelete, addCategory, addPerson }) {
+const blankEntry = () => ({ categoryId: '', amount: '', date: todayStr(), personId: '', yourMins: 0, workStart: '', workEnd: '', miles: '', note: '', bill: '', extra: null, id: null, taskId: null })
+function EntriesView({ folder, entries, allEntries, people, onAdd, onAddMany, onDelete, addCategory, addPerson, taggedTasks = [], recordedTaskIds = new Set(), categories = [] }) {
   const cats = folder.categories || []
   const [open, setOpen] = useState(entries.length === 0)
   const [more, setMore] = useState(false)     // show contractor/time/miles/bill section
@@ -159,8 +205,46 @@ function EntriesView({ folder, entries, allEntries, people, onAdd, onAddMany, on
   const [addingCat, setAddingCat] = useState(false)
   const [scanMsg, setScanMsg] = useState('')
   const [scanning, setScanning] = useState(false)
+  const [fromTask, setFromTask] = useState(null)   // the task this form was filled from
   const set = (k, v) => setF(prev => ({ ...prev, [k]: v }))
   const sym = folder.currency || '$'
+
+  // ── Pick a task for record keeping ──────────────────────────
+  // Everything the task already knows — its day, its name and notes, and
+  // whatever its record label asked for — drops straight into the form below,
+  // in the shape this folder keeps its books in. Nothing is retyped; you just
+  // check it over and save.
+  const fillFromTask = (task) => {
+    const ids = taskLabelIds(task)
+    const link = recordLinksForCats(ids).find(l => l.folderId === folder.id)
+      || { labelId: ids[0] || '', folderId: folder.id, categoryId: '' }
+    const built = buildTaskEntry({ task, link, fields: fieldsForCats(ids, categories), values: task.recordValues || {} })
+    // A person named on the task is matched to this folder's people list.
+    const wanted = (built.personName || task.person || '').trim().toLowerCase()
+    const person = wanted ? people.find(p => (p.name || '').trim().toLowerCase() === wanted) : null
+    const existing = allEntries.find(e => e.id === taskEntryId(task.id, folder.id) || (e.taskId === task.id && e.folderId === folder.id))
+    setF({
+      ...blankEntry(),
+      id: existing?.id || taskEntryId(task.id, folder.id),
+      taskId: task.id,
+      date: built.date,
+      categoryId: built.categoryId || existing?.categoryId || '',
+      amount: built.amount ? String(built.amount) : (existing?.amount ? String(existing.amount) : ''),
+      yourMins: built.yourMins || num(existing?.yourMins),
+      miles: built.miles ? String(built.miles) : (existing?.miles ? String(existing.miles) : ''),
+      note: [built.note, (task.description || '').trim()].filter(Boolean).join(' — '),
+      workStart: built.workStart || existing?.workStart || '',
+      workEnd: built.workEnd || existing?.workEnd || '',
+      bill: built.bill || existing?.bill || '',
+      extra: Object.keys(built.extra || {}).length ? built.extra : (existing?.extra || null),
+      personId: person?.id || existing?.personId || '',
+    })
+    setFromTask(task)
+    setOpen(true)
+    setMore(!!(built.yourMins || built.miles || built.workStart || built.workEnd))
+    setScanMsg('')
+  }
+  const clearForm = () => { setF(blankEntry()); setFromTask(null); setMore(false); setScanMsg('') }
 
   // This month's fixed costs not yet added.
   const curMonth = todayStr().slice(0, 7)
@@ -173,8 +257,15 @@ function EntriesView({ folder, entries, allEntries, people, onAdd, onAddMany, on
 
   const save = () => {
     if (!f.categoryId || !(Number(f.amount) >= 0 && f.amount !== '')) return
-    onAdd({ ...f, amount: Number(f.amount) || 0, miles: Number(f.miles) || 0 })
-    setF(blankEntry()); setMore(false); setScanMsg('')
+    const { id, taskId, extra, ...rest } = f
+    // A record made from a task reuses that task's own entry id, so recording
+    // it here refines the one entry rather than adding a second copy of it.
+    onAdd({
+      ...rest, amount: Number(f.amount) || 0, miles: Number(f.miles) || 0,
+      ...(taskId ? { id, taskId, source: 'task' } : {}),
+      ...(extra && Object.keys(extra).length ? { extra } : {}),
+    })
+    clearForm()
   }
 
   const chooseCategory = (v) => { if (v === '__new') { setAddingCat(true) } else set('categoryId', v) }
@@ -230,13 +321,60 @@ function EntriesView({ folder, entries, allEntries, people, onAdd, onAddMany, on
         </div>
       )}
 
+      {taggedTasks.length > 0 && (
+        <div style={card}>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 4, flexWrap: 'wrap' }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>From your tasks</div>
+            <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>{taggedTasks.length} tagged for this folder</div>
+          </div>
+          <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 11, lineHeight: 1.5 }}>
+            Anything you tagged with a label that files into <b>{folder.name}</b>. Tap one to pull everything it recorded into the form below — its day, what it was, and whatever its label asked you for.
+          </div>
+          <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>
+            {taggedTasks.slice(0, 24).map(t => {
+              const done = recordedTaskIds.has(t.id)
+              const on = fromTask?.id === t.id
+              return (
+                <button key={t.id} onClick={() => fillFromTask(t)} title={t.text}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 6, maxWidth: 260, fontSize: 12, padding: '7px 12px', borderRadius: 18, cursor: 'pointer', fontFamily: 'DM Sans,sans-serif', fontWeight: 600,
+                    border: on ? 'none' : `1px solid ${done ? '#cdeae6' : 'var(--border)'}`,
+                    background: on ? 'var(--forest)' : (done ? '#F0FDFB' : 'white'),
+                    color: on ? 'var(--green-light)' : (done ? 'var(--teal)' : 'var(--text)') }}>
+                  <span style={{ flexShrink: 0, opacity: .85 }}>{done ? '✓' : '○'}</span>
+                  <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.text || 'Task'}</span>
+                  {t.date && <span style={{ fontSize: 10.5, opacity: .7, flexShrink: 0 }}>{prettyDate(t.date).replace(/, \d{4}$/, '')}</span>}
+                </button>
+              )
+            })}
+          </div>
+          {taggedTasks.length > 24 && <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 8 }}>Showing the 24 most recent.</div>}
+          <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 9 }}>✓ already on the record · ○ not written up yet</div>
+        </div>
+      )}
+
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', margin: '2px 0 10px' }}>
         <div style={{ fontSize: 12, color: 'var(--muted)', letterSpacing: 1, textTransform: 'uppercase', fontWeight: 600 }}>{rows.length} entr{rows.length === 1 ? 'y' : 'ies'}</div>
-        <button onClick={() => setOpen(o => !o)} style={{ ...primaryBtn(), padding: '7px 14px', fontSize: 12.5 }}>{open ? 'Close' : '+ Add entry'}</button>
+        <button onClick={() => { if (open) { clearForm(); setOpen(false) } else setOpen(true) }} style={{ ...primaryBtn(), padding: '7px 14px', fontSize: 12.5 }}>{open ? 'Close' : '+ Add entry'}</button>
       </div>
 
       {open && (
         <div style={card}>
+          {fromTask && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', background: '#F0FDFB', border: '1px solid #cdeae6', borderRadius: 10, padding: '9px 12px', marginBottom: 14 }}>
+              <span style={{ flex: 1, minWidth: 180, fontSize: 12.5, color: 'var(--teal)', lineHeight: 1.5 }}>
+                Filled in from <b>{fromTask.text || 'your task'}</b>. Saving keeps it as that task’s one record — edit anything here first.
+              </span>
+              <button onClick={clearForm}
+                style={{ flexShrink: 0, fontSize: 11.5, padding: '6px 12px', borderRadius: 16, border: '1px solid var(--border)', background: 'white', color: 'var(--muted)', cursor: 'pointer', fontFamily: 'DM Sans,sans-serif', fontWeight: 600 }}>Start blank</button>
+            </div>
+          )}
+          {/* Anything the task's label asked for that has no field of its own
+              here still goes on the record, so nothing captured is lost. */}
+          {f.extra && Object.keys(f.extra).length > 0 && (
+            <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 12, lineHeight: 1.5 }}>
+              Also recorded: <b style={{ color: 'var(--text)' }}>{extraText(f)}</b>
+            </div>
+          )}
           {/* Scan a bill/receipt */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14, flexWrap: 'wrap' }}>
             <input type="file" accept="image/*" onChange={e => { onBill(e.target.files?.[0]); e.target.value = '' }} style={{ display: 'none' }} id="trk-bill" />
@@ -335,12 +473,16 @@ function EntryRow({ entry, folder, people, onDelete, last }) {
   if (num(entry.yourMins)) meta.push(fmtHours(entry.yourMins))
   if (days != null) meta.push(`took ${fmtDays(days)}`)
   if (num(entry.miles)) meta.push(`${fmtNumber(entry.miles)} mi`)
+  const extras = extraText(entry)
+  if (extras) meta.push(extras)
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '11px 0', borderBottom: last ? 'none' : '1px solid #F1EEF3' }}>
       {entry.bill ? <img src={entry.bill} alt="" style={{ width: 34, height: 34, borderRadius: 7, objectFit: 'cover', border: '1px solid var(--border)', flexShrink: 0 }} />
         : <span style={{ width: 10, height: 10, borderRadius: 3, background: cat?.color || 'var(--muted)', flexShrink: 0 }} />}
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 13.5, color: 'var(--text)', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{title}</div>
+        <div style={{ fontSize: 13.5, color: 'var(--text)', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+          {entry.taskId && <span title="Came from a tagged task" style={{ color: 'var(--teal)', marginRight: 5 }}>◈</span>}{title}
+        </div>
         <div style={{ fontSize: 11.5, color: 'var(--muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{meta.join(' · ')}</div>
       </div>
       <span style={{ fontSize: 13, fontWeight: 700, color: income ? '#0a7d3c' : 'var(--coral)', flexShrink: 0, fontVariantNumeric: 'tabular-nums' }}>{income ? '+' : '−'}{fmtMoney(entry.amount, sym)}</span>
@@ -350,7 +492,7 @@ function EntryRow({ entry, folder, people, onDelete, last }) {
 }
 
 // ── Setup ───────────────────────────────────────────────────────
-function Setup({ folder, onUpdateFolder, people, entries, addCategory, updateCategory, deleteCategory, addPerson, updatePerson, deletePerson }) {
+function Setup({ folder, onUpdateFolder, people, entries, addCategory, updateCategory, deleteCategory, addPerson, updatePerson, deletePerson, otherFolders = [], onMergeInto = null, labelMeta = {}, categories = [] }) {
   const cats = folder.categories || []
   const sym = folder.currency || '$'
   // category add
@@ -369,6 +511,12 @@ function Setup({ folder, onUpdateFolder, people, entries, addCategory, updateCat
   const fixedCosts = folder.fixedCosts || []
   const addFixedCost = () => { if (!fcLabel.trim() || !(Number(fcAmount) > 0)) return; onUpdateFolder({ fixedCosts: [...fixedCosts, { id: 'fc' + Date.now().toString(36), label: fcLabel.trim(), amount: Number(fcAmount), categoryId: fcCat || expenseCategories(folder)[0]?.id }] }); setFcLabel(''); setFcAmount('') }
   const removeFixedCost = (id) => onUpdateFolder({ fixedCosts: fixedCosts.filter(c => c.id !== id) })
+  // merge target
+  const [mergeTarget, setMergeTarget] = useState('')
+  // Labels pointing at this folder, so it's obvious what feeds it.
+  const feedingLabels = (categories || [])
+    .filter(c => ((labelMeta[c.id] || {}).folders || []).some(l => l.folderId === folder.id))
+    .map(c => ({ ...c, fieldCount: ((labelMeta[c.id] || {}).fields || []).length }))
   // budget
   const [bMoney, setBMoney] = useState(folder.budgetMoney || ''); const [bHours, setBHours] = useState(folder.budgetHours || 0)
   const saveBudget = () => onUpdateFolder({ budgetMoney: bMoney === '' ? null : Number(bMoney), budgetHours: Number(bHours) || null })
@@ -462,6 +610,44 @@ function Setup({ folder, onUpdateFolder, people, entries, addCategory, updateCat
               <select value={fcCat} onChange={e => setFcCat(e.target.value)} style={inputStyle}>{expenseCategories(folder).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select>
             </div>
             <button onClick={addFixedCost} disabled={!fcLabel.trim() || !(Number(fcAmount) > 0)} style={primaryBtn(!!fcLabel.trim() && Number(fcAmount) > 0)}>+ Add</button>
+          </div>
+        </div>
+      )}
+
+      {/* Which labels feed this folder */}
+      <div style={card}>
+        <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', marginBottom: 4 }}>Labels that file in here</div>
+        <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 12 }}>Tag a task with one of these and it records itself into this folder. Link a label — and choose what it asks you for — in Settings → Labels.</div>
+        {feedingLabels.length === 0
+          ? <div style={{ fontSize: 12.5, color: 'var(--muted)' }}>No label points at this folder yet.</div>
+          : <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              {feedingLabels.map(l => (
+                <span key={l.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11.5, padding: '5px 11px', borderRadius: 16, background: `${l.color}1e`, color: l.color, fontWeight: 700 }}>
+                  {l.label}{l.fieldCount > 0 && <span style={{ opacity: .75, fontWeight: 600 }}>· {l.fieldCount} field{l.fieldCount > 1 ? 's' : ''}</span>}
+                </span>
+              ))}
+            </div>}
+      </div>
+
+      {/* Merge into another folder */}
+      {onMergeInto && otherFolders.length > 0 && (
+        <div style={card}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', marginBottom: 4 }}>Merge into another folder</div>
+          <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 12 }}>
+            Everything here — categories, people and entries — moves across, and “{folder.name}” is gone. A task that was recorded in both folders is kept once, so it counts as the single task it is.
+          </div>
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+            <div style={{ flex: 1, minWidth: 160 }}>
+              <label style={labelStyle}>Merge “{folder.name}” into</label>
+              <select value={mergeTarget} onChange={e => setMergeTarget(e.target.value)} style={inputStyle}>
+                <option value="">— Choose a folder —</option>
+                {otherFolders.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
+              </select>
+            </div>
+            <button onClick={() => {
+              const t = otherFolders.find(f => f.id === mergeTarget)
+              if (t && confirm(`Merge “${folder.name}” into “${t.name}”? Entries and people move across and this folder is removed.`)) onMergeInto(mergeTarget)
+            }} disabled={!mergeTarget} style={primaryBtn(!!mergeTarget)}>Merge</button>
           </div>
         </div>
       )}

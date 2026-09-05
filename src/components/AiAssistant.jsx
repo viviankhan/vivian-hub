@@ -1,10 +1,13 @@
 // src/components/AiAssistant.jsx
 // The AI assistant sheet: type an instruction ("add these to my orgo task and
-// check them off", "reschedule the dentist to Friday 3pm", "make a task for…"),
-// it plans the actions against your current tasks, shows the plan for you to
-// confirm, then the parent applies it. Nothing changes until you tap Apply.
-import { useState } from 'react'
-import { runAssistant } from '../lib/parseEvent.js'
+// check them off", "reschedule the dentist to Friday 3pm", "make a task for…")
+// AND/OR add photos of the thing — a screenshot of an email about a seminar, a
+// syllabus page, a flyer, a handwritten list. It plans the actions against your
+// current tasks, shows the plan for you to confirm, then the parent applies it.
+// Nothing changes until you tap Apply.
+import { useRef, useState } from 'react'
+import { runAssistant, MAX_ASSISTANT_IMAGES } from '../lib/parseEvent.js'
+import { compressImage, dataUrlToBase64 } from '../lib/trackers.js'
 
 function fmt12(t) {
   if (!t) return ''
@@ -49,18 +52,61 @@ export default function AiAssistant({ categories = [], tasks = [], onApply, onCl
   const [busy, setBusy]       = useState(false)
   const [err, setErr]         = useState('')
   const [plan, setPlan]       = useState(null)   // { summary, actions }
+  const [photos, setPhotos]   = useState([])     // { id, url, data, mimeType }
+  const [loadingPhotos, setLoadingPhotos] = useState(0)
+  const fileRef = useRef(null)
+
+  // Take photos from the picker, the camera, or a paste. Each is downscaled in
+  // the browser (a full-res phone photo is far more than the model needs and
+  // slow to upload); only the shrunken JPEG ever leaves the device.
+  const addPhotos = async (fileList) => {
+    const files = Array.from(fileList || []).filter(f => f && f.type && f.type.startsWith('image/'))
+    if (!files.length) return
+    const room = MAX_ASSISTANT_IMAGES - photos.length
+    if (room <= 0) { setErr(`You can add up to ${MAX_ASSISTANT_IMAGES} photos at a time.`); return }
+    const take = files.slice(0, room)
+    setErr(files.length > room ? `Only the first ${room} photo${room > 1 ? 's' : ''} fit — up to ${MAX_ASSISTANT_IMAGES} at a time.` : '')
+    setLoadingPhotos(n => n + take.length)
+    for (const file of take) {
+      try {
+        // Text on a screenshot has to stay legible, so keep more detail than a
+        // receipt scan does.
+        const url = await compressImage(file, { maxDim: 1400, quality: 0.85 })
+        const data = dataUrlToBase64(url)
+        if (!data) throw new Error('Could not read that image.')
+        setPhotos(prev => prev.length >= MAX_ASSISTANT_IMAGES ? prev
+          : [...prev, { id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, url, data, mimeType: 'image/jpeg' }])
+      } catch (e) {
+        setErr((e && e.message) || 'Could not read that image.')
+      } finally {
+        setLoadingPhotos(n => Math.max(0, n - 1))
+      }
+    }
+  }
+
+  const removePhoto = (id) => setPhotos(prev => prev.filter(p => p.id !== id))
+
+  // Screenshot → ⌘V straight into the box, no file picker.
+  const onPaste = (e) => {
+    const files = Array.from(e.clipboardData?.files || [])
+    if (files.some(f => f.type && f.type.startsWith('image/'))) { e.preventDefault(); addPhotos(files) }
+  }
 
   const titleOf = (id) => (tasks.find(t => t.id === id) || {}).title
   const labelsOf = (ids) => (Array.isArray(ids) ? ids : [])
     .map(id => (categories.find(c => c.id === id) || {}).label)
     .filter(Boolean)
 
+  const canPlan = !!command.trim() || photos.length > 0
+
   const plated = async () => {
-    const c = command.trim()
-    if (!c || busy) return
+    if (!canPlan || busy || loadingPhotos) return
     setBusy(true); setErr('')
     try {
-      const res = await runAssistant(c, { categories, tasks })
+      const res = await runAssistant(command.trim(), {
+        categories, tasks,
+        images: photos.map(p => ({ data: p.data, mimeType: p.mimeType })),
+      })
       setPlan(res)
     } catch (e) {
       setErr((e && e.message) || 'Something went wrong.')
@@ -85,30 +131,65 @@ export default function AiAssistant({ categories = [], tasks = [], onApply, onCl
           </div>
           <div style={{ fontSize:20, fontWeight:800, color:'#17313f', marginTop:8, fontFamily:'DM Sans,sans-serif' }}>✨ Tell me what to do</div>
           <div style={{ fontSize:12.5, color:'rgba(0,0,0,.62)', marginTop:4, lineHeight:1.5 }}>
-            Add a task, paste an event, or give an instruction about your existing tasks — I’ll show you the plan before anything changes.
+            Add a task, paste an event, add a photo of one, or give an instruction about your existing tasks — I’ll show you the plan before anything changes.
           </div>
         </div>
 
         <div style={{ padding:'16px 14px calc(20px + env(safe-area-inset-bottom))' }}>
           {!plan ? (<>
             <div style={{ position:'relative' }}>
-              <textarea value={command} onChange={e => setCommand(e.target.value)} autoFocus
-                placeholder={"e.g. Add the Aug 17 assignments to my Orgo task’s subtasks and check them off. Or: Dentist next Tue 3pm, bring insurance card."}
+              <textarea value={command} onChange={e => setCommand(e.target.value)} onPaste={onPaste} autoFocus
+                placeholder={"e.g. Add the Aug 17 assignments to my Orgo task’s subtasks and check them off. Or: Dentist next Tue 3pm, bring insurance card. Or add a photo below and leave this empty."}
                 style={{ width:'100%', fontSize:14, padding:'12px 14px', borderRadius:12, border:'1px solid var(--border)', fontFamily:'DM Sans,sans-serif', outline:'none', lineHeight:1.55, resize:'vertical', minHeight:140, background:'white', color:'var(--text)', boxSizing:'border-box' }} />
               {command && (
                 <button type="button" onClick={() => { setCommand(''); setErr('') }} aria-label="Clear"
                   style={{ position:'absolute', top:8, right:8, height:26, padding:'0 10px', borderRadius:13, border:'1px solid var(--border)', background:'rgba(255,255,255,.9)', color:'var(--muted)', fontSize:12, fontWeight:600, cursor:'pointer', fontFamily:'DM Sans,sans-serif' }}>Clear</button>
               )}
             </div>
+
+            {/* Photos of the thing to schedule — a screenshot of an email, a
+                flyer, a syllabus page. Read alongside whatever you type. */}
+            <input ref={fileRef} type="file" accept="image/*" multiple hidden
+              onChange={e => { addPhotos(e.target.files); e.target.value = '' }} />
+            <div style={{ display:'flex', alignItems:'center', gap:8, marginTop:10, flexWrap:'wrap' }}>
+              <button type="button" onClick={() => fileRef.current?.click()}
+                disabled={busy || photos.length >= MAX_ASSISTANT_IMAGES}
+                style={{ padding:'9px 14px', borderRadius:12, border:'1px solid var(--border)', fontFamily:'DM Sans,sans-serif', fontWeight:600, fontSize:13,
+                  background: (busy || photos.length >= MAX_ASSISTANT_IMAGES) ? '#EDEDF1' : 'white',
+                  color: (busy || photos.length >= MAX_ASSISTANT_IMAGES) ? '#9CA3AF' : 'var(--forest)',
+                  cursor: (busy || photos.length >= MAX_ASSISTANT_IMAGES) ? 'default' : 'pointer' }}>
+                📷 {photos.length ? 'Add another photo' : 'Add a photo'}
+              </button>
+              <span style={{ fontSize:11.5, color:'var(--muted)' }}>
+                {loadingPhotos > 0
+                  ? 'Preparing photo…'
+                  : photos.length
+                    ? `${photos.length} of ${MAX_ASSISTANT_IMAGES} added`
+                    : 'Screenshot an email, snap a flyer — or paste one in.'}
+              </span>
+            </div>
+
+            {photos.length > 0 && (
+              <div style={{ display:'flex', gap:8, marginTop:10, flexWrap:'wrap' }}>
+                {photos.map(p => (
+                  <div key={p.id} style={{ position:'relative' }}>
+                    <img src={p.url} alt="Attached" style={{ width:74, height:74, objectFit:'cover', borderRadius:10, border:'1px solid var(--border)', display:'block', background:'white' }} />
+                    <button type="button" onClick={() => removePhoto(p.id)} disabled={busy} aria-label="Remove photo"
+                      style={{ position:'absolute', top:-6, right:-6, width:22, height:22, borderRadius:'50%', border:'1px solid var(--border)', background:'white', color:'var(--muted)', fontSize:11, lineHeight:1, cursor: busy ? 'default' : 'pointer', boxShadow:'0 1px 4px rgba(20,40,60,.18)' }}>✕</button>
+                  </div>
+                ))}
+              </div>
+            )}
+
             {err && <div style={{ fontSize:12, color:'#B42318', background:'#FEF3F2', border:'1px solid #FECDCA', borderRadius:10, padding:'9px 12px', marginTop:10, lineHeight:1.45 }}>{err}</div>}
-            <button onClick={plated} disabled={!command.trim() || busy}
+            <button onClick={plated} disabled={!canPlan || busy || loadingPhotos > 0}
               style={{ width:'100%', marginTop:12, padding:'14px', borderRadius:14, border:'none',
-                background:(!command.trim()||busy)?'#E1E1E6':'var(--forest)', color:(!command.trim()||busy)?'#9CA3AF':'var(--green-light)',
-                cursor:(!command.trim()||busy)?'default':'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:700, fontSize:15 }}>
-              {busy ? 'Thinking…' : 'Plan it'}
+                background:(!canPlan||busy||loadingPhotos>0)?'#E1E1E6':'var(--forest)', color:(!canPlan||busy||loadingPhotos>0)?'#9CA3AF':'var(--green-light)',
+                cursor:(!canPlan||busy||loadingPhotos>0)?'default':'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:700, fontSize:15 }}>
+              {busy ? (photos.length ? 'Reading the photo…' : 'Thinking…') : 'Plan it'}
             </button>
             <div style={{ fontSize:10.5, color:'var(--muted)', marginTop:10, textAlign:'center', lineHeight:1.5 }}>
-              Uses a free AI model — your text and a list of your task titles are sent to Google Gemini. Nothing changes until you review and tap Apply.
+              Uses a free AI model — your text, any photos you add, and a list of your task titles are sent to Google Gemini. Photos are shrunk on your phone first and are never saved to your planner. Nothing changes until you review and tap Apply.
             </div>
           </>) : (<>
             {/* Plan review */}

@@ -5,7 +5,7 @@
 // a start time and end time (with quick-duration buttons that fill the end
 // from the start), plus optional custom reminder lead times that override the
 // global defaults just for this item.
-import { useState, useEffect, useRef, useLayoutEffect } from 'react'
+import { useState, useEffect, useRef, useLayoutEffect, Fragment } from 'react'
 import DateField from './DateField.jsx'
 import TimeField from './TimeField.jsx'
 import MiniCalendar from './MiniCalendar.jsx'
@@ -23,6 +23,9 @@ import { predictLabel } from '../lib/predictLabel.js'
 import { geolocationSupported, getCurrentLocation, searchPlaces, reverseGeocode, RADIUS_OPTIONS, radiusLabel } from '../lib/geofence.js'
 import { getSavedPlaces, getRecentPlaces, rememberPlace } from '../lib/places.js'
 import { activeAccent } from '../lib/appearance.js'
+import { fieldType, fieldsForCats, recordLinksForCats, hasValue } from '../lib/labels.js'
+import { compressImage } from '../lib/trackers.js'
+import { getTaskMenu, taskMenuRow, TASK_MENU_EVENT } from '../lib/taskMenuPrefs.js'
 
 const DEFAULT_CATEGORIES = [{ id:'other', label:'Other', color:'#8899AA' }]
 
@@ -177,6 +180,108 @@ function relativeDay(dateStr) {
   return null
 }
 
+
+// A ledger — the Record details row, where a record label's own fields live.
+const LedgerIcon = () => (<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 3h13v18H6.5A1.5 1.5 0 0 1 5 19.5v-15A1.5 1.5 0 0 1 6.5 3Z"/><path d="M9 3v18M12.5 8.5h3.5M12.5 12.5h3.5"/></svg>)
+
+// ── One field a record label asks for ──────────────────────────
+// The label decides the field's type; the type decides both the input you get
+// here and where the value lands on the folder's record. A dot in the label
+// color shows which label asked for it, so a task carrying two record labels
+// still reads clearly.
+function RecordField({ field, value, onChange, currency = '$' }) {
+  const t = fieldType(field.type)
+  const head = (
+    <div style={{ ...fieldLabel, display:'flex', alignItems:'center', gap:6, marginBottom:5 }}>
+      <span style={{ width:8, height:8, borderRadius:'50%', background: field.labelColor || ROW_ACCENT, flexShrink:0 }} />
+      <span style={{ minWidth:0, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{field.name}</span>
+    </div>
+  )
+  const wrap = (child, note) => (
+    <div style={{ marginBottom:13 }}>
+      {head}{child}
+      {note && <div style={{ fontSize:10.5, color:'var(--muted)', marginTop:5 }}>{note}</div>}
+    </div>
+  )
+  const chipStyle = (on) => ({ fontSize:11.5, padding:'6px 12px', borderRadius:16, cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:600,
+    border: on ? 'none' : '1px solid var(--border)', background: on ? 'var(--forest)' : 'white', color: on ? 'var(--green-light)' : 'var(--muted)' })
+
+  switch (field.type) {
+    case 'money':
+      return wrap(
+        <div style={{ position:'relative' }}>
+          <span style={{ position:'absolute', left:11, top:10, color:'var(--muted)', fontSize:14 }}>{currency}</span>
+          <input type="number" min="0" step="0.01" value={value ?? ''} onChange={e => onChange(e.target.value)}
+            placeholder="0.00" style={{ ...inp, paddingLeft:26 }} />
+        </div>,
+        'Money in or out — the folder category on this label decides which.')
+    case 'hours': {
+      const m = Number(value) || 0
+      return wrap(
+        <span style={{ display:'inline-flex', alignItems:'center', gap:6 }}>
+          <input type="number" min="0" value={Math.floor(m / 60) || ''} onChange={e => onChange(Math.max(0, +e.target.value || 0) * 60 + (m % 60))}
+            style={{ ...inp, width:72, textAlign:'center' }} />
+          <span style={{ fontSize:12.5, color:'var(--muted)' }}>h</span>
+          <input type="number" min="0" max="59" value={m % 60 || ''} onChange={e => onChange(Math.floor(m / 60) * 60 + Math.min(59, Math.max(0, +e.target.value || 0)))}
+            style={{ ...inp, width:72, textAlign:'center' }} />
+          <span style={{ fontSize:12.5, color:'var(--muted)' }}>m</span>
+        </span>,
+        'Leave it blank to record the task’s own scheduled length.')
+    }
+    case 'miles':
+    case 'number':
+      return wrap(<input type="number" min="0" step="0.1" value={value ?? ''} onChange={e => onChange(e.target.value)} placeholder="0" style={inp} />)
+    case 'note':
+      return wrap(<textarea value={value ?? ''} onChange={e => onChange(e.target.value)} rows={3}
+        placeholder="What this was for…" style={{ ...inp, minHeight:0, resize:'vertical', lineHeight:1.5 }} />)
+    case 'choice':
+      return wrap(
+        (field.options || []).length
+          ? <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
+              {field.options.map(o => {
+                const on = value === o
+                return <button key={o} type="button" onClick={() => onChange(on ? '' : o)} style={chipStyle(on)}>{on ? '✓ ' : ''}{o}</button>
+              })}
+            </div>
+          : <div style={{ fontSize:11.5, color:'var(--muted)' }}>No options on this field yet — add some in Settings → Labels.</div>)
+    case 'date':
+    case 'startDate':
+    case 'endDate':
+      return wrap(<DateField value={value || ''} onChange={onChange} style={inp} />)
+    case 'check':
+      return (
+        <div style={{ display:'flex', alignItems:'center', gap:12, marginBottom:13 }}>
+          <span style={{ flex:1, minWidth:0, fontSize:14, color:'var(--text)' }}>{field.name}</span>
+          <button type="button" onClick={() => onChange(!value)} aria-pressed={!!value}
+            style={{ width:46, height:27, borderRadius:14, border:'none', cursor:'pointer', padding:3, flexShrink:0, background: value ? 'var(--forest)' : '#CBD2DA', transition:'background .2s', display:'flex', justifyContent: value ? 'flex-end' : 'flex-start' }}>
+            <span style={{ width:21, height:21, borderRadius:'50%', background:'white', boxShadow:'0 1px 3px rgba(0,0,0,.28)' }} />
+          </button>
+        </div>
+      )
+    case 'photo':
+      return wrap(
+        <>
+          <input type="file" accept="image/*" id={`rf-${field.id}`} style={{ display:'none' }}
+            onChange={async e => {
+              const file = e.target.files?.[0]; e.target.value = ''
+              if (!file) return
+              try { onChange(await compressImage(file, { maxDim: 900, quality: 0.6 })) } catch {}
+            }} />
+          <div style={{ display:'flex', alignItems:'center', gap:10, flexWrap:'wrap' }}>
+            <label htmlFor={`rf-${field.id}`}
+              style={{ fontSize:12, padding:'8px 14px', borderRadius:10, cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:700, border:'1px solid var(--border)', background:'white', color:'var(--teal)' }}>
+              📷 {value ? 'Replace photo' : 'Attach a photo'}
+            </label>
+            {value && <img src={value} alt="" style={{ height:44, borderRadius:8, border:'1px solid var(--border)' }} />}
+            {value && <button type="button" onClick={() => onChange('')}
+              style={{ fontSize:11, padding:'6px 11px', borderRadius:16, border:'1px solid var(--border)', background:'white', color:'var(--muted)', cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:600 }}>Remove</button>}
+          </div>
+        </>)
+    default:
+      return wrap(<input value={value ?? ''} onChange={e => onChange(e.target.value)} placeholder={t.name} style={inp} />)
+  }
+}
+
 // A row in the header ⋯ menu (Duplicate / Move to Thoughts / Delete).
 function MenuRow({ icon, label, danger, onClick }) {
   return (
@@ -275,6 +380,24 @@ export default function AddItemModal({ existing = null, existingRecurring = null
       (!isEdit && Array.isArray(presetReminders) && presetReminders.length > 0)
   })
   const [alertPickerOpen, setAlertPickerOpen] = useState(false)
+
+  // ── Record keeping ───────────────────────────────────────────
+  // Values for the fields the picked record labels ask for, keyed by field id.
+  // They ride along on the saved task, and App turns them into a real entry in
+  // each linked folder — so the task lands on the day AND in the books, once.
+  const [recordValues, setRecordValues] = useState(() =>
+    (existing?.recordValues && typeof existing.recordValues === 'object') ? { ...existing.recordValues } : {})
+  const setRecordValue = (id, v) => setRecordValues(prev => ({ ...prev, [id]: v }))
+
+  // ── Your own task menu ───────────────────────────────────────
+  // Which rows show first and which tuck under "More options" is a setting
+  // (Settings → Task menu); re-read it when another device changes it.
+  const [menu, setMenu] = useState(getTaskMenu)
+  useEffect(() => {
+    const h = () => setMenu(getTaskMenu())
+    window.addEventListener(TASK_MENU_EVENT, h)
+    return () => window.removeEventListener(TASK_MENU_EVENT, h)
+  }, [])
 
   // ── Duration ─────────────────────────────────────────────────
   // A task's length can come from an end time, a tapped preset, or a typed
@@ -568,7 +691,6 @@ export default function AddItemModal({ existing = null, existingRecurring = null
     const primaryCatId = effectiveCats[0] || null
     return {
       id,
-      type: 'today',
       freq: repeatFreq,
       interval: Math.max(1, repeatInterval),
       days: repeatFreq === 'weekly' ? WEEKDAY_ORDER.filter(d => repeatDays.includes(d)) : [],
@@ -615,6 +737,7 @@ export default function AddItemModal({ existing = null, existingRecurring = null
         icon: effectiveIcon || null,
         description: description.trim() || '',
         subtasks,
+        recordValues,
         done: false,
         block: block || false,
         location: buildLocation(),
@@ -679,6 +802,9 @@ export default function AddItemModal({ existing = null, existingRecurring = null
       icon: effectiveIcon || null,
       description: description.trim() || '',
       subtasks,
+      // What a record label asked for. App files these into every folder the
+      // task's labels link to, so the task lands on the day and in the books.
+      recordValues,
       // An arrival location, if tagged. Preserve any prior startedAt so editing
       // the task doesn't wipe an in-progress arrival.
       location: buildLocation(),
@@ -736,6 +862,567 @@ export default function AddItemModal({ existing = null, existingRecurring = null
     const base = every ? `Every ${repeatInterval} weeks` : 'Weekly'
     return `${base} · ${daysSummary(repeatDays)}`
   })()
+
+
+  // ── Record keeping, derived ──────────────────────────────────
+  // Which folders the chosen labels file into, and the fields those labels ask
+  // for. Recurring templates have no single day to record, so the row is only
+  // offered for a real one-off task.
+  const recordLinks  = (!!onSave && !repeatOn) ? recordLinksForCats(effectiveCats) : []
+  const recordFields = recordLinks.length ? fieldsForCats(effectiveCats, cats) : []
+  const recordFolderNames = [...new Set(recordLinks.map(l => l.folder.name))]
+  const recordCurrency = recordLinks[0]?.folder?.currency || '$'
+  const recordFilledCount = recordFields.filter(f => hasValue(f, recordValues[f.id])).length
+  const recordRowText = recordLinks.length
+    ? (recordFilledCount
+        ? `${recordFilledCount} of ${recordFields.length} recorded · ${recordFolderNames.join(', ')}`
+        : `Records into ${recordFolderNames.join(', ')}`)
+    : 'Record details'
+
+  // ── The sheet's rows ─────────────────────────────────────────
+  // Every arrangeable row, built once. Your task menu (Settings → Task menu)
+  // decides the order and which ones tuck under "More options"; a row that
+  // doesn't apply to what's being edited is null and simply skipped.
+  const rowNodes = {
+    // Labels — no blind default: unlabeled until you pick one or the
+    // title matches your past tasks well enough to predict one.
+    labels: (
+      <DetailRow icon={<TagIcon />} iconColor={effectiveCats.length ? headerColor : '#B7BEC8'}
+        text={labelNames.length ? labelNames.join(', ') : 'No label'} textMuted={!labelNames.length}
+        hint={usingPrediction ? 'Predicted' : (effectiveCats.length > 1 ? `${effectiveCats.length}` : null)}
+        open={expanded==='labels'} onClick={() => toggleRow('labels')}>
+        <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
+          {cats.map(c => {
+            const on = effectiveCats.includes(c.id)
+            const primary = effectiveCats[0] === c.id
+            return (
+              <button key={c.id} onClick={() => toggleCat(c.id)}
+                style={{ fontSize:11, padding:'5px 12px', borderRadius:20, border: on ? 'none' : '1px solid var(--border)', background: on ? c.color : 'white', color: on ? 'white' : 'var(--muted)', cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight: on ? 600 : 400, boxShadow: primary ? '0 0 0 2px rgba(0,0,0,.16)' : 'none' }}>
+                {on ? '✓ ' : ''}{c.label}
+              </button>
+            )
+          })}
+        </div>
+        {usingPrediction && (
+          <div style={{ fontSize:10.5, color:'var(--muted)', marginTop:7 }}>Predicted from your past tasks — tap to change, or tap it again to leave this task unlabeled.</div>
+        )}
+        {!effectiveCats.length && !usingPrediction && (
+          <div style={{ fontSize:10.5, color:'var(--muted)', marginTop:7 }}>Optional — leave it unlabeled, or pick a label above.</div>
+        )}
+        {effectiveCats.length > 1 && (
+          <div style={{ fontSize:10.5, color:'var(--muted)', marginTop:7 }}>The outlined label is the primary — it sets the color and scheduling.</div>
+        )}
+      </DetailRow>
+    ),
+    // Date
+    date: (
+      <DetailRow icon={<CalIcon />} text={date ? prettyDate(date) : 'Add a date'} textMuted={!date}
+        hint={relativeDay(date)} open={expanded==='date'}
+        onClick={lockDate ? undefined : () => toggleRow('date')}>
+        <div style={{ fontSize:10, color:'var(--muted)', letterSpacing:1, textTransform:'uppercase', marginBottom:4 }}>Type it</div>
+        <DateField value={date} onChange={setDate} style={inp} />
+        <div style={{ fontSize:10, color:'var(--muted)', letterSpacing:1, textTransform:'uppercase', margin:'12px 0 0' }}>Or pick a day</div>
+        <MiniCalendar value={date} onChange={setDate} />
+        {date && (
+          <button onClick={() => setDate('')}
+            style={{ marginTop:10, fontSize:11, padding:'5px 12px', borderRadius:16, cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:600, border:'1px solid var(--border)', background:'white', color:'var(--muted)' }}>
+            Clear date
+          </button>
+        )}
+      </DetailRow>
+    ),
+    // Time
+    time: (
+      <DetailRow icon={<ClockIcon />}
+        text={time ? `${fmt12(time)}${endTime && durationMins ? ' – '+fmt12(endTime) : ''}` : (durationMins ? `${prettyDur(durationMins)} · no start time` : 'Add a time')}
+        textMuted={!time && !durationMins}
+        open={expanded==='time'} onClick={() => toggleRow('time')}>
+        <div style={{ display:'flex', gap:8, marginBottom:8 }}>
+          <div style={{ flex:1, minWidth:0 }}>
+            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:6, marginBottom:4 }}>
+              <span style={{ ...fieldLabel, marginBottom:0 }}>Start</span>
+              {canStartNow && (
+                <button type="button" onClick={startNow} title="Start this at the current time"
+                  style={{ fontSize:10.5, fontWeight:700, letterSpacing:.4, border:'none', background:'none', cursor:'pointer', color:'var(--teal)', padding:0, whiteSpace:'nowrap' }}>
+                  Start now
+                </button>
+              )}
+            </div>
+            <TimeField value={time} onChange={onStartChange} style={inp} />
+          </div>
+          <div style={{ flex:1, minWidth:0 }}>
+            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:6, marginBottom:4 }}>
+              <span style={{ ...fieldLabel, marginBottom:0 }}>End</span>
+              {canEndNow && (
+                <button type="button" onClick={endNow} title="Set the end to the current time"
+                  style={{ fontSize:10.5, fontWeight:700, letterSpacing:.4, border:'none', background:'none', cursor:'pointer', color:'var(--teal)', padding:0, whiteSpace:'nowrap' }}>
+                  End now
+                </button>
+              )}
+            </div>
+            <TimeField value={endTime} onChange={setEndTime} style={{ ...inp, borderColor: endInvalid ? '#DC2626' : 'var(--border)' }} />
+          </div>
+        </div>
+        {/* Duration presets + a manual entry. Presets fill the length (and
+            the end time, when a start is set); the field takes anything
+            like "90", "1h30", "45 min". Both work with or without a start. */}
+        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:6 }}>
+          <div style={fieldLabel}>Duration</div>
+          <button type="button" onClick={() => setEditingPresets(e => !e)}
+            style={{ fontSize:10.5, fontWeight:700, letterSpacing:.4, border:'none', background:'none', cursor:'pointer', color:'var(--teal)', padding:0 }}>
+            {editingPresets ? 'Done' : 'Edit'}
+          </button>
+        </div>
+        <div style={{ display:'flex', gap:6, flexWrap:'wrap', alignItems:'center' }}>
+          {presets.map(mins => {
+            const on = durationMins === mins
+            return (
+              <span key={mins} style={{ position:'relative', display:'inline-flex' }}>
+                <button onClick={() => editingPresets ? removePreset(mins) : applyDuration(mins)}
+                  style={{ fontSize:11, padding:'4px 11px', borderRadius:16, cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:600,
+                    border: on && !editingPresets ? 'none' : '1px solid var(--border)',
+                    background: editingPresets ? '#FDECEC' : (on ? 'var(--teal)' : 'white'),
+                    color: editingPresets ? '#DC2626' : (on ? 'white' : 'var(--muted)') }}>
+                  {editingPresets ? '✕ ' : ''}{durationLabel(mins)}
+                </button>
+              </span>
+            )
+          })}
+          {editingPresets && (
+            <button onClick={resetPresets} style={{ fontSize:10.5, padding:'4px 10px', borderRadius:16, cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:600, border:'1px dashed var(--border)', background:'white', color:'var(--muted)' }}>
+              Reset
+            </button>
+          )}
+        </div>
+        {editingPresets ? (
+          <div style={{ display:'flex', gap:6, marginTop:8 }}>
+            <input value={newPreset} onChange={e => setNewPreset(e.target.value)} placeholder="Add preset, e.g. 25m or 1h30"
+              onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addPreset() } }}
+              style={{ ...inp, flex:1, fontSize:12.5 }} />
+            <button onClick={addPreset} disabled={!parseDuration(newPreset)}
+              style={{ fontSize:12, padding:'0 14px', borderRadius:10, border:'none', cursor: parseDuration(newPreset) ? 'pointer' : 'default', fontFamily:'DM Sans,sans-serif', fontWeight:700, background: parseDuration(newPreset) ? ROW_ACCENT : '#E1E1E6', color: parseDuration(newPreset) ? 'white' : '#9CA3AF' }}>Add</button>
+          </div>
+        ) : (
+          <div style={{ display:'flex', gap:6, marginTop:8, alignItems:'center' }}>
+            <input value={durText} onChange={e => onDurTextChange(e.target.value)} onBlur={commitDurText}
+              placeholder="Or type a duration — 90, 1h30, 45 min"
+              style={{ ...inp, flex:1, fontSize:12.5 }} />
+            {durationMins > 0 && (
+              <button onClick={() => { setManualDur(null); setDurText(''); setEndTime('') }}
+                style={{ fontSize:11, padding:'0 12px', borderRadius:10, border:'1px solid var(--border)', background:'white', color:'var(--muted)', cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:600, whiteSpace:'nowrap' }}>Clear</button>
+            )}
+          </div>
+        )}
+        <div style={{ fontSize:11, color: endInvalid ? '#DC2626' : 'var(--muted)', marginTop:8 }}>
+          {endInvalid ? 'End time must be after the start time.'
+            : durationMins ? `${prettyDur(durationMins)} long${!time ? ' · add a start time to place it on the timeline' : ''}`
+            : 'Tap a preset or type a length. Add a start time to also set the end.'}
+        </div>
+      </DetailRow>
+    ),
+    // Record details — the fields a record label asks for. Tag a task with a
+    // label that's linked to a Records folder and this row becomes that
+    // folder's own form, so everything your book-keeping needs is captured
+    // once, here, and the task files itself into the folder on save.
+    record: recordLinks.length ? (
+      <DetailRow icon={<LedgerIcon />} iconColor={recordLinks.length ? ROW_ACCENT : '#B7BEC8'}
+        text={recordRowText} textMuted={!recordFilledCount}
+        hint={recordFolderNames.length > 1 ? `${recordFolderNames.length} folders` : 'Records'}
+        open={expanded==='record'} onClick={() => toggleRow('record')}>
+        <div style={{ fontSize:11.5, color:'var(--muted)', lineHeight:1.5, marginBottom:12 }}>
+          Saving writes this into <b style={{ color:'var(--text)' }}>{recordFolderNames.join(' and ')}</b>, where it counts toward that folder’s totals, charts and exports. Change what a label asks for in Settings → Labels.
+        </div>
+        {recordFields.length === 0
+          ? <div style={{ fontSize:11.5, color:'var(--muted)', lineHeight:1.5 }}>
+              This label doesn’t ask for anything extra — the task’s date, name and length go on the record as they are.
+            </div>
+          : recordFields.map(f => (
+              <RecordField key={f.id} field={f} value={recordValues[f.id]}
+                onChange={v => setRecordValue(f.id, v)} currency={recordCurrency} />
+            ))}
+      </DetailRow>
+    ) : null,
+    // Repeat — turns this into a recurring task shown on every matching day
+    repeat: canRepeat ? (
+      <DetailRow icon={<RepeatIcon />} text={repeatRowSummary} textMuted={!repeatOn}
+        hint={repeatOn ? 'On' : null} open={expanded==='repeat'} onClick={() => toggleRow('repeat')}>
+        {/* Once / Daily / Weekly / Monthly */}
+        <div style={{ display:'flex', gap:4, padding:4, borderRadius:12, background:'#EAE7EE', marginBottom: repeatOn ? 14 : 0 }}>
+          {((defaultRepeat || isRecEdit) ? [['daily','Daily'],['weekly','Weekly'],['monthly','Monthly']] : [['once','Once'],['daily','Daily'],['weekly','Weekly'],['monthly','Monthly']]).map(([v,l]) => {
+            const on = repeatFreq === v
+            return (
+              <button key={v} onClick={() => pickFreq(v)}
+                style={{ flex:1, padding:'8px 4px', borderRadius:9, border:'none', cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontSize:12.5, fontWeight:600,
+                  background: on ? 'var(--forest)' : 'transparent', color: on ? 'var(--green-light)' : 'var(--muted)' }}>{l}</button>
+            )
+          })}
+        </div>
+        {repeatOn && <>
+          {/* Interval stepper */}
+          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:8, marginBottom:14 }}>
+            <span style={{ fontSize:13.5, color:'var(--text)' }}>Every {repeatInterval > 1 ? repeatInterval : ''} {intervalUnit}{repeatInterval > 1 ? 's' : ''}</span>
+            <div style={{ display:'flex', alignItems:'center', gap:0, border:'1px solid var(--border)', borderRadius:10, overflow:'hidden' }}>
+              <button onClick={() => bumpInterval(-1)} disabled={repeatInterval <= 1}
+                style={{ width:38, height:34, border:'none', background:'white', cursor: repeatInterval<=1?'default':'pointer', fontSize:18, color: repeatInterval<=1?'#CBD2DA':'var(--text)' }}>−</button>
+              <span style={{ width:34, textAlign:'center', fontSize:14, fontWeight:600, color:'var(--text)' }}>{repeatInterval}</span>
+              <button onClick={() => bumpInterval(1)}
+                style={{ width:38, height:34, border:'none', borderLeft:'1px solid var(--border)', background:'white', cursor:'pointer', fontSize:18, color:'var(--text)' }}>+</button>
+            </div>
+          </div>
+          {/* Weekday picker (weekly) */}
+          {repeatFreq === 'weekly' && (
+            <>
+              <div style={{ display:'flex', gap:6, flexWrap:'wrap', marginBottom:6 }}>
+                {WEEKDAY_ORDER.map(d => {
+                  const on = repeatDays.includes(d)
+                  return (
+                    <button key={d} onClick={() => toggleRepeatDay(d)}
+                      style={{ width:38, height:38, borderRadius:'50%', border: on ? 'none' : '1px solid var(--border)', background: on ? 'var(--forest)' : 'white', color: on ? 'var(--green-light)' : 'var(--muted)', cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:600, fontSize:11.5 }}>
+                      {WEEKDAY_SHORT[d]}
+                    </button>
+                  )
+                })}
+              </div>
+              {repeatInvalid && <div style={{ fontSize:10.5, color:'#DC2626', marginBottom:6 }}>Pick at least one day.</div>}
+            </>
+          )}
+          {/* Monthly note */}
+          {repeatFreq === 'monthly' && (
+            <div style={{ fontSize:12.5, color:'var(--muted)', marginBottom:12 }}>
+              Repeats on the <b style={{ color:'var(--text)' }}>{ordinal(date ? parseInt(date.slice(8,10), 10) : new Date().getDate())}</b> of each month{date ? '' : ' (from today)'}.
+            </div>
+          )}
+          {/* Start date — the first day it can appear. Independent of the
+              end date, so it can be set (or changed) even when it repeats
+              indefinitely. Bound to the same `date` the top row uses. */}
+          <div style={{ fontSize:10, color:'var(--muted)', letterSpacing:1, textTransform:'uppercase', margin:'6px 0 6px' }}>Starts</div>
+          <div style={{ display:'flex', gap:8, alignItems:'center' }}>
+            <DateField value={date} onChange={setDate} style={{ ...inp, flex:1 }} />
+            {date && (
+              <button onClick={() => setDate('')}
+                style={{ fontSize:11, padding:'8px 12px', borderRadius:16, cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:600, border:'1px solid var(--border)', background:'white', color:'var(--muted)', whiteSpace:'nowrap' }}>Clear</button>
+            )}
+          </div>
+          <div style={{ fontSize:10.5, color:'var(--muted)', marginTop:8 }}>
+            {date ? 'First day this can appear.' : 'Starts today if left blank.'}
+          </div>
+          {/* End date */}
+          <div style={{ fontSize:10, color:'var(--muted)', letterSpacing:1, textTransform:'uppercase', margin:'16px 0 6px' }}>Ends</div>
+          <div style={{ display:'flex', gap:8, alignItems:'center' }}>
+            <DateField value={repeatEnd} onChange={setRepeatEnd} style={{ ...inp, flex:1 }} />
+            {repeatEnd && (
+              <button onClick={() => setRepeatEnd('')}
+                style={{ fontSize:11, padding:'8px 12px', borderRadius:16, cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:600, border:'1px solid var(--border)', background:'white', color:'var(--muted)', whiteSpace:'nowrap' }}>Clear</button>
+            )}
+          </div>
+          <div style={{ fontSize:10.5, color:'var(--muted)', marginTop:8 }}>
+            {repeatEnd ? 'Stops repeating after this date.' : 'No end date — repeats indefinitely. Shows on Today, Week & Calendar; manage it in the Recurring tab.'}
+          </div>
+        </>}
+      </DetailRow>
+    ) : null,
+    // Routine — any task can be filed under a routine group (not just
+    // recurring ones): it groups in the Recurring tab and washes the
+    // routine's film behind the task on the timeline, one-off or not.
+    routine: routines.length > 0 ? (
+        <DetailRow icon={<span style={{ width:15, height:15, borderRadius:'50%', background: activeRoutine ? activeRoutine.tint : 'transparent', border: activeRoutine ? 'none' : '2px solid #C3C9D2' }} />}
+          text={activeRoutine ? activeRoutine.name : 'No routine'} textMuted={!activeRoutine}
+          hint={activeRoutine ? 'On' : null} open={expanded==='routine'} onClick={() => toggleRow('routine')}>
+          <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
+            <button onClick={() => setRoutine('')}
+              style={{ fontSize:12, padding:'7px 13px', borderRadius:16, cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:600,
+                border: routine ? '1px solid var(--border)' : '1.5px solid var(--forest)',
+                background: routine ? 'white' : 'var(--forest)', color: routine ? 'var(--muted)' : 'var(--green-light)' }}>None</button>
+            {routines.map(r => {
+              const on = routine === r.id
+              return (
+                <button key={r.id} onClick={() => setRoutine(r.id)}
+                  style={{ display:'inline-flex', alignItems:'center', gap:6, fontSize:12, padding:'7px 13px', borderRadius:16, cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:600,
+                    border: on ? `1.5px solid ${r.tint}` : '1px solid var(--border)',
+                    background: on ? r.tint : 'white', color: on ? '#3A3A3A' : 'var(--muted)' }}>
+                  <span style={{ width:10, height:10, borderRadius:'50%', background:r.tint, boxShadow: on ? 'inset 0 0 0 1px rgba(0,0,0,.15)' : 'none', flexShrink:0 }} />
+                  {r.name}
+                </button>
+              )
+            })}
+          </div>
+          <div style={{ fontSize:10.5, color:'var(--muted)', marginTop:9 }}>
+            Files this task under the routine and tints it with that group's film — even a single day's one-off task.
+          </div>
+        </DetailRow>
+
+    ) : null,
+    // Color
+    color: (
+      <DetailRow icon={<span style={{ width:15, height:15, borderRadius:'50%', background:headerColor }} />} iconColor={headerColor}
+        text="Color" hint={color ? 'Custom' : 'From label'} open={expanded==='color'} onClick={() => toggleRow('color')}>
+        <ColorSwatchRow value={color} onChange={setColor} size={28} />
+        <div style={{ display:'flex', gap:8, flexWrap:'wrap', marginTop:11 }}>
+          <button onClick={() => setColor('')}
+            style={{ fontSize:11, padding:'5px 12px', borderRadius:16, cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:600,
+              border: color ? '1px solid var(--border)' : 'none', background: color ? 'white' : 'var(--forest)', color: color ? 'var(--muted)' : 'var(--green-light)' }}>
+            {color ? 'Match label color' : '✓ Matching label color'}
+          </button>
+          {/* When this task belongs to a routine, offer to paint it the
+              routine's film color so it reads as part of that group. */}
+          {activeRoutine && (
+            <button onClick={() => setColor(activeRoutine.tint)}
+              style={{ display:'inline-flex', alignItems:'center', gap:6, fontSize:11, padding:'5px 12px', borderRadius:16, cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:600,
+                border: color === activeRoutine.tint ? 'none' : '1px solid var(--border)',
+                background: color === activeRoutine.tint ? activeRoutine.tint : 'white',
+                color: color === activeRoutine.tint ? '#3A3A3A' : 'var(--muted)' }}>
+              <span style={{ width:11, height:11, borderRadius:'50%', background:activeRoutine.tint, boxShadow:'inset 0 0 0 1px rgba(0,0,0,.15)', flexShrink:0 }} />
+              {color === activeRoutine.tint ? 'Routine color' : 'Use routine color'}
+            </button>
+          )}
+        </div>
+      </DetailRow>
+    ),
+    // Time block toggle — turns this into a labeled background container
+    block: (!!onSave || !!onSaveRecurring) ? (
+        <div style={{ display:'flex', alignItems:'center', gap:12, padding:'13px 15px' }}>
+          <IconCircle color={ROW_ACCENT}><BlockIcon /></IconCircle>
+          <div style={{ flex:1, minWidth:0 }}>
+            <div style={{ fontSize:15, fontWeight:500, color:'var(--text)' }}>Time block</div>
+            <div style={{ fontSize:11, color:'var(--muted)', marginTop:1, lineHeight:1.35 }}>A labeled band behind the day (e.g. Work). Tasks scheduled inside its time stay normal.</div>
+          </div>
+          <button type="button" onClick={() => setBlock(b => !b)} aria-pressed={block}
+            style={{ width:46, height:27, borderRadius:14, border:'none', cursor:'pointer', padding:3, flexShrink:0, background: block ? 'var(--forest)' : '#CBD2DA', transition:'background .2s', display:'flex', justifyContent: block ? 'flex-end' : 'flex-start' }}>
+            <span style={{ width:21, height:21, borderRadius:'50%', background:'white', boxShadow:'0 1px 3px rgba(0,0,0,.28)' }} />
+          </button>
+        </div>
+    ) : null,
+    // Auto-complete — available for any task, not just recurring
+    // ones: it ticks itself off once its scheduled window passes.
+    autodone: (!!onSave || !!onSaveRecurring) ? (
+      <div style={{ display:'flex', alignItems:'center', gap:12, padding:'13px 15px' }}>
+        <IconCircle color={ROW_ACCENT}><CheckIcon /></IconCircle>
+        <div style={{ flex:1, minWidth:0 }}>
+          <div style={{ fontSize:15, fontWeight:500, color:'var(--text)' }}>Auto-complete when it's over</div>
+          <div style={{ fontSize:11, color:'var(--muted)', marginTop:1, lineHeight:1.35 }}>Ticks itself off once its time has passed — good for things you'd rather not check by hand. You can still tap to undo.</div>
+        </div>
+        <button type="button" onClick={() => setAutoComplete(v => !v)} aria-pressed={autoComplete}
+          style={{ width:46, height:27, borderRadius:14, border:'none', cursor:'pointer', padding:3, flexShrink:0, background: autoComplete ? 'var(--forest)' : '#CBD2DA', transition:'background .2s', display:'flex', justifyContent: autoComplete ? 'flex-end' : 'flex-start' }}>
+          <span style={{ width:21, height:21, borderRadius:'50%', background:'white', boxShadow:'0 1px 3px rgba(0,0,0,.28)' }} />
+        </button>
+      </div>
+    ) : null,
+    // Reminders
+    remind: (
+      <DetailRow icon={<BellIcon />} text="Remind me" hint={remindText}
+        open={expanded==='remind'} onClick={() => toggleRow('remind')}>
+        {/* Alerts list — the ones set for this item, each removable, like
+            the phone's Alerts sheet. Only shown when this item has its own
+            alerts (i.e. not riding the global default). */}
+        {!useDefault && reminders.length > 0 && (
+          <div style={{ marginBottom:12 }}>
+            {reminders.map(val => (
+              <div key={String(val)} style={{ display:'flex', alignItems:'center', gap:11, padding:'9px 2px', borderBottom:'1px solid #F1EDF2' }}>
+                <span style={{ display:'inline-flex', color: val==='end' ? '#C77A4A' : ROW_ACCENT }}>
+                  {val==='end' ? <EndAlertIcon /> : val===0 ? <StartAlertIcon /> : <LeadAlertIcon />}
+                </span>
+                <span style={{ flex:1, minWidth:0, fontSize:14, color:'var(--text)' }}>{alertName(val)}</span>
+                <button onClick={() => toggleLead(val)} aria-label={`Remove ${alertName(val)}`}
+                  style={{ border:'none', background:'none', cursor:'pointer', color:'#B4BEC8', fontSize:17, lineHeight:1, padding:'0 4px' }}>✕</button>
+              </div>
+            ))}
+          </div>
+        )}
+        {/* Add an alert — Default (the global set), a lead before the start,
+            at the start, or when the task ends. */}
+        <div style={{ fontSize:10, color:'var(--muted)', letterSpacing:1, textTransform:'uppercase', marginBottom:6 }}>Add an alert</div>
+        <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
+          <button onClick={chooseDefault}
+            style={{ fontSize:11, padding:'5px 12px', borderRadius:20, cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:600, border: useDefault ? 'none' : '1px solid var(--border)', background: useDefault ? 'var(--forest)' : 'white', color: useDefault ? 'var(--green-light)' : 'var(--muted)' }}>
+            {useDefault ? '✓ ' : ''}Default
+          </button>
+          {LEAD_OPTIONS.map(opt => {
+            const on = !useDefault && reminders.includes(opt.mins)
+            // While on "Default", outline the chips that the default
+            // actually uses, so you can see what Default means at a glance.
+            const isDef = useDefault && getDefaultLeads().includes(opt.mins)
+            return (
+              <button key={opt.mins} onClick={() => toggleLead(opt.mins)}
+                style={{ fontSize:11, padding:'5px 12px', borderRadius:20, cursor:'pointer', fontFamily:'DM Sans,sans-serif',
+                  fontWeight: (on || isDef) ? 700 : 600,
+                  border: on ? 'none' : isDef ? '1.5px solid var(--forest)' : '1px solid var(--border)',
+                  background: on ? 'var(--forest)' : isDef ? 'rgba(56,110,90,.12)' : 'white',
+                  color: on ? 'var(--green-light)' : isDef ? 'var(--forest)' : 'var(--muted)' }}>
+                {on ? '✓ ' : isDef ? '★ ' : ''}{opt.label}
+              </button>
+            )
+          })}
+          {/* End-of-task alert — fires when the task's window closes. */}
+          {(() => {
+            const on = !useDefault && reminders.includes('end')
+            // Star it too when 'when it ends' is part of the default set,
+            // matching the numeric chips above.
+            const isDef = useDefault && getDefaultLeads().includes('end')
+            return (
+              <button onClick={() => toggleLead('end')}
+                style={{ fontSize:11, padding:'5px 12px', borderRadius:20, cursor:'pointer', fontFamily:'DM Sans,sans-serif',
+                  fontWeight: (on || isDef) ? 700 : 600,
+                  border: on ? 'none' : isDef ? '1.5px solid var(--forest)' : '1px solid var(--border)',
+                  background: on ? 'var(--forest)' : isDef ? 'rgba(56,110,90,.12)' : 'white',
+                  color: on ? 'var(--green-light)' : isDef ? 'var(--forest)' : 'var(--muted)' }}>
+                {on ? '✓ ' : isDef ? '★ ' : ''}When it ends
+              </button>
+            )
+          })()}
+          {/* Custom lead — opens the scroll-wheel picker for any hr/min. */}
+          <button onClick={() => setAlertPickerOpen(true)}
+            style={{ fontSize:11, padding:'5px 12px', borderRadius:20, cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:600, border:'1px dashed var(--teal)', background:'white', color:'var(--teal)' }}>
+            ＋ Custom…
+          </button>
+        </div>
+        <div style={{ fontSize:10.5, color:'var(--muted)', marginTop:7 }}>
+          {useDefault ? `Default reminders: ${defaultLeadsLabel()} (change in Settings → Reminders).`
+            : reminders.length ? `This item only: ${leadsPhrase(reminders, ', ')}.`
+            : 'No reminders for this item.'}
+          {!useDefault && reminders.includes('end') && !durationMins && ' · Set a duration so the end alert has a time.'}
+        </div>
+        {/* Sound — tap to choose + preview */}
+        <div style={{ fontSize:10, color:'var(--muted)', letterSpacing:1, textTransform:'uppercase', margin:'14px 0 6px' }}>Sound</div>
+        <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
+          {SOUNDS.map(s => {
+            const on = sound === s.id
+            return (
+              <button key={s.id} onClick={() => { setSound(s.id); if (s.id !== 'none') playSound(s.id) }}
+                style={{ fontSize:11, padding:'5px 12px', borderRadius:20, cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:600, border: on ? 'none' : '1px solid var(--border)', background: on ? 'var(--forest)' : 'white', color: on ? 'var(--green-light)' : 'var(--muted)' }}>
+                {on ? '♪ ' : ''}{s.label}
+              </button>
+            )
+          })}
+        </div>
+        <div style={{ fontSize:10.5, color:'var(--muted)', marginTop:6 }}>Plays in-app when a reminder fires. Your phone controls the system notification sound.</div>
+      </DetailRow>
+    ),
+    // Who you committed to — a one-off commitment field (not part of a
+    // recurring template). "I told Sam I'd send it."
+    person: (!!onSave && !isRecEdit) ? (
+        <DetailRow icon={<PersonIcon />}
+          text={person.trim() ? `With ${person.trim()}` : 'Who you committed to'} textMuted={!person.trim()}
+          open={expanded==='person'} onClick={() => toggleRow('person')}>
+          <div style={{ fontSize:11.5, color:'var(--muted)', lineHeight:1.5, marginBottom:8 }}>
+            Optional — the person you made this commitment to. Shows on the card so you remember who's counting on it.
+          </div>
+          <input value={person} onChange={e => setPerson(e.target.value)} placeholder="e.g. Sam, Mom, my manager…"
+            style={{ ...inp }} />
+        </DetailRow>
+
+    ) : null,
+    // Location — a place that auto-starts this task when you arrive.
+    // Offered for one-off commitments (not recurring templates).
+    location: ((!!onSave || !!onSaveRecurring) && geolocationSupported()) ? (
+        <DetailRow icon={<PinIcon />}
+          text={locHasCoords ? (location.name?.trim() || 'Location set') : 'Add a location'} textMuted={!locHasCoords}
+          hint={locHasCoords ? (location.autoStart ? 'Auto-start' : 'Set') : null} open={expanded==='location'} onClick={() => toggleRow('location')}>
+          <div style={{ fontSize:11.5, color:'var(--muted)', lineHeight:1.5, marginBottom:10 }}>
+            Tag where this happens. It's just a note by default — turn on auto-start below to have Bloom begin the task's progress the moment you arrive, no matter the time it's set for.
+          </div>
+          {/* One-tap suggestions: saved defaults + recently-used places. */}
+          {(savedPlaces.length > 0 || recentPlaces.length > 0) && (
+            <div style={{ marginBottom:10 }}>
+              <div style={{ fontSize:10, color:'var(--muted)', letterSpacing:1, textTransform:'uppercase', marginBottom:6 }}>Suggestions</div>
+              <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
+                {[...savedPlaces.map(p => ({ ...p, saved:true })), ...recentPlaces.map(p => ({ ...p, saved:false }))].map((p, i) => {
+                  const on = locHasCoords && Math.abs(location.lat - p.lat) < 0.0004 && Math.abs(location.lng - p.lng) < 0.0004
+                  return (
+                    <button key={p.id || i} type="button" onClick={() => pickPlace(p)}
+                      style={{ display:'inline-flex', alignItems:'center', gap:5, fontSize:11.5, padding:'6px 11px', borderRadius:16, cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:600, maxWidth:'100%',
+                        border: on ? 'none' : '1px solid var(--border)', background: on ? 'var(--forest)' : 'white', color: on ? 'var(--green-light)' : 'var(--muted)' }}>
+                      <span style={{ opacity:.85 }}>{p.saved ? '★' : '🕘'}</span>
+                      <span style={{ minWidth:0, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{p.name || 'Unnamed place'}</span>
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+          {/* Type-to-search a place — set a location without being there. */}
+          <input value={locQuery} onChange={e => setLocQuery(e.target.value)} placeholder="Search a place or address…"
+            style={{ ...inp, fontSize:13, marginBottom: (locResults.length || locSearching) ? 6 : 10 }} />
+          {locSearching && <div style={{ fontSize:11, color:'var(--muted)', padding:'2px 2px 8px' }}>Searching…</div>}
+          {locResults.length > 0 && (
+            <div style={{ border:'1px solid var(--border)', borderRadius:10, overflow:'hidden', marginBottom:10 }}>
+              {locResults.map((p, i) => (
+                <button key={i} type="button" onClick={() => pickPlace(p)}
+                  style={{ display:'flex', alignItems:'center', gap:8, width:'100%', textAlign:'left', padding:'9px 11px', border:'none', borderTop: i ? '1px solid #F1EDF2' : 'none', background:'white', cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontSize:12.5, color:'var(--text)' }}>
+                  <PinIcon /><span style={{ flex:1, minWidth:0, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{p.name}</span>
+                </button>
+              ))}
+            </div>
+          )}
+          <div style={{ fontSize:10, color:'var(--muted)', textAlign:'center', margin:'0 0 8px' }}>or</div>
+          <button type="button" onClick={useCurrentLocation} disabled={locBusy}
+            style={{ width:'100%', padding:'10px', borderRadius:10, border: locHasCoords ? '1px solid var(--border)' : 'none', background: locHasCoords ? 'white' : 'var(--forest)', color: locHasCoords ? 'var(--text)' : 'var(--green-light)', fontWeight:600, fontSize:13, cursor: locBusy ? 'default' : 'pointer', fontFamily:'DM Sans,sans-serif', display:'flex', alignItems:'center', justifyContent:'center', gap:8 }}>
+            <PinIcon />{locBusy ? 'Getting location…' : (locHasCoords ? 'Update to my current location' : 'Use my current location')}
+          </button>
+          {locErr && <div style={{ fontSize:10.5, color:'#DC2626', marginTop:8 }}>{locErr}</div>}
+          {locHasCoords && <>
+            <div style={{ fontSize:10, color:'var(--muted)', letterSpacing:1, textTransform:'uppercase', margin:'14px 0 4px' }}>Name</div>
+            <input value={location.name || ''} onChange={e => setLocName(e.target.value)} placeholder="e.g. Gym, Office, Library"
+              style={{ ...inp, fontSize:13 }} />
+            <div style={{ fontSize:10.5, color:'var(--muted)', marginTop:6 }}>
+              Pinned at {location.lat.toFixed(4)}, {location.lng.toFixed(4)}.
+            </div>
+            {/* Arrival radius is opt-in. By default arrival fires when you
+                reach the vicinity (like "Arriving" in a maps app); tap to
+                open a scrolling menu and pin an exact distance if wanted. */}
+            <div style={{ display:'flex', alignItems:'center', gap:8, margin:'14px 0 0' }}>
+              <span style={{ fontSize:10, color:'var(--muted)', letterSpacing:1, textTransform:'uppercase', flex:1 }}>Arrival radius</span>
+              <button type="button" onClick={() => setRadiusMenuOpen(o => !o)}
+                style={{ display:'inline-flex', alignItems:'center', gap:6, fontSize:11.5, padding:'5px 11px', borderRadius:16, cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:600,
+                  border: location.radius ? 'none' : '1px solid var(--border)', background: location.radius ? 'var(--forest)' : 'white', color: location.radius ? 'var(--green-light)' : 'var(--muted)' }}>
+                {radiusLabel(location.radius)}<span style={{ fontSize:9, opacity:.8 }}>{radiusMenuOpen ? '▲' : '▼'}</span>
+              </button>
+            </div>
+            {radiusMenuOpen && (
+              <div style={{ marginTop:8, border:'1px solid var(--border)', borderRadius:10, overflow:'hidden' }}>
+                <div style={{ maxHeight:150, overflowY:'auto', WebkitOverflowScrolling:'touch' }}>
+                  {[null, ...RADIUS_OPTIONS].map((r, i) => {
+                    const on = (location.radius || null) === r
+                    return (
+                      <button key={r ?? 'vicinity'} type="button" onClick={() => setLocRadius(r)}
+                        style={{ display:'flex', alignItems:'center', gap:8, width:'100%', textAlign:'left', padding:'9px 12px', border:'none', borderTop: i ? '1px solid #F1EDF2' : 'none', cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontSize:12.5, fontWeight: on ? 700 : 500, background: on ? '#F1FBF5' : 'white', color: on ? 'var(--forest)' : 'var(--text)' }}>
+                        <span style={{ width:14, color:'var(--forest)' }}>{on ? '✓' : ''}</span>
+                        <span style={{ flex:1 }}>{r ? radiusLabel(r) : 'Vicinity'}</span>
+                        {!r && <span style={{ fontSize:10.5, color:'var(--muted)' }}>Default · like “Arriving”</span>}
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+            {/* Auto-start toggle — off by default (location is informative). */}
+            <div style={{ display:'flex', alignItems:'center', gap:12, marginTop:16, paddingTop:14, borderTop:'1px solid #F1EDF2' }}>
+              <div style={{ flex:1, minWidth:0 }}>
+                <div style={{ fontSize:13.5, fontWeight:500, color:'var(--text)' }}>Start on arrival</div>
+                <div style={{ fontSize:11, color:'var(--muted)', marginTop:1, lineHeight:1.35 }}>Begin the task's progress automatically when you get here. Off keeps it as just a location.</div>
+              </div>
+              <button type="button" onClick={() => setLocAutoStart(!location.autoStart)} aria-pressed={!!location.autoStart}
+                style={{ width:46, height:27, borderRadius:14, border:'none', cursor:'pointer', padding:3, flexShrink:0, background: location.autoStart ? 'var(--forest)' : '#CBD2DA', transition:'background .2s', display:'flex', justifyContent: location.autoStart ? 'flex-end' : 'flex-start' }}>
+                <span style={{ width:21, height:21, borderRadius:'50%', background:'white', boxShadow:'0 1px 3px rgba(0,0,0,.28)' }} />
+              </button>
+            </div>
+            <button onClick={clearLocation}
+              style={{ marginTop:12, fontSize:11, padding:'5px 12px', borderRadius:16, cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:600, border:'1px solid var(--border)', background:'white', color:'var(--muted)' }}>
+              Remove location
+            </button>
+          </>}
+        </DetailRow>
+
+    ) : null,
+  }
+  // Pair each id with its node, dropping the ones that don't apply, so the
+  // dividers land between rows that actually render.
+  const rowPairs = (ids) => ids.map(id => [id, rowNodes[id]]).filter(([, node]) => node)
+  const renderRows = (pairs, leadDivider = false) => pairs.map(([id, node], i) => (
+    <Fragment key={id}>{(i > 0 || leadDivider) && <RowDivider />}{node}</Fragment>
+  ))
+  const primaryRows = rowPairs(menu.primary)
+  const moreRows    = rowPairs(menu.more)
+  const moreSummary = moreRows.map(([id]) => (taskMenuRow(id)?.label || id)).slice(0, 3).join(', ')
 
   return (
     <div onClick={onClose}
@@ -851,524 +1538,23 @@ export default function AddItemModal({ existing = null, existingRecurring = null
               </div>
             </div>
           )}
-          {/* ── Scheduling rows ───────────────────────────────── */}
+          {/* ── The task menu ─────────────────────────────────── */}
+          {/* Rows in your own order (Settings → Task menu). Labels lead by
+              default: a record label reshapes the sheet around what it needs. */}
           <div style={card}>
-            {/* Date */}
-            <DetailRow icon={<CalIcon />} text={date ? prettyDate(date) : 'Add a date'} textMuted={!date}
-              hint={relativeDay(date)} open={expanded==='date'}
-              onClick={lockDate ? undefined : () => toggleRow('date')}>
-              <div style={{ fontSize:10, color:'var(--muted)', letterSpacing:1, textTransform:'uppercase', marginBottom:4 }}>Type it</div>
-              <DateField value={date} onChange={setDate} style={inp} />
-              <div style={{ fontSize:10, color:'var(--muted)', letterSpacing:1, textTransform:'uppercase', margin:'12px 0 0' }}>Or pick a day</div>
-              <MiniCalendar value={date} onChange={setDate} />
-              {date && (
-                <button onClick={() => setDate('')}
-                  style={{ marginTop:10, fontSize:11, padding:'5px 12px', borderRadius:16, cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:600, border:'1px solid var(--border)', background:'white', color:'var(--muted)' }}>
-                  Clear date
-                </button>
-              )}
-            </DetailRow>
-            <RowDivider />
-            {/* Time */}
-            <DetailRow icon={<ClockIcon />}
-              text={time ? `${fmt12(time)}${endTime && durationMins ? ' – '+fmt12(endTime) : ''}` : (durationMins ? `${prettyDur(durationMins)} · no start time` : 'Add a time')}
-              textMuted={!time && !durationMins}
-              open={expanded==='time'} onClick={() => toggleRow('time')}>
-              <div style={{ display:'flex', gap:8, marginBottom:8 }}>
-                <div style={{ flex:1, minWidth:0 }}>
-                  <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:6, marginBottom:4 }}>
-                    <span style={{ ...fieldLabel, marginBottom:0 }}>Start</span>
-                    {canStartNow && (
-                      <button type="button" onClick={startNow} title="Start this at the current time"
-                        style={{ fontSize:10.5, fontWeight:700, letterSpacing:.4, border:'none', background:'none', cursor:'pointer', color:'var(--teal)', padding:0, whiteSpace:'nowrap' }}>
-                        Start now
-                      </button>
-                    )}
-                  </div>
-                  <TimeField value={time} onChange={onStartChange} style={inp} />
-                </div>
-                <div style={{ flex:1, minWidth:0 }}>
-                  <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:6, marginBottom:4 }}>
-                    <span style={{ ...fieldLabel, marginBottom:0 }}>End</span>
-                    {canEndNow && (
-                      <button type="button" onClick={endNow} title="Set the end to the current time"
-                        style={{ fontSize:10.5, fontWeight:700, letterSpacing:.4, border:'none', background:'none', cursor:'pointer', color:'var(--teal)', padding:0, whiteSpace:'nowrap' }}>
-                        End now
-                      </button>
-                    )}
-                  </div>
-                  <TimeField value={endTime} onChange={setEndTime} style={{ ...inp, borderColor: endInvalid ? '#DC2626' : 'var(--border)' }} />
-                </div>
+            {renderRows(primaryRows)}
+            {moreRows.length > 0 && <>
+              {primaryRows.length > 0 && <RowDivider />}
+              <div onClick={() => setMoreOpen(o => !o)}
+                style={{ display:'flex', alignItems:'center', gap:12, padding:'13px 15px', cursor:'pointer', userSelect:'none' }}>
+                <IconCircle color={ROW_ACCENT}><MoreIcon /></IconCircle>
+                <span style={{ flex:1, minWidth:0, fontSize:15, fontWeight:500, color:'var(--text)' }}>More options</span>
+                <span style={{ marginLeft:'auto', display:'inline-flex', alignItems:'center', gap:7, flexShrink:0, minWidth:0 }}>
+                  {!moreOpen && <span style={{ fontSize:12.5, color:'var(--muted)', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{moreSummary}…</span>}
+                  <Chevron open={moreOpen} />
+                </span>
               </div>
-              {/* Duration presets + a manual entry. Presets fill the length (and
-                  the end time, when a start is set); the field takes anything
-                  like "90", "1h30", "45 min". Both work with or without a start. */}
-              <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:6 }}>
-                <div style={fieldLabel}>Duration</div>
-                <button type="button" onClick={() => setEditingPresets(e => !e)}
-                  style={{ fontSize:10.5, fontWeight:700, letterSpacing:.4, border:'none', background:'none', cursor:'pointer', color:'var(--teal)', padding:0 }}>
-                  {editingPresets ? 'Done' : 'Edit'}
-                </button>
-              </div>
-              <div style={{ display:'flex', gap:6, flexWrap:'wrap', alignItems:'center' }}>
-                {presets.map(mins => {
-                  const on = durationMins === mins
-                  return (
-                    <span key={mins} style={{ position:'relative', display:'inline-flex' }}>
-                      <button onClick={() => editingPresets ? removePreset(mins) : applyDuration(mins)}
-                        style={{ fontSize:11, padding:'4px 11px', borderRadius:16, cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:600,
-                          border: on && !editingPresets ? 'none' : '1px solid var(--border)',
-                          background: editingPresets ? '#FDECEC' : (on ? 'var(--teal)' : 'white'),
-                          color: editingPresets ? '#DC2626' : (on ? 'white' : 'var(--muted)') }}>
-                        {editingPresets ? '✕ ' : ''}{durationLabel(mins)}
-                      </button>
-                    </span>
-                  )
-                })}
-                {editingPresets && (
-                  <button onClick={resetPresets} style={{ fontSize:10.5, padding:'4px 10px', borderRadius:16, cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:600, border:'1px dashed var(--border)', background:'white', color:'var(--muted)' }}>
-                    Reset
-                  </button>
-                )}
-              </div>
-              {editingPresets ? (
-                <div style={{ display:'flex', gap:6, marginTop:8 }}>
-                  <input value={newPreset} onChange={e => setNewPreset(e.target.value)} placeholder="Add preset, e.g. 25m or 1h30"
-                    onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addPreset() } }}
-                    style={{ ...inp, flex:1, fontSize:12.5 }} />
-                  <button onClick={addPreset} disabled={!parseDuration(newPreset)}
-                    style={{ fontSize:12, padding:'0 14px', borderRadius:10, border:'none', cursor: parseDuration(newPreset) ? 'pointer' : 'default', fontFamily:'DM Sans,sans-serif', fontWeight:700, background: parseDuration(newPreset) ? ROW_ACCENT : '#E1E1E6', color: parseDuration(newPreset) ? 'white' : '#9CA3AF' }}>Add</button>
-                </div>
-              ) : (
-                <div style={{ display:'flex', gap:6, marginTop:8, alignItems:'center' }}>
-                  <input value={durText} onChange={e => onDurTextChange(e.target.value)} onBlur={commitDurText}
-                    placeholder="Or type a duration — 90, 1h30, 45 min"
-                    style={{ ...inp, flex:1, fontSize:12.5 }} />
-                  {durationMins > 0 && (
-                    <button onClick={() => { setManualDur(null); setDurText(''); setEndTime('') }}
-                      style={{ fontSize:11, padding:'0 12px', borderRadius:10, border:'1px solid var(--border)', background:'white', color:'var(--muted)', cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:600, whiteSpace:'nowrap' }}>Clear</button>
-                  )}
-                </div>
-              )}
-              <div style={{ fontSize:11, color: endInvalid ? '#DC2626' : 'var(--muted)', marginTop:8 }}>
-                {endInvalid ? 'End time must be after the start time.'
-                  : durationMins ? `${prettyDur(durationMins)} long${!time ? ' · add a start time to place it on the timeline' : ''}`
-                  : 'Tap a preset or type a length. Add a start time to also set the end.'}
-              </div>
-            </DetailRow>
-            {canRepeat && <>
-              <RowDivider />
-              {/* Repeat — turns this into a recurring task shown on every matching day */}
-              <DetailRow icon={<RepeatIcon />} text={repeatRowSummary} textMuted={!repeatOn}
-                hint={repeatOn ? 'On' : null} open={expanded==='repeat'} onClick={() => toggleRow('repeat')}>
-                {/* Once / Daily / Weekly / Monthly */}
-                <div style={{ display:'flex', gap:4, padding:4, borderRadius:12, background:'#EAE7EE', marginBottom: repeatOn ? 14 : 0 }}>
-                  {((defaultRepeat || isRecEdit) ? [['daily','Daily'],['weekly','Weekly'],['monthly','Monthly']] : [['once','Once'],['daily','Daily'],['weekly','Weekly'],['monthly','Monthly']]).map(([v,l]) => {
-                    const on = repeatFreq === v
-                    return (
-                      <button key={v} onClick={() => pickFreq(v)}
-                        style={{ flex:1, padding:'8px 4px', borderRadius:9, border:'none', cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontSize:12.5, fontWeight:600,
-                          background: on ? 'var(--forest)' : 'transparent', color: on ? 'var(--green-light)' : 'var(--muted)' }}>{l}</button>
-                    )
-                  })}
-                </div>
-                {repeatOn && <>
-                  {/* Interval stepper */}
-                  <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:8, marginBottom:14 }}>
-                    <span style={{ fontSize:13.5, color:'var(--text)' }}>Every {repeatInterval > 1 ? repeatInterval : ''} {intervalUnit}{repeatInterval > 1 ? 's' : ''}</span>
-                    <div style={{ display:'flex', alignItems:'center', gap:0, border:'1px solid var(--border)', borderRadius:10, overflow:'hidden' }}>
-                      <button onClick={() => bumpInterval(-1)} disabled={repeatInterval <= 1}
-                        style={{ width:38, height:34, border:'none', background:'white', cursor: repeatInterval<=1?'default':'pointer', fontSize:18, color: repeatInterval<=1?'#CBD2DA':'var(--text)' }}>−</button>
-                      <span style={{ width:34, textAlign:'center', fontSize:14, fontWeight:600, color:'var(--text)' }}>{repeatInterval}</span>
-                      <button onClick={() => bumpInterval(1)}
-                        style={{ width:38, height:34, border:'none', borderLeft:'1px solid var(--border)', background:'white', cursor:'pointer', fontSize:18, color:'var(--text)' }}>+</button>
-                    </div>
-                  </div>
-                  {/* Weekday picker (weekly) */}
-                  {repeatFreq === 'weekly' && (
-                    <>
-                      <div style={{ display:'flex', gap:6, flexWrap:'wrap', marginBottom:6 }}>
-                        {WEEKDAY_ORDER.map(d => {
-                          const on = repeatDays.includes(d)
-                          return (
-                            <button key={d} onClick={() => toggleRepeatDay(d)}
-                              style={{ width:38, height:38, borderRadius:'50%', border: on ? 'none' : '1px solid var(--border)', background: on ? 'var(--forest)' : 'white', color: on ? 'var(--green-light)' : 'var(--muted)', cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:600, fontSize:11.5 }}>
-                              {WEEKDAY_SHORT[d]}
-                            </button>
-                          )
-                        })}
-                      </div>
-                      {repeatInvalid && <div style={{ fontSize:10.5, color:'#DC2626', marginBottom:6 }}>Pick at least one day.</div>}
-                    </>
-                  )}
-                  {/* Monthly note */}
-                  {repeatFreq === 'monthly' && (
-                    <div style={{ fontSize:12.5, color:'var(--muted)', marginBottom:12 }}>
-                      Repeats on the <b style={{ color:'var(--text)' }}>{ordinal(date ? parseInt(date.slice(8,10), 10) : new Date().getDate())}</b> of each month{date ? '' : ' (from today)'}.
-                    </div>
-                  )}
-                  {/* Start date — the first day it can appear. Independent of the
-                      end date, so it can be set (or changed) even when it repeats
-                      indefinitely. Bound to the same `date` the top row uses. */}
-                  <div style={{ fontSize:10, color:'var(--muted)', letterSpacing:1, textTransform:'uppercase', margin:'6px 0 6px' }}>Starts</div>
-                  <div style={{ display:'flex', gap:8, alignItems:'center' }}>
-                    <DateField value={date} onChange={setDate} style={{ ...inp, flex:1 }} />
-                    {date && (
-                      <button onClick={() => setDate('')}
-                        style={{ fontSize:11, padding:'8px 12px', borderRadius:16, cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:600, border:'1px solid var(--border)', background:'white', color:'var(--muted)', whiteSpace:'nowrap' }}>Clear</button>
-                    )}
-                  </div>
-                  <div style={{ fontSize:10.5, color:'var(--muted)', marginTop:8 }}>
-                    {date ? 'First day this can appear.' : 'Starts today if left blank.'}
-                  </div>
-                  {/* End date */}
-                  <div style={{ fontSize:10, color:'var(--muted)', letterSpacing:1, textTransform:'uppercase', margin:'16px 0 6px' }}>Ends</div>
-                  <div style={{ display:'flex', gap:8, alignItems:'center' }}>
-                    <DateField value={repeatEnd} onChange={setRepeatEnd} style={{ ...inp, flex:1 }} />
-                    {repeatEnd && (
-                      <button onClick={() => setRepeatEnd('')}
-                        style={{ fontSize:11, padding:'8px 12px', borderRadius:16, cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:600, border:'1px solid var(--border)', background:'white', color:'var(--muted)', whiteSpace:'nowrap' }}>Clear</button>
-                    )}
-                  </div>
-                  <div style={{ fontSize:10.5, color:'var(--muted)', marginTop:8 }}>
-                    {repeatEnd ? 'Stops repeating after this date.' : 'No end date — repeats indefinitely. Shows on Today, Week & Calendar; manage it in the Recurring tab.'}
-                  </div>
-                </>}
-              </DetailRow>
-            </>}
-            {/* Routine — any task can be filed under a routine group (not just
-                recurring ones): it groups in the Recurring tab and washes the
-                routine's film behind the task on the timeline, one-off or not. */}
-            {routines.length > 0 && <>
-              <RowDivider />
-              <DetailRow icon={<span style={{ width:15, height:15, borderRadius:'50%', background: activeRoutine ? activeRoutine.tint : 'transparent', border: activeRoutine ? 'none' : '2px solid #C3C9D2' }} />}
-                text={activeRoutine ? activeRoutine.name : 'No routine'} textMuted={!activeRoutine}
-                hint={activeRoutine ? 'On' : null} open={expanded==='routine'} onClick={() => toggleRow('routine')}>
-                <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
-                  <button onClick={() => setRoutine('')}
-                    style={{ fontSize:12, padding:'7px 13px', borderRadius:16, cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:600,
-                      border: routine ? '1px solid var(--border)' : '1.5px solid var(--forest)',
-                      background: routine ? 'white' : 'var(--forest)', color: routine ? 'var(--muted)' : 'var(--green-light)' }}>None</button>
-                  {routines.map(r => {
-                    const on = routine === r.id
-                    return (
-                      <button key={r.id} onClick={() => setRoutine(r.id)}
-                        style={{ display:'inline-flex', alignItems:'center', gap:6, fontSize:12, padding:'7px 13px', borderRadius:16, cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:600,
-                          border: on ? `1.5px solid ${r.tint}` : '1px solid var(--border)',
-                          background: on ? r.tint : 'white', color: on ? '#3A3A3A' : 'var(--muted)' }}>
-                        <span style={{ width:10, height:10, borderRadius:'50%', background:r.tint, boxShadow: on ? 'inset 0 0 0 1px rgba(0,0,0,.15)' : 'none', flexShrink:0 }} />
-                        {r.name}
-                      </button>
-                    )
-                  })}
-                </div>
-                <div style={{ fontSize:10.5, color:'var(--muted)', marginTop:9 }}>
-                  Files this task under the routine and tints it with that group's film — even a single day's one-off task.
-                </div>
-              </DetailRow>
-            </>}
-            <RowDivider />
-            {/* Labels — no blind default: unlabeled until you pick one or the
-                title matches your past tasks well enough to predict one. */}
-            <DetailRow icon={<TagIcon />} iconColor={effectiveCats.length ? headerColor : '#B7BEC8'}
-              text={labelNames.length ? labelNames.join(', ') : 'No label'} textMuted={!labelNames.length}
-              hint={usingPrediction ? 'Predicted' : (effectiveCats.length > 1 ? `${effectiveCats.length}` : null)}
-              open={expanded==='labels'} onClick={() => toggleRow('labels')}>
-              <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
-                {cats.map(c => {
-                  const on = effectiveCats.includes(c.id)
-                  const primary = effectiveCats[0] === c.id
-                  return (
-                    <button key={c.id} onClick={() => toggleCat(c.id)}
-                      style={{ fontSize:11, padding:'5px 12px', borderRadius:20, border: on ? 'none' : '1px solid var(--border)', background: on ? c.color : 'white', color: on ? 'white' : 'var(--muted)', cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight: on ? 600 : 400, boxShadow: primary ? '0 0 0 2px rgba(0,0,0,.16)' : 'none' }}>
-                      {on ? '✓ ' : ''}{c.label}
-                    </button>
-                  )
-                })}
-              </div>
-              {usingPrediction && (
-                <div style={{ fontSize:10.5, color:'var(--muted)', marginTop:7 }}>Predicted from your past tasks — tap to change, or tap it again to leave this task unlabeled.</div>
-              )}
-              {!effectiveCats.length && !usingPrediction && (
-                <div style={{ fontSize:10.5, color:'var(--muted)', marginTop:7 }}>Optional — leave it unlabeled, or pick a label above.</div>
-              )}
-              {effectiveCats.length > 1 && (
-                <div style={{ fontSize:10.5, color:'var(--muted)', marginTop:7 }}>The outlined label is the primary — it sets the color and scheduling.</div>
-              )}
-            </DetailRow>
-            <RowDivider />
-            {/* Color */}
-            <DetailRow icon={<span style={{ width:15, height:15, borderRadius:'50%', background:headerColor }} />} iconColor={headerColor}
-              text="Color" hint={color ? 'Custom' : 'From label'} open={expanded==='color'} onClick={() => toggleRow('color')}>
-              <ColorSwatchRow value={color} onChange={setColor} size={28} />
-              <div style={{ display:'flex', gap:8, flexWrap:'wrap', marginTop:11 }}>
-                <button onClick={() => setColor('')}
-                  style={{ fontSize:11, padding:'5px 12px', borderRadius:16, cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:600,
-                    border: color ? '1px solid var(--border)' : 'none', background: color ? 'white' : 'var(--forest)', color: color ? 'var(--muted)' : 'var(--green-light)' }}>
-                  {color ? 'Match label color' : '✓ Matching label color'}
-                </button>
-                {/* When this task belongs to a routine, offer to paint it the
-                    routine's film color so it reads as part of that group. */}
-                {activeRoutine && (
-                  <button onClick={() => setColor(activeRoutine.tint)}
-                    style={{ display:'inline-flex', alignItems:'center', gap:6, fontSize:11, padding:'5px 12px', borderRadius:16, cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:600,
-                      border: color === activeRoutine.tint ? 'none' : '1px solid var(--border)',
-                      background: color === activeRoutine.tint ? activeRoutine.tint : 'white',
-                      color: color === activeRoutine.tint ? '#3A3A3A' : 'var(--muted)' }}>
-                    <span style={{ width:11, height:11, borderRadius:'50%', background:activeRoutine.tint, boxShadow:'inset 0 0 0 1px rgba(0,0,0,.15)', flexShrink:0 }} />
-                    {color === activeRoutine.tint ? 'Routine color' : 'Use routine color'}
-                  </button>
-                )}
-              </div>
-            </DetailRow>
-            {/* More options — the secondary settings (time block, alerts, who you
-                committed to, location) tuck under here so the sheet stays short
-                by default. */}
-            <RowDivider />
-            <div onClick={() => setMoreOpen(o => !o)}
-              style={{ display:'flex', alignItems:'center', gap:12, padding:'13px 15px', cursor:'pointer', userSelect:'none' }}>
-              <IconCircle color={ROW_ACCENT}><MoreIcon /></IconCircle>
-              <span style={{ flex:1, minWidth:0, fontSize:15, fontWeight:500, color:'var(--text)' }}>More options</span>
-              <span style={{ marginLeft:'auto', display:'inline-flex', alignItems:'center', gap:7, flexShrink:0 }}>
-                {!moreOpen && <span style={{ fontSize:12.5, color:'var(--muted)', whiteSpace:'nowrap' }}>Alerts, block, location…</span>}
-                <Chevron open={moreOpen} />
-              </span>
-            </div>
-            {moreOpen && <>
-              {/* Time block toggle — turns this into a labeled background container */}
-              {(!!onSave || !!onSaveRecurring) && <>
-                <RowDivider />
-                <div style={{ display:'flex', alignItems:'center', gap:12, padding:'13px 15px' }}>
-                  <IconCircle color={ROW_ACCENT}><BlockIcon /></IconCircle>
-                  <div style={{ flex:1, minWidth:0 }}>
-                    <div style={{ fontSize:15, fontWeight:500, color:'var(--text)' }}>Time block</div>
-                    <div style={{ fontSize:11, color:'var(--muted)', marginTop:1, lineHeight:1.35 }}>A labeled band behind the day (e.g. Work). Tasks scheduled inside its time stay normal.</div>
-                  </div>
-                  <button type="button" onClick={() => setBlock(b => !b)} aria-pressed={block}
-                    style={{ width:46, height:27, borderRadius:14, border:'none', cursor:'pointer', padding:3, flexShrink:0, background: block ? 'var(--forest)' : '#CBD2DA', transition:'background .2s', display:'flex', justifyContent: block ? 'flex-end' : 'flex-start' }}>
-                    <span style={{ width:21, height:21, borderRadius:'50%', background:'white', boxShadow:'0 1px 3px rgba(0,0,0,.28)' }} />
-                  </button>
-                </div>
-                {/* Auto-complete — available for any task, not just recurring
-                    ones: it ticks itself off once its scheduled window passes. */}
-                <RowDivider />
-                <div style={{ display:'flex', alignItems:'center', gap:12, padding:'13px 15px' }}>
-                  <IconCircle color={ROW_ACCENT}><CheckIcon /></IconCircle>
-                  <div style={{ flex:1, minWidth:0 }}>
-                    <div style={{ fontSize:15, fontWeight:500, color:'var(--text)' }}>Auto-complete when it's over</div>
-                    <div style={{ fontSize:11, color:'var(--muted)', marginTop:1, lineHeight:1.35 }}>Ticks itself off once its time has passed — good for things you'd rather not check by hand. You can still tap to undo.</div>
-                  </div>
-                  <button type="button" onClick={() => setAutoComplete(v => !v)} aria-pressed={autoComplete}
-                    style={{ width:46, height:27, borderRadius:14, border:'none', cursor:'pointer', padding:3, flexShrink:0, background: autoComplete ? 'var(--forest)' : '#CBD2DA', transition:'background .2s', display:'flex', justifyContent: autoComplete ? 'flex-end' : 'flex-start' }}>
-                    <span style={{ width:21, height:21, borderRadius:'50%', background:'white', boxShadow:'0 1px 3px rgba(0,0,0,.28)' }} />
-                  </button>
-                </div>
-              </>}
-            <RowDivider />
-            {/* Reminders */}
-            <DetailRow icon={<BellIcon />} text="Remind me" hint={remindText}
-              open={expanded==='remind'} onClick={() => toggleRow('remind')}>
-              {/* Alerts list — the ones set for this item, each removable, like
-                  the phone's Alerts sheet. Only shown when this item has its own
-                  alerts (i.e. not riding the global default). */}
-              {!useDefault && reminders.length > 0 && (
-                <div style={{ marginBottom:12 }}>
-                  {reminders.map(val => (
-                    <div key={String(val)} style={{ display:'flex', alignItems:'center', gap:11, padding:'9px 2px', borderBottom:'1px solid #F1EDF2' }}>
-                      <span style={{ display:'inline-flex', color: val==='end' ? '#C77A4A' : ROW_ACCENT }}>
-                        {val==='end' ? <EndAlertIcon /> : val===0 ? <StartAlertIcon /> : <LeadAlertIcon />}
-                      </span>
-                      <span style={{ flex:1, minWidth:0, fontSize:14, color:'var(--text)' }}>{alertName(val)}</span>
-                      <button onClick={() => toggleLead(val)} aria-label={`Remove ${alertName(val)}`}
-                        style={{ border:'none', background:'none', cursor:'pointer', color:'#B4BEC8', fontSize:17, lineHeight:1, padding:'0 4px' }}>✕</button>
-                    </div>
-                  ))}
-                </div>
-              )}
-              {/* Add an alert — Default (the global set), a lead before the start,
-                  at the start, or when the task ends. */}
-              <div style={{ fontSize:10, color:'var(--muted)', letterSpacing:1, textTransform:'uppercase', marginBottom:6 }}>Add an alert</div>
-              <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
-                <button onClick={chooseDefault}
-                  style={{ fontSize:11, padding:'5px 12px', borderRadius:20, cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:600, border: useDefault ? 'none' : '1px solid var(--border)', background: useDefault ? 'var(--forest)' : 'white', color: useDefault ? 'var(--green-light)' : 'var(--muted)' }}>
-                  {useDefault ? '✓ ' : ''}Default
-                </button>
-                {LEAD_OPTIONS.map(opt => {
-                  const on = !useDefault && reminders.includes(opt.mins)
-                  // While on "Default", outline the chips that the default
-                  // actually uses, so you can see what Default means at a glance.
-                  const isDef = useDefault && getDefaultLeads().includes(opt.mins)
-                  return (
-                    <button key={opt.mins} onClick={() => toggleLead(opt.mins)}
-                      style={{ fontSize:11, padding:'5px 12px', borderRadius:20, cursor:'pointer', fontFamily:'DM Sans,sans-serif',
-                        fontWeight: (on || isDef) ? 700 : 600,
-                        border: on ? 'none' : isDef ? '1.5px solid var(--forest)' : '1px solid var(--border)',
-                        background: on ? 'var(--forest)' : isDef ? 'rgba(56,110,90,.12)' : 'white',
-                        color: on ? 'var(--green-light)' : isDef ? 'var(--forest)' : 'var(--muted)' }}>
-                      {on ? '✓ ' : isDef ? '★ ' : ''}{opt.label}
-                    </button>
-                  )
-                })}
-                {/* End-of-task alert — fires when the task's window closes. */}
-                {(() => {
-                  const on = !useDefault && reminders.includes('end')
-                  // Star it too when 'when it ends' is part of the default set,
-                  // matching the numeric chips above.
-                  const isDef = useDefault && getDefaultLeads().includes('end')
-                  return (
-                    <button onClick={() => toggleLead('end')}
-                      style={{ fontSize:11, padding:'5px 12px', borderRadius:20, cursor:'pointer', fontFamily:'DM Sans,sans-serif',
-                        fontWeight: (on || isDef) ? 700 : 600,
-                        border: on ? 'none' : isDef ? '1.5px solid var(--forest)' : '1px solid var(--border)',
-                        background: on ? 'var(--forest)' : isDef ? 'rgba(56,110,90,.12)' : 'white',
-                        color: on ? 'var(--green-light)' : isDef ? 'var(--forest)' : 'var(--muted)' }}>
-                      {on ? '✓ ' : isDef ? '★ ' : ''}When it ends
-                    </button>
-                  )
-                })()}
-                {/* Custom lead — opens the scroll-wheel picker for any hr/min. */}
-                <button onClick={() => setAlertPickerOpen(true)}
-                  style={{ fontSize:11, padding:'5px 12px', borderRadius:20, cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:600, border:'1px dashed var(--teal)', background:'white', color:'var(--teal)' }}>
-                  ＋ Custom…
-                </button>
-              </div>
-              <div style={{ fontSize:10.5, color:'var(--muted)', marginTop:7 }}>
-                {useDefault ? `Default reminders: ${defaultLeadsLabel()} (change in Settings → Reminders).`
-                  : reminders.length ? `This item only: ${leadsPhrase(reminders, ', ')}.`
-                  : 'No reminders for this item.'}
-                {!useDefault && reminders.includes('end') && !durationMins && ' · Set a duration so the end alert has a time.'}
-              </div>
-              {/* Sound — tap to choose + preview */}
-              <div style={{ fontSize:10, color:'var(--muted)', letterSpacing:1, textTransform:'uppercase', margin:'14px 0 6px' }}>Sound</div>
-              <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
-                {SOUNDS.map(s => {
-                  const on = sound === s.id
-                  return (
-                    <button key={s.id} onClick={() => { setSound(s.id); if (s.id !== 'none') playSound(s.id) }}
-                      style={{ fontSize:11, padding:'5px 12px', borderRadius:20, cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:600, border: on ? 'none' : '1px solid var(--border)', background: on ? 'var(--forest)' : 'white', color: on ? 'var(--green-light)' : 'var(--muted)' }}>
-                      {on ? '♪ ' : ''}{s.label}
-                    </button>
-                  )
-                })}
-              </div>
-              <div style={{ fontSize:10.5, color:'var(--muted)', marginTop:6 }}>Plays in-app when a reminder fires. Your phone controls the system notification sound.</div>
-            </DetailRow>
-            {/* Who you committed to — a one-off commitment field (not part of a
-                recurring template). "I told Sam I'd send it." */}
-            {!!onSave && !isRecEdit && <>
-              <RowDivider />
-              <DetailRow icon={<PersonIcon />}
-                text={person.trim() ? `With ${person.trim()}` : 'Who you committed to'} textMuted={!person.trim()}
-                open={expanded==='person'} onClick={() => toggleRow('person')}>
-                <div style={{ fontSize:11.5, color:'var(--muted)', lineHeight:1.5, marginBottom:8 }}>
-                  Optional — the person you made this commitment to. Shows on the card so you remember who's counting on it.
-                </div>
-                <input value={person} onChange={e => setPerson(e.target.value)} placeholder="e.g. Sam, Mom, my manager…"
-                  style={{ ...inp }} />
-              </DetailRow>
-            </>}
-            {/* Location — a place that auto-starts this task when you arrive.
-                Offered for one-off commitments (not recurring templates). */}
-            {(!!onSave || !!onSaveRecurring) && geolocationSupported() && <>
-              <RowDivider />
-              <DetailRow icon={<PinIcon />}
-                text={locHasCoords ? (location.name?.trim() || 'Location set') : 'Add a location'} textMuted={!locHasCoords}
-                hint={locHasCoords ? (location.autoStart ? 'Auto-start' : 'Set') : null} open={expanded==='location'} onClick={() => toggleRow('location')}>
-                <div style={{ fontSize:11.5, color:'var(--muted)', lineHeight:1.5, marginBottom:10 }}>
-                  Tag where this happens. It's just a note by default — turn on auto-start below to have Bloom begin the task's progress the moment you arrive, no matter the time it's set for.
-                </div>
-                {/* One-tap suggestions: saved defaults + recently-used places. */}
-                {(savedPlaces.length > 0 || recentPlaces.length > 0) && (
-                  <div style={{ marginBottom:10 }}>
-                    <div style={{ fontSize:10, color:'var(--muted)', letterSpacing:1, textTransform:'uppercase', marginBottom:6 }}>Suggestions</div>
-                    <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
-                      {[...savedPlaces.map(p => ({ ...p, saved:true })), ...recentPlaces.map(p => ({ ...p, saved:false }))].map((p, i) => {
-                        const on = locHasCoords && Math.abs(location.lat - p.lat) < 0.0004 && Math.abs(location.lng - p.lng) < 0.0004
-                        return (
-                          <button key={p.id || i} type="button" onClick={() => pickPlace(p)}
-                            style={{ display:'inline-flex', alignItems:'center', gap:5, fontSize:11.5, padding:'6px 11px', borderRadius:16, cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:600, maxWidth:'100%',
-                              border: on ? 'none' : '1px solid var(--border)', background: on ? 'var(--forest)' : 'white', color: on ? 'var(--green-light)' : 'var(--muted)' }}>
-                            <span style={{ opacity:.85 }}>{p.saved ? '★' : '🕘'}</span>
-                            <span style={{ minWidth:0, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{p.name || 'Unnamed place'}</span>
-                          </button>
-                        )
-                      })}
-                    </div>
-                  </div>
-                )}
-                {/* Type-to-search a place — set a location without being there. */}
-                <input value={locQuery} onChange={e => setLocQuery(e.target.value)} placeholder="Search a place or address…"
-                  style={{ ...inp, fontSize:13, marginBottom: (locResults.length || locSearching) ? 6 : 10 }} />
-                {locSearching && <div style={{ fontSize:11, color:'var(--muted)', padding:'2px 2px 8px' }}>Searching…</div>}
-                {locResults.length > 0 && (
-                  <div style={{ border:'1px solid var(--border)', borderRadius:10, overflow:'hidden', marginBottom:10 }}>
-                    {locResults.map((p, i) => (
-                      <button key={i} type="button" onClick={() => pickPlace(p)}
-                        style={{ display:'flex', alignItems:'center', gap:8, width:'100%', textAlign:'left', padding:'9px 11px', border:'none', borderTop: i ? '1px solid #F1EDF2' : 'none', background:'white', cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontSize:12.5, color:'var(--text)' }}>
-                        <PinIcon /><span style={{ flex:1, minWidth:0, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{p.name}</span>
-                      </button>
-                    ))}
-                  </div>
-                )}
-                <div style={{ fontSize:10, color:'var(--muted)', textAlign:'center', margin:'0 0 8px' }}>or</div>
-                <button type="button" onClick={useCurrentLocation} disabled={locBusy}
-                  style={{ width:'100%', padding:'10px', borderRadius:10, border: locHasCoords ? '1px solid var(--border)' : 'none', background: locHasCoords ? 'white' : 'var(--forest)', color: locHasCoords ? 'var(--text)' : 'var(--green-light)', fontWeight:600, fontSize:13, cursor: locBusy ? 'default' : 'pointer', fontFamily:'DM Sans,sans-serif', display:'flex', alignItems:'center', justifyContent:'center', gap:8 }}>
-                  <PinIcon />{locBusy ? 'Getting location…' : (locHasCoords ? 'Update to my current location' : 'Use my current location')}
-                </button>
-                {locErr && <div style={{ fontSize:10.5, color:'#DC2626', marginTop:8 }}>{locErr}</div>}
-                {locHasCoords && <>
-                  <div style={{ fontSize:10, color:'var(--muted)', letterSpacing:1, textTransform:'uppercase', margin:'14px 0 4px' }}>Name</div>
-                  <input value={location.name || ''} onChange={e => setLocName(e.target.value)} placeholder="e.g. Gym, Office, Library"
-                    style={{ ...inp, fontSize:13 }} />
-                  <div style={{ fontSize:10.5, color:'var(--muted)', marginTop:6 }}>
-                    Pinned at {location.lat.toFixed(4)}, {location.lng.toFixed(4)}.
-                  </div>
-                  {/* Arrival radius is opt-in. By default arrival fires when you
-                      reach the vicinity (like "Arriving" in a maps app); tap to
-                      open a scrolling menu and pin an exact distance if wanted. */}
-                  <div style={{ display:'flex', alignItems:'center', gap:8, margin:'14px 0 0' }}>
-                    <span style={{ fontSize:10, color:'var(--muted)', letterSpacing:1, textTransform:'uppercase', flex:1 }}>Arrival radius</span>
-                    <button type="button" onClick={() => setRadiusMenuOpen(o => !o)}
-                      style={{ display:'inline-flex', alignItems:'center', gap:6, fontSize:11.5, padding:'5px 11px', borderRadius:16, cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:600,
-                        border: location.radius ? 'none' : '1px solid var(--border)', background: location.radius ? 'var(--forest)' : 'white', color: location.radius ? 'var(--green-light)' : 'var(--muted)' }}>
-                      {radiusLabel(location.radius)}<span style={{ fontSize:9, opacity:.8 }}>{radiusMenuOpen ? '▲' : '▼'}</span>
-                    </button>
-                  </div>
-                  {radiusMenuOpen && (
-                    <div style={{ marginTop:8, border:'1px solid var(--border)', borderRadius:10, overflow:'hidden' }}>
-                      <div style={{ maxHeight:150, overflowY:'auto', WebkitOverflowScrolling:'touch' }}>
-                        {[null, ...RADIUS_OPTIONS].map((r, i) => {
-                          const on = (location.radius || null) === r
-                          return (
-                            <button key={r ?? 'vicinity'} type="button" onClick={() => setLocRadius(r)}
-                              style={{ display:'flex', alignItems:'center', gap:8, width:'100%', textAlign:'left', padding:'9px 12px', border:'none', borderTop: i ? '1px solid #F1EDF2' : 'none', cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontSize:12.5, fontWeight: on ? 700 : 500, background: on ? '#F1FBF5' : 'white', color: on ? 'var(--forest)' : 'var(--text)' }}>
-                              <span style={{ width:14, color:'var(--forest)' }}>{on ? '✓' : ''}</span>
-                              <span style={{ flex:1 }}>{r ? radiusLabel(r) : 'Vicinity'}</span>
-                              {!r && <span style={{ fontSize:10.5, color:'var(--muted)' }}>Default · like “Arriving”</span>}
-                            </button>
-                          )
-                        })}
-                      </div>
-                    </div>
-                  )}
-                  {/* Auto-start toggle — off by default (location is informative). */}
-                  <div style={{ display:'flex', alignItems:'center', gap:12, marginTop:16, paddingTop:14, borderTop:'1px solid #F1EDF2' }}>
-                    <div style={{ flex:1, minWidth:0 }}>
-                      <div style={{ fontSize:13.5, fontWeight:500, color:'var(--text)' }}>Start on arrival</div>
-                      <div style={{ fontSize:11, color:'var(--muted)', marginTop:1, lineHeight:1.35 }}>Begin the task's progress automatically when you get here. Off keeps it as just a location.</div>
-                    </div>
-                    <button type="button" onClick={() => setLocAutoStart(!location.autoStart)} aria-pressed={!!location.autoStart}
-                      style={{ width:46, height:27, borderRadius:14, border:'none', cursor:'pointer', padding:3, flexShrink:0, background: location.autoStart ? 'var(--forest)' : '#CBD2DA', transition:'background .2s', display:'flex', justifyContent: location.autoStart ? 'flex-end' : 'flex-start' }}>
-                      <span style={{ width:21, height:21, borderRadius:'50%', background:'white', boxShadow:'0 1px 3px rgba(0,0,0,.28)' }} />
-                    </button>
-                  </div>
-                  <button onClick={clearLocation}
-                    style={{ marginTop:12, fontSize:11, padding:'5px 12px', borderRadius:16, cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:600, border:'1px solid var(--border)', background:'white', color:'var(--muted)' }}>
-                    Remove location
-                  </button>
-                </>}
-              </DetailRow>
-            </>}
+              {moreOpen && renderRows(moreRows, true)}
             </>}
           </div>
 

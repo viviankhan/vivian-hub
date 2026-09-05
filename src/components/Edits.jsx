@@ -4,6 +4,15 @@
 
 const EDIT_LOG = [
   {
+    date: '2026-09-05',
+    summary: 'The leftover Morning / Night Routine dropdowns are gone from Today',
+    changes: [
+      'Fixed: Today no longer shows the empty "Morning Routine" and "Night Routine" dropdown cards — they were left over from the old routines system and pointed at a Settings → Routines page that no longer exists, so there was no way to fill them in or turn them off',
+      'Routines still live where they belong: file recurring tasks under a routine from the add/edit sheet, and manage them in Recurring → Routines',
+      'Removed the orphaned routines editor and its storage behind the scenes; Look → Layout density no longer mentions routine cards',
+    ]
+  },
+  {
     date: '2026-09-01',
     summary: 'Rescheduling one recurring occurrence actually moves it — plus a "this & future" option',
     changes: [
