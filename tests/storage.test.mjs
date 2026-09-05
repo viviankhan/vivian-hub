@@ -149,5 +149,33 @@ goOnline()
 await off.flush()
 eq('and uploaded on the retry', mock.state.tables.commitments.some(r => r.id === 'c4'), true)
 
+console.log('\n— one app load, one kv_store query —')
+// The first load asks for two dozen blobs at once. Sent one at a time that is
+// two dozen round trips and two dozen pooled connections per launch, which is
+// what wore the database out. They have to leave as a single query.
+goOnline()
+await off.flush()
+const KEYS = ['notes', 'label_meta', 'tracker_folders', 'time_logs', 'task_templates',
+              'change_history', 'wellness_checkins', 'art_overrides', 'recurring_meta']
+mock.state.tables.kv_store = KEYS.map((key, i) => ({ user_id: 'user-1', key, value: 'v' + i }))
+mock.state.calls = []
+const batched = await Promise.all(KEYS.map(k => S.dbGet(k)))
+const kvSelects = mock.state.calls.filter(c => c === 'kv_store.select').length
+eq('nine reads in one tick cost one query', kvSelects, 1)
+eq('and every one of them got its own value', batched, KEYS.map((_, i) => 'v' + i))
+
+// The batch must keep every guarantee a single read had.
+mock.state.calls = []
+eq('a key with no row still reads as null', await S.dbGet('never_written'), null)
+
+await S.dbSet('notes', 'edited offline')   // online here, so it lands in the cloud
+goOffline()
+await S.dbSet('notes', 'edited with no signal')
+const [pendingKey, freshKey] = await Promise.all([S.dbGet('notes'), S.dbGet('label_meta')])
+eq('an unsent edit still beats the cloud copy', pendingKey, 'edited with no signal')
+eq('and its neighbours still come from the mirror', freshKey, 'v1')
+goOnline()
+await off.flush()
+
 console.log(`\n${pass} passed, ${fail} failed`)
 process.exit(fail ? 1 : 0)

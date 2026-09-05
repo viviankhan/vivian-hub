@@ -202,17 +202,96 @@ if (typeof window !== 'undefined') {
 }
 
 // ── KV store ───────────────────────────────────────────────────
-export async function dbGet(key) {
-  if (USE_SUPABASE) {
-    return cloudRead({
-      mirror: 'kv:' + key, table: 'kv_store', id: key, fallback: null, label: `dbGet('${key}')`,
-      run: async () => {
-        const { data, error } = await supabase.from('kv_store').select('value').eq('key', key).maybeSingle()
-        if (error) throw error
-        return data?.value ?? null
-      },
-    })
+// ── Batched kv_store reads ──────────────────────────────────────
+// Nearly everything Bloom stores lives in kv_store, and the first load asks for
+// two dozen of those blobs at once. One request each meant two dozen HTTP round
+// trips, two dozen query plans and two dozen pooled connections to open one
+// screen — per device, per launch, and a phone relaunches a PWA often. That is
+// the shape of load that exhausts a small database: not one expensive query,
+// but a storm of cheap ones arriving together.
+//
+// So reads raised in the same tick are collected and sent as a single
+// `key=in.(…)`. dbGet's contract is unchanged — every caller still asks for one
+// key and gets one value, with the same mirror and outbox semantics per key —
+// it just stops being one request per key. App's whole first load is now a
+// single kv_store query.
+const KV_BATCH_MAX = 50           // keep the `in.(…)` list well inside URL limits
+let kvPending = null              // { keys: Set, waiters: Map<key, resolve[]> }
+
+function flushKvBatch() {
+  const batch = kvPending
+  kvPending = null
+  if (batch) runKvBatch(batch)
+}
+
+function kvBatchRead(key) {
+  return new Promise(resolve => {
+    if (!kvPending) {
+      kvPending = { keys: new Set(), waiters: new Map() }
+      // Collected synchronously, sent on the microtask turn — so a Promise.all
+      // of twenty getters becomes one query, with no delay anyone can see.
+      queueMicrotask(flushKvBatch)
+    }
+    kvPending.keys.add(key)
+    const waiting = kvPending.waiters.get(key) || []
+    waiting.push(resolve)
+    kvPending.waiters.set(key, waiting)
+    if (kvPending.keys.size >= KV_BATCH_MAX) flushKvBatch()
+  })
+}
+
+async function runKvBatch(batch) {
+  const keys = [...batch.keys]
+  const local = new Map()
+  const done = new Set()
+  const settle = (key, value) => {
+    if (done.has(key)) return
+    done.add(key)
+    for (const fn of batch.waiters.get(key) || []) { try { fn(value) } catch {} }
   }
+  try {
+    await offlineReady()
+    const cached = await Promise.all(keys.map(k => cacheRead(kvMirrorKey(k))))
+    keys.forEach((k, i) => local.set(k, cached[i] === undefined ? null : cached[i]))
+
+    // A key with an edit still in the outbox is answered from the mirror: the
+    // cloud is still showing the value that edit replaced.
+    const ask = []
+    for (const k of keys) {
+      if (hasPending('kv_store', k)) settle(k, local.get(k))
+      else ask.push(k)
+    }
+    if (!ask.length) return
+    if (!isOnline()) { for (const k of ask) settle(k, local.get(k)); return }
+
+    // One request per chunk; in practice one chunk for the whole app.
+    const chunks = []
+    for (let i = 0; i < ask.length; i += KV_BATCH_MAX) chunks.push(ask.slice(i, i + KV_BATCH_MAX))
+    await Promise.all(chunks.map(async chunk => {
+      try {
+        const { data, error } = await supabase.from('kv_store').select('key, value').in('key', chunk)
+        if (error) throw error
+        noteSuccess()
+        const got = new Map((data || []).map(r => [r.key, r.value ?? null]))
+        // A key with no row reads as null, exactly as a single-row miss did.
+        await Promise.all(chunk.map(k => cacheWrite(kvMirrorKey(k), got.has(k) ? got.get(k) : null)))
+        for (const k of chunk) settle(k, got.has(k) ? got.get(k) : null)
+      } catch (e) {
+        if (!noteFailure(e)) console.error('[storage] batched kv_store read failed:', (e && e.message) || e)
+        for (const k of chunk) settle(k, local.get(k))
+      }
+    }))
+  } catch (e) {
+    console.error('[storage] batched kv_store read failed:', (e && e.message) || e)
+  } finally {
+    // Nothing may be left unanswered: a read that never settles is an app that
+    // never finishes loading.
+    for (const k of keys) settle(k, local.has(k) ? local.get(k) : null)
+  }
+}
+
+export async function dbGet(key) {
+  if (USE_SUPABASE) return kvBatchRead(key)
   return lsGet(key)
 }
 
