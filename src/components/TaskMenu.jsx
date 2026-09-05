@@ -10,6 +10,9 @@ import ColorIconPicker from './ColorIconPicker.jsx'
 import { suggestGlyph, iconColorOn } from '../lib/glyphs.jsx'
 import { activeAccent } from '../lib/appearance.js'
 import { getDurationPresets, setDurationPresets, resetDurationPresets, parseDuration, durationLabel } from '../lib/durations.js'
+import ColorSwatchRow from './ColorSwatchRow.jsx'
+import CategoriesManager from './CategoriesManager.jsx'
+import { labelMetaFor } from '../lib/labels.js'
 
 const DEFAULT_CATEGORIES = [{ id:'other', label:'Other', color:'#8899AA' }]
 
@@ -52,7 +55,7 @@ function hexToBg(hex) {
 // A trimmed-down cousin of the Add sheet: everything that can be preset on a
 // task WITHOUT a date or time. No scheduling, repeat, reminders or location —
 // those belong to the moment you actually place the task on a day.
-function TemplateEditor({ existing = null, categories = [], onSave, onClose }) {
+function TemplateEditor({ existing = null, categories = [], onSave, onClose, addCategory = null, deleteCategory = null }) {
   const cats = (categories && categories.length) ? categories : DEFAULT_CATEGORIES
   const isEdit = !!existing
 
@@ -83,6 +86,31 @@ function TemplateEditor({ existing = null, categories = [], onSave, onClose }) {
   const effectiveIcon = icon || autoIcon || ''
 
   const toggleCat = (id) => setSelectedCats(prev => prev.includes(id) ? prev.filter(c => c !== id) : [...prev, id])
+
+  // ── Labels, right here ───────────────────────────────────────
+  // Add a label without leaving the sheet, and delete one you no longer use.
+  // Editing mode turns the chips into delete buttons rather than pickers, so a
+  // tap can't quietly remove a label you meant to select.
+  const [editingLabels, setEditingLabels] = useState(false)
+  const [addingLabel, setAddingLabel]     = useState(false)
+  const [newLabelText, setNewLabelText]   = useState('')
+  const [newLabelColor, setNewLabelColor] = useState('#4A9EB5')
+  const [confirmLabel, setConfirmLabel]   = useState(null)
+  const commitNewLabel = async () => {
+    const text = newLabelText.trim()
+    if (!text || !addCategory) return
+    let id = text.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '').slice(0, 24) || 'label'
+    if (cats.some(c => c.id === id)) id = `${id}-${Date.now().toString().slice(-4)}`
+    const sortOrder = cats.reduce((m, c) => Math.max(m, c.sortOrder ?? 0), 0) + 1
+    await addCategory({ id, label: text, color: newLabelColor, icon: '', sortOrder })
+    setSelectedCats(prev => [...prev, id])
+    setNewLabelText(''); setAddingLabel(false)
+  }
+  const removeLabel = (id) => {
+    deleteCategory(id)
+    setSelectedCats(prev => prev.filter(c => c !== id))
+    setConfirmLabel(null)
+  }
 
   const applyDuration = (mins) => { if (!mins) return; setManualDur(mins); setDurText('') }
   const onDurTextChange = (v) => {
@@ -229,23 +257,67 @@ function TemplateEditor({ existing = null, categories = [], onSave, onClose }) {
             </div>
           </div>
 
-          {/* Tags / labels */}
+          {/* Labels — pick them, add one, or delete one you've outgrown */}
           <div style={{ ...card, padding:'14px 15px' }}>
-            <div style={fieldLabel}>Tags</div>
-            <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
+            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:8 }}>
+              <div style={{ ...fieldLabel, marginBottom:0 }}>Labels</div>
+              {deleteCategory && cats.length > 0 && (
+                <button type="button" onClick={() => { setEditingLabels(e => !e); setConfirmLabel(null) }}
+                  style={{ fontSize:10.5, fontWeight:700, letterSpacing:.4, border:'none', background:'none', cursor:'pointer', color:'var(--teal)', padding:0 }}>
+                  {editingLabels ? 'Done' : 'Edit'}
+                </button>
+              )}
+            </div>
+            <div style={{ display:'flex', gap:6, flexWrap:'wrap', alignItems:'center' }}>
               {cats.map(c => {
                 const on = selectedCats.includes(c.id)
                 const primary = selectedCats[0] === c.id
+                const records = labelMetaFor(c.id).folders.length > 0
+                if (editingLabels) {
+                  const confirming = confirmLabel === c.id
+                  return (
+                    <button key={c.id} onClick={() => confirming ? removeLabel(c.id) : setConfirmLabel(c.id)}
+                      style={{ fontSize:11, padding:'5px 12px', borderRadius:20, border: confirming ? 'none' : '1px solid #F3C9C9', background: confirming ? '#DC2626' : '#FDECEC', color: confirming ? 'white' : '#DC2626', cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:600 }}>
+                      {confirming ? `Delete “${c.label}”?` : `✕ ${c.label}`}
+                    </button>
+                  )
+                }
                 return (
                   <button key={c.id} onClick={() => toggleCat(c.id)}
-                    style={{ fontSize:11, padding:'5px 12px', borderRadius:20, border: on ? 'none' : '1px solid var(--border)', background: on ? c.color : 'white', color: on ? 'white' : 'var(--muted)', cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight: on ? 600 : 400, boxShadow: primary ? '0 0 0 2px rgba(0,0,0,.16)' : 'none' }}>
-                    {on ? '✓ ' : ''}{c.label}
+                    style={{ display:'inline-flex', alignItems:'center', gap:5, fontSize:11, padding:'5px 12px', borderRadius:20, border: on ? 'none' : '1px solid var(--border)', background: on ? c.color : 'white', color: on ? 'white' : 'var(--muted)', cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight: on ? 600 : 400, boxShadow: primary ? '0 0 0 2px rgba(0,0,0,.16)' : 'none' }}>
+                    {on ? '✓ ' : ''}{c.label}{records && <span title="Files into a record folder" style={{ opacity:.8 }}>◈</span>}
                   </button>
                 )
               })}
+              {addCategory && !editingLabels && !addingLabel && (
+                <button type="button" onClick={() => setAddingLabel(true)}
+                  style={{ fontSize:11, padding:'5px 12px', borderRadius:20, border:'1px dashed var(--teal)', background:'white', color:'var(--teal)', cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:600 }}>
+                  ＋ New label
+                </button>
+              )}
             </div>
-            <div style={{ fontSize:10.5, color:'var(--muted)', marginTop:7 }}>
-              {labelNames.length > 1 ? 'The outlined tag is the primary — it sets the color.' : 'Optional — pick one or more tags.'}
+            {addingLabel && (
+              <div style={{ marginTop:10, paddingTop:10, borderTop:'1px solid #F1EDF2' }}>
+                <div style={{ display:'flex', gap:6, alignItems:'center', marginBottom:9 }}>
+                  <span style={{ width:24, height:24, borderRadius:7, background:newLabelColor, flexShrink:0, boxShadow:'0 0 0 1px rgba(0,0,0,.12)' }} />
+                  <input value={newLabelText} onChange={e => setNewLabelText(e.target.value)} autoFocus
+                    onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); commitNewLabel() } }}
+                    placeholder="Name the label — e.g. Rental, Study…"
+                    style={{ ...inp, flex:1, fontSize:12.5 }} />
+                </div>
+                <ColorSwatchRow value={newLabelColor} onChange={setNewLabelColor} size={24} />
+                <div style={{ display:'flex', gap:8, marginTop:10 }}>
+                  <button onClick={commitNewLabel} disabled={!newLabelText.trim()}
+                    style={{ fontSize:12, padding:'8px 16px', borderRadius:10, border:'none', cursor: newLabelText.trim() ? 'pointer' : 'default', fontFamily:'DM Sans,sans-serif', fontWeight:700, background: newLabelText.trim() ? ROW_ACCENT : '#E1E1E6', color: newLabelText.trim() ? 'white' : '#9CA3AF' }}>Add label</button>
+                  <button onClick={() => { setAddingLabel(false); setNewLabelText('') }}
+                    style={{ fontSize:12, padding:'8px 14px', borderRadius:10, border:'none', background:'none', color:'var(--muted)', cursor:'pointer', fontFamily:'DM Sans,sans-serif' }}>Cancel</button>
+                </div>
+              </div>
+            )}
+            <div style={{ fontSize:10.5, color:'var(--muted)', marginTop:8, lineHeight:1.5 }}>
+              {editingLabels ? 'Tap a label to delete it — tasks that used it simply lose the tag.'
+                : labelNames.length > 1 ? 'The outlined label is the primary — it sets the color. ◈ marks a label that records into a folder.'
+                : 'Optional — pick one or more. ◈ marks a label that records into a folder.'}
             </div>
           </div>
 
@@ -359,10 +431,19 @@ function TemplateCard({ t, categories, onEdit, onDelete }) {
 }
 
 // ── Main ───────────────────────────────────────────────────────
-export default function TaskMenu({ templates = [], addTemplate, updateTemplate, deleteTemplate, categories = [] }) {
+export default function TaskMenu({
+  templates = [], addTemplate, updateTemplate, deleteTemplate, categories = [],
+  addCategory = null, updateCategory = null, deleteCategory = null,
+  labelMeta = {}, updateLabelMeta = () => {}, trackerFolders = [],
+}) {
   const [editing, setEditing] = useState(null)  // template object being edited
   const [adding, setAdding] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(null)
+  // Labels come first here, the way they come first on the task sheet — this is
+  // where they're made, renamed, deleted, and pointed at a record folder.
+  const [labelsOpen, setLabelsOpen] = useState(false)
+  const canManageLabels = !!(addCategory && updateCategory && deleteCategory)
+  const recordLabelCount = (categories || []).filter(c => ((labelMeta[c.id] || {}).folders || []).length > 0).length
 
   const handleSave = (tpl) => {
     if (editing) updateTemplate(tpl.id, tpl)
@@ -377,6 +458,36 @@ export default function TaskMenu({ templates = [], addTemplate, updateTemplate, 
     <div>
       <div className="page-title">Task Menu</div>
       <div className="page-sub">A library of reusable tasks — set the duration, tags, notes and look here, with no date. When you add a task anywhere, pick one off the menu and it all fills in; you just choose a start time.</div>
+
+      {/* ── Labels ─────────────────────────────────────────────── */}
+      {/* First on the sheet, so first here: add one, delete one, and link the
+          ones you keep books on to a folder in Records. */}
+      {canManageLabels && (
+        <div style={{ background:'white', borderRadius:12, border:'1px solid var(--border)', marginBottom:12, overflow:'hidden' }}>
+          <button onClick={() => setLabelsOpen(o => !o)}
+            style={{ display:'flex', alignItems:'center', gap:10, width:'100%', padding:'13px 16px', border:'none', background:'none', cursor:'pointer', fontFamily:'DM Sans,sans-serif', textAlign:'left' }}>
+            <span style={{ width:30, height:30, borderRadius:'50%', flexShrink:0, background:`${ROW_ACCENT}20`, color:ROW_ACCENT, display:'inline-flex', alignItems:'center', justifyContent:'center', fontSize:15 }}>🏷</span>
+            <span style={{ flex:1, minWidth:0 }}>
+              <span style={{ display:'block', fontSize:14.5, fontWeight:600, color:'var(--text)' }}>Labels</span>
+              <span style={{ display:'block', fontSize:11.5, color:'var(--muted)', marginTop:1 }}>
+                {categories.length} label{categories.length === 1 ? '' : 's'}
+                {recordLabelCount > 0 ? ` · ${recordLabelCount} record into a folder` : ' · none linked to a record folder yet'}
+              </span>
+            </span>
+            <span style={{ flexShrink:0, fontSize:12, fontWeight:700, color:'var(--teal)' }}>{labelsOpen ? 'Done' : 'Manage'}</span>
+          </button>
+          {labelsOpen && (
+            <div style={{ padding:'0 16px 16px', borderTop:'1px solid #F1EDF2' }}>
+              <div style={{ fontSize:12, color:'var(--muted)', lineHeight:1.55, margin:'12px 0 14px' }}>
+                Link a label to a folder in Records and any task you tag with it files itself into that folder — with whatever fields you add here asked for on the task itself.
+              </div>
+              <CategoriesManager compact
+                categories={categories} addCategory={addCategory} updateCategory={updateCategory} deleteCategory={deleteCategory}
+                labelMeta={labelMeta} updateLabelMeta={updateLabelMeta} trackerFolders={trackerFolders} />
+            </div>
+          )}
+        </div>
+      )}
 
       <button onClick={() => setAdding(true)}
         style={{ width:'100%', background:'linear-gradient(135deg, #7BBFD4, #C8BFDF)', border:'none', borderRadius:14, padding:'14px 18px', cursor:'pointer', display:'flex', alignItems:'center', gap:10, marginBottom:16 }}>
@@ -398,6 +509,8 @@ export default function TaskMenu({ templates = [], addTemplate, updateTemplate, 
         <TemplateEditor
           existing={editing}
           categories={categories}
+          addCategory={addCategory}
+          deleteCategory={deleteCategory}
           onSave={handleSave}
           onClose={() => { setEditing(null); setAdding(false) }} />
       )}

@@ -383,6 +383,14 @@ export const setChangeHistory = v  => dbSet('change_history', v)
 export const getTaskTemplates = () => dbGet('task_templates').then(v => Array.isArray(v) ? v : [])
 export const setTaskTemplates = v  => dbSet('task_templates', v)
 
+// ── Label meta (record-folder links + custom task fields) ───────
+// The extras that turn a plain label into a record label: which tracker
+// folders it files into, and the fields it adds to the add-task sheet. Keyed by
+// label (category) id, in one synced kv_store blob so it needs no migration of
+// the categories table. See src/lib/labels.js for the shape and helpers.
+export const getLabelMeta = () => dbGet('label_meta').then(v => (v && typeof v === 'object') ? v : {})
+export const setLabelMeta = v  => dbSet('label_meta', v)
+
 // ── Trackers (custom folders in the Insights tab) ───────────────
 // User-created record folders — a B&B, a rental, freelance work, mileage… Each
 // folder holds hours worked and money spent, attributed to people, so it can be

@@ -270,6 +270,14 @@ export function makeFixedEntry(folder, cost, dateStr) {
 }
 
 // ── Export columns (table view, PDF, CSV) ───────────────────────
+// Anything a record label asked for that has no home of its own on an entry
+// (a reference number, a payment method, a yes/no) rides along in `extra` and
+// is reported as one readable Details column.
+export function extraText(entry) {
+  const x = entry && entry.extra
+  if (!x || typeof x !== 'object') return ''
+  return Object.entries(x).filter(([, v]) => v !== '' && v != null).map(([k, v]) => `${k}: ${v}`).join(' · ')
+}
 export function entryColumns(folder, people) {
   const sym = folder.currency || '$'
   return [
@@ -284,6 +292,7 @@ export function entryColumns(folder, people) {
     { id: 'days', header: 'Days to complete', align: 'num', get: e => { const d = turnaround(e); return d == null ? '—' : String(d) }, csv: e => { const d = turnaround(e); return d == null ? '' : d } },
     { id: 'miles', header: 'Miles', align: 'num', get: e => num(e.miles) ? fmtNumber(e.miles) : '—', csv: e => num(e.miles) || '' },
     { id: 'note', header: 'Note', align: 'wide', get: e => e.note || '—', csv: e => e.note || '' },
+    { id: 'details', header: 'Details', align: 'wide', get: e => extraText(e) || '—', csv: e => extraText(e) },
   ]
 }
 
