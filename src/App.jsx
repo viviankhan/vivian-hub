@@ -1917,8 +1917,7 @@ export default function App() {
           onOpenWellness={() => setTab('wellness')} />}
         {tab==='taskmenu'    && <TaskMenu templates={taskTemplates} addTemplate={addTaskTemplate}
           updateTemplate={updateTaskTemplate} deleteTemplate={deleteTaskTemplate} categories={categories}
-          addCategory={addCategoryFn} updateCategory={updateCategoryFn} deleteCategory={deleteCategoryFn}
-          labelMeta={labelMeta} updateLabelMeta={saveLabelMeta} trackerFolders={trackerFolders} />}
+          addCategory={addCategoryFn} deleteCategory={deleteCategoryFn} />}
         {tab==='calendar'    && <Calendar    {...sharedProps} jumpTo={jumpTo} />}
         {tab==='thoughts'    && <ThoughtsBoard addCommitment={addCommitment} addRecurringTask={addRecurringTaskFn}
           categories={categories} routines={routines} taskTemplates={taskTemplates} labelModel={labelModel}
@@ -1945,7 +1944,8 @@ export default function App() {
           mergeFolders={mergeTrackerFolders}
           addEntry={addTrackerEntry} addEntries={addTrackerEntries} deleteEntry={deleteTrackerEntry}
           addPerson={addTrackerPerson} updatePerson={updateTrackerPerson} deletePerson={deleteTrackerPerson}
-          commitments={commitmentsView} categories={categories} labelMeta={labelMeta} />}
+          commitments={commitmentsView} categories={categories} labelMeta={labelMeta}
+          addCategory={addCategoryFn} updateLabelMeta={saveLabelMeta} />}
       </main>
 
       <SettingsDrawer

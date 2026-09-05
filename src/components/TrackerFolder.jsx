@@ -11,6 +11,9 @@ import { inputStyle, labelStyle, card, primaryBtn, Field, HmInput, Empty, Stat, 
 import { TrendColumns, RankedBars, MoneyCascade, abbrMoney, abbrHours } from './TrackerCharts.jsx'
 import { scanReceipt, receiptScanAvailable } from '../lib/parseReceipt.js'
 import { recordLinksForCats, fieldsForCats, buildTaskEntry, taskEntryId } from '../lib/labels.js'
+import LabelFields from './LabelFields.jsx'
+import ColorSwatchRow from './ColorSwatchRow.jsx'
+import { Icon } from './IconPicker.jsx'
 import {
   DEFAULT_MILEAGE_RATE, DEFAULT_TAX_RATE, CATEGORY_COLORS, makeCategory,
   todayStr, fmtHours, decimalHours, fmtMoney, fmtNumber, fmtDays, num, inRange, prettyDate,
@@ -22,7 +25,7 @@ import {
   extraText, decimalHours as toDecimalHours,
 } from '../lib/trackers.js'
 
-const SUBTABS = [['summary', 'Summary'], ['entries', 'Entries'], ['setup', 'Setup']]
+const SUBTABS = [['summary', 'Summary'], ['entries', 'Entries'], ['labels', 'Labels'], ['setup', 'Setup']]
 
 // Which labels a task carries — the extra `cats` list when it has one, else its
 // single primary label.
@@ -37,6 +40,7 @@ export default function TrackerFolder({
   addEntry, addManyEntries, deleteEntry, addPerson, updatePerson, deletePerson,
   onRename, onDelete, onUpdateFolder, onBack,
   commitments = [], categories = [], labelMeta = {}, otherFolders = [], onMergeInto = null,
+  addCategory: onAddLabel = null, updateLabelMeta = null,
 }) {
   // A brand-new / empty tracker opens on Entries so you can log right away.
   const [sub, setSub] = useState(entries.length === 0 ? 'entries' : 'summary')
@@ -88,6 +92,8 @@ export default function TrackerFolder({
       {sub === 'entries' && <EntriesView folder={folder} entries={fEntries} allEntries={entries} people={people}
         onAdd={addEntry} onAddMany={addManyEntries} onDelete={deleteEntry} addCategory={addCategory} addPerson={addPerson}
         taggedTasks={taggedTasks} recordedTaskIds={recordedTaskIds} categories={categories} />}
+      {sub === 'labels' && <FolderLabels folder={folder} categories={categories} labelMeta={labelMeta}
+        updateLabelMeta={updateLabelMeta} onAddLabel={onAddLabel} entries={entries} taggedTasks={taggedTasks} />}
       {sub === 'setup' && <Setup folder={folder} onUpdateFolder={onUpdateFolder} people={people} entries={entries}
         addCategory={addCategory} updateCategory={updateCategory} deleteCategory={deleteCategory}
         addPerson={addPerson} updatePerson={updatePerson} deletePerson={deletePerson}
@@ -491,6 +497,161 @@ function EntryRow({ entry, folder, people, onDelete, last }) {
   )
 }
 
+// ── Labels (inside the folder, where they belong) ───────────────
+// Which of your labels file into THIS folder. Tick one on and every task you
+// tag with it records itself in here — with whatever you ask it for below.
+// This is the home for that wiring: you set it up next to the books it keeps,
+// not somewhere else in the app.
+function FolderLabels({ folder, categories = [], labelMeta = {}, updateLabelMeta, onAddLabel, entries = [], taggedTasks = [] }) {
+  const [openId, setOpenId] = useState(null)       // label whose details are expanded
+  const [adding, setAdding] = useState(false)
+  const [newName, setNewName] = useState('')
+  const [newColor, setNewColor] = useState(folder.color || '#4A9EB5')
+
+  const metaOf = (id) => labelMeta[id] || { folders: [], fields: [] }
+  const linkOf = (id) => (metaOf(id).folders || []).find(l => l.folderId === folder.id) || null
+  const on = (id) => !!linkOf(id)
+  const chosen = categories.filter(c => on(c.id))
+  const inc = incomeCategories(folder), exp = expenseCategories(folder)
+
+  // Toggling a label on/off for this folder. Off also removes what it recorded
+  // here, because the label was the only reason those entries existed.
+  const toggle = (cat) => {
+    const meta = metaOf(cat.id)
+    const folders = on(cat.id)
+      ? meta.folders.filter(l => l.folderId !== folder.id)
+      : [...(meta.folders || []), { folderId: folder.id, categoryId: (exp[0] || inc[0])?.id || '' }]
+    updateLabelMeta(cat.id, { ...meta, folders })
+    if (!on(cat.id)) setOpenId(cat.id)
+  }
+  const setLinkCategory = (id, categoryId) => {
+    const meta = metaOf(id)
+    updateLabelMeta(id, { ...meta, folders: meta.folders.map(l => l.folderId === folder.id ? { ...l, categoryId } : l) })
+  }
+  const setFields = (id, fields) => updateLabelMeta(id, { ...metaOf(id), fields })
+
+  // A brand-new label, made and attached to this folder in one step.
+  const createLabel = async () => {
+    const text = newName.trim()
+    if (!text || !onAddLabel) return
+    let id = text.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '').slice(0, 24) || 'label'
+    if (categories.some(c => c.id === id)) id = `${id}-${Date.now().toString().slice(-4)}`
+    const sortOrder = categories.reduce((m, c) => Math.max(m, c.sortOrder ?? 0), 0) + 1
+    await onAddLabel({ id, label: text, color: newColor, icon: '', sortOrder })
+    updateLabelMeta(id, { folders: [{ folderId: folder.id, categoryId: (exp[0] || inc[0])?.id || '' }], fields: [] })
+    setNewName(''); setAdding(false); setOpenId(id)
+  }
+
+  const taggedFor = (id) => taggedTasks.filter(t => taskLabelIds(t).includes(id)).length
+
+  if (!updateLabelMeta) return <Empty text="Labels can't be edited here." />
+
+  return (
+    <>
+      <div style={card}>
+        <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', marginBottom: 4 }}>Labels that record into {folder.name}</div>
+        <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 13, lineHeight: 1.55 }}>
+          Pick the labels this folder keeps books on. Tag a task with one and it files itself in here — on the day <i>and</i> on the record. Tap a chosen label to say which category it counts as, and what it should ask you for when you make the task.
+        </div>
+
+        {categories.length === 0 ? (
+          <div style={{ fontSize: 12.5, color: 'var(--muted)', marginBottom: 12 }}>You have no labels yet — make your first one below.</div>
+        ) : (
+          <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>
+            {categories.map(c => {
+              const sel = on(c.id)
+              const fieldCount = (metaOf(c.id).fields || []).length
+              return (
+                <button key={c.id} onClick={() => toggle(c)}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, padding: '7px 13px', borderRadius: 18, cursor: 'pointer', fontFamily: 'DM Sans,sans-serif', fontWeight: sel ? 700 : 500,
+                    border: sel ? 'none' : '1px solid var(--border)', background: sel ? c.color : 'white', color: sel ? 'white' : 'var(--muted)' }}>
+                  {c.icon && <Icon value={c.icon} size={13} />}
+                  <span>{sel ? '✓ ' : ''}{c.label}</span>
+                  {sel && fieldCount > 0 && <span style={{ opacity: .8, fontWeight: 600 }}>· {fieldCount}</span>}
+                </button>
+              )
+            })}
+            {onAddLabel && !adding && (
+              <button onClick={() => setAdding(true)}
+                style={{ fontSize: 12, padding: '7px 13px', borderRadius: 18, border: '1px dashed var(--teal)', background: 'white', color: 'var(--teal)', cursor: 'pointer', fontFamily: 'DM Sans,sans-serif', fontWeight: 700 }}>
+                ＋ New label
+              </button>
+            )}
+          </div>
+        )}
+
+        {adding && (
+          <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid #F1EEF3' }}>
+            <label style={labelStyle}>New label — attached to this folder straight away</label>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 10 }}>
+              <span style={{ width: 26, height: 26, borderRadius: 8, background: newColor, flexShrink: 0, boxShadow: '0 0 0 1px rgba(0,0,0,.12)' }} />
+              <input value={newName} autoFocus onChange={e => setNewName(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') createLabel() }}
+                placeholder="e.g. Tenancy, Repairs, Cleaning…" style={{ ...inputStyle, flex: 1, minWidth: 140 }} />
+            </div>
+            <ColorSwatchRow value={newColor} onChange={setNewColor} size={24} />
+            <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+              <button onClick={createLabel} disabled={!newName.trim()} style={primaryBtn(!!newName.trim())}>Add label</button>
+              <button onClick={() => { setAdding(false); setNewName('') }}
+                style={{ padding: '11px 16px', borderRadius: 11, border: 'none', background: 'none', color: 'var(--muted)', cursor: 'pointer', fontFamily: 'DM Sans,sans-serif', fontWeight: 600 }}>Cancel</button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {chosen.length === 0 ? (
+        <Empty text="No label files into this folder yet. Choose one above and every task you tag with it will land here." />
+      ) : chosen.map(c => {
+        const meta = metaOf(c.id)
+        const link = linkOf(c.id)
+        const open = openId === c.id
+        const kind = categoryKind(folder, link?.categoryId)
+        const tagged = taggedFor(c.id)
+        return (
+          <div key={c.id} style={{ ...card, padding: 0, overflow: 'hidden' }}>
+            <button onClick={() => setOpenId(o => o === c.id ? null : c.id)}
+              style={{ display: 'flex', alignItems: 'center', gap: 11, width: '100%', padding: '14px 18px', border: 'none', background: 'none', cursor: 'pointer', fontFamily: 'DM Sans,sans-serif', textAlign: 'left' }}>
+              <span style={{ width: 12, height: 12, borderRadius: 4, background: c.color, flexShrink: 0 }} />
+              <span style={{ flex: 1, minWidth: 0 }}>
+                <span style={{ display: 'block', fontSize: 14, fontWeight: 700, color: 'var(--text)' }}>{c.label}</span>
+                <span style={{ display: 'block', fontSize: 11.5, color: 'var(--muted)', marginTop: 2 }}>
+                  Files as {link?.categoryId ? categoryName(folder, link.categoryId) : 'Uncategorized'}
+                  {kind ? ` · money ${kind === 'income' ? 'in' : 'out'}` : ''}
+                  {(meta.fields || []).length ? ` · asks for ${meta.fields.length} thing${meta.fields.length > 1 ? 's' : ''}` : ' · asks for nothing extra'}
+                  {tagged ? ` · ${tagged} task${tagged > 1 ? 's' : ''} tagged` : ''}
+                </span>
+              </span>
+              <span style={{ flexShrink: 0, fontSize: 12, fontWeight: 700, color: 'var(--teal)' }}>{open ? 'Done' : 'Edit'}</span>
+            </button>
+            {open && (
+              <div style={{ padding: '0 18px 16px', borderTop: '1px solid #F1EEF3' }}>
+                <div style={{ marginTop: 14 }}>
+                  <label style={labelStyle}>In this folder, a “{c.label}” task counts as</label>
+                  <select value={link?.categoryId || ''} onChange={e => setLinkCategory(c.id, e.target.value)} style={inputStyle}>
+                    <option value="">— Uncategorized —</option>
+                    {inc.length > 0 && <optgroup label="Income">{inc.map(x => <option key={x.id} value={x.id}>{x.name}</option>)}</optgroup>}
+                    {exp.length > 0 && <optgroup label="Expense">{exp.map(x => <option key={x.id} value={x.id}>{x.name}</option>)}</optgroup>}
+                  </select>
+                  <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 6, lineHeight: 1.5 }}>
+                    This is what decides whether an amount is money in or money out. Add categories on the Setup tab.
+                  </div>
+                </div>
+                <div style={{ fontSize: 10, color: 'var(--muted)', letterSpacing: 1, textTransform: 'uppercase', fontWeight: 700, margin: '18px 0 8px' }}>
+                  What a “{c.label}” task asks you for
+                </div>
+                <LabelFields fields={meta.fields || []} onChange={fs => setFields(c.id, fs)} accent={c.color} />
+                <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 12, lineHeight: 1.55 }}>
+                  These appear on the add-task sheet the moment you tag a task “{c.label}”, and land straight on its record here.
+                </div>
+              </div>
+            )}
+          </div>
+        )
+      })}
+    </>
+  )
+}
+
 // ── Setup ───────────────────────────────────────────────────────
 function Setup({ folder, onUpdateFolder, people, entries, addCategory, updateCategory, deleteCategory, addPerson, updatePerson, deletePerson, otherFolders = [], onMergeInto = null, labelMeta = {}, categories = [] }) {
   const cats = folder.categories || []
@@ -617,7 +778,7 @@ function Setup({ folder, onUpdateFolder, people, entries, addCategory, updateCat
       {/* Which labels feed this folder */}
       <div style={card}>
         <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', marginBottom: 4 }}>Labels that file in here</div>
-        <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 12 }}>Tag a task with one of these and it records itself into this folder. Link a label — and choose what it asks you for — in Settings → Labels.</div>
+        <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 12 }}>Tag a task with one of these and it records itself into this folder. Choose them — and what each asks you for — on the <b>Labels</b> tab above.</div>
         {feedingLabels.length === 0
           ? <div style={{ fontSize: 12.5, color: 'var(--muted)' }}>No label points at this folder yet.</div>
           : <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
