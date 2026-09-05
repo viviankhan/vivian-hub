@@ -10,7 +10,8 @@
 // existing id, so re-running just overwrites identical rows rather than
 // duplicating anything. Old blob rows are never modified or deleted here —
 // they stay as a frozen snapshot/safety net.
-import { supabase, isUsingSupabase, dbGet, dbSet, commitmentChangesToDb, recurringTaskToDb } from './storage.js'
+import { supabase, isUsingSupabase, dbGet, dbSet, getCategories, commitmentChangesToDb, recurringTaskToDb } from './storage.js'
+import { isOnline } from './offline.js'
 import { DEFAULT_CATEGORIES } from '../data/categories.js'
 
 const LEGACY_DAYS = ['monday','tuesday','wednesday','thursday','friday','saturday','sunday']
@@ -23,9 +24,15 @@ const LEGACY_DAYS = ['monday','tuesday','wednesday','thursday','friday','saturda
 export async function seedCategoriesIfNeeded() {
   if (isUsingSupabase) {
     try {
-      const { data, error } = await supabase.from('categories').select('*').order('sort_order')
-      if (error) throw new Error(error.message)
-      if (data && data.length > 0) return data.map(r => ({ id:r.id, label:r.label, color:r.color, sortOrder:r.sort_order }))
+      // Read through storage.getCategories rather than querying directly: that
+      // path serves the offline mirror when there's no network, so a user's
+      // renamed and recolored categories keep their real names offline instead
+      // of reverting to the built-in defaults on screen.
+      const existing = await getCategories()
+      if (existing && existing.length > 0) return existing
+      // Empty AND offline just means we've never managed to read them — that is
+      // not the same as "this account has no categories", so don't seed over it.
+      if (!isOnline()) return DEFAULT_CATEGORIES
       const rows = DEFAULT_CATEGORIES.map(c => ({ id:c.id, label:c.label, color:c.color, sort_order:c.sortOrder }))
       // Categories are keyed per (user_id, id) once accounts are on (see
       // supabase_auth_migration.sql) — so each account seeds its own copy of the
@@ -122,6 +129,12 @@ async function migrateLog() {
 
 export async function runMigrationIfNeeded() {
   if (!isUsingSupabase) return
+  // The migration reads legacy blobs and writes real rows, and it has to see
+  // the actual database to do either. Offline, every read would come back
+  // empty, every step would trivially "succeed", and the done-flag would be
+  // queued — marking the migration complete without it ever having run. So it
+  // simply waits for a connection.
+  if (!isOnline()) return
   const flag = await dbGet('migration_v2_done')
   if (flag?.done) return
   try {

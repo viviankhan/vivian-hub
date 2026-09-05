@@ -2,8 +2,9 @@
 // The account gate. Shown by App whenever Supabase is configured but nobody is
 // signed in. Sign in, create an account, or reset a password. On success the
 // auth listener in App swaps this out for the app itself.
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { signIn, signUp, sendPasswordReset } from '../lib/auth.js'
+import { subscribe, isOnline } from '../lib/offline.js'
 
 const MODES = { in: 'Sign in', up: 'Create account', reset: 'Reset password' }
 
@@ -14,11 +15,18 @@ export default function Auth() {
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
   const [note, setNote] = useState('')   // success / info message
+  // Signing in is the one thing that genuinely needs the network, so say so up
+  // front rather than letting the user type a password into a form that can't
+  // submit. (Once signed in, this screen isn't seen again — the session is
+  // remembered and the app opens offline; see src/lib/auth.js.)
+  const [online, setOnline] = useState(isOnline)
+  useEffect(() => subscribe(s => setOnline(s.online)), [])
 
   const submit = async (e) => {
     e.preventDefault()
     if (busy) return
     setErr(''); setNote('')
+    if (!online) { setErr('You’re offline. Connect to the internet to sign in.'); return }
     const em = email.trim()
     if (!em) { setErr('Enter your email.'); return }
     if (mode !== 'reset' && password.length < 6) { setErr('Password must be at least 6 characters.'); return }
@@ -87,14 +95,19 @@ export default function Auth() {
               </>
             )}
 
+            {!online && (
+              <div style={{ fontSize: 12.5, color: '#8A5A00', background: '#FFF4E5', border: '1px solid #F5D9AE', borderRadius: 10, padding: '9px 12px', marginBottom: 12, lineHeight: 1.45 }}>
+                You’re offline. Signing in needs a connection — after that, Bloom stays signed in and works offline.
+              </div>
+            )}
             {err && <div style={{ fontSize: 12.5, color: '#B42318', background: '#FEF3F2', border: '1px solid #FECDCA', borderRadius: 10, padding: '9px 12px', marginBottom: 12, lineHeight: 1.45 }}>{err}</div>}
             {note && <div style={{ fontSize: 12.5, color: '#155724', background: '#EAF6EC', border: '1px solid #BFE3C6', borderRadius: 10, padding: '9px 12px', marginBottom: 12, lineHeight: 1.45 }}>{note}</div>}
 
-            <button type="submit" disabled={busy}
+            <button type="submit" disabled={busy || !online}
               style={{ width: '100%', padding: '14px', borderRadius: 14, border: 'none', marginTop: 2,
-                background: busy ? '#E1E1E6' : 'var(--forest)', color: busy ? '#9CA3AF' : 'var(--green-light)',
-                cursor: busy ? 'default' : 'pointer', fontFamily: 'DM Sans,sans-serif', fontWeight: 700, fontSize: 15 }}>
-              {busy ? 'One moment…' : MODES[mode]}
+                background: (busy || !online) ? '#E1E1E6' : 'var(--forest)', color: (busy || !online) ? '#9CA3AF' : 'var(--green-light)',
+                cursor: (busy || !online) ? 'default' : 'pointer', fontFamily: 'DM Sans,sans-serif', fontWeight: 700, fontSize: 15 }}>
+              {busy ? 'One moment…' : !online ? 'Waiting for a connection…' : MODES[mode]}
             </button>
           </form>
 
