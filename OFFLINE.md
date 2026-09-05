@@ -112,6 +112,28 @@ answer:
    except an explicit sign-out or the server actually rejecting the refresh
    token. Timeouts, dropped connections and 5xx all fail *open*.
 
+### What this can and cannot fix
+
+The mirror recovers a session when `localStorage` alone is cleared. It does
+**not** survive the browser evicting the whole origin — IndexedDB goes with it.
+
+That matters on iPhone: **Safari deletes a website's storage after about seven
+days without opening it.** No client-side code can prevent that, and
+`navigator.storage.persist()` is not granted to ordinary Safari tabs. If Bloom
+is being used as a website in Safari, expect to sign in roughly weekly no
+matter what this code does.
+
+**Adding Bloom to the Home Screen is the actual fix** — installed web apps are
+exempt from that cap. Open it in Safari → Share → *Add to Home Screen*, then
+use that icon.
+
+So the login screen now explains itself. Every path that ends there records
+why (`bloom_signout_reason`), and an install marker written to both
+`localStorage` and IndexedDB says which stores survived: both intact means the
+session ended for some other reason and it's a real bug; neither means the
+browser evicted everything. The email is prefilled either way, so a forced
+re-login is one field.
+
 Signing out clears the remembered account, the session mirror, and that
 account's offline data — so the next person to open Bloom on that browser can't
 read it out of IndexedDB. If changes are still waiting to upload, sign-out
@@ -134,8 +156,9 @@ The logic has three test suites. They need no database — they run against an
 in-memory stand-in and a real headless browser:
 
 ```bash
-npm test              # the queue's coalescing/ordering/failures, and the full
-                      # read → queue → replay round trip against a mock database
+npm test              # the queue's coalescing/ordering/failures, the full
+                      # read → queue → replay round trip against a mock
+                      # database, and the sign-out rules
 
 npm run test:browser  # builds, serves dist, then loads it in a real headless
                       # browser, kills the server, and reloads — proving the app
@@ -148,6 +171,9 @@ npm run test:browser  # builds, serves dist, then loads it in a real headless
   `tests/mock-supabase.mjs`: reads falling back to the mirror, offline edits
   queueing, reconnect uploading them, and a pending edit beating a stale cloud
   read.
+- `tests/auth-signout.test.mjs` — exactly which failures may sign someone out.
+  Pins the rule that "auth session missing" (a 400 meaning *this device has no
+  tokens*) must never be mistaken for the server refusing the sign-in.
 - `tests/browser.test.mjs` — a real Chromium session: checks the shell cache
   holds the JS and CSS bundles, then reloads with the server destroyed and the
   context offline, and asserts the app still renders.

@@ -142,6 +142,57 @@ async function clearSessionMirror() {
   try { await cacheWrite(SESSION_MIRROR, null) } catch {}
 }
 
+// ── Why am I looking at the login screen? ────────────────────
+// Being signed out is the kind of thing that happens once in a while on a
+// phone and is impossible to reproduce on demand — which is exactly why it
+// went unfixed. So every path that ends at the login screen now records why,
+// and the login screen says it out loud. Its own key, so it survives whatever
+// removed the session.
+const REASON_KEY = 'bloom_signout_reason'
+export function noteSignedOut(reason, detail) {
+  try { localStorage.setItem(REASON_KEY, JSON.stringify({ reason, detail: detail || '', at: Date.now() })) } catch {}
+}
+export function readSignedOut() {
+  try {
+    const v = JSON.parse(localStorage.getItem(REASON_KEY) || 'null')
+    return (v && v.reason) ? v : null
+  } catch { return null }
+}
+export function clearSignedOut() { try { localStorage.removeItem(REASON_KEY) } catch {} }
+
+// The last account's email, kept so a forced re-login is one field, not two.
+export function lastKnownEmail() { return readRememberedUser()?.email || '' }
+
+// ── Did the browser throw our storage away? ──────────────────
+// A marker written to BOTH localStorage and IndexedDB on first run. Which of
+// the two survives tells us what actually happened:
+//   both        → storage is intact, so the session ended for some other
+//                 reason and that's a bug worth chasing
+//   IndexedDB   → localStorage alone was cleared; the session mirror recovers it
+//   neither     → the whole origin was evicted. On iOS this happens after about
+//                 seven days without opening the site, and NO client-side code
+//                 can prevent it — only installing Bloom to the Home Screen can.
+// It cannot tell a genuine first run from a full wipe (that is the nature of
+// losing every writable store), so the login screen words it as both.
+const MARK_KEY = 'bloom_install_mark'
+const MARK_MIRROR = 'auth:install-mark'
+export async function storageReport() {
+  let ls = null, idb = null
+  try { ls = localStorage.getItem(MARK_KEY) } catch {}
+  try { idb = await cacheRead(MARK_MIRROR) } catch {}
+  const mark = ls || (idb && idb.id) || null
+  if (!mark) {
+    const fresh = 'm-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8)
+    try { localStorage.setItem(MARK_KEY, fresh) } catch {}
+    cacheWrite(MARK_MIRROR, { id: fresh, at: Date.now() }).catch(() => {})
+    return { known: false, localStorage: false, indexedDb: false }
+  }
+  // Heal whichever side went missing, so the next comparison still means something.
+  if (!ls) { try { localStorage.setItem(MARK_KEY, mark) } catch {} }
+  if (!idb) cacheWrite(MARK_MIRROR, { id: mark, at: Date.now() }).catch(() => {})
+  return { known: true, localStorage: !!ls, indexedDb: !!idb }
+}
+
 // Does this error mean the server actually rejected our refresh token — as
 // opposed to the request never getting there? Only the former may sign someone
 // out; everything else has to fail open, or a flaky connection would log the
@@ -149,8 +200,17 @@ async function clearSessionMirror() {
 function isSessionRejected(e) {
   if (!e || isNetworkError(e)) return false
   const msg = String(e.message || e)
-  if (e.status === 400 || e.status === 401 || e.status === 403) return true
-  return /invalid refresh token|refresh token not found|already used|invalid claim|jwt expired|session[_ ]not[_ ]found|user (from sub claim )?not found/i.test(msg)
+  const name = String(e.name || '')
+  // "Auth session missing" is NOT the server rejecting us. It means this device
+  // has nothing to refresh — storage was cleared, or we're running on a
+  // remembered account whose tokens are gone. Supabase reports it as a 400,
+  // which is why matching on the status code alone was wrong: it turned a
+  // recoverable state into a forced sign-out.
+  if (name === 'AuthSessionMissingError' || /auth ?session ?missing|session missing|no session/i.test(msg)) return false
+  // A refresh token the server actively refuses. This is the one case that
+  // genuinely means "this sign-in is over".
+  if (/invalid refresh token|refresh token not found|refresh_token_not_found|already used|invalid claim|jwt expired|user (from sub claim )?not found/i.test(msg)) return true
+  return e.status === 401 || e.status === 403
 }
 
 // A request that never returns would strand the app on the splash screen. Cap
@@ -202,6 +262,18 @@ export function initAuth() {
         console.info('[auth] offline — opening on the remembered account; will re-verify when back online')
       } else {
         if (sessionErr) console.error('[auth] getSession failed:', sessionErr.message || sessionErr)
+        // Record what this looked like, so the login screen can say something
+        // more useful than nothing. If our install marker is gone from BOTH
+        // stores, the browser evicted everything — that's the iOS seven-day
+        // cap, not a bug in the app.
+        const report = await storageReport().catch(() => null)
+        if (remembered) {
+          noteSignedOut('expired', 'The saved sign-in was no longer accepted.')
+        } else if (report && !report.known) {
+          noteSignedOut('storage-cleared', 'This browser had no saved sign-in — either it is new to Bloom, or the browser cleared Bloom\u2019s storage.')
+        } else {
+          noteSignedOut('no-session', 'No signed-in session was found on this device.')
+        }
         setUser(null)
       }
     }
@@ -218,6 +290,7 @@ export function initAuth() {
       if (event === 'SIGNED_OUT') {
         // The only path that genuinely forgets an account.
         unverified = false
+        if (!signingOutDeliberately) noteSignedOut('server-ended', 'The server ended this session.')
         forgetUser()
         clearSessionMirror().catch(() => {})
         setUser(null)
@@ -271,6 +344,7 @@ export async function revalidateSession() {
     if (isSessionRejected(e)) {
       console.warn('[auth] the stored session is no longer valid — signing out')
       unverified = false
+      noteSignedOut('expired', 'Your saved sign-in expired or was revoked. Anything you changed offline is still saved here and will upload once you sign back in.')
       forgetUser()
       await clearSessionMirror()
       setUser(null)
@@ -315,6 +389,10 @@ export async function sendPasswordReset(email) {
   if (error) throw new Error(error.message)
 }
 
+// Set while the user's own sign-out is in flight, so the SIGNED_OUT event it
+// triggers isn't recorded as something that happened *to* them.
+let signingOutDeliberately = false
+
 export async function signOut() {
   if (!isUsingSupabase) return
   // Signing out drops this device's local mirror, so anything still waiting to
@@ -330,9 +408,12 @@ export async function signOut() {
     }
   }
   const uid = currentUid
-  const { error } = await supabase.auth.signOut()
+  signingOutDeliberately = true
+  let error
+  try { ({ error } = await supabase.auth.signOut()) } finally { signingOutDeliberately = false }
   if (error) throw new Error(error.message)
   unverified = false
+  clearSignedOut()
   forgetUser()
   await clearSessionMirror()
   // Wipe this account's offline copy so the next person to open Bloom on this

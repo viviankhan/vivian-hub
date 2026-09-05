@@ -3,14 +3,19 @@
 // signed in. Sign in, create an account, or reset a password. On success the
 // auth listener in App swaps this out for the app itself.
 import { useEffect, useState } from 'react'
-import { signIn, signUp, sendPasswordReset } from '../lib/auth.js'
+import { signIn, signUp, sendPasswordReset, readSignedOut, clearSignedOut, lastKnownEmail } from '../lib/auth.js'
 import { subscribe, isOnline } from '../lib/offline.js'
 
 const MODES = { in: 'Sign in', up: 'Create account', reset: 'Reset password' }
 
 export default function Auth() {
   const [mode, setMode] = useState('in')
-  const [email, setEmail] = useState('')
+  // Prefill the last account's address so a re-login is one field, not two.
+  const [email, setEmail] = useState(lastKnownEmail)
+  // Why this screen is showing. Recorded by whichever path signed the user out
+  // (see src/lib/auth.js) — being told beats guessing, especially for the
+  // once-a-week kind that's impossible to reproduce on demand.
+  const [why] = useState(readSignedOut)
   const [password, setPassword] = useState('')
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
@@ -34,6 +39,7 @@ export default function Auth() {
     try {
       if (mode === 'in') {
         await signIn(em, password)
+        clearSignedOut()
         // The auth listener in App takes over from here.
       } else if (mode === 'up') {
         const data = await signUp(em, password)
@@ -95,6 +101,23 @@ export default function Auth() {
               </>
             )}
 
+            {why && mode === 'in' && (
+              <div style={{ fontSize: 12.5, color: '#1F4E79', background: '#EAF2FB', border: '1px solid #C6DCF3', borderRadius: 10, padding: '10px 12px', marginBottom: 12, lineHeight: 1.5 }}>
+                <div style={{ fontWeight: 700, marginBottom: 3 }}>
+                  {why.reason === 'storage-cleared' ? 'Your browser cleared Bloom’s saved sign-in'
+                    : why.reason === 'expired' ? 'Your saved sign-in expired'
+                    : why.reason === 'server-ended' ? 'Your session was ended'
+                    : 'You were signed out'}
+                </div>
+                <div>{why.detail}</div>
+                {why.reason === 'storage-cleared' && (
+                  <div style={{ marginTop: 6 }}>
+                    On an iPhone, Safari clears a website’s storage after about a week of not opening it. Adding Bloom to your Home Screen stops that — open it in Safari, tap Share, then <strong>Add to Home Screen</strong>, and use that icon from now on.
+                  </div>
+                )}
+                <div style={{ marginTop: 6, opacity: .75 }}>Your data is safe in the cloud — signing in brings it all back.</div>
+              </div>
+            )}
             {!online && (
               <div style={{ fontSize: 12.5, color: '#8A5A00', background: '#FFF4E5', border: '1px solid #F5D9AE', borderRadius: 10, padding: '9px 12px', marginBottom: 12, lineHeight: 1.45 }}>
                 You’re offline. Signing in needs a connection — after that, Bloom stays signed in and works offline.
