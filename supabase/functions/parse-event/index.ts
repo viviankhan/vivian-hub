@@ -1,10 +1,16 @@
 // supabase/functions/parse-event/index.ts
 // ─────────────────────────────────────────────────────────────
-// The planner's AI assistant. The app posts a natural-language command plus a
-// snapshot of the user's current tasks; this asks Google Gemini to return a
-// PLAN of actions (create a task, add/check subtasks on an existing one, mark a
-// task done, reschedule). The app shows the plan for confirmation, then applies
-// it — nothing here ever writes to the database.
+// The planner's AI assistant. The app posts a natural-language command and/or
+// photos (a screenshot of an email, a syllabus page, a flyer, a handwritten
+// list) plus a snapshot of the user's current tasks; this asks Google Gemini to
+// return a PLAN of actions (create a task, add/check subtasks on an existing
+// one, mark a task done, reschedule). The app shows the plan for confirmation,
+// then applies it — nothing here ever writes to the database.
+//
+// The flash models are multimodal, so the same call reads the pictures: photos
+// ride along as inline_data parts next to the prompt. Either a command or at
+// least one photo is required; with a photo alone, the instruction is simply
+// "schedule what this describes".
 //
 // Free to run on Gemini's free tier. Supply your own key as a secret (never in
 // the app's public code):
@@ -27,6 +33,13 @@ const json = (body: unknown, status = 200) =>
 // more often overloaded. We fall through the list on any transient error.
 const MODELS = ['gemini-2.0-flash', 'gemini-2.5-flash', 'gemini-flash-latest', 'gemini-1.5-flash']
 const GEMINI_KEY = Deno.env.get('GEMINI_API_KEY') || ''
+
+// Photo limits. The app downscales to a ~1400px JPEG (a few hundred KB of
+// base64 each), so four fit comfortably; the byte cap matches parse-receipt's
+// and keeps a full-res upload from stalling the request.
+const MAX_IMAGES = 4
+const MAX_IMAGE_BYTES = 8_000_000
+const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif']
 
 // The last model name that actually worked, remembered across invocations on a
 // warm instance. Without it, a key that doesn't have any of the hardcoded names
@@ -80,13 +93,33 @@ Deno.serve(async (req) => {
   if (req.method !== 'POST') return json({ error: 'Method not allowed' }, 405)
   if (!GEMINI_KEY) return json({ error: 'The AI key is not set up. Add a GEMINI_API_KEY secret, then redeploy.' }, 503)
 
-  let body: { command?: string; text?: string; today?: string; categories?: { id: string; label: string }[]; tasks?: Task[] }
+  let body: {
+    command?: string; text?: string; today?: string
+    categories?: { id: string; label: string }[]; tasks?: Task[]
+    images?: (string | { data?: string; mimeType?: string })[]
+  }
   try { body = await req.json() } catch { return json({ error: 'Bad JSON body' }, 400) }
 
   // `command` is the field; `text` is accepted for backward-compat.
   const command = (body.command || body.text || '').trim()
-  if (!command) return json({ error: 'Nothing to do — type an instruction or paste an event.' }, 400)
   if (command.length > 12000) return json({ error: 'That’s a lot of text — trim it down a bit.' }, 400)
+
+  // Photos of a task: base64 bytes, either bare or as { data, mimeType }. The
+  // app downscales before sending, so anything huge here is a mistake — reject
+  // it with a readable message rather than letting Gemini time out.
+  const images = (Array.isArray(body.images) ? body.images : [])
+    .slice(0, MAX_IMAGES)
+    .map(im => (typeof im === 'string' ? { data: im, mimeType: '' } : { data: String(im?.data || ''), mimeType: String(im?.mimeType || '') }))
+    .map(im => ({
+      // Tolerate a full data: URL — strip the prefix so we always send raw base64.
+      data: im.data.replace(/^data:[^,]*,/, '').trim(),
+      mimeType: ALLOWED_IMAGE_TYPES.includes(im.mimeType) ? im.mimeType : 'image/jpeg',
+    }))
+    .filter(im => im.data)
+
+  if (!command && !images.length) return json({ error: 'Nothing to do — type an instruction, paste an event, or add a photo.' }, 400)
+  const imageBytes = images.reduce((n, im) => n + im.data.length, 0)
+  if (imageBytes > MAX_IMAGE_BYTES) return json({ error: 'Those photos are too large — try fewer, or smaller ones.' }, 413)
 
   const today = (body.today || new Date().toISOString().slice(0, 10)).slice(0, 10)
   const cats = Array.isArray(body.categories) ? body.categories.slice(0, 40) : []
@@ -100,11 +133,26 @@ Deno.serve(async (req) => {
       }).join('\n')
     : '(the user has no existing tasks)'
 
+  // Reading a photo needs its own rules — what to name the thing, which of the
+  // times printed on it to believe, and what belongs in the description. Only
+  // added when a photo is actually attached, so text-only commands are unchanged.
+  const photoNote = images.length ? `
+ATTACHED PHOTO${images.length > 1 ? `S (${images.length})` : ''}: the user photographed or screenshotted something they need on their planner — an email or message about a meeting, a syllabus or assignment sheet, a flyer, a poster, a whiteboard, a paper schedule, a handwritten list. Read ${images.length > 1 ? 'each one' : 'it'} and schedule what it describes:
+- Title it after the thing itself ("Immunology WIP Seminar", "BIO 210 midterm") — not after the app, the sender, or the subject line's boilerplate. If the image names a specific talk, class, or appointment, that name is the title.
+- Use the date and time printed in the image. A weekday paired with a date ("Next Wednesday (9/9)") means that calendar date — trust the number over the weekday word. Resolve a bare weekday, "tomorrow", or "next week" against today's date. When only a month/day is shown, choose the year that puts it nearest today, upcoming if the wording points forward.
+- If two time zones are given for the same moment, use the FIRST one listed unless the user says which is theirs.
+- Put everything a person needs on the day into "description": room and building, addresses, joining links, meeting IDs and passcodes, dial-ins, the presenter and their topic, what to bring, costs. Copy links, IDs, and codes EXACTLY, character for character — never shorten or tidy them.
+- A single-day meeting, class, or appointment is a create with its time and durationMins (default 60 minutes for a seminar or meeting when no end is shown). Use event only for something covering more than one day.
+- Several separate items in one image (a list of assignments, a week of classes, a page of due dates) means one action for each. If the user names an existing task the items belong to, use addSubtasks on that task instead.
+- Ignore phone status bars, app chrome, toolbars, buttons, and navigation — they are not the task.
+${command ? "- The user's instruction below says what to do with the photo; where they disagree, the instruction wins." : '- The user sent the photo with no instruction: just schedule what it describes.'}
+` : ''
+
   const prompt =
-`You are the assistant for a personal planner. Turn the user's instruction into a PLAN of concrete actions the app will carry out after they confirm.
+`You are the assistant for a personal planner. Turn the user's instruction${images.length ? ' and attached photo' + (images.length > 1 ? 's' : '') : ''} into a PLAN of concrete actions the app will carry out after they confirm.
 
 Today is ${today} (the user's local date). Resolve relative dates against it.
-
+${photoNote}
 CATEGORIES (use ids only where a category applies):
 ${catList}
 
@@ -145,11 +193,15 @@ Correct output:
 
 INSTRUCTION:
 """
-${command}
+${command || 'Schedule what the attached photo shows.'}
 """`
 
   const reqBody = JSON.stringify({
-    contents: [{ parts: [{ text: prompt }] }],
+    contents: [{ parts: [
+      { text: prompt },
+      // Photos ride alongside the prompt; the flash models read them directly.
+      ...images.map(im => ({ inline_data: { mime_type: im.mimeType, data: im.data } })),
+    ] }],
     // NB: no responseSchema. Gemini's structured-output mode reliably fills only
     // required fields and drops the rest on a schema this size — it was omitting
     // event dates entirely. Plain JSON mode + explicit per-kind templates in the
@@ -234,7 +286,8 @@ ${command}
   const raw = data?.candidates?.[0]?.content?.parts?.[0]?.text
   if (!raw) {
     const blocked = data?.promptFeedback?.blockReason
-    return json({ error: blocked ? `The AI declined this text (${blocked}).` : 'The AI returned nothing usable.' }, 502)
+    const what = images.length ? (command ? 'this' : 'this photo') : 'this text'
+    return json({ error: blocked ? `The AI declined ${what} (${blocked}).` : 'The AI returned nothing usable.' }, 502)
   }
 
   // Without responseSchema the model almost always returns bare JSON, but strip

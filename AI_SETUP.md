@@ -7,6 +7,16 @@ plans the changes against your current tasks, shows you the plan, and applies it
 only after you tap **Apply**. It can create tasks, add/check subtasks on an
 existing task, mark tasks complete, and reschedule.
 
+**Or just show it a picture.** Tap **📷 Add a photo** (or paste a screenshot
+straight into the box) and it reads the picture instead of you retyping it — a
+screenshot of an email about a seminar, a syllabus page, a flyer, a paper
+schedule, a handwritten list. It takes the title, the date and time, and puts
+the room, the Zoom link, the meeting ID and passcode into the task's
+description. Up to 4 photos at once, with or without a typed instruction ("only
+the Wednesday one", "add these to my Orgo task") — and you still see the plan
+before anything is saved. Photos are shrunk in the browser before they're sent
+and are never stored in your planner.
+
 It runs on **Google Gemini's free tier**. The AI key stays on the server (a
 Supabase Edge Function), never in the app's public code. You just do this once.
 
@@ -55,10 +65,13 @@ See `RECEIPTS.md` for the B&B tracker.
 
 - **Cost:** free within Gemini's free tier. If you ever hit the rate limit, the
   app shows a friendly "try again in a moment" message.
-- **Privacy:** the text you paste is sent to Google Gemini to be structured.
-  Nothing is saved to your planner until you review the draft and tap Save.
+- **Privacy:** the text you paste and any photo you add are sent to Google
+  Gemini to be structured. Nothing is saved to your planner until you review the
+  draft and tap Save, and the photo itself is never stored.
 - **Model:** `gemini-2.0-flash`. To change it, edit `MODEL` in
-  `supabase/functions/parse-event/index.ts` and redeploy.
+  `supabase/functions/parse-event/index.ts` and redeploy. The flash models read
+  pictures as well as text, so photo support needs no extra setup — the same
+  `parse-event` deploy covers it.
 - **If the ✨ button does nothing / errors:** it means the function isn't
   deployed yet or the key isn't set — re-run steps 2 and 3. The button only
   appears when your Supabase URL is configured (`VITE_SUPABASE_URL`).
