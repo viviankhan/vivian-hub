@@ -290,7 +290,12 @@ async function runKvBatch(batch) {
         await Promise.all(chunk.map(k => cacheWrite(kvMirrorKey(k), got.has(k) ? got.get(k) : null)))
         for (const k of chunk) settle(k, got.has(k) ? got.get(k) : null)
       } catch (e) {
-        if (!noteFailure(e)) console.error('[storage] batched kv_store read failed:', (e && e.message) || e)
+        // Same three outcomes as every other read: a stale session renews
+        // itself quietly, a dropped connection or a struggling server is what
+        // the mirror is for, anything else is worth logging. Either way every
+        // key still gets answered from the mirror.
+        if (isAuthError(e)) requestReauth()
+        else if (!noteFailure(e)) console.error('[storage] batched kv_store read failed:', (e && e.message) || e)
         for (const k of chunk) settle(k, local.get(k))
       }
     }))
