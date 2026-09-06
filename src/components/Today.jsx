@@ -1330,10 +1330,43 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
       return { start: st, end: Math.max(et, st + 15) }
     }),
   ]
+  // Once an event has been added to the schedule, the row up here and the task
+  // down on the timeline are the same thing — so the row stops living its own
+  // life and follows that task: its real time instead of a suggested slot, and
+  // (below) its checked state, in both directions. Until then the row keeps its
+  // own record under the imported key.
+  const adoptedTaskFor = (row) => {
+    const cid = importedAdoptions[row.key]
+    return cid ? (commitments || []).find(x => x.id === cid) || null : null
+  }
   const importedRows = buildImportedRows(importedSpansForDay, dateKey, dayOccupied, isToday ? now : null)
-  const isImportedDone = (row) => !!(todos[row.key] || weekState[row.key])
-  const onToggleImported = (row) => syncToggle(row.key, row.span.label || 'Busy', null, null, !isImportedDone(row))
-  const onAdoptImported  = (row) => adoptImportedEvent && adoptImportedEvent(row.span, dateKey, row.timeHHMM, row.dur)
+    .map(row => {
+      const c = adoptedTaskFor(row)
+      if (!c || !c.time) return row
+      return { ...row, startMins: hhmmToMins(c.time), timeHHMM: c.time, dur: c.durationMins || row.dur, recommended: false }
+    })
+  const isImportedDone = (row) => {
+    const c = adoptedTaskFor(row)
+    if (c) {
+      // Read it exactly as the timeline does, so the two can never disagree —
+      // including a task that ticks itself off by the clock.
+      const t = tasksWithStatus.find(x => x.id === c.id)
+      return t ? effectiveDone(t) : !!(todos[c.id] || weekState[c.id] || c.done)
+    }
+    return !!(todos[row.key] || weekState[row.key])
+  }
+  const onToggleImported = (row) => {
+    const c = adoptedTaskFor(row)
+    if (c) { syncToggle(c.id, c.text, c.cat, null, !isImportedDone(row)); return }
+    syncToggle(row.key, row.span.label || 'Busy', null, null, !isImportedDone(row))
+  }
+  const onAdoptImported  = (row) => {
+    if (!adoptImportedEvent) return
+    adoptImportedEvent(row.span, dateKey, row.timeHHMM, row.dur)
+    // The row's own tick record means nothing once it stands for a real task —
+    // drop it rather than leave a stale one behind it.
+    if (todos[row.key] || weekState[row.key]) clearCompletion && clearCompletion(row.key)
+  }
   // Tapping an imported row opens its details, so an event from a subscribed
   // calendar can be read and changed like anything else on the day. Once it has
   // been adopted it IS one of your commitments — open that editor. Before then
@@ -1362,6 +1395,7 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
     })
     setItemReminders(commitment.id, reminderMins)
     markImportedAdopted && markImportedAdopted(row.key, commitment.id)
+    if (todos[row.key] || weekState[row.key]) clearCompletion && clearCompletion(row.key)
   }
 
   // Reveal a spotlighted task: unfold whatever it's tucked inside (a finished

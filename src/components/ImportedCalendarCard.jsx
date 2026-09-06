@@ -73,9 +73,9 @@ export default function ImportedCalendarCard({ rows = [], adoptions = {}, isDone
                 </span>
                 <span style={{ fontSize:11, color:'var(--muted)' }}>·</span>
                 {span.allDay
-                  ? <span style={{ fontSize:11, color:'var(--muted)' }}>all-day{row.startMins!=null ? ` · suggested ${rangeText(row)}` : ''}</span>
+                  ? <span style={{ fontSize:11, color:'var(--muted)' }}>all-day{row.startMins!=null ? ` · ${adopted ? 'scheduled' : 'suggested'} ${rangeText(row)}` : ''}</span>
                   : <span style={{ fontSize:11, color:'var(--muted)' }}>{rangeText(row)}</span>}
-                {row.recommended && (
+                {row.recommended && !adopted && (
                   <span style={{ fontSize:8.5, letterSpacing:.5, textTransform:'uppercase', color:'var(--teal)', border:'1px solid var(--teal)', borderRadius:12, padding:'1px 6px', fontWeight:700 }}>Suggested</span>
                 )}
                 {span.location && <span style={{ fontSize:11, color:'var(--muted)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', maxWidth:140 }}>· {span.location}</span>}
