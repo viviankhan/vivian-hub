@@ -627,6 +627,10 @@ export default function App() {
   // Set when a search suggestion is picked → Calendar navigates to this date.
   // The nonce lets re-picking the same date re-trigger the jump.
   const [jumpTo,       setJumpTo]       = useState(null)
+  // Set when a task is held down on the Calendar → Today opens on that task's
+  // day with the task itself scrolled to and spotlighted. Today clears it once
+  // it has landed, so returning to the tab later doesn't replay the jump.
+  const [todayJump,    setTodayJump]    = useState(null)
 
   // "completions" replaces the old separate todos/weekState blobs — every
   // consumer already reads todos[k] || weekState[k], which were confirmed to
@@ -1981,12 +1985,14 @@ export default function App() {
           wlEpisodes={wlEpisodes} persistWlEpisodes={persistWlEpisodes}
           wlGame={wlGame} persistWlGame={persistWlGame} wlLog={log}
           wlEmotions={wlEmotions} persistWlEmotions={persistWlEmotions}
+          jumpTo={todayJump} onJumpConsumed={() => setTodayJump(null)}
           onOpenWellness={() => setTab('wellness')} />}
         {tab==='taskmenu'    && <TaskMenu templates={taskTemplates} addTemplate={addTaskTemplate}
           updateTemplate={updateTaskTemplate} deleteTemplate={deleteTaskTemplate} categories={categories}
           addCategory={addCategoryFn} deleteCategory={deleteCategoryFn}
           reorderCategories={reorderCategoriesFn} />}
-        {tab==='calendar'    && <Calendar    {...sharedProps} jumpTo={jumpTo} />}
+        {tab==='calendar'    && <Calendar    {...sharedProps} jumpTo={jumpTo}
+          openInToday={(date, taskId) => { setTodayJump({ date, taskId, nonce: Date.now() }); setTab('today') }} />}
         {tab==='thoughts'    && <ThoughtsBoard addCommitment={addCommitment} addRecurringTask={addRecurringTaskFn}
           categories={categories} routines={routines} taskTemplates={taskTemplates} labelModel={labelModel}
           appendLog={appendLog} />}

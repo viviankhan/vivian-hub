@@ -589,7 +589,7 @@ function RoutineCollapseRow({ routine, count, expanded, onToggle }) {
 // Unscheduled ("anytime") tasks — a day but no set time. Rendered as a compact
 // standalone list rather than on the timeline spine, since they have no place
 // on the clock. Sits at the top of the day on mobile and beside it on desktop.
-function AnytimeCard({ tasks, categories, isDoneOf, onToggle, onOpen, onManage }) {
+function AnytimeCard({ tasks, categories, isDoneOf, onToggle, onOpen, onManage, spotlight = null }) {
   if (!tasks.length) return null
   return (
     <div style={{ background:'linear-gradient(180deg, rgba(255,255,255,.9), rgba(255,255,255,.72))', border:'1px solid var(--border)', borderRadius:14, padding:'12px 14px', marginBottom:16 }}>
@@ -608,6 +608,7 @@ function AnytimeCard({ tasks, categories, isDoneOf, onToggle, onOpen, onManage }
           const isDone   = isDoneOf(task)
           return (
             <div key={task.id} onClick={()=>onOpen&&onOpen(task)}
+              data-task-row={task.id} className={spotlight===task.id ? 'task-spotlight' : undefined}
               style={{ display:'flex', alignItems:'center', gap:10, cursor:onOpen?'pointer':'default', opacity:isDone?.5:1, transition:'opacity .3s' }}>
               <div style={{ width:34, height:34, borderRadius:'50%', flexShrink:0, background:color, display:'flex', alignItems:'center', justifyContent:'center' }}>
                 {shownIcon
@@ -852,7 +853,7 @@ function addDays(key, delta) {
 // to feel endless while you flick, bounded so the strip stays light.
 const WHEEL_BACK = 120
 const WHEEL_FWD  = 120
-function WeekStrip({ viewDate, setViewDate, commitments, categories, doneCount, total, dayProgress, isToday, summary, todos, recurringTasks, recurringExceptions }) {
+function WeekStrip({ viewDate, setViewDate, commitments, categories, doneCount, total, dayProgress, isToday, summary, todos, recurringTasks, recurringExceptions, centerNonce = 0 }) {
   const today = todayKey()
   const base = new Date(viewDate + 'T12:00:00')
   const wheelRef = useRef(null)
@@ -906,6 +907,13 @@ function WeekStrip({ viewDate, setViewDate, commitments, categories, doneCount, 
   // end never flashes) — not on every re-render, so a flick that scrolls away
   // is never yanked back.
   useLayoutEffect(() => { centerOn(today, false) }, [])  // eslint-disable-line react-hooks/exhaustive-deps
+  // A jump from another view (holding a task on the Calendar) can land on a day
+  // well outside the wheel's current window, leaving the selected day scrolled
+  // out of sight — slide it back into the middle.
+  useEffect(() => {
+    if (centerNonce) centerOn(viewDate, true)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [centerNonce])
   const goToday = () => { setViewDate(today); centerOn(today, true) }
 
   return (
@@ -978,12 +986,18 @@ function WeekStrip({ viewDate, setViewDate, commitments, categories, doneCount, 
 
 // ── Main ───────────────────────────────────────────────────────
 export default function Today({ todos, weekState, syncToggle, clearCompletion, pushUndo, commitments, addCommitment, updateCommitment, deleteCommitment, moveCommitmentToThoughts, addEvent, appendLog, scheduled, categories, recurringTasks, recurringExceptions, occStarted = {}, skipRecurringOccurrence, deleteRecurringTask, addRecurringTask, updateRecurringTask, routines = [], taskTemplates = [], summary, labelModel = null, externalEvents = [], externalCalendars = [], toggleCalendar, importedAdoptions = {}, adoptImportedEvent,
-  wlCheckins = [], persistWlCheckins, wlEffects, persistWlEffects, wlEpisodes = [], persistWlEpisodes, wlGame, persistWlGame, wlLog = [], wlEmotions, persistWlEmotions, onOpenWellness }) {
+  wlCheckins = [], persistWlCheckins, wlEffects, persistWlEffects, wlEpisodes = [], persistWlEpisodes, wlGame, persistWlGame, wlLog = [], wlEmotions, persistWlEmotions, onOpenWellness,
+  jumpTo = null, onJumpConsumed }) {
   const [now,         setNow]         = useState(nowMins())
   // The day the timeline is showing. Defaults to today; the week strip up top
   // navigates to any day. "Now" logic (the progress marker, current/overdue,
   // start-now) only applies when we're actually looking at today.
   const [viewDate,    setViewDate]    = useState(todayKey())
+  // Set when we arrive here from another view (holding a task on the Calendar):
+  // the id of the task to reveal on the timeline, plus a nonce so landing on the
+  // same task twice re-runs the reveal.
+  const [spotlight,   setSpotlight]   = useState(null)
+  const [spotNonce,   setSpotNonce]   = useState(0)
   const [managing,    setManaging]    = useState(null)
   const [editing,     setEditing]     = useState(null)  // full commitment being edited
   const [editingRec,  setEditingRec]  = useState(null)  // recurring template being edited
@@ -1039,6 +1053,18 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
   })
 
   useEffect(()=>{ const t=setInterval(()=>setNow(nowMins()),30000); return ()=>clearInterval(t) },[])
+
+  // Arriving from another view (holding a task on the Calendar): show that
+  // task's day and remember which task to reveal. The jump is consumed right
+  // away so coming back to Today later doesn't replay it.
+  useEffect(() => {
+    if (!jumpTo || !jumpTo.date) return
+    setViewDate(jumpTo.date)
+    setSpotlight(jumpTo.taskId || null)
+    setSpotNonce(n => n + 1)
+    onJumpConsumed && onJumpConsumed()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [jumpTo?.nonce])
 
   // Global day-start shift modal
   const [shiftDayOpen, setShiftDayOpen] = useState(false)
@@ -1307,6 +1333,33 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
   const isImportedDone = (row) => !!(todos[row.key] || weekState[row.key])
   const onToggleImported = (row) => syncToggle(row.key, row.span.label || 'Busy', null, null, !isImportedDone(row))
   const onAdoptImported  = (row) => adoptImportedEvent && adoptImportedEvent(row.span, dateKey, row.timeHHMM, row.dur)
+
+  // Reveal a spotlighted task: unfold whatever it's tucked inside (a finished
+  // routine's summary row, a collapsed time block), scroll it into view and let
+  // its ring pulse. The row can take a beat to mount after the day changes, so
+  // this retries briefly before giving up.
+  useEffect(() => {
+    if (!spotlight) return
+    const t = tasksWithStatus.find(x => x.id === spotlight)
+    if (t) {
+      if (t.routine && routineIds.has(t.routine) && !expandedRoutines[t.routine]) {
+        setExpandedRoutines(p => ({ ...p, [t.routine]: true }))
+      }
+      const b = t._mins != null ? blocks.find(x => t._mins >= x.start && t._mins < x.end) : null
+      if (b && isBlockCollapsed(b)) toggleBlockCollapsed(b.id, true)
+    }
+    let timer = null
+    let tries = 0
+    const reveal = () => {
+      const el = Array.from(document.querySelectorAll('[data-task-row]')).find(n => n.dataset.taskRow === spotlight)
+      if (el) { el.scrollIntoView({ behavior:'smooth', block:'center' }); return }
+      if (++tries < 12) timer = setTimeout(reveal, 80)
+    }
+    timer = setTimeout(reveal, 60)
+    const fade = setTimeout(() => setSpotlight(null), 3400)
+    return () => { clearTimeout(timer); clearTimeout(fade) }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [spotNonce])
 
   const doneCount = tasksWithStatus.filter(t=>t._status==='past').length
   // When a task is in progress, the "now" indicator is drawn inside that task's
@@ -1889,7 +1942,7 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
         viewDate={viewDate} setViewDate={setViewDate}
         commitments={commitments} categories={categories}
         doneCount={doneCount} total={tasksWithStatus.length}
-        dayProgress={dayProgress} isToday={isToday}
+        dayProgress={dayProgress} isToday={isToday} centerNonce={spotNonce}
         summary={summary} todos={todos}
         recurringTasks={recurringTasks} recurringExceptions={recurringExceptions} />
 
@@ -1910,7 +1963,7 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
           <AnytimeCard tasks={anytimeTasks} categories={categories}
             isDoneOf={effectiveDone}
             onToggle={(t)=>syncToggle(t.id,t.label,t.tag,t.isCommitment?null:dateKey, !effectiveDone(t))}
-            onOpen={openTask} onManage={setManaging} />
+            onOpen={openTask} onManage={setManaging} spotlight={spotlight} />
         </div>
       )}
       <div className={hasAnytime ? 'today-split-main' : undefined}>
@@ -2052,7 +2105,7 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
               const tEnd = (task._time && task._dur) ? hhmmToMins(task._time)+task._dur : task._mins
               advance(tEnd, r?.tint || null, 'rt-'+task.routine)
               return [...before, rtGap, (
-                <div key={task.id}>
+                <div key={task.id} data-task-row={task.id} className={spotlight===task.id ? 'task-spotlight' : undefined}>
                   {header}
                   <TimelineBlock
                     task={task} categories={categories} status={task._status} now={now}
@@ -2097,7 +2150,7 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
             const emitNow = wantNow && !nowState.done && i===nowInsertIdx
             if (emitNow) nowState.done = true
             return [...before, (
-              <div key={task.id}>
+              <div key={task.id} data-task-row={task.id} className={spotlight===task.id ? 'task-spotlight' : undefined}>
                 {emitNow&&<NowMarker now={now} bandTint={(myBand && (joinHead || prevSameRoutine)) ? myTint : null} bandOpacity={inBlockId ? BLOCK_FILM_OPACITY : 0.5}/>}
                 {gapEl}
                 <TimelineBlock
