@@ -27,7 +27,7 @@
 //      the user out except an explicit sign-out or the server actually
 //      rejecting the refresh token.
 // ─────────────────────────────────────────────────────────────
-import { supabase, isUsingSupabase, setStorageUser, clearOfflineMirror } from './storage.js'
+import { supabase, isUsingSupabase, supabaseUrl, supabaseAnonKey, setStorageUser, clearOfflineMirror } from './storage.js'
 import { cacheRead, cacheWrite, isOnline, isNetworkError, pendingCount, flush as flushOutbox } from './offline.js'
 
 // When there's no Supabase, everyone is the same implicit "local" user. A fixed
@@ -193,6 +193,38 @@ export async function storageReport() {
   return { known: true, localStorage: !!ls, indexedDb: !!idb }
 }
 
+// Is the auth server actually answering right now?
+//
+// This exists because getSession() cannot tell us. When it can't reach the
+// server to refresh an expired token it resolves with NO session and NO error
+// — byte-for-byte identical to "this person is signed out". Guessing wrong in
+// one direction strands someone on a login screen during an outage; guessing
+// wrong in the other leaves a genuinely signed-out person in a broken app. So
+// we ask, with one cheap unauthenticated request.
+//
+// Only a real HTTP answer below 500 counts as "the server is up and talking".
+// A 5xx means it's there but not serving, which for our purposes is the same
+// as unreachable: not a basis for signing anyone out.
+async function authServerReachable(ms = 6000) {
+  if (!supabaseUrl) return false
+  let timer = null
+  try {
+    const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null
+    if (ctrl) timer = setTimeout(() => ctrl.abort(), ms)
+    const res = await fetch(supabaseUrl + '/auth/v1/health', {
+      method: 'GET',
+      cache: 'no-store',
+      headers: supabaseAnonKey ? { apikey: supabaseAnonKey } : undefined,
+      signal: ctrl ? ctrl.signal : undefined,
+    })
+    return !!res && typeof res.status === 'number' && res.status < 500
+  } catch {
+    return false
+  } finally {
+    if (timer) clearTimeout(timer)
+  }
+}
+
 // Does this error mean the server actually rejected our refresh token — as
 // opposed to the request never getting there? Only the former may sign someone
 // out; everything else has to fail open, or a flaky connection would log the
@@ -255,11 +287,26 @@ export function initAuth() {
       // is to open their planner from the local mirror, not to demand a
       // password they can't submit anyway.
       const remembered = readRememberedUser()
-      const couldNotAsk = res.timedOut || !isOnline() || (sessionErr && isNetworkError(sessionErr))
-      if (remembered && couldNotAsk) {
+      // The default here has to be "stay signed in". An empty session only
+      // means the sign-in is over if we actually reached the server and it
+      // said so — otherwise it just means we couldn't ask, and the honest
+      // response is to open their planner from the local mirror.
+      //
+      // Everything except a confirmed answer counts as "couldn't ask": no
+      // network, a timeout, a transport error, a server that is down or
+      // returning 5xx. This is the case that used to bounce someone to the
+      // login screen during an outage — their device had wifi the whole time,
+      // so nothing else here noticed anything was wrong.
+      const couldNotAsk = remembered && (
+        res.timedOut ||
+        !isOnline() ||
+        (sessionErr && isNetworkError(sessionErr)) ||
+        !(await authServerReachable())
+      )
+      if (couldNotAsk) {
         unverified = true
         setUser(remembered)
-        console.info('[auth] offline — opening on the remembered account; will re-verify when back online')
+        console.info('[auth] could not confirm the session (offline or the server is down) — opening on the remembered account and re-verifying later')
       } else {
         if (sessionErr) console.error('[auth] getSession failed:', sessionErr.message || sessionErr)
         // Record what this looked like, so the login screen can say something
@@ -356,7 +403,48 @@ export async function revalidateSession() {
   }
 }
 
+// A data request came back saying our credentials are stale. Renew the session
+// rather than making the user deal with it: the writes that hit this are sitting
+// safely in the outbox and go up as soon as the token is good again.
+//
+// Only a refresh the server actively refuses ends the session here — the same
+// strict rule as everywhere else, so an outage can't sign anyone out.
+let renewing = false
+let lastRenewAt = 0
+export async function renewSession() {
+  if (!isUsingSupabase || renewing) return
+  // Every failed write asks for this, so a burst of edits during an outage
+  // must not become a burst of refresh calls.
+  if (Date.now() - lastRenewAt < 5000) return
+  renewing = true
+  lastRenewAt = Date.now()
+  try {
+    const { data, error } = await supabase.auth.refreshSession()
+    if (error) throw error
+    if (data?.session?.user) {
+      unverified = false
+      rememberUser(data.session.user)
+      setUser(data.session.user)
+      mirrorSession().catch(() => {})
+      flushOutbox()          // the queued writes can go up now
+    }
+  } catch (e) {
+    if (isSessionRejected(e)) {
+      console.warn('[auth] the session was refused on renewal — signing out')
+      unverified = false
+      noteSignedOut('expired', 'Your sign-in expired. Anything you changed is still saved on this device and will upload once you sign back in.')
+      forgetUser()
+      await clearSessionMirror()
+      setUser(null)
+    }
+    // Otherwise: the server is unreachable or having trouble. Stay signed in.
+  } finally {
+    renewing = false
+  }
+}
+
 if (typeof window !== 'undefined' && isUsingSupabase) {
+  window.addEventListener('bloom-auth-stale', () => { renewSession() })
   window.addEventListener('online', () => { revalidateSession() })
   document.addEventListener('visibilitychange', () => { if (!document.hidden) revalidateSession() })
   // Re-mirror periodically: supabase-js rotates the refresh token on every

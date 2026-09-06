@@ -294,6 +294,24 @@ export function isNetworkError(e) {
   return NETWORK_HINTS.test(String((e && e.message) || e || ''))
 }
 
+// A failure that means "your credentials aren't good right now" rather than
+// "your data is wrong". Worth its own category: the write is perfectly valid
+// and must be kept, and the fix is to renew the session, not to bother the
+// user about every single edit.
+export function isAuthError(e) {
+  if (!e) return false
+  if (typeof e === 'object' && (e.status === 401 || e.status === 403 || e.code === 'PGRST301')) return true
+  return /\bjwt\b.*(expired|invalid|malformed)|pgrst301|invalid (auth|token)|token is expired|not authenticated|no api key|missing sub claim/i
+    .test(String((e && e.message) || e || ''))
+}
+
+// Ask whoever owns the session to renew it. storage.js can't call into auth.js
+// (auth.js imports storage.js), so the request goes out as an event.
+export function requestReauth() {
+  if (!hasWindow) return
+  try { window.dispatchEvent(new CustomEvent('bloom-auth-stale')) } catch {}
+}
+
 export function isOnline() {
   if (!hasWindow) return true
   if (navigator.onLine === false) return false

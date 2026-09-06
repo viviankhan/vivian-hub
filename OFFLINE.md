@@ -80,6 +80,32 @@ intermediate state:
 | Created a task, then deleted it | Nothing — it never existed as far as the cloud knows |
 | Cleared all recurring tasks | Just the clear; earlier writes to that table are dropped |
 
+### The server being down is not the same as being offline
+
+Worth calling out separately, because it's the case that bites: during a server
+outage `navigator.onLine` keeps saying **online** the whole time. Nothing in the
+browser notices anything is wrong, so every "am I offline?" check answers no.
+
+Three things follow from that, and each was a real interruption before it was
+fixed:
+
+- **Opening the app must not bounce to the login screen.** `getSession()`
+  resolves with no session *and no error* when it can't reach the server to
+  refresh a token — identical to being signed out. So when a device has a
+  remembered account, an empty session only ends the sign-in if a reachability
+  check (`/auth/v1/health`) confirms the server answered. Unreachable, timed
+  out, or 5xx all mean "couldn't ask", and the app opens on the mirror.
+- **Errors must keep their status code.** Wrapping a Supabase error in
+  `new Error(...)` for a readable message discards `status` and `code`, which
+  is exactly how the engine tells "the server is down" from "the server
+  refused this data". Dropped, every 5xx looked like a rejected write: an
+  alert per edit, and the change not queued. `failed()` wraps while carrying
+  them through.
+- **A stale token is not a rejected write.** A 401/403 means the credentials
+  need renewing, not that the edit was wrong. Those queue like any other write
+  and quietly trigger a session refresh; nothing is shown to the user and
+  nothing is lost.
+
 Two rules keep the data honest:
 
 - **A cloud read never overwrites an unsent edit.** If a key still has something
@@ -171,6 +197,9 @@ npm run test:browser  # builds, serves dist, then loads it in a real headless
   `tests/mock-supabase.mjs`: reads falling back to the mirror, offline edits
   queueing, reconnect uploading them, and a pending edit beating a stale cloud
   read.
+- `tests/server-down.test.mjs` — the server unreachable, returning 5xx, and
+  genuinely reporting no session, with `navigator.onLine` true throughout.
+  Pins that only a confirmed answer from a reachable server ends a sign-in.
 - `tests/auth-signout.test.mjs` — exactly which failures may sign someone out.
   Pins the rule that "auth session missing" (a 400 meaning *this device has no
   tokens*) must never be mistaken for the server refusing the sign-in.
