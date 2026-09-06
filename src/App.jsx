@@ -1362,6 +1362,17 @@ export default function App() {
   // "Add to my schedule" copies a read-only imported event into a real
   // commitment the user owns (so they can move/edit it freely), then records the
   // adoption so it reads as "Added" everywhere and is never offered twice.
+  // Remember that an imported event now has a commitment of the user's own
+  // standing in for it, so it reads as "Added" everywhere and is never offered
+  // twice. Shared by "+ Schedule" and by editing an imported event into your
+  // own schedule from Today.
+  const markImportedAdopted = useCallback((key, commitmentId) => {
+    setImportedAdoptions_(prev => {
+      const next = { ...prev, [key]: commitmentId }
+      setImportedAdoptions(next).catch(e => console.warn("[Bloom] adoption save failed:", e))
+      return next
+    })
+  }, [])
   const adoptImportedEvent = useCallback((span, dateStr, timeHHMM, durationMins) => {
     const key = importedKey(span)
     if (importedAdoptions[key]) return
@@ -1382,12 +1393,8 @@ export default function App() {
       description: span.calendarName ? `From ${span.calendarName}` : 'From a subscribed calendar',
       createdAt: new Date().toISOString(),
     })
-    setImportedAdoptions_(prev => {
-      const next = { ...prev, [key]: cid }
-      setImportedAdoptions(next).catch(e => console.warn("[Bloom] adoption save failed:", e))
-      return next
-    })
-  }, [importedAdoptions, addCommitment])
+    markImportedAdopted(key, cid)
+  }, [importedAdoptions, addCommitment, markImportedAdopted])
   const updateCommitment = useCallback(async (id, changes, opts = {}) => {
     const { description, subtasks, cats, color, icon, location, startedAt, block, routine, autoComplete, recordValues, ...core } = changes
     // Snapshot the prior values of exactly the fields being changed, so this
@@ -1888,7 +1895,7 @@ export default function App() {
     // from enabled calendars), and the "add to my schedule" adoption map + action.
     externalCalendars: extCalendars, toggleCalendar,
     externalEvents: externalSpans,
-    importedAdoptions, adoptImportedEvent,
+    importedAdoptions, adoptImportedEvent, markImportedAdopted,
     categories,
     // History-based label prediction for the add sheet (no blind defaults).
     labelModel,

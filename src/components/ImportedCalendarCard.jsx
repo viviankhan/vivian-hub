@@ -17,7 +17,7 @@ function rangeText(row) {
   return `${fmt12(minsToHHMM(row.startMins))} – ${fmt12(end)}`
 }
 
-export default function ImportedCalendarCard({ rows = [], adoptions = {}, isDone, onToggle, onAdopt, dayLabel = 'today' }) {
+export default function ImportedCalendarCard({ rows = [], adoptions = {}, isDone, onToggle, onAdopt, onOpen, dayLabel = 'today' }) {
   if (!rows.length) return null
   return (
     <div style={{ background:'white', borderRadius:14, border:'1px solid var(--border)', padding:'12px 14px', marginBottom:14 }}>
@@ -35,14 +35,18 @@ export default function ImportedCalendarCard({ rows = [], adoptions = {}, isDone
         return (
           <div key={key} style={{ display:'flex', alignItems:'flex-start', gap:11, padding:'9px 2px', borderTop:'1px solid #F3F1ED' }}>
             {/* Tick it off — a normal completion, reflected on every view. */}
-            <div onClick={() => onToggle && onToggle(row)} role="checkbox" aria-checked={done}
+            <div onClick={(e) => { e.stopPropagation(); onToggle && onToggle(row) }} role="checkbox" aria-checked={done}
               style={{ width:20, height:20, marginTop:1, borderRadius:6, flexShrink:0, cursor:'pointer',
                 border: done ? 'none' : `2px solid ${color}`, background: done ? color : 'transparent',
                 display:'flex', alignItems:'center', justifyContent:'center' }}>
               {done && <span style={{ color:'white', fontSize:11, fontWeight:700 }}>✓</span>}
             </div>
 
-            <div style={{ flex:1, minWidth:0 }}>
+            <div onClick={() => onOpen && onOpen(row)}
+              role={onOpen ? 'button' : undefined} tabIndex={onOpen ? 0 : undefined}
+              onKeyDown={onOpen ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen(row) } } : undefined}
+              title={onOpen ? 'Open its details' : undefined}
+              style={{ flex:1, minWidth:0, cursor: onOpen ? 'pointer' : 'default' }}>
               <div style={{ display:'flex', alignItems:'center', gap:6 }}>
                 {span.icon && <Icon value={span.icon} size={13} />}
                 <span style={{ fontSize:14, fontWeight:600, color: done ? 'var(--muted)' : 'var(--text)',
@@ -71,7 +75,7 @@ export default function ImportedCalendarCard({ rows = [], adoptions = {}, isDone
               <span style={{ fontSize:9, letterSpacing:.6, textTransform:'uppercase', color:'#5C8A5C', border:'1px solid #BFDFBF',
                 borderRadius:20, padding:'3px 9px', fontWeight:700, flexShrink:0, whiteSpace:'nowrap' }}>✓ Added</span>
             ) : (
-              <button onClick={() => onAdopt && onAdopt(row)} title={`Add "${span.label}" to your schedule for ${dayLabel}`}
+              <button onClick={(e) => { e.stopPropagation(); onAdopt && onAdopt(row) }} title={`Add "${span.label}" to your schedule for ${dayLabel}`}
                 style={{ fontSize:11, padding:'5px 11px', borderRadius:16, border:'1px solid var(--teal)', background:'#F0FDFB',
                   color:'var(--teal)', cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:700, flexShrink:0, whiteSpace:'nowrap' }}>
                 + Schedule

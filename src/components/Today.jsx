@@ -985,7 +985,7 @@ function WeekStrip({ viewDate, setViewDate, commitments, categories, doneCount, 
 }
 
 // ── Main ───────────────────────────────────────────────────────
-export default function Today({ todos, weekState, syncToggle, clearCompletion, pushUndo, commitments, addCommitment, updateCommitment, deleteCommitment, moveCommitmentToThoughts, addEvent, appendLog, scheduled, categories, recurringTasks, recurringExceptions, occStarted = {}, skipRecurringOccurrence, deleteRecurringTask, addRecurringTask, updateRecurringTask, routines = [], taskTemplates = [], summary, labelModel = null, externalEvents = [], externalCalendars = [], toggleCalendar, importedAdoptions = {}, adoptImportedEvent,
+export default function Today({ todos, weekState, syncToggle, clearCompletion, pushUndo, commitments, addCommitment, updateCommitment, deleteCommitment, moveCommitmentToThoughts, addEvent, appendLog, scheduled, categories, recurringTasks, recurringExceptions, occStarted = {}, skipRecurringOccurrence, deleteRecurringTask, addRecurringTask, updateRecurringTask, routines = [], taskTemplates = [], summary, labelModel = null, externalEvents = [], externalCalendars = [], toggleCalendar, importedAdoptions = {}, adoptImportedEvent, markImportedAdopted,
   wlCheckins = [], persistWlCheckins, wlEffects, persistWlEffects, wlEpisodes = [], persistWlEpisodes, wlGame, persistWlGame, wlLog = [], wlEmotions, persistWlEmotions, onOpenWellness,
   jumpTo = null, onJumpConsumed }) {
   const [now,         setNow]         = useState(nowMins())
@@ -1026,6 +1026,7 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
   const pauseKeyFor = (task) => `${dateKey}:${task.id}`
   const [addingTask,  setAddingTask]  = useState(false)
   const [addPreset,   setAddPreset]   = useState(null)  // {time, cat} when adding inside a block
+  const [importRow,   setImportRow]   = useState(null)  // imported event being edited into the schedule
   const [pasterOpen,  setPasterOpen]  = useState(false) // AI assistant sheet
   const [expandedRoutines, setExpandedRoutines] = useState({})  // routineId → show its done tasks individually
   // Explicit collapse overrides for time blocks (keyed by block id). A stored
@@ -1333,6 +1334,35 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
   const isImportedDone = (row) => !!(todos[row.key] || weekState[row.key])
   const onToggleImported = (row) => syncToggle(row.key, row.span.label || 'Busy', null, null, !isImportedDone(row))
   const onAdoptImported  = (row) => adoptImportedEvent && adoptImportedEvent(row.span, dateKey, row.timeHHMM, row.dur)
+  // Tapping an imported row opens its details, so an event from a subscribed
+  // calendar can be read and changed like anything else on the day. Once it has
+  // been adopted it IS one of your commitments — open that editor. Before then
+  // the add sheet opens pre-filled from the event: saving adopts it with your
+  // edits, where "+ Schedule" copies it across verbatim.
+  const openImported = (row) => {
+    const cid = importedAdoptions[row.key]
+    const c = cid ? (commitments || []).find(x => x.id === cid) : null
+    if (c) { setEditing(c); return }
+    setImportRow(row)
+  }
+  // Save an edited imported event as a commitment of your own, keeping the
+  // calendar's color/icon/location for anything the sheet didn't set, and
+  // recording the adoption so the row reads as "Added" rather than offering
+  // to schedule it a second time.
+  const handleAdoptEdited = (commitment, reminderMins) => {
+    const row = importRow
+    setImportRow(null)
+    if (!row || !addCommitment) return
+    const span = row.span || {}
+    addCommitment({
+      ...commitment,
+      color: commitment.color || span.color || null,
+      icon: commitment.icon || span.icon || null,
+      location: commitment.location || span.location || '',
+    })
+    setItemReminders(commitment.id, reminderMins)
+    markImportedAdopted && markImportedAdopted(row.key, commitment.id)
+  }
 
   // Reveal a spotlighted task: unfold whatever it's tucked inside (a finished
   // routine's summary row, a collapsed time block), scroll it into view and let
@@ -1953,7 +1983,7 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
       {/* Imported events for this day, as unscheduled tasks with recommended
           times — tick them off, or add them into your own schedule. */}
       <ImportedCalendarCard rows={importedRows} adoptions={importedAdoptions}
-        isDone={isImportedDone} onToggle={onToggleImported} onAdopt={onAdoptImported}
+        isDone={isImportedDone} onToggle={onToggleImported} onAdopt={onAdoptImported} onOpen={openImported}
         dayLabel={isToday ? 'today' : new Date(dateKey+'T12:00:00').toLocaleDateString('en-US',{weekday:'long',month:'short',day:'numeric'})} />
 
       <div className={hasAnytime ? 'today-split' : undefined}>
@@ -2225,6 +2255,15 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
         onApply={(ids)=>{ shiftPlan.mode==='delta' ? applyTimeShift(shiftPlan.pivot, shiftPlan.delta, ids) : applyShift(shiftPlan.pivot, ids); setShiftPlan(null) }}
         onCancel={()=>setShiftPlan(null)}/>}
       {shiftResult&&<ShiftToast result={shiftResult} onClose={()=>setShiftResult(null)}/>}
+      {importRow&&<AddItemModal
+        presetDate={dateKey}
+        presetText={importRow.span?.label || 'Busy'}
+        presetTime={importRow.timeHHMM || ''}
+        presetDur={importRow.dur || null}
+        presetDescription={importRow.span?.calendarName ? `From ${importRow.span.calendarName}` : 'From a subscribed calendar'}
+        categories={categories} routines={routines} templates={taskTemplates} labelModel={labelModel}
+        onSave={handleAdoptEdited} onSaveRecurring={addRecurringTask} onClose={()=>setImportRow(null)}
+        title="Add to my schedule"/>}
       {addingTask&&<AddItemModal presetDate={dateKey} presetTime={addPreset?.time||''} presetDur={addPreset?.dur||null} presetCat={addPreset?.cat||''} categories={categories} routines={routines} templates={taskTemplates} labelModel={labelModel} onSave={handleAdd} onSaveRecurring={addRecurringTask} onClose={()=>{ setAddingTask(false); setAddPreset(null) }} title="Add to Today"/>}
       {/* AI assistant: command → plan → confirm → apply. */}
       {pasterOpen&&<AiAssistant categories={categories} tasks={assistantTasks}
