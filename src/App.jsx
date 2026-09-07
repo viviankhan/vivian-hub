@@ -1226,15 +1226,27 @@ export default function App() {
   }, [persistRoutines])
   const deleteRoutineFn = useCallback(id => {
     setRoutines_(prev => persistRoutines(prev.filter(r => r.id !== id)))
-    setRecurringMeta_(prev => {
+    // Unfile everything that pointed at the group — repeating tasks AND one-off
+    // commitments, both of which can be filed under a routine — so nothing is
+    // left tinted by a routine that no longer exists.
+    const unfile = (prev) => {
       let touched = false
       const next = {}
       for (const [k, v] of Object.entries(prev)) {
         if (v && v.routine === id) { const { routine, ...rest } = v; if (Object.keys(rest).length) next[k] = rest; touched = true }
         else next[k] = v
       }
-      if (touched) setRecurringMeta(next).catch(reportSaveError)
-      return touched ? next : prev
+      return touched ? next : null
+    }
+    setRecurringMeta_(prev => {
+      const next = unfile(prev)
+      if (next) setRecurringMeta(next).catch(reportSaveError)
+      return next || prev
+    })
+    setCommitmentMeta_(prev => {
+      const next = unfile(prev)
+      if (next) setCommitmentMeta(next).catch(reportSaveError)
+      return next || prev
     })
   }, [persistRoutines])
 

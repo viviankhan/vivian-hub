@@ -15,6 +15,7 @@ import { setItemReminders } from '../lib/notifications.js'
 import CalendarLegend from './CalendarLegend.jsx'
 import ImportedCalendarCard from './ImportedCalendarCard.jsx'
 import { importedOn, buildImportedRows, importedKey } from '../lib/importedTasks.js'
+import ColorSwatchRow from './ColorSwatchRow.jsx'
 
 // Concentric-circle "focus" target, for the Focus Now button.
 function TargetIcon({ size = 13 }) {
@@ -376,10 +377,11 @@ const BLOCK_FILM_OPACITY = 0.16
 // A "free time" gap between two timed tasks, with a quick Add Task. Its height
 // grows with the length of the gap, so the day reads at relative scale.
 
-// The little round icon that marks a time block. Tapping it edits the block.
-function BandIcon({ icon, color, onEdit }) {
+// The little round icon that marks a band — a time block or a routine. Tapping
+// it opens that container for editing.
+function BandIcon({ icon, color, onEdit, title = 'Edit time block' }) {
   return (
-    <button type="button" onClick={e=>{ e.stopPropagation(); onEdit && onEdit() }} title="Edit time block" aria-label="Edit time block"
+    <button type="button" onClick={e=>{ e.stopPropagation(); onEdit && onEdit() }} title={title} aria-label={title}
       style={{ width:30, height:30, flexShrink:0, borderRadius:'50%', border:'none', background:'rgba(255,255,255,.72)', cursor:onEdit?'pointer':'default', padding:0, display:'flex', alignItems:'center', justifyContent:'center' }}>
       <Icon value={icon || 'glyph:clock'} size={16} color={color} />
     </button>
@@ -396,11 +398,59 @@ function BandChevron({ collapsed, onClick }) {
     </button>
   )
 }
+// The ⋯ on a band — the container's OWN actions, so a time block or a routine
+// can be edited or deleted from every band it draws, not just from the sheet
+// its icon happens to open. Items marked `confirm` ask a second time before
+// they fire, since the things they remove (a whole series, a routine group)
+// can't be taken back.
+function BandMenu({ items = [], name = '' }) {
+  const [open, setOpen] = useState(false)
+  const [armed, setArmed] = useState(null)   // index of the item awaiting its confirm tap
+  const ref = useRef(null)
+  useEffect(() => {
+    if (!open) return
+    const away = (e) => { if (ref.current && !ref.current.contains(e.target)) { setOpen(false); setArmed(null) } }
+    document.addEventListener('mousedown', away)
+    return () => document.removeEventListener('mousedown', away)
+  }, [open])
+  if (!items.length) return null
+  const title = name ? `${name} — more actions` : 'More actions'
+  return (
+    <span ref={ref} onClick={e=>e.stopPropagation()} style={{ position:'relative', flexShrink:0, display:'inline-flex' }}>
+      <button type="button" onClick={e=>{ e.stopPropagation(); setArmed(null); setOpen(o=>!o) }}
+        title={title} aria-label={title} aria-haspopup="menu" aria-expanded={open}
+        style={{ width:30, height:30, flexShrink:0, borderRadius:'50%', border:'none', background:'rgba(255,255,255,.72)', cursor:'pointer', padding:0,
+          display:'flex', alignItems:'center', justifyContent:'center', color:'#39434F', fontSize:16, fontWeight:800, lineHeight:1, fontFamily:'DM Sans,sans-serif' }}>···</button>
+      {open && (
+        <div role="menu" style={{ position:'absolute', top:34, right:0, zIndex:40, minWidth:198, background:'white', border:'1px solid var(--border)',
+          borderRadius:12, boxShadow:'0 12px 34px rgba(26,58,78,.20)', padding:5, textAlign:'left' }}>
+          {items.map((it, i) => {
+            const isArmed = armed === i
+            return (
+              <button key={it.label} role="menuitem" type="button"
+                onClick={e=>{
+                  e.stopPropagation()
+                  if (it.confirm && !isArmed) { setArmed(i); return }
+                  setOpen(false); setArmed(null); it.onClick()
+                }}
+                style={{ display:'block', width:'100%', textAlign:'left', padding:'9px 11px', borderRadius:8, border:'none', cursor:'pointer',
+                  fontFamily:'DM Sans,sans-serif', fontSize:13, fontWeight:600, whiteSpace:'nowrap',
+                  background: isArmed ? '#FEF2F2' : 'transparent', color: it.danger ? '#B91C1C' : 'var(--text)' }}>
+                {isArmed ? 'Tap again to confirm' : it.label}
+              </button>
+            )
+          })}
+        </div>
+      )}
+    </span>
+  )
+}
+
 // A time block reads as a light "folder" for a slice of the day. Tapping the
 // body opens the add sheet (a task scheduled inside the block); the icon edits
-// the block; the chevron on the right collapses/expands it. No checkbox — the
-// tasks inside auto-complete on their own.
-function BlockBand({ seg, onEdit, onAdd, onCollapse }) {
+// the block; the ⋯ edits or deletes the block itself; the chevron on the right
+// collapses/expands it. No checkbox — the tasks inside auto-complete on their own.
+function BlockBand({ seg, onEdit, onAdd, onCollapse, menu = [] }) {
   const label = (seg.label || 'Block').toUpperCase()
   // Collapsed: one compact row standing in for the whole block + its tasks.
   if (seg.collapsed) {
@@ -419,7 +469,10 @@ function BlockBand({ seg, onEdit, onAdd, onCollapse }) {
             <span style={{ fontSize:12, fontWeight:800, letterSpacing:.7, textTransform:'uppercase', color:'#39434F', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis', maxWidth:'40%', textDecoration: done?'line-through':'none' }}>{label}</span>
             {done && <span style={{ flexShrink:0, display:'inline-flex', color:'#5C8A5C' }}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5"/></svg></span>}
             <span style={{ fontSize:11, color:'var(--muted)', flexShrink:1, minWidth:0, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{done?'done · ':''}{rangeLabel(seg.start, seg.end)}{seg.count>0?` · ${seg.count} inside`:''}</span>
-            <span style={{ marginLeft:'auto', flexShrink:0 }}><BandChevron collapsed onClick={onCollapse} /></span>
+            <span style={{ marginLeft:'auto', flexShrink:0, display:'flex', alignItems:'center', gap:6 }}>
+              <BandMenu items={menu} name={seg.label} />
+              <BandChevron collapsed onClick={onCollapse} />
+            </span>
           </div>
         </div>
       </div>
@@ -450,7 +503,10 @@ function BlockBand({ seg, onEdit, onAdd, onCollapse }) {
             {seg.blockStart!=null && seg.blockEnd!=null && (
               <span style={{ fontSize:11, color:'var(--muted)', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis', minWidth:0 }}>{rangeLabel(seg.blockStart, seg.blockEnd)}</span>
             )}
-            {onCollapse && <span style={{ marginLeft:'auto', flexShrink:0 }}><BandChevron collapsed={false} onClick={onCollapse} /></span>}
+            <span style={{ marginLeft:'auto', flexShrink:0, display:'flex', alignItems:'center', gap:6 }}>
+              <BandMenu items={menu} name={seg.label} />
+              {onCollapse && <BandChevron collapsed={false} onClick={onCollapse} />}
+            </span>
           </div>
         )}
       </div>
@@ -563,25 +619,105 @@ function collapseLabelFor(routine) {
   if (n.includes('night') || n.includes('evening')) return 'Last of the evening'
   return `${routine?.name || 'Routine'} — done`
 }
-function RoutineCollapseRow({ routine, count, expanded, onToggle }) {
-  const tint = routine?.tint || '#EDE7F0'
+// A routine's stand-in glyph — the sun for a morning one, the moon for a night
+// one. Shared by the band header and the done-routine summary row so a routine
+// looks the same wherever it shows up.
+function routineGlyph(routine) {
   const n = (routine?.name || '').toLowerCase()
-  const glyph = n.includes('night') || n.includes('evening') ? 'glyph:moon' : 'glyph:sun'
+  return (n.includes('night') || n.includes('evening')) ? 'glyph:moon' : 'glyph:sun'
+}
+function RoutineCollapseRow({ routine, count, expanded, onToggle, menu = [] }) {
+  const tint = routine?.tint || '#EDE7F0'
   return (
     <div style={{ position:'relative', zIndex:0, display:'flex', gap:0, minHeight:52, opacity:.85 }}>
       <div style={{ position:'absolute', top:6, bottom:6, left:44, right:0, background:tint, opacity:.4, borderRadius:16, zIndex:-1 }} />
       <div style={{ width:52, flexShrink:0 }} />
       <div style={{ width:52, flexShrink:0, display:'flex', justifyContent:'center', alignItems:'center' }}>
         <div style={{ width:34, height:34, borderRadius:'50%', background:tint, display:'flex', alignItems:'center', justifyContent:'center' }}>
-          <Icon value={glyph} size={17} color="#5A5560" />
+          <Icon value={routineGlyph(routine)} size={17} color="#5A5560" />
         </div>
       </div>
-      <button onClick={onToggle}
-        style={{ flex:1, minWidth:0, textAlign:'left', border:'none', background:'transparent', cursor:'pointer', padding:'10px 10px', display:'flex', alignItems:'center', gap:8, fontFamily:'DM Sans,sans-serif' }}>
-        <span style={{ fontSize:14.5, fontWeight:700, color:'var(--text)', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{collapseLabelFor(routine)}</span>
-        <span style={{ fontSize:12, color:'var(--muted)', flexShrink:0 }}>{count} done</span>
-        <span style={{ marginLeft:'auto', fontSize:11, color:'var(--muted)', transform:expanded?'rotate(180deg)':'none', transition:'transform .2s', flexShrink:0 }}>▾</span>
-      </button>
+      {/* The ⋯ sits OUTSIDE the expand button — a button can't nest inside one. */}
+      <div style={{ flex:1, minWidth:0, display:'flex', alignItems:'center', gap:8, padding:'10px 10px' }}>
+        <button onClick={onToggle}
+          style={{ flex:1, minWidth:0, textAlign:'left', border:'none', background:'transparent', cursor:'pointer', padding:0, display:'flex', alignItems:'center', gap:8, fontFamily:'DM Sans,sans-serif' }}>
+          <span style={{ fontSize:14.5, fontWeight:700, color:'var(--text)', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{collapseLabelFor(routine)}</span>
+          <span style={{ fontSize:12, color:'var(--muted)', flexShrink:0 }}>{count} done</span>
+          <span style={{ marginLeft:'auto', fontSize:11, color:'var(--muted)', transform:expanded?'rotate(180deg)':'none', transition:'transform .2s', flexShrink:0 }}>▾</span>
+        </button>
+        <BandMenu items={menu} name={routine?.name} />
+      </div>
+    </div>
+  )
+}
+
+// The header a routine's band wears on the timeline: its glyph, its name, and
+// the ⋯ that edits or deletes the routine itself. It sits directly above the
+// routine's first task and carries the same film, so the two read as one band —
+// the routine's answer to a time block's head segment. Without it a routine was
+// only ever a nameless wash of color you couldn't act on from the day view.
+function RoutineBandHead({ routine, onEdit, menu = [] }) {
+  const tint = routine?.tint || '#EDE7F0'
+  const name = (routine?.name || 'Routine').toUpperCase()
+  return (
+    <div style={{ position:'relative', minHeight:34 }}>
+      <div style={{ position:'absolute', top:6, bottom:0, left:44, right:0, background:tint, opacity:.5, zIndex:-1, borderTopLeftRadius:16, borderTopRightRadius:16 }} />
+      <div style={{ position:'relative', display:'flex' }}>
+        <div style={{ width:52, flexShrink:0 }} />
+        <div style={{ paddingTop:9, paddingBottom:2, paddingLeft:11, paddingRight:8, flex:1, minWidth:0, display:'flex', alignItems:'center', gap:8 }}>
+          <BandIcon icon={routineGlyph(routine)} color="#5A5560" onEdit={onEdit} title="Edit routine" />
+          <button type="button" onClick={onEdit || undefined} title={onEdit ? 'Edit routine' : undefined}
+            style={{ fontSize:10, fontWeight:800, letterSpacing:.9, textTransform:'uppercase', color:'#39434F', background:'none', padding:0, border:'none',
+              fontFamily:'DM Sans,sans-serif', cursor:onEdit?'pointer':'default', pointerEvents:onEdit?'auto':'none',
+              whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis', minWidth:0 }}>{name}</button>
+          <span style={{ marginLeft:'auto', flexShrink:0 }}><BandMenu items={menu} name={routine?.name} /></span>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// Rename a routine, change the film color it washes behind its tasks, or delete
+// the group — right from Today, without a trip to the Recurring tab. Deleting
+// only removes the grouping; the tasks filed under it stay where they are.
+function RoutineEditor({ routine, taskCount = 0, onSave, onDelete, onClose }) {
+  const [name, setName] = useState(routine?.name || '')
+  const [tint, setTint] = useState(routine?.tint || '#D9C7EE')
+  const [confirm, setConfirm] = useState(false)
+  const save = () => { onSave({ name: name.trim() || routine?.name || 'Routine', tint }); onClose() }
+  return (
+    <div onClick={onClose} style={{position:'fixed',inset:0,background:'rgba(0,0,0,.5)',zIndex:610,display:'flex',alignItems:'center',justifyContent:'center',padding:16}}>
+      <div onClick={e=>e.stopPropagation()} style={{background:'white',borderRadius:18,width:'100%',maxWidth:380,maxHeight:'86vh',overflowY:'auto',boxShadow:'0 24px 64px rgba(0,0,0,.3)',padding:20}}>
+        <div className="serif" style={{fontSize:18,fontWeight:600,color:'var(--text)',marginBottom:3}}>Edit routine</div>
+        <div style={{fontSize:12.5,color:'var(--muted)',marginBottom:14}}>Its name, and the film it washes behind its tasks — everywhere this routine appears.</div>
+        <input value={name} onChange={e=>setName(e.target.value)} placeholder="Routine name" aria-label="Routine name"
+          style={{width:'100%',fontSize:14,padding:'10px 12px',borderRadius:10,border:'1px solid var(--border)',fontFamily:'DM Sans,sans-serif',outline:'none',boxSizing:'border-box',marginBottom:8}} />
+        <ColorSwatchRow value={tint} onChange={setTint} size={26} />
+        <div style={{display:'flex',gap:8,marginTop:12}}>
+          <button onClick={save}
+            style={{flex:1,padding:'12px',borderRadius:12,border:'none',background:'var(--forest)',color:'var(--green-light)',fontWeight:700,fontSize:14,cursor:'pointer',fontFamily:'DM Sans,sans-serif'}}>Save changes</button>
+          <button onClick={onClose}
+            style={{padding:'12px 16px',borderRadius:12,border:'1px solid var(--border)',background:'white',color:'var(--muted)',cursor:'pointer',fontSize:13,fontFamily:'DM Sans,sans-serif'}}>Cancel</button>
+        </div>
+        {onDelete && (
+          <div style={{marginTop:14,paddingTop:12,borderTop:'1px solid #F1EDF2'}}>
+            {confirm ? (
+              <>
+                <div style={{fontSize:12,color:'#991B1B',marginBottom:8}}>Delete “{routine?.name}”? Its {taskCount} task{taskCount===1?'':'s'} stay — they just lose this routine.</div>
+                <div style={{display:'flex',gap:8}}>
+                  <button onClick={()=>{ onDelete(); onClose() }}
+                    style={{fontSize:12,padding:'8px 14px',borderRadius:9,border:'none',background:'#EF4444',color:'white',cursor:'pointer',fontFamily:'DM Sans,sans-serif',fontWeight:600}}>Delete routine</button>
+                  <button onClick={()=>setConfirm(false)}
+                    style={{fontSize:12,padding:'8px 14px',borderRadius:9,border:'1px solid var(--border)',background:'white',color:'var(--muted)',cursor:'pointer',fontFamily:'DM Sans,sans-serif'}}>Keep it</button>
+                </div>
+              </>
+            ) : (
+              <button onClick={()=>setConfirm(true)}
+                style={{fontSize:12.5,border:'none',background:'none',color:'#B91C1C',cursor:'pointer',fontFamily:'DM Sans,sans-serif',fontWeight:600,padding:0}}>Delete routine</button>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   )
 }
@@ -632,7 +768,7 @@ function AnytimeCard({ tasks, categories, isDoneOf, onToggle, onOpen, onManage, 
   )
 }
 
-function TimelineBlock({ task, categories, status, now, prevColor, nextColor, routineTint, tintOpacity = 0.5, filmTop = true, filmBottom = true, bandLabel = null, bandIcon = null, onBandLabel = null, onBandCollapse = null, isDone, elapsed, dateKey, pauseData = null, offerStartNow = false, onToggle, onManage, onShiftToNow, onOpen, onFocus, onToggleSub }) {
+function TimelineBlock({ task, categories, status, now, prevColor, nextColor, routineTint, tintOpacity = 0.5, filmTop = true, filmBottom = true, bandLabel = null, bandIcon = null, onBandLabel = null, onBandCollapse = null, bandMenu = [], isDone, elapsed, dateKey, pauseData = null, offerStartNow = false, onToggle, onManage, onShiftToNow, onOpen, onFocus, onToggleSub }) {
   const [subOpen, setSubOpen] = useState(false)
   const catFound = (categories || []).find(x => x.id === task.tag)
   const catColor = catFound?.color || TAG_COLORS[task.tag] || '#9CA3AF'
@@ -689,8 +825,9 @@ function TimelineBlock({ task, categories, status, now, prevColor, nextColor, ro
           borderTopLeftRadius:filmTop?16:0, borderTopRightRadius:filmTop?16:0, borderBottomLeftRadius:filmBottom?16:0, borderBottomRightRadius:filmBottom?16:0, zIndex:-1 }} />
       )}
       {/* Time-block (container) label, shown once at the top of its band: the
-          block's icon (tap to edit) + name, and a collapse chevron. No checkbox —
-          the tasks inside auto-complete on their own. */}
+          block's icon (tap to edit) + name, the ⋯ that edits or deletes the block
+          itself, and a collapse chevron. No checkbox — the tasks inside
+          auto-complete on their own. */}
       {routineTint && bandLabel && (
         <div style={{ position:'absolute', top:9, left:52, right:8, zIndex:1, display:'flex', alignItems:'center', gap:7 }}>
           <BandIcon icon={bandIcon} color={routineTint} onEdit={onBandLabel} />
@@ -698,7 +835,10 @@ function TimelineBlock({ task, categories, status, now, prevColor, nextColor, ro
             style={{ fontSize:10, fontWeight:800, letterSpacing:.9, textTransform:'uppercase',
               color:'#39434F', background:'none', padding:0, border:'none', fontFamily:'DM Sans,sans-serif',
               cursor: onBandLabel ? 'pointer' : 'default', pointerEvents: onBandLabel ? 'auto' : 'none', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{(bandLabel||'').toUpperCase()}</button>
-          {onBandCollapse && <span style={{ marginLeft:'auto', flexShrink:0 }}><BandChevron collapsed={false} onClick={onBandCollapse} /></span>}
+          <span style={{ marginLeft:'auto', flexShrink:0, display:'flex', alignItems:'center', gap:6 }}>
+            <BandMenu items={bandMenu} name={bandLabel} />
+            {onBandCollapse && <BandChevron collapsed={false} onClick={onBandCollapse} />}
+          </span>
         </div>
       )}
       {/* Spacer keeping the spine aligned with gaps + the now-marker. The task's
@@ -737,8 +877,10 @@ function TimelineBlock({ task, categories, status, now, prevColor, nextColor, ro
         </div>
         <div style={{ width:3, flex:1, minHeight:14, borderRadius:3, background: nextColor ? `linear-gradient(to bottom, ${color}, ${nextColor})` : color }} />
       </div>
-      {/* Card */}
-      <div style={{ flex:1, minWidth:0, paddingTop:8, paddingBottom:12, paddingLeft:10 }}>
+      {/* Card. When this row is also carrying its band's header (the block's
+          name + its ⋯, laid over the top of the row), the card starts below it
+          instead of underneath it. */}
+      <div style={{ flex:1, minWidth:0, paddingTop:(routineTint && bandLabel) ? 36 : 8, paddingBottom:12, paddingLeft:10 }}>
         <div onClick={()=>onOpen&&onOpen()} style={{ cursor:onOpen?'pointer':'default' }}>
           {timeLine && (
             <div style={{ fontSize:12, color:isCurrent?'var(--teal)':'var(--muted)', fontWeight:600, marginBottom:2, display:'flex', alignItems:'center', gap:6 }}>
@@ -985,7 +1127,7 @@ function WeekStrip({ viewDate, setViewDate, commitments, categories, doneCount, 
 }
 
 // ── Main ───────────────────────────────────────────────────────
-export default function Today({ todos, weekState, syncToggle, clearCompletion, pushUndo, commitments, addCommitment, updateCommitment, deleteCommitment, moveCommitmentToThoughts, addEvent, appendLog, scheduled, categories, recurringTasks, recurringExceptions, occStarted = {}, skipRecurringOccurrence, deleteRecurringTask, addRecurringTask, updateRecurringTask, routines = [], taskTemplates = [], summary, labelModel = null, externalEvents = [], externalCalendars = [], toggleCalendar, importedAdoptions = {}, adoptImportedEvent, markImportedAdopted,
+export default function Today({ todos, weekState, syncToggle, clearCompletion, pushUndo, commitments, addCommitment, updateCommitment, deleteCommitment, moveCommitmentToThoughts, addEvent, appendLog, scheduled, categories, recurringTasks, recurringExceptions, occStarted = {}, skipRecurringOccurrence, deleteRecurringTask, addRecurringTask, updateRecurringTask, routines = [], updateRoutine, deleteRoutine, taskTemplates = [], summary, labelModel = null, externalEvents = [], externalCalendars = [], toggleCalendar, importedAdoptions = {}, adoptImportedEvent, markImportedAdopted,
   wlCheckins = [], persistWlCheckins, wlEffects, persistWlEffects, wlEpisodes = [], persistWlEpisodes, wlGame, persistWlGame, wlLog = [], wlEmotions, persistWlEmotions, onOpenWellness,
   jumpTo = null, onJumpConsumed }) {
   const [now,         setNow]         = useState(nowMins())
@@ -1002,6 +1144,7 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
   const [editing,     setEditing]     = useState(null)  // full commitment being edited
   const [editingRec,  setEditingRec]  = useState(null)  // recurring template being edited
   const [editingRecDate, setEditingRecDate] = useState(null)  // which occurrence's date (for single-event edits)
+  const [editingRoutine, setEditingRoutine] = useState(null)  // routine group being renamed/recolored
   const [shiftPlan,   setShiftPlan]   = useState(null)  // {pivot, rest, selected} — "start now" push chooser
   const [focusTask,   setFocusTask]   = useState(null)  // task shown in full-screen Focus mode
   // Focus pauses — the wall-clock spans a task was paused in Focus mode, keyed
@@ -1886,13 +2029,74 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
     setManaging(task)
   }
   // Open a time block (container) for editing/deleting from its band label —
-  // a one-off commitment block, or a repeating block's template.
+  // a one-off commitment block, or a repeating block's template. A repeating
+  // block nudged for just this day opens showing THAT moved time (like a task
+  // does), so re-saving never quietly reverts today's move.
   const openContainer = (id) => {
     const c = (commitments || []).find(x => x.id === id)
     if (c) { setEditing(c); return }
     const tmpl = (recurringTasks || []).find(t => t.id === id)
-    if (tmpl && updateRecurringTask) { setEditingRecDate(dateKey); setEditingRec(tmpl) }
+    if (tmpl && updateRecurringTask) {
+      const ov = timeOverrides[tmpl.id]
+      setEditingRecDate(dateKey)
+      setEditingRec(ov !== undefined ? { ...tmpl, label: shiftLabelTime(tmpl.label, ov) } : tmpl)
+    }
   }
+  // Delete a time block (container) itself, from any band it draws. A one-off
+  // block just goes; a repeating one can go for this day only, from this day
+  // onward (its series ends the day before), or entirely.
+  const deleteContainer = (id, scope = 'all') => {
+    const c = (commitments || []).find(x => x.id === id)
+    const tmpl = c ? null : (recurringTasks || []).find(t => t.id === id)
+    const name = c ? (c.text || 'block') : (tmpl ? stripTimePrefix(tmpl.label || tmpl.text || '') || 'block' : 'block')
+    let what = null
+    if (c && deleteCommitment) { deleteCommitment(id); what = 'Deleted block' }
+    else if (tmpl) {
+      if (scope === 'day' && skipRecurringOccurrence) {
+        skipRecurringOccurrence(id, dateKey); what = 'Skipped block for the day'
+      } else if (scope === 'future' && updateRecurringTask) {
+        // updateRecurringTask rebuilds the whole row, so pass the full template
+        // plus the new end date or the other columns get wiped. (endDate is
+        // inclusive, so cap it at the day BEFORE this one.)
+        const x = new Date(dateKey + 'T12:00:00'); x.setDate(x.getDate() - 1)
+        const endDate = `${x.getFullYear()}-${String(x.getMonth()+1).padStart(2,'0')}-${String(x.getDate()).padStart(2,'0')}`
+        updateRecurringTask(tmpl.id, { ...tmpl, endDate }); what = 'Ended block — this day onward'
+      } else if (deleteRecurringTask) {
+        deleteRecurringTask(id); what = 'Deleted repeating block'
+      }
+    }
+    if (what && appendLog) appendLog({ date:dateKey, dateLabel:todayLabel(), label:`${what}: ${name}`, tag:'deleted', ts:new Date().toISOString() })
+  }
+  // What a time block's ⋯ offers, wherever its band is drawn — its own edit and
+  // delete, never the tasks sitting inside it.
+  const containerMenu = (id) => {
+    const c = (commitments || []).find(x => x.id === id)
+    const tmpl = c ? null : (recurringTasks || []).find(t => t.id === id)
+    if (!c && !tmpl) return []
+    const items = [{ label:'Edit block', onClick:()=>openContainer(id) }]
+    if (c) {
+      if (deleteCommitment) items.push({ label:'Delete block', danger:true, onClick:()=>deleteContainer(id, 'all') })
+    } else {
+      if (skipRecurringOccurrence) items.push({ label:'Delete just this day', danger:true, onClick:()=>deleteContainer(id, 'day') })
+      if (updateRecurringTask)     items.push({ label:'Delete this & all future', danger:true, confirm:true, onClick:()=>deleteContainer(id, 'future') })
+      if (deleteRecurringTask)     items.push({ label:'Delete every day', danger:true, confirm:true, onClick:()=>deleteContainer(id, 'all') })
+    }
+    return items
+  }
+  // …and what a routine's ⋯ offers. Deleting a routine unfiles its tasks; it
+  // never deletes them, so this only ever removes the grouping.
+  const routineMenu = (rid) => {
+    const r = (routines || []).find(x => x.id === rid)
+    if (!r) return []
+    const items = []
+    if (updateRoutine) items.push({ label:'Edit routine', onClick:()=>setEditingRoutine(r) })
+    if (deleteRoutine) items.push({ label:'Delete routine', danger:true, confirm:true, onClick:()=>{
+      deleteRoutine(rid)
+      if (appendLog) appendLog({ date:dateKey, dateLabel:todayLabel(), label:`Deleted routine: ${r.name}`, tag:'deleted', ts:new Date().toISOString() })
+    } })
+    return items
+  }
+  const routineById = (rid) => (routines || []).find(x => x.id === rid) || null
   // Unschedule → strip the date/time so it drops off the timeline and returns
   // to Commitments as an unscheduled item (keeps everything else).
   const handleUnschedule = (task) => {
@@ -2107,6 +2311,7 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
           const bandId = 'blk-'+s.bid
           const bb = (seg, controls) => <BlockBand key={'seg-'+seg.id} seg={seg}
             onEdit={()=>openContainer(s.bid)}
+            menu={containerMenu(s.bid)}
             onAdd={b ? ()=>addInBlock(b, seg.start) : undefined}
             onCollapse={controls ? ()=>toggleBlockCollapsed(s.bid, !!seg.collapsed) : undefined} />
           // Gap before this segment — only for a block's true top (roundTop),
@@ -2158,6 +2363,7 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
               const header = firstOfRoutine
                 ? (emittedCollapse[task.routine] = true,
                    <RoutineCollapseRow key={'rc-'+task.routine} routine={r} count={doneRoutineCounts[task.routine]} expanded={isExp}
+                     menu={routineMenu(task.routine)}
                      onToggle={()=>setExpandedRoutines(p=>({...p,[task.routine]:!p[task.routine]}))} />)
                 : null
               if (!isExp) {
@@ -2202,6 +2408,16 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
             const isLastInBand  = !!myBand && !nextSameRoutine
             const joinHead = !!(inBlockId && isFirstInBand && blockHeadIds.has(inBlockId))
             const joinTail = !!(inBlockId && isLastInBand  && blockTailIds.has(inBlockId))
+            // A routine band gets a header of its own above its first task —
+            // the routine's name plus the ⋯ that edits or deletes the group. It
+            // carries the film's rounded top, so the task below joins it flush.
+            const routineBandId = myBand?.id?.startsWith('rt-') ? myBand.id.slice(3) : null
+            const routineBand = (routineBandId && isFirstInBand) ? routineById(routineBandId) : null
+            const routineHead = routineBand ? (
+              <RoutineBandHead routine={routineBand}
+                onEdit={updateRoutine ? ()=>setEditingRoutine(routineBand) : null}
+                menu={routineMenu(routineBandId)} />
+            ) : null
             // Free time before this task, measured from wherever the day last
             // ended (a task, a routine, or a block) — tinted with the block's
             // film only when the gap sits inside that same block.
@@ -2217,13 +2433,15 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
               <div key={task.id} data-task-row={task.id} className={spotlight===task.id ? 'task-spotlight' : undefined}>
                 {emitNow&&<NowMarker now={now} bandTint={(myBand && (joinHead || prevSameRoutine)) ? myTint : null} bandOpacity={inBlockId ? BLOCK_FILM_OPACITY : 0.5}/>}
                 {gapEl}
+                {routineHead}
                 <TimelineBlock
                   task={task} categories={categories} status={task._status} now={now}
                   routineTint={myTint} tintOpacity={inBlockId ? BLOCK_FILM_OPACITY : 0.5}
-                  filmTop={!prevSameRoutine && !joinHead} filmBottom={!nextSameRoutine && !joinTail}
+                  filmTop={!prevSameRoutine && !joinHead && !routineHead} filmBottom={!nextSameRoutine && !joinTail}
                   bandLabel={(isFirstInBand && !joinHead) ? (myBand?.label || null) : null}
                   bandIcon={inBlockBand?.icon || null}
                   onBandLabel={inBlockId ? () => openContainer(inBlockId) : null}
+                  bandMenu={inBlockId ? containerMenu(inBlockId) : []}
                   onBandCollapse={(inBlockId && isFirstInBand && !joinHead) ? () => toggleBlockCollapsed(inBlockId, false) : null}
                   prevColor={colorOf(prev)} nextColor={colorOf(next)}
                   isDone={task._status==='past'}
@@ -2372,6 +2590,12 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
         }}
         onDelete={t=>{ deleteRecurringTask&&deleteRecurringTask(t.id); setEditingRec(null); setEditingRecDate(null) }}
         onClose={()=>{ setEditingRec(null); setEditingRecDate(null) }} title="Edit recurring task"/>}
+      {editingRoutine&&<RoutineEditor routine={editingRoutine}
+        taskCount={(recurringTasks||[]).filter(t=>t.routine===editingRoutine.id).length
+                 + (commitments||[]).filter(c=>c.routine===editingRoutine.id).length}
+        onSave={changes=>updateRoutine&&updateRoutine(editingRoutine.id, changes)}
+        onDelete={deleteRoutine ? ()=>deleteRoutine(editingRoutine.id) : null}
+        onClose={()=>setEditingRoutine(null)} />}
       {managing&&<ManageModal task={managing} dateKey={dateKey} onClose={()=>setManaging(null)} onDelete={handleDelete} onReschedule={handleReschedule} onUnschedule={handleUnschedule} onDeleteSeries={handleDeleteSeries} onDeleteFuture={handleDeleteFuture} scheduled={scheduled}/>}
     </div>
   )
