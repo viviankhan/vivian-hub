@@ -65,12 +65,21 @@ const seed = async (build) => {
 const store = (key) => page.evaluate(k => JSON.parse(localStorage.getItem('vivian_' + k) || 'null'), key)
 // The band's ⋯ — labelled with the container's own name.
 const bandMenu = (name) => page.locator(`button[aria-label="${name} — more actions"]`)
+// Open it and wait for the portalled popover to be measured and painted.
+const openMenu = async (name) => {
+  await bandMenu(name).click()
+  await page.waitForSelector('[role="menuitem"]', { timeout: 3000 })
+}
 const menuItems = () => page.$$eval('[role="menuitem"]', bs => bs.map(b => b.textContent.trim()))
-const clickMenuItem = (text) => page.evaluate(t => {
-  const b = [...document.querySelectorAll('[role="menuitem"]')].find(x => x.textContent.trim() === t)
-  if (!b) throw new Error(`no menu item “${t}”`)
-  b.click()
-}, text)
+// A REAL click, not a dispatched one. Playwright checks the point actually
+// hits this element, which is the whole point: an earlier version of the menu
+// was painted under the next band and every tap fell through to it — a
+// synthetic element.click() sails through that and reports success.
+const clickMenuItem = (text) =>
+  page.getByRole('menuitem', { name: text, exact: true }).click({ timeout: 3000 })
+// Nothing on the timeline should have opened a task sheet behind the menu.
+const sheetOpen = () => page.evaluate(() =>
+  !!document.body.innerText.match(/ADD TO TODAY|Add to Today/))
 // Every uppercase band label currently on the timeline. A block's own band
 // draws it as a span, a band label riding on a task (or a routine head) as a
 // button — so look at both.
@@ -89,9 +98,11 @@ await seed(today => ({
 eq('its band is on the timeline', (await bandLabels()).includes('WORK'), true)
 eq('and the band carries a ⋯', await bandMenu('Work').count(), 1)
 
-await bandMenu('Work').click()
+await openMenu('Work')
 eq('which offers the block’s own edit + delete', await menuItems(), ['Edit block', 'Delete block'])
 await clickMenuItem('Delete block')
+await page.waitForTimeout(300)
+eq('and the tap did not fall through to the band', await sheetOpen(), false)
 await page.waitForTimeout(300)
 eq('deleting takes the band off the day', (await bandLabels()).includes('WORK'), false)
 eq('and the block itself is gone', await store('commitments'), [])
@@ -106,7 +117,7 @@ const repeating = today => ({
 })
 await seed(repeating)
 eq('its band is on the timeline', (await bandLabels()).includes('STUDIO'), true)
-await bandMenu('Studio').click()
+await openMenu('Studio')
 eq('and its delete is scoped like a series', await menuItems(),
    ['Edit block', 'Delete just this day', 'Delete this & all future', 'Delete every day'])
 
@@ -120,7 +131,7 @@ eq('the series itself is untouched', ((await store('recurring_tasks_v2')) || [])
 
 // Deleting every day is not undoable, so it asks a second time first.
 await seed(repeating)
-await bandMenu('Studio').click()
+await openMenu('Studio')
 await clickMenuItem('Delete every day')
 await page.waitForTimeout(150)
 eq('“every day” arms rather than fires', await menuItems(),
@@ -152,7 +163,7 @@ const withRoutine = today => ({
 await seed(withRoutine)
 eq('the routine names its own band', (await bandLabels()).includes('DEEP WORK'), true)
 eq('and the band carries a ⋯', await bandMenu('Deep work').count(), 1)
-await bandMenu('Deep work').click()
+await openMenu('Deep work')
 eq('which edits or deletes the routine itself', await menuItems(), ['Edit routine', 'Delete routine'])
 
 // Edit: rename it, and the band renames with it.
@@ -165,7 +176,7 @@ eq('a rename lands on the band', (await bandLabels()).includes('STUDIO HOURS'), 
 eq('and on the stored group', ((await store('routine_groups')) || []).map(r => r.name), ['Studio hours'])
 
 // Delete: the group goes, its tasks stay.
-await bandMenu('Studio hours').click()
+await openMenu('Studio hours')
 await clickMenuItem('Delete routine')
 await page.waitForTimeout(150)
 await clickMenuItem('Tap again to confirm')
@@ -173,6 +184,47 @@ await page.waitForTimeout(300)
 eq('deleting drops the routine', await store('routine_groups'), [])
 eq('but keeps its tasks on the day', await page.evaluate(() =>
   ['Write', 'Review'].every(t => document.body.innerText.includes(t))), true)
+
+// ── A done routine sitting right above a block band ────────────
+// The layout that broke the menu: every band row pins its film with a z-index,
+// which makes it a stacking context — so a popover rendered inside one row was
+// painted UNDER the rows and bands that follow it, and every tap fell through
+// to whatever was on top (usually a block band's "add a task here"). The menu
+// is portalled out to the body now; these check the taps land where they're aimed.
+console.log('\n— a done routine stacked above a block band —')
+await seed(today => ({
+  commitments: [{ id:'c-blk', text:'Studio', date:today, time:'23:00', durationMins:59, cat:'', done:false }],
+  commitment_meta: { 'c-blk': { block:true, color:'#8B7BB8' } },
+  routine_groups: [{ id:'rt-am', name:'Morning routine', tint:'#FBE79E' }],
+  recurring_tasks_v2: [{ id:'r-am1', label:'00:05 — Stretch', days:[], startDate:null }],
+  recurring_meta: { 'r-am1': { routine:'rt-am', durationMins:15, freq:'daily' } },
+  recurring_exceptions: {},
+  // Done, so the routine renders as its collapsed summary row — the row the
+  // screenshot showed the menu vanishing behind.
+  completions: { [`${today}_r-am1`]: true },
+}))
+eq('the routine collapsed to its summary row', await page.evaluate(() =>
+  document.body.innerText.includes('First thing in the morning')), true)
+await openMenu('Morning routine')
+eq('its menu is reachable over the band below', await menuItems(), ['Edit routine', 'Delete routine'])
+await clickMenuItem('Edit routine')
+await page.waitForTimeout(300)
+eq('and Edit opens the routine editor, not the add sheet', await page.evaluate(() =>
+  !!document.querySelector('input[aria-label="Routine name"]')), true)
+eq('no task sheet opened behind it', await sheetOpen(), false)
+await page.getByRole('button', { name: 'Cancel' }).click()
+await page.waitForTimeout(200)
+
+// …and the same for Delete, which is what actually fell through in the report.
+await openMenu('Morning routine')
+await clickMenuItem('Delete routine')
+await page.waitForTimeout(200)
+eq('Delete arms in place instead of opening anything', await menuItems(),
+   ['Edit routine', 'Tap again to confirm'])
+eq('still no task sheet', await sheetOpen(), false)
+await clickMenuItem('Tap again to confirm')
+await page.waitForTimeout(300)
+eq('and the second tap removes the group', await store('routine_groups'), [])
 
 eq('no uncaught errors', errors, [])
 

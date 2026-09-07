@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useMemo, useLayoutEffect } from 'react'
+import { createPortal } from 'react-dom'
 import { recurringOccurrencesForDate, taskSegments, occKey, recurringActiveOn } from '../lib/occurrences.js'
 import { findSlots } from '../lib/scheduler.js'
 import { Icon } from './IconPicker.jsx'
@@ -403,27 +404,64 @@ function BandChevron({ collapsed, onClick }) {
 // its icon happens to open. Items marked `confirm` ask a second time before
 // they fire, since the things they remove (a whole series, a routine group)
 // can't be taken back.
+//
+// The popover goes in a PORTAL, not inline. Every band row pins its film with
+// `zIndex:0`, and that makes the row a stacking context — an inline popover is
+// trapped inside it, so the next row (or the block band below) paints straight
+// over the menu and swallows the taps meant for it. Fixed to the viewport off
+// document.body, it can't be buried by anything.
 function BandMenu({ items = [], name = '' }) {
   const [open, setOpen] = useState(false)
   const [armed, setArmed] = useState(null)   // index of the item awaiting its confirm tap
-  const ref = useRef(null)
+  const [pos, setPos] = useState(null)       // viewport coords, recomputed while open
+  const btnRef = useRef(null)
+  const popRef = useRef(null)
+  const count = items.length
   useEffect(() => {
     if (!open) return
-    const away = (e) => { if (ref.current && !ref.current.contains(e.target)) { setOpen(false); setArmed(null) } }
+    // Hang the menu off the button's right edge, flipping above it when there
+    // isn't room below (a band near the bottom of the day).
+    const place = () => {
+      const r = btnRef.current?.getBoundingClientRect()
+      if (!r) return
+      const h = count * 38 + 12
+      const below = r.bottom + 6
+      setPos({
+        top: (below + h > window.innerHeight - 8 && r.top - 6 - h > 8) ? (r.top - 6 - h) : below,
+        right: Math.max(8, window.innerWidth - r.right),
+      })
+    }
+    place()
+    const away = (e) => {
+      if (btnRef.current?.contains(e.target) || popRef.current?.contains(e.target)) return
+      setOpen(false); setArmed(null)
+    }
+    const key = (e) => { if (e.key === 'Escape') { setOpen(false); setArmed(null) } }
     document.addEventListener('mousedown', away)
-    return () => document.removeEventListener('mousedown', away)
-  }, [open])
-  if (!items.length) return null
+    document.addEventListener('keydown', key)
+    window.addEventListener('resize', place)
+    window.addEventListener('scroll', place, true)
+    return () => {
+      document.removeEventListener('mousedown', away)
+      document.removeEventListener('keydown', key)
+      window.removeEventListener('resize', place)
+      window.removeEventListener('scroll', place, true)
+    }
+  }, [open, count])
+  if (!count) return null
   const title = name ? `${name} — more actions` : 'More actions'
   return (
-    <span ref={ref} onClick={e=>e.stopPropagation()} style={{ position:'relative', flexShrink:0, display:'inline-flex' }}>
-      <button type="button" onClick={e=>{ e.stopPropagation(); setArmed(null); setOpen(o=>!o) }}
+    <span onClick={e=>e.stopPropagation()} style={{ flexShrink:0, display:'inline-flex' }}>
+      <button ref={btnRef} type="button" onClick={e=>{ e.stopPropagation(); setArmed(null); setOpen(o=>!o) }}
         title={title} aria-label={title} aria-haspopup="menu" aria-expanded={open}
         style={{ width:30, height:30, flexShrink:0, borderRadius:'50%', border:'none', background:'rgba(255,255,255,.72)', cursor:'pointer', padding:0,
           display:'flex', alignItems:'center', justifyContent:'center', color:'#39434F', fontSize:16, fontWeight:800, lineHeight:1, fontFamily:'DM Sans,sans-serif' }}>···</button>
-      {open && (
-        <div role="menu" style={{ position:'absolute', top:34, right:0, zIndex:40, minWidth:198, background:'white', border:'1px solid var(--border)',
-          borderRadius:12, boxShadow:'0 12px 34px rgba(26,58,78,.20)', padding:5, textAlign:'left' }}>
+      {open && pos && createPortal(
+        // A portal still bubbles events up the REACT tree, so the click has to
+        // be stopped here too or it reaches the band underneath all the same.
+        <div ref={popRef} role="menu" onClick={e=>e.stopPropagation()}
+          style={{ position:'fixed', top:pos.top, right:pos.right, zIndex:500, minWidth:198, background:'white', border:'1px solid var(--border)',
+            borderRadius:12, boxShadow:'0 12px 34px rgba(26,58,78,.20)', padding:5, textAlign:'left' }}>
           {items.map((it, i) => {
             const isArmed = armed === i
             return (
@@ -440,8 +478,7 @@ function BandMenu({ items = [], name = '' }) {
               </button>
             )
           })}
-        </div>
-      )}
+        </div>, document.body)}
     </span>
   )
 }
