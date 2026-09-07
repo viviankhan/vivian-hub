@@ -1799,14 +1799,29 @@ export default function App() {
 
     pushUndo((nowDone ? 'checked off' : 'unchecked') + ' “' + (label || 'task') + '”', () => syncToggle(id, label, tag, date, !!currentDone))
 
-    if (isCommitment) {
-      setCommitments_(prev => prev.map(c => c.id===id ? {...c, done:nowDone} : c))
-      dbUpdateCommitment(id, { done: nowDone }).catch(reportSaveError)
+    // An event from a subscribed calendar that has been added to the schedule
+    // exists twice over: the event itself, keyed by the feed, is what the
+    // calendar views tick, and the task it became, keyed by its own id, is what
+    // the timeline ticks. They are one thing to the user, so a tick on either
+    // writes both — otherwise a task reads as done on one screen and not on the
+    // next, and unchecking in one place leaves the other struck through.
+    const twins = []
+    for (const [impKey, cid] of Object.entries(importedAdoptions || {})) {
+      if (!cid) continue
+      if (cid === storageKey) twins.push(impKey)
+      else if (impKey === storageKey) twins.push(cid)
+    }
+    const doneCommitments = [id, ...twins].filter(k => commitments.some(c => c.id === k))
+    if (isCommitment || doneCommitments.length) {
+      setCommitments_(prev => prev.map(c => doneCommitments.includes(c.id) ? {...c, done:nowDone} : c))
+      doneCommitments.forEach(cid => dbUpdateCommitment(cid, { done: nowDone }).catch(reportSaveError))
     }
     const nextCompletions = { ...completions, [storageKey]: nowDone }
+    twins.forEach(k => { nextCompletions[k] = nowDone })
     setCompletions_(nextCompletions)
     try {
       await setCompletion(storageKey, nowDone)
+      for (const k of twins) await setCompletion(k, nowDone)
     } catch (e) { reportSaveError(e) }
 
     if (nowDone) {
@@ -1832,7 +1847,7 @@ export default function App() {
       })
       deleteLogEntry(label, storageKey).catch(reportSaveError)
     }
-  }, [completions, commitments])
+  }, [completions, commitments, importedAdoptions])
 
   // Drop a task's stored completion record entirely (as opposed to syncToggle,
   // which records an explicit true/false). With no record, a routine / block /
