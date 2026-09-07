@@ -627,6 +627,10 @@ export default function App() {
   // Set when a search suggestion is picked → Calendar navigates to this date.
   // The nonce lets re-picking the same date re-trigger the jump.
   const [jumpTo,       setJumpTo]       = useState(null)
+  // Set when a task is held down on the Calendar → Today opens on that task's
+  // day with the task itself scrolled to and spotlighted. Today clears it once
+  // it has landed, so returning to the tab later doesn't replay the jump.
+  const [todayJump,    setTodayJump]    = useState(null)
 
   // "completions" replaces the old separate todos/weekState blobs — every
   // consumer already reads todos[k] || weekState[k], which were confirmed to
@@ -1370,6 +1374,17 @@ export default function App() {
   // "Add to my schedule" copies a read-only imported event into a real
   // commitment the user owns (so they can move/edit it freely), then records the
   // adoption so it reads as "Added" everywhere and is never offered twice.
+  // Remember that an imported event now has a commitment of the user's own
+  // standing in for it, so it reads as "Added" everywhere and is never offered
+  // twice. Shared by "+ Schedule" and by editing an imported event into your
+  // own schedule from Today.
+  const markImportedAdopted = useCallback((key, commitmentId) => {
+    setImportedAdoptions_(prev => {
+      const next = { ...prev, [key]: commitmentId }
+      setImportedAdoptions(next).catch(e => console.warn("[Bloom] adoption save failed:", e))
+      return next
+    })
+  }, [])
   const adoptImportedEvent = useCallback((span, dateStr, timeHHMM, durationMins) => {
     const key = importedKey(span)
     if (importedAdoptions[key]) return
@@ -1390,12 +1405,8 @@ export default function App() {
       description: span.calendarName ? `From ${span.calendarName}` : 'From a subscribed calendar',
       createdAt: new Date().toISOString(),
     })
-    setImportedAdoptions_(prev => {
-      const next = { ...prev, [key]: cid }
-      setImportedAdoptions(next).catch(e => console.warn("[Bloom] adoption save failed:", e))
-      return next
-    })
-  }, [importedAdoptions, addCommitment])
+    markImportedAdopted(key, cid)
+  }, [importedAdoptions, addCommitment, markImportedAdopted])
   const updateCommitment = useCallback(async (id, changes, opts = {}) => {
     const { description, subtasks, cats, color, icon, location, startedAt, block, routine, autoComplete, recordValues, ...core } = changes
     // Snapshot the prior values of exactly the fields being changed, so this
@@ -1800,14 +1811,29 @@ export default function App() {
 
     pushUndo((nowDone ? 'checked off' : 'unchecked') + ' “' + (label || 'task') + '”', () => syncToggle(id, label, tag, date, !!currentDone))
 
-    if (isCommitment) {
-      setCommitments_(prev => prev.map(c => c.id===id ? {...c, done:nowDone} : c))
-      dbUpdateCommitment(id, { done: nowDone }).catch(reportSaveError)
+    // An event from a subscribed calendar that has been added to the schedule
+    // exists twice over: the event itself, keyed by the feed, is what the
+    // calendar views tick, and the task it became, keyed by its own id, is what
+    // the timeline ticks. They are one thing to the user, so a tick on either
+    // writes both — otherwise a task reads as done on one screen and not on the
+    // next, and unchecking in one place leaves the other struck through.
+    const twins = []
+    for (const [impKey, cid] of Object.entries(importedAdoptions || {})) {
+      if (!cid) continue
+      if (cid === storageKey) twins.push(impKey)
+      else if (impKey === storageKey) twins.push(cid)
+    }
+    const doneCommitments = [id, ...twins].filter(k => commitments.some(c => c.id === k))
+    if (isCommitment || doneCommitments.length) {
+      setCommitments_(prev => prev.map(c => doneCommitments.includes(c.id) ? {...c, done:nowDone} : c))
+      doneCommitments.forEach(cid => dbUpdateCommitment(cid, { done: nowDone }).catch(reportSaveError))
     }
     const nextCompletions = { ...completions, [storageKey]: nowDone }
+    twins.forEach(k => { nextCompletions[k] = nowDone })
     setCompletions_(nextCompletions)
     try {
       await setCompletion(storageKey, nowDone)
+      for (const k of twins) await setCompletion(k, nowDone)
     } catch (e) { reportSaveError(e) }
 
     if (nowDone) {
@@ -1833,7 +1859,7 @@ export default function App() {
       })
       deleteLogEntry(label, storageKey).catch(reportSaveError)
     }
-  }, [completions, commitments])
+  }, [completions, commitments, importedAdoptions])
 
   // Drop a task's stored completion record entirely (as opposed to syncToggle,
   // which records an explicit true/false). With no record, a routine / block /
@@ -1896,7 +1922,7 @@ export default function App() {
     // from enabled calendars), and the "add to my schedule" adoption map + action.
     externalCalendars: extCalendars, toggleCalendar,
     externalEvents: externalSpans,
-    importedAdoptions, adoptImportedEvent,
+    importedAdoptions, adoptImportedEvent, markImportedAdopted,
     categories,
     // History-based label prediction for the add sheet (no blind defaults).
     labelModel,
@@ -1993,12 +2019,14 @@ export default function App() {
           wlEpisodes={wlEpisodes} persistWlEpisodes={persistWlEpisodes}
           wlGame={wlGame} persistWlGame={persistWlGame} wlLog={log}
           wlEmotions={wlEmotions} persistWlEmotions={persistWlEmotions}
+          jumpTo={todayJump} onJumpConsumed={() => setTodayJump(null)}
           onOpenWellness={() => setTab('wellness')} />}
         {tab==='taskmenu'    && <TaskMenu templates={taskTemplates} addTemplate={addTaskTemplate}
           updateTemplate={updateTaskTemplate} deleteTemplate={deleteTaskTemplate} categories={categories}
           addCategory={addCategoryFn} deleteCategory={deleteCategoryFn}
           reorderCategories={reorderCategoriesFn} />}
-        {tab==='calendar'    && <Calendar    {...sharedProps} jumpTo={jumpTo} />}
+        {tab==='calendar'    && <Calendar    {...sharedProps} jumpTo={jumpTo}
+          openInToday={(date, taskId) => { setTodayJump({ date, taskId, nonce: Date.now() }); setTab('today') }} />}
         {tab==='thoughts'    && <ThoughtsBoard addCommitment={addCommitment} addRecurringTask={addRecurringTaskFn}
           categories={categories} routines={routines} taskTemplates={taskTemplates} labelModel={labelModel}
           appendLog={appendLog} />}

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Icon } from './IconPicker.jsx'
 import AddItemModal from './AddItemModal.jsx'
 import { setItemReminders } from '../lib/notifications.js'
@@ -41,7 +41,7 @@ function endTimeFrom(start, mins) {
   return `${String(Math.floor(total/60)).padStart(2,'0')}:${String(total%60).padStart(2,'0')}`
 }
 
-export default function Calendar({ commitments, vacations, events, log, categories, jumpTo, addCommitment, updateCommitment, deleteCommitment, moveCommitmentToThoughts, todos, weekState, syncToggle, recurringTasks, recurringExceptions, skipRecurringOccurrence, addRecurringTask, updateRecurringTask, deleteRecurringTask, routines = [], taskTemplates = [], labelModel = null, externalCalendars = [], toggleCalendar, importedAdoptions = {}, adoptImportedEvent }) {
+export default function Calendar({ commitments, vacations, events, log, categories, jumpTo, addCommitment, updateCommitment, deleteCommitment, moveCommitmentToThoughts, todos, weekState, syncToggle, recurringTasks, recurringExceptions, skipRecurringOccurrence, addRecurringTask, updateRecurringTask, deleteRecurringTask, routines = [], taskTemplates = [], labelModel = null, externalCalendars = [], toggleCalendar, importedAdoptions = {}, adoptImportedEvent, openInToday }) {
   // monthOffset shifts by whole months from the current month: 0 = this month,
   // -1 = last month, +1 = next month, and so on — unbounded either way.
   const [monthOffset, setMonthOffset] = useState(0)
@@ -58,6 +58,76 @@ export default function Calendar({ commitments, vacations, events, log, categori
     return () => window.removeEventListener(RECURRING_FILTER_EVENT, h)
   }, [])
   const today = todayStr()
+
+  // ── Tap for details, hold to teleport ────────────────────────
+  // A task row on a day behaves like one on Today: a tap opens its full editor
+  // (subtasks, notes, alerts — "just this event" vs the series for a repeating
+  // one), and a press-and-hold jumps to Today on that task's own day with the
+  // task itself scrolled to and spotlighted on the timeline.
+  const HOLD_MS = 480
+  const HOLD_SLOP = 12          // px of finger drift allowed before it's a scroll
+  const holdTimer = useRef(null)
+  const holdFired = useRef(false)
+  const holdFrom = useRef({ x:0, y:0 })
+  // Navigating away mid-press means the click that ends the press would land on
+  // whatever Today just put under the finger — swallow that one click.
+  const swallowNextClick = () => {
+    let timer = null
+    const eat = (ev) => { ev.stopPropagation(); ev.preventDefault(); done() }
+    const done = () => { window.removeEventListener('click', eat, true); clearTimeout(timer) }
+    timer = setTimeout(done, 700)
+    window.addEventListener('click', eat, true)
+  }
+  const startHold = (e, dateStr, taskId) => {
+    holdFired.current = false
+    holdFrom.current = { x: e.clientX, y: e.clientY }
+    clearTimeout(holdTimer.current)
+    if (!openInToday) return
+    holdTimer.current = setTimeout(() => {
+      holdFired.current = true
+      // A short buzz confirms the hold registered before the view changes.
+      try { navigator.vibrate && navigator.vibrate(14) } catch {}
+      swallowNextClick()
+      openInToday(dateStr, taskId)
+    }, HOLD_MS)
+  }
+  const endHold = () => clearTimeout(holdTimer.current)
+  // Scrolling the day list must not count as a hold — any real drift cancels it.
+  const moveHold = (e) => {
+    if (Math.abs(e.clientX - holdFrom.current.x) > HOLD_SLOP ||
+        Math.abs(e.clientY - holdFrom.current.y) > HOLD_SLOP) endHold()
+  }
+  // The click that follows a completed hold is swallowed — the jump already ran.
+  const tapRow = (open) => { if (holdFired.current) { holdFired.current = false; return } open() }
+  // Handlers for a whole task row: tap opens `open`, hold teleports to Today.
+  const rowPress = (dateStr, taskId, open) => ({
+    onClick: () => tapRow(open),
+    onPointerDown: (e) => startHold(e, dateStr, taskId),
+    onPointerMove: moveHold,
+    onPointerUp: endHold,
+    onPointerLeave: endHold,
+    onPointerCancel: endHold,
+    onContextMenu: (e) => e.preventDefault(),
+    onKeyDown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open() } },
+    role: 'button', tabIndex: 0,
+    // Suppresses the text-selection / callout a long press otherwise triggers.
+    className: 'cal-task-row',
+    title: openInToday ? 'Tap for details · hold to open it in Today' : 'Tap for details',
+  })
+  // A control sitting inside a row (checkbox, ✎, ✕, a subtask) acts on its own —
+  // it must not open the row or start a hold.
+  const stopRow = {
+    onPointerDown: (e) => { e.stopPropagation(); endHold() },
+    onPointerUp: (e) => e.stopPropagation(),
+  }
+  useEffect(() => () => clearTimeout(holdTimer.current), [])
+
+  // Open a recurring occurrence's editor — the same sheet its ✎ opens, and the
+  // same one Today shows when you tap a repeating task.
+  const openRecurring = (id, dateStr) => {
+    const t = (recurringTasks || []).find(r => r.id === id)
+    if (t) { setEditingRecDate(dateStr); setEditingRec(t) }
+  }
 
   // ── Effective done, mirroring Today & Week ───────────────────
   // A task that sits inside a time block, belongs to a routine, or opts in via
@@ -297,6 +367,11 @@ export default function Calendar({ commitments, vacations, events, log, categori
               + Add to this day
             </button>
           </div>
+          {(selectedEvents.length > 0 || selectedRecurring.length > 0) && (
+            <div style={{ fontSize:11, color:'var(--muted)', marginBottom:8 }}>
+              Tap a task for its full details{openInToday ? ' · hold to open it in Today' : ''}.
+            </div>
+          )}
           {selectedEvents.length === 0 && selectedSpans.length === 0 && selectedRecurring.length === 0 && !(doneByDate[selected]?.length > 0) && (
             <div style={{ fontSize:12, color:'var(--muted)', fontStyle:'italic', paddingBottom:2 }}>Nothing scheduled yet. Use “+ Add to this day.”</div>
           )}
@@ -337,9 +412,10 @@ export default function Calendar({ commitments, vacations, events, log, categori
           {selectedEvents.map((e, i) => {
             const done = effectiveDone(e, selected, selectedBlocks)
             return (
-            <div key={i} style={{ padding:'9px 12px', borderRadius:8, marginBottom:6, background:`${e.color}14`, border:`1px solid ${e.color}44`, opacity: done ? .6 : 1 }}>
+            <div key={i} {...rowPress(selected, e.id, () => setEditing(e.raw))}
+              style={{ padding:'9px 12px', borderRadius:8, marginBottom:6, background:`${e.color}14`, border:`1px solid ${e.color}44`, opacity: done ? .6 : 1, cursor:'pointer' }}>
               <div style={{ display:'flex', gap:10, alignItems:'center' }}>
-                <div onClick={() => syncToggle && syncToggle(e.id, e.text, e.raw.cat, null, !done)} role="checkbox" aria-checked={done} title={done ? 'Mark not done' : 'Mark done'}
+                <div {...stopRow} onClick={(ev) => { ev.stopPropagation(); syncToggle && syncToggle(e.id, e.text, e.raw.cat, null, !done) }} role="checkbox" aria-checked={done} title={done ? 'Mark not done' : 'Mark done'}
                   style={{ width:18, height:18, borderRadius:5, flexShrink:0, cursor:'pointer', border: done ? 'none' : `2px solid ${e.color}`, background: done ? e.color : 'transparent', display:'flex', alignItems:'center', justifyContent:'center' }}>
                   {done && <span style={{ color:'white', fontSize:10, fontWeight:700 }}>✓</span>}
                 </div>
@@ -347,7 +423,7 @@ export default function Calendar({ commitments, vacations, events, log, categori
                   {e.icon && <Icon value={e.icon} size={12} />}{e.catLabel}
                 </span>
                 <div style={{ flex:1, fontSize:13, color:'var(--text)', textDecoration: done ? 'line-through' : 'none' }}>{e.label}</div>
-                <button onClick={() => setEditing(e.raw)} title="Edit"
+                <button {...stopRow} onClick={(ev) => { ev.stopPropagation(); setEditing(e.raw) }} title="Edit"
                   style={{ background:'none', border:'none', cursor:'pointer', color:'#9CA3AF', fontSize:13, padding:'0 2px', flexShrink:0 }}>✎</button>
               </div>
               {e.description && (
@@ -356,7 +432,7 @@ export default function Calendar({ commitments, vacations, events, log, categori
               {e.subtasks.length > 0 && (
                 <div style={{ marginTop:6, paddingLeft:2 }}>
                   {e.subtasks.map(s => (
-                    <div key={s.id} onClick={() => toggleSubtask(e.raw, s.id)}
+                    <div key={s.id} {...stopRow} onClick={(ev) => { ev.stopPropagation(); toggleSubtask(e.raw, s.id) }}
                       style={{ display:'flex', alignItems:'center', gap:8, marginBottom:4, cursor:'pointer' }}>
                       <div style={{ width:15, height:15, borderRadius:4, flexShrink:0, border: s.done ? 'none' : `2px solid ${e.color}`, background: s.done ? e.color : 'transparent', display:'flex', alignItems:'center', justifyContent:'center' }}>
                         {s.done && <span style={{ color:'white', fontSize:9, fontWeight:700 }}>✓</span>}
@@ -373,8 +449,9 @@ export default function Calendar({ commitments, vacations, events, log, categori
           {selectedRecurring.map((e, i) => {
             const done = effectiveDone(e, selected, selectedBlocks)
             return (
-            <div key={'rec'+i} style={{ display:'flex', gap:10, alignItems:'center', padding:'9px 12px', borderRadius:8, marginBottom:6, background:`${e.color}14`, border:`1px solid ${e.color}44`, opacity: done ? .6 : 1 }}>
-              <div onClick={() => syncToggle && syncToggle(e.id, e.text, e.cat, selected, !done)} role="checkbox" aria-checked={done} title={done ? 'Mark not done' : 'Mark done'}
+            <div key={'rec'+i} {...rowPress(selected, e.id, () => openRecurring(e.id, selected))}
+              style={{ display:'flex', gap:10, alignItems:'center', padding:'9px 12px', borderRadius:8, marginBottom:6, background:`${e.color}14`, border:`1px solid ${e.color}44`, opacity: done ? .6 : 1, cursor:'pointer' }}>
+              <div {...stopRow} onClick={(ev) => { ev.stopPropagation(); syncToggle && syncToggle(e.id, e.text, e.cat, selected, !done) }} role="checkbox" aria-checked={done} title={done ? 'Mark not done' : 'Mark done'}
                 style={{ width:18, height:18, borderRadius:5, flexShrink:0, cursor:'pointer', border: done ? 'none' : `2px solid ${e.color}`, background: done ? e.color : 'transparent', display:'flex', alignItems:'center', justifyContent:'center' }}>
                 {done && <span style={{ color:'white', fontSize:10, fontWeight:700 }}>✓</span>}
               </div>
@@ -383,9 +460,9 @@ export default function Calendar({ commitments, vacations, events, log, categori
               </span>
               <div style={{ flex:1, fontSize:13, color:'var(--text)', textDecoration: done ? 'line-through' : 'none' }}>{e.label}</div>
               <span style={{ fontSize:9, letterSpacing:.5, textTransform:'uppercase', color:'var(--muted)', flexShrink:0 }}>Repeats</span>
-              <button onClick={() => { const t=(recurringTasks||[]).find(r=>r.id===e.id); if(t){ setEditingRecDate(selected); setEditingRec(t) } }} title="Edit"
+              <button {...stopRow} onClick={(ev) => { ev.stopPropagation(); openRecurring(e.id, selected) }} title="Edit"
                 style={{ background:'none', border:'none', cursor:'pointer', color:'#9CA3AF', fontSize:13, padding:'0 2px', flexShrink:0 }}>✎</button>
-              <button onClick={() => skipRecurringOccurrence && skipRecurringOccurrence(e.id, selected)} title="Skip just this day"
+              <button {...stopRow} onClick={(ev) => { ev.stopPropagation(); skipRecurringOccurrence && skipRecurringOccurrence(e.id, selected) }} title="Skip just this day"
                 style={{ background:'none', border:'none', cursor:'pointer', color:'#9CA3AF', fontSize:14, padding:'0 2px', flexShrink:0 }}>✕</button>
             </div>
           )})}
