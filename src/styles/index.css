@@ -243,6 +243,30 @@ body {
   .today-split-aside { grid-area: aside; position: sticky; top: 16px; }
 }
 
+/* ── TODAY: spotlighted task ────────────────────────────────────
+   Landing on Today from a long-press on the Calendar scrolls that task into
+   view; the ring pulses a couple of times so the eye finds it, then settles. */
+@keyframes task-spotlight {
+  0%, 100% { box-shadow: 0 0 0 0 transparent; }
+  35%      { box-shadow: 0 0 0 4px color-mix(in srgb, var(--teal) 42%, transparent); }
+}
+.task-spotlight {
+  border-radius: 18px;
+  animation: task-spotlight 1.15s ease-in-out 2;
+}
+@media (prefers-reduced-motion: reduce) {
+  .task-spotlight { animation: none; box-shadow: 0 0 0 3px color-mix(in srgb, var(--teal) 42%, transparent); }
+}
+
+/* ── CALENDAR: a task row in the day panel ──────────────────────
+   Tap opens its details, press-and-hold jumps to it on Today — so the press
+   must not start a text selection or the iOS callout menu. */
+.cal-task-row {
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
 /* ── SHARED ─────────────────────────────────────────────────── */
 .section-label { font-size: 10px; letter-spacing: 3px; text-transform: uppercase; color: var(--muted); margin-bottom: 16px; }
 .divider { height: 1px; background: linear-gradient(90deg,transparent,var(--border),transparent); margin: 24px 0; }
