@@ -2,7 +2,7 @@
 import { createClient } from '@supabase/supabase-js'
 import {
   ready as offlineReady, cacheRead, cacheWrite, cacheClear,
-  enqueue, hasPending, isOnline, noteFailure, noteSuccess,
+  enqueue, hasPending, isOnline, noteFailure, noteSuccess, isAuthError, requestReauth,
   registerReplay, setActiveUid, flush as flushOutbox,
 } from './offline.js'
 
@@ -31,6 +31,10 @@ export const supabase = USE_SUPABASE
     })
   : null
 export const isUsingSupabase = USE_SUPABASE
+// Exposed so auth.js can ask the server directly whether it is reachable,
+// without a second copy of the environment lookup.
+export const supabaseUrl = SUPABASE_URL
+export const supabaseAnonKey = SUPABASE_KEY
 
 // ── localStorage helpers ───────────────────────────────────────
 async function lsGet(key) {
@@ -113,8 +117,10 @@ async function cloudRead({ mirror, table, id, run, fallback, label }) {
     return value
   } catch (e) {
     // A dropped connection is not an error worth shouting about — that is
-    // exactly the case the mirror exists for. Anything else still gets logged.
-    if (!noteFailure(e)) console.error(`[storage] ${label} failed:`, (e && e.message) || e)
+    // exactly the case the mirror exists for. A stale session isn't either:
+    // the mirror covers the read while the session renews itself.
+    if (isAuthError(e)) requestReauth()
+    else if (!noteFailure(e)) console.error(`[storage] ${label} failed:`, (e && e.message) || e)
     return local
   }
 }
@@ -130,7 +136,14 @@ async function cloudWrite(op, run) {
       noteSuccess()
       return { queued: false, result }
     } catch (e) {
-      if (!noteFailure(e)) throw e
+      // Three outcomes, and only one of them is the user's problem:
+      //   • the connection or the server is down → queue it, say nothing
+      //   • the session went stale → queue it and renew; a valid edit must not
+      //     be lost, and alerting once per change during an outage is exactly
+      //     the interruption this whole system exists to prevent
+      //   • the server refused the data itself → tell them, as it always did
+      if (isAuthError(e)) requestReauth()
+      else if (!noteFailure(e)) throw e
     }
   }
   await enqueue({ ...op, uid: kvUid })
@@ -277,7 +290,12 @@ async function runKvBatch(batch) {
         await Promise.all(chunk.map(k => cacheWrite(kvMirrorKey(k), got.has(k) ? got.get(k) : null)))
         for (const k of chunk) settle(k, got.has(k) ? got.get(k) : null)
       } catch (e) {
-        if (!noteFailure(e)) console.error('[storage] batched kv_store read failed:', (e && e.message) || e)
+        // Same three outcomes as every other read: a stale session renews
+        // itself quietly, a dropped connection or a struggling server is what
+        // the mirror is for, anything else is worth logging. Either way every
+        // key still gets answered from the mirror.
+        if (isAuthError(e)) requestReauth()
+        else if (!noteFailure(e)) console.error('[storage] batched kv_store read failed:', (e && e.message) || e)
         for (const k of chunk) settle(k, local.get(k))
       }
     }))
@@ -345,6 +363,23 @@ export async function dbGetChanged(key, sinceISO) {
 // called in.
 const writeQueues = new Map()
 
+// Wrap a Supabase error with a message a human can read, WITHOUT throwing away
+// the parts a machine needs. `status` and `code` are how the offline engine
+// tells "the server is down" apart from "the server refused this data" — and
+// dropping them meant every 5xx during an outage looked like a rejected write:
+// an alert per edit, and the change not queued. Which is exactly the
+// interruption offline support is supposed to prevent.
+function failed(message, error) {
+  const e = new Error(`${message}: ${(error && error.message) || error}`)
+  if (error && typeof error === 'object') {
+    if (error.status != null) e.status = error.status
+    if (error.code != null) e.code = error.code
+    if (error.name) e.serverName = error.name
+    e.cause = error
+  }
+  return e
+}
+
 // The raw kv_store upsert. Shared by dbSet and by outbox replay, so a write
 // that was queued offline lands exactly as it would have online.
 //
@@ -357,7 +392,7 @@ async function cloudKvSet(key, value) {
                     : { key, value, updated_at: new Date().toISOString() }
   const opts = kvUid ? { onConflict: 'user_id,key' } : undefined
   const { error } = await supabase.from('kv_store').upsert(row, opts)
-  if (error) throw new Error(`Cloud save failed for "${key}": ${error.message}`)
+  if (error) throw failed(`Cloud save failed for "${key}"`, error)
 }
 
 export async function dbSet(key, value) {
@@ -416,10 +451,10 @@ async function cloudCompletionSet(storageKey, done) {
   if (done) {
     const { error } = await supabase.from('task_completions')
       .upsert({ storage_key: storageKey, done: true, updated_at: new Date().toISOString() })
-    if (error) throw new Error(`Failed to save completion for "${storageKey}": ${error.message}`)
+    if (error) throw failed(`Failed to save completion for "${storageKey}"`, error)
   } else {
     const { error } = await supabase.from('task_completions').delete().eq('storage_key', storageKey)
-    if (error) throw new Error(`Failed to clear completion for "${storageKey}": ${error.message}`)
+    if (error) throw failed(`Failed to clear completion for "${storageKey}"`, error)
   }
 }
 
@@ -465,11 +500,11 @@ async function cloudLogInsert(entry) {
     id: entry.id, date: entry.date, date_label: entry.dateLabel, label: entry.label, tag: entry.tag,
     storage_key: entry.storageKey, ts: entry.ts || new Date().toISOString(),
   })
-  if (error) throw new Error(`Failed to add log entry: ${error.message}`)
+  if (error) throw failed(`Failed to add log entry`, error)
 }
 async function cloudLogDelete(id) {
   const { error } = await supabase.from('log_entries').delete().eq('id', id)
-  if (error) throw new Error(`Failed to delete log entry: ${error.message}`)
+  if (error) throw failed(`Failed to delete log entry`, error)
 }
 
 export async function getLogEntries() {
@@ -529,17 +564,17 @@ export async function deleteLogEntry(label, storageKey) {
       try {
         const { data: exact, error: e1 } = await supabase.from('log_entries')
           .select('id').eq('label', label).eq('storage_key', storageKey)
-        if (e1) throw new Error(`Failed to look up log entry: ${e1.message}`)
+        if (e1) throw failed(`Failed to look up log entry`, e1)
         if (exact && exact.length > 0) {
           const { error: e2 } = await supabase.from('log_entries').delete().in('id', exact.map(r => r.id))
-          if (e2) throw new Error(`Failed to delete log entry: ${e2.message}`)
+          if (e2) throw failed(`Failed to delete log entry`, e2)
         } else {
           const { data: latest, error: e3 } = await supabase.from('log_entries')
             .select('id').eq('label', label).order('ts', { ascending:false }).limit(1).maybeSingle()
-          if (e3) throw new Error(`Failed to look up log entry: ${e3.message}`)
+          if (e3) throw failed(`Failed to look up log entry`, e3)
           if (latest) {
             const { error: e4 } = await supabase.from('log_entries').delete().eq('id', latest.id)
-            if (e4) throw new Error(`Failed to delete log entry: ${e4.message}`)
+            if (e4) throw failed(`Failed to delete log entry`, e4)
           }
         }
         noteSuccess()
@@ -764,12 +799,12 @@ export const setArtOverrides = v  => dbSet('art_overrides', v)
 // keeps the offline path correct without assuming which the install uses.
 async function cloudClassInsert(cls) {
   const { data, error } = await supabase.from('classes').insert(cls).select().single()
-  if (error) throw new Error(`Failed to add class: ${error.message}`)
+  if (error) throw failed(`Failed to add class`, error)
   return data
 }
 async function cloudClassDelete(id) {
   const { error } = await supabase.from('classes').delete().eq('id', id)
-  if (error) throw new Error(`Failed to delete class: ${error.message}`)
+  if (error) throw failed(`Failed to delete class`, error)
 }
 
 export async function getClasses() {
@@ -814,12 +849,12 @@ export async function deleteClass(id) {
 // ── Weeks / Folders (supports parent_id for nesting) ───────────
 async function cloudWeekInsert(week) {
   const { data, error } = await supabase.from('study_weeks').insert(week).select().single()
-  if (error) throw new Error(`Failed to add folder: ${error.message}`)
+  if (error) throw failed(`Failed to add folder`, error)
   return data
 }
 async function cloudWeekDelete(id) {
   const { error } = await supabase.from('study_weeks').delete().eq('id', id)
-  if (error) throw new Error(`Failed to delete folder: ${error.message}`)
+  if (error) throw failed(`Failed to delete folder`, error)
 }
 
 // Weeks are read per (class, parent), so each of those slices gets its own
@@ -885,7 +920,7 @@ async function cloudCardsUpsert(cards) {
 }
 async function cloudCardDelete(id) {
   const { error } = await supabase.from('flashcards').delete().eq('id', id)
-  if (error) throw new Error(`Failed to delete card: ${error.message}`)
+  if (error) throw failed(`Failed to delete card`, error)
 }
 
 export async function getCards(weekId) {
@@ -975,13 +1010,13 @@ async function cloudFileUpload({ id, weekId, file, path, addedDate }) {
     file_url: urlData.publicUrl, file_size: Math.round(file.size/1024), added_date: addedDate,
   }
   const { data, error } = await supabase.from('study_files').insert(record).select().single()
-  if (error) throw new Error(`Failed to record file: ${error.message}`)
+  if (error) throw failed(`Failed to record file`, error)
   return data
 }
 async function cloudFileDelete(id, storagePath) {
   if (storagePath) await supabase.storage.from('study-files').remove([storagePath])
   const { error } = await supabase.from('study_files').delete().eq('id', id)
-  if (error) throw new Error(`Failed to delete file: ${error.message}`)
+  if (error) throw failed(`Failed to delete file`, error)
 }
 
 export async function getFiles(weekId) {
@@ -1063,18 +1098,18 @@ export function commitmentChangesToDb(changes) {
 async function cloudCommitmentInsert(row) {
   const { data, error } = await supabase.from('commitments')
     .insert(commitmentChangesToDb(row)).select().single()
-  if (error) throw new Error(`Failed to add commitment: ${error.message}`)
+  if (error) throw failed(`Failed to add commitment`, error)
   return commitmentFromDb(data)
 }
 async function cloudCommitmentUpdate(id, changes) {
   const { data, error } = await supabase.from('commitments')
     .update(commitmentChangesToDb(changes)).eq('id', id).select().single()
-  if (error) throw new Error(`Failed to update commitment: ${error.message}`)
+  if (error) throw failed(`Failed to update commitment`, error)
   return commitmentFromDb(data)
 }
 async function cloudCommitmentDelete(id) {
   const { error } = await supabase.from('commitments').delete().eq('id', id)
-  if (error) throw new Error(`Failed to delete commitment: ${error.message}`)
+  if (error) throw failed(`Failed to delete commitment`, error)
 }
 
 export async function getCommitments() {
@@ -1151,12 +1186,12 @@ function vacationFromDb(row) {
 async function cloudVacationInsert(v) {
   const { data, error } = await supabase.from('vacations')
     .insert({ id: v.id, label: v.label, start_date: v.startDate, end_date: v.endDate }).select().single()
-  if (error) throw new Error(`Failed to add vacation: ${error.message}`)
+  if (error) throw failed(`Failed to add vacation`, error)
   return vacationFromDb(data)
 }
 async function cloudVacationDelete(id) {
   const { error } = await supabase.from('vacations').delete().eq('id', id)
-  if (error) throw new Error(`Failed to delete vacation: ${error.message}`)
+  if (error) throw failed(`Failed to delete vacation`, error)
 }
 
 export async function getVacations() {
@@ -1212,12 +1247,12 @@ async function cloudEventInsert(e) {
     end_time: e.allDay === false ? (e.endTime || null) : null,
     color: e.color || '#7C9CBF', icon: e.icon || null,
   }).select().single()
-  if (error) throw new Error(`Failed to add event: ${error.message}`)
+  if (error) throw failed(`Failed to add event`, error)
   return eventFromDb(data)
 }
 async function cloudEventDelete(id) {
   const { error } = await supabase.from('events').delete().eq('id', id)
-  if (error) throw new Error(`Failed to delete event: ${error.message}`)
+  if (error) throw failed(`Failed to delete event`, error)
 }
 
 export async function getEvents() {
@@ -1290,21 +1325,21 @@ export function recurringTaskToDb(task) {
 }
 async function cloudRecurringInsert(task) {
   const { data, error } = await supabase.from('recurring_tasks').insert(recurringTaskToDb(task)).select().single()
-  if (error) throw new Error(`Failed to add recurring task: ${error.message}`)
+  if (error) throw failed(`Failed to add recurring task`, error)
   return recurringTaskFromDb(data)
 }
 async function cloudRecurringUpdate(id, task) {
   const { data, error } = await supabase.from('recurring_tasks').update(recurringTaskToDb(task)).eq('id', id).select().single()
-  if (error) throw new Error(`Failed to update recurring task: ${error.message}`)
+  if (error) throw failed(`Failed to update recurring task`, error)
   return recurringTaskFromDb(data)
 }
 async function cloudRecurringDelete(id) {
   const { error } = await supabase.from('recurring_tasks').delete().eq('id', id)
-  if (error) throw new Error(`Failed to delete recurring task: ${error.message}`)
+  if (error) throw failed(`Failed to delete recurring task`, error)
 }
 async function cloudRecurringClear() {
   const { error } = await supabase.from('recurring_tasks').delete().not('id', 'is', null)
-  if (error) throw new Error(`Failed to clear recurring tasks: ${error.message}`)
+  if (error) throw failed(`Failed to clear recurring tasks`, error)
 }
 
 // A recurring row round-tripped through the DB shape, so a template created
@@ -1397,17 +1432,17 @@ function categoryChangesToDb(changes) {
 async function cloudCategoryInsert(cat) {
   const { data, error } = await supabase.from('categories')
     .insert({ id: cat.id, label: cat.label, color: cat.color, icon: cat.icon || null, sort_order: cat.sortOrder ?? 0 }).select().single()
-  if (error) throw new Error(`Failed to add category: ${error.message}`)
+  if (error) throw failed(`Failed to add category`, error)
   return categoryFromDb(data)
 }
 async function cloudCategoryUpdate(id, changes) {
   const { data, error } = await supabase.from('categories').update(categoryChangesToDb(changes)).eq('id', id).select().single()
-  if (error) throw new Error(`Failed to update category: ${error.message}`)
+  if (error) throw failed(`Failed to update category`, error)
   return categoryFromDb(data)
 }
 async function cloudCategoryDelete(id) {
   const { error } = await supabase.from('categories').delete().eq('id', id)
-  if (error) throw new Error(`Failed to delete category: ${error.message}`)
+  if (error) throw failed(`Failed to delete category`, error)
 }
 
 export async function getCategories() {

@@ -3,3 +3,5 @@ node_modules
 .env
 .env.local
 tests/.storage.shim.mjs
+tests/.auth-stub.mjs
+tests/.storage-stub.mjs

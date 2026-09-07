@@ -21,6 +21,8 @@ globalThis.window = { addEventListener: () => {}, dispatchEvent: () => true }
 globalThis.document = { hidden: false, addEventListener: () => {} }
 Object.defineProperty(globalThis, 'navigator', { value: { onLine: true }, configurable: true })
 globalThis.CustomEvent = class { constructor(t, o) { this.type = t; Object.assign(this, o) } }
+let reauthRequests = 0
+globalThis.window.dispatchEvent = e => { if (e && e.type === 'bloom-auth-stale') reauthRequests++; return true }
 
 // storage.js is source that Vite normally transforms (bare import + import.meta.env).
 // Rewrite just those two things so Node can load the real file unmodified otherwise.
@@ -176,6 +178,47 @@ eq('an unsent edit still beats the cloud copy', pendingKey, 'edited with no sign
 eq('and its neighbours still come from the mirror', freshKey, 'v1')
 goOnline()
 await off.flush()
+
+console.log('\n— the server is down while the device still has wifi —')
+// navigator.onLine stays true through a server outage, so nothing else in the
+// app notices. Editing must still be silent and lossless.
+goOnline()
+mock.state.offline = false
+const before = mock.state.tables.commitments.length
+// A paused/overloaded Supabase project answers with a 5xx rather than refusing
+// the connection.
+mock.state.forceError = Object.assign(new Error('Service Unavailable'), { status: 503 })
+let alerted = false
+try { await S.addCommitment({ id: 'd1', text: 'During the outage', date: '2026-09-13', cat: '' }) }
+catch { alerted = true }
+try { await S.dbSet('notes', 'written during the outage') } catch { alerted = true }
+try { await S.setCompletion('d1', true) } catch { alerted = true }
+eq('nothing was thrown at the user', alerted, false)
+eq('the task is there locally', (await S.getCommitments()).some(c => c.id === 'd1'), true)
+eq('the note reads back', await S.getNotes(), 'written during the outage')
+eq('the database was not touched', mock.state.tables.commitments.length, before)
+eq('it is all queued', off.pendingCount() >= 3, true)
+
+console.log('\n— a stale session mid-outage —')
+// A 401 is not the server refusing the data; it means the token needs renewing.
+// The edit is valid and must be kept, not thrown back at the user per change.
+// The 5xx above left the engine in a known-down state, where it queues without
+// trying. Clear that so the request is actually attempted and can come back 401.
+off.noteSuccess()
+mock.state.forceError = Object.assign(new Error('JWT expired'), { status: 401, code: 'PGRST301' })
+let authAlerted = false
+try { await S.addCommitment({ id: 'd2', text: 'Stale token', date: '2026-09-14', cat: '' }) }
+catch { authAlerted = true }
+eq('still nothing thrown at the user', authAlerted, false)
+eq('and the edit is queued, not lost', off.hasPending('commitments', 'd2'), true)
+eq('the app asked for the session to be renewed', reauthRequests > 0, true)
+
+console.log('\n— the server comes back —')
+mock.state.forceError = null
+await off.flush()
+eq('everything made during the outage went up', mock.state.tables.commitments.filter(r => r.id === 'd1' || r.id === 'd2').length, 2)
+eq('including the note', mock.state.tables.kv_store.find(r => r.key === 'notes').value, 'written during the outage')
+eq('and the queue is empty', off.pendingCount(), 0)
 
 console.log(`\n${pass} passed, ${fail} failed`)
 process.exit(fail ? 1 : 0)
