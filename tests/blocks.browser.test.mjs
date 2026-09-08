@@ -77,6 +77,10 @@ const menuItems = () => page.$$eval('[role="menuitem"]', bs => bs.map(b => b.tex
 // synthetic element.click() sails through that and reports success.
 const clickMenuItem = (text) =>
   page.getByRole('menuitem', { name: text, exact: true }).click({ timeout: 3000 })
+// An armed row states the consequence and ends in "— tap again"; that sentence
+// IS the confirmation, so the test reads it rather than a fixed string.
+const clickConfirm = () =>
+  page.getByRole('menuitem', { name: /— tap again$/ }).click({ timeout: 3000 })
 // Nothing on the timeline should have opened a task sheet behind the menu.
 const sheetOpen = () => page.evaluate(() =>
   !!document.body.innerText.match(/ADD TO TODAY|Add to Today/))
@@ -99,8 +103,8 @@ eq('its band is on the timeline', (await bandLabels()).includes('WORK'), true)
 eq('and the band carries a ⋯', await bandMenu('Work').count(), 1)
 
 await openMenu('Work')
-eq('which offers the block’s own edit + delete', await menuItems(), ['Edit block', 'Delete block'])
-await clickMenuItem('Delete block')
+eq('which offers the block’s own edit + removal', await menuItems(), ['Edit block', 'Remove from today'])
+await clickMenuItem('Remove from today')
 await page.waitForTimeout(300)
 eq('and the tap did not fall through to the band', await sheetOpen(), false)
 await page.waitForTimeout(300)
@@ -119,9 +123,9 @@ await seed(repeating)
 eq('its band is on the timeline', (await bandLabels()).includes('STUDIO'), true)
 await openMenu('Studio')
 eq('and its delete is scoped like a series', await menuItems(),
-   ['Edit block', 'Delete just this day', 'Delete this & all future', 'Delete every day'])
+   ['Edit block', 'Remove from today', 'Delete this & all future…', 'Delete every day…'])
 
-await clickMenuItem('Delete just this day')
+await clickMenuItem('Remove from today')
 await page.waitForTimeout(300)
 const todayKey = await page.evaluate(() => { const d = new Date()
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}` })
@@ -132,12 +136,12 @@ eq('the series itself is untouched', ((await store('recurring_tasks_v2')) || [])
 // Deleting every day is not undoable, so it asks a second time first.
 await seed(repeating)
 await openMenu('Studio')
-await clickMenuItem('Delete every day')
+await clickMenuItem('Delete every day…')
 await page.waitForTimeout(150)
-eq('“every day” arms rather than fires', await menuItems(),
-   ['Edit block', 'Delete just this day', 'Delete this & all future', 'Tap again to confirm'])
+eq('“every day” arms, saying what it will do', (await menuItems())[3],
+   'Delete this block on every day, past and future? This cannot be undone. — tap again')
 eq('and nothing is deleted yet', ((await store('recurring_tasks_v2')) || []).length, 1)
-await clickMenuItem('Tap again to confirm')
+await clickConfirm()
 await page.waitForTimeout(300)
 eq('the second tap deletes the series', await store('recurring_tasks_v2'), [])
 eq('and the band is off the day', (await bandLabels()).includes('STUDIO'), false)
@@ -164,7 +168,8 @@ await seed(withRoutine)
 eq('the routine names its own band', (await bandLabels()).includes('DEEP WORK'), true)
 eq('and the band carries a ⋯', await bandMenu('Deep work').count(), 1)
 await openMenu('Deep work')
-eq('which edits or deletes the routine itself', await menuItems(), ['Edit routine', 'Delete routine'])
+eq('which leads with clearing it off THIS day', await menuItems(),
+   ['Clear from today — 2 tasks', 'Edit routine', 'Delete the routine group…'])
 
 // Edit: rename it, and the band renames with it.
 await clickMenuItem('Edit routine')
@@ -177,9 +182,9 @@ eq('and on the stored group', ((await store('routine_groups')) || []).map(r => r
 
 // Delete: the group goes, its tasks stay.
 await openMenu('Studio hours')
-await clickMenuItem('Delete routine')
+await clickMenuItem('Delete the routine group…')
 await page.waitForTimeout(150)
-await clickMenuItem('Tap again to confirm')
+await clickConfirm()
 await page.waitForTimeout(300)
 eq('deleting drops the routine', await store('routine_groups'), [])
 eq('but keeps its tasks on the day', await page.evaluate(() =>
@@ -206,7 +211,8 @@ await seed(today => ({
 eq('the routine collapsed to its summary row', await page.evaluate(() =>
   document.body.innerText.includes('First thing in the morning')), true)
 await openMenu('Morning routine')
-eq('its menu is reachable over the band below', await menuItems(), ['Edit routine', 'Delete routine'])
+eq('its menu is reachable over the band below', await menuItems(),
+   ['Clear from today — 1 task', 'Edit routine', 'Delete the routine group…'])
 await clickMenuItem('Edit routine')
 await page.waitForTimeout(300)
 eq('and Edit opens the routine editor, not the add sheet', await page.evaluate(() =>
@@ -217,14 +223,88 @@ await page.waitForTimeout(200)
 
 // …and the same for Delete, which is what actually fell through in the report.
 await openMenu('Morning routine')
-await clickMenuItem('Delete routine')
+await clickMenuItem('Delete the routine group…')
 await page.waitForTimeout(200)
-eq('Delete arms in place instead of opening anything', await menuItems(),
-   ['Edit routine', 'Tap again to confirm'])
+eq('Delete arms in place instead of opening anything', (await menuItems())[2],
+   'Delete “Morning routine” from every day? Its tasks stay — they just stop being grouped. — tap again')
 eq('still no task sheet', await sheetOpen(), false)
-await clickMenuItem('Tap again to confirm')
+await clickConfirm()
 await page.waitForTimeout(300)
 eq('and the second tap removes the group', await store('routine_groups'), [])
+
+// ── The holiday: a routine whose tasks live inside a block ─────
+// The case that went wrong. A routine's tasks sitting inside a time block lose
+// the band to that block, so the routine used to get NO header at all — its only
+// handle was the done-summary row, whose only offer was a permanent, unrecorded
+// delete. Wanting "not today" and being given "gone forever" is the bug.
+console.log('\n— a work routine inside a work block, on a day off —')
+const holiday = today => ({
+  commitments: [{ id:'c-workblk', text:'Work', date:today, time:'09:00', durationMins:480, cat:'', done:false }],
+  commitment_meta: { 'c-workblk': { block:true, color:'#B9A7D9' } },
+  routine_groups: [{ id:'rt-work', name:'Work routine', tint:'#D9C7EE' }],
+  recurring_tasks_v2: [
+    { id:'r-w1', label:'09:30 — Standup',     days:[], startDate:null },
+    { id:'r-w2', label:'11:00 — Code review', days:[], startDate:null },
+    { id:'r-w3', label:'14:00 — Deploy',      days:[], startDate:null },
+  ],
+  recurring_meta: {
+    'r-w1': { routine:'rt-work', durationMins:30, freq:'daily' },
+    'r-w2': { routine:'rt-work', durationMins:60, freq:'daily' },
+    'r-w3': { routine:'rt-work', durationMins:60, freq:'daily' },
+  },
+  recurring_exceptions: {}, completions: {},
+})
+await seed(holiday)
+eq('the block and the routine each get their own ⋯', await page.$$eval(
+  'button[aria-label$="more actions"]', bs => bs.map(b => b.getAttribute('aria-label')).sort()),
+  ['Work routine — more actions', 'Work — more actions'])
+
+// Clearing the routine off today must not touch what it is on any other day.
+await openMenu('Work routine')
+eq('the routine leads with the one-day action', (await menuItems())[0], 'Clear from today — 3 tasks')
+await clickMenuItem('Clear from today — 3 tasks')
+await page.waitForTimeout(150)
+eq('and says so before it fires', (await menuItems())[0],
+   "Take Work routine's 3 tasks off today? Every other day keeps them. — tap again")
+await clickConfirm()
+await page.waitForTimeout(500)
+eq('its tasks leave the day', await page.evaluate(() =>
+  ['Standup', 'Code review', 'Deploy'].filter(t => document.body.innerText.includes(t))), [])
+eq('the group survives', ((await store('routine_groups')) || []).map(r => r.name), ['Work routine'])
+eq('every template survives', ((await store('recurring_tasks_v2')) || []).length, 3)
+eq('and it is a skip for THIS date only', Object.keys((await store('recurring_exceptions')) || {}).sort(),
+   [`r-w1@${todayKey}`, `r-w2@${todayKey}`, `r-w3@${todayKey}`].sort())
+
+// The block, cleared with everything in it — "the work block + everything in it".
+await seed(holiday)
+await openMenu('Work')
+eq('the block offers to take its contents with it', (await menuItems())[1],
+   'Clear from today — block + 3 tasks')
+await clickMenuItem('Clear from today — block + 3 tasks')
+await page.waitForTimeout(150)
+await clickConfirm()
+await page.waitForTimeout(500)
+eq('the block goes', (await bandLabels()).includes('WORK'), false)
+eq('its tasks go with it', await page.evaluate(() =>
+  ['Standup', 'Code review', 'Deploy'].filter(t => document.body.innerText.includes(t))), [])
+eq('and the templates are all still there', ((await store('recurring_tasks_v2')) || []).length, 3)
+
+// ── Deleting the group is undoable now ────────────────────────
+console.log('\n— deleting a routine group can be taken back —')
+await seed(holiday)
+await openMenu('Work routine')
+await clickMenuItem('Delete the routine group…')
+await page.waitForTimeout(150)
+await clickConfirm()
+await page.waitForTimeout(400)
+eq('the group goes', await store('routine_groups'), [])
+eq('its tasks are unfiled', await page.evaluate(() =>
+  Object.values(JSON.parse(localStorage.getItem('vivian_recurring_meta') || '{}')).filter(v => v.routine).length), 0)
+await page.keyboard.press('Control+z')
+await page.waitForTimeout(500)
+eq('Ctrl+Z brings the group back', ((await store('routine_groups')) || []).map(r => r.name), ['Work routine'])
+eq('with its tasks re-filed under it', await page.evaluate(() =>
+  Object.values(JSON.parse(localStorage.getItem('vivian_recurring_meta') || '{}')).filter(v => v.routine === 'rt-work').length), 3)
 
 eq('no uncaught errors', errors, [])
 

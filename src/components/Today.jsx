@@ -424,7 +424,7 @@ function BandMenu({ items = [], name = '' }) {
     const place = () => {
       const r = btnRef.current?.getBoundingClientRect()
       if (!r) return
-      const h = count * 38 + 12
+      const h = count * 44 + 12
       const below = r.bottom + 6
       setPos({
         top: (below + h > window.innerHeight - 8 && r.top - 6 - h > 8) ? (r.top - 6 - h) : below,
@@ -460,7 +460,7 @@ function BandMenu({ items = [], name = '' }) {
         // A portal still bubbles events up the REACT tree, so the click has to
         // be stopped here too or it reaches the band underneath all the same.
         <div ref={popRef} role="menu" onClick={e=>e.stopPropagation()}
-          style={{ position:'fixed', top:pos.top, right:pos.right, zIndex:500, minWidth:198, background:'white', border:'1px solid var(--border)',
+          style={{ position:'fixed', top:pos.top, right:pos.right, zIndex:500, minWidth:198, maxWidth:290, background:'white', border:'1px solid var(--border)',
             borderRadius:12, boxShadow:'0 12px 34px rgba(26,58,78,.20)', padding:5, textAlign:'left' }}>
           {items.map((it, i) => {
             const isArmed = armed === i
@@ -472,9 +472,13 @@ function BandMenu({ items = [], name = '' }) {
                   setOpen(false); setArmed(null); it.onClick()
                 }}
                 style={{ display:'block', width:'100%', textAlign:'left', padding:'9px 11px', borderRadius:8, border:'none', cursor:'pointer',
-                  fontFamily:'DM Sans,sans-serif', fontSize:13, fontWeight:600, whiteSpace:'nowrap',
+                  fontFamily:'DM Sans,sans-serif', fontSize:13, fontWeight:600, lineHeight:1.35,
+                  whiteSpace: isArmed ? 'normal' : 'nowrap',
                   background: isArmed ? '#FEF2F2' : 'transparent', color: it.danger ? '#B91C1C' : 'var(--text)' }}>
-                {isArmed ? 'Tap again to confirm' : it.label}
+                {/* Armed, the row says what it is about to do rather than a bare
+                    "confirm" — the whole point of the second tap is that you can
+                    read the consequence before you commit to it. */}
+                {isArmed ? `${it.confirm} — tap again` : it.label}
               </button>
             )
           })}
@@ -531,13 +535,13 @@ function BlockBand({ seg, onEdit, onAdd, onCollapse, menu = [] }) {
         {/* Spine spacer — the block's window already reads inline on the band
             (its range beside the label), so a gutter time here would be redundant. */}
         <div style={{ width:52, flexShrink:0 }} />
-        {seg.label && (
-          <div style={{ paddingTop:9, paddingLeft:11, flex:1, minWidth:0, display:'flex', alignItems:'center', gap:8 }}>
-            <BandIcon icon={seg.icon} color={seg.color} onEdit={onEdit} />
-            <span style={{ fontSize:10, fontWeight:800, letterSpacing:.9, textTransform:'uppercase', color:'#39434F', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis', flexShrink:0 }}>{label}</span>
+        {(seg.label || seg.showMenu) && (
+          <div style={{ paddingTop:9, paddingLeft:11, paddingRight:8, flex:1, minWidth:0, display:'flex', alignItems:'center', gap:8 }}>
+            {seg.label && <BandIcon icon={seg.icon} color={seg.color} onEdit={onEdit} />}
+            {seg.label && <span style={{ fontSize:10, fontWeight:800, letterSpacing:.9, textTransform:'uppercase', color:'#39434F', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis', flexShrink:0 }}>{label}</span>}
             {/* The block's full window, so you can read its end time without
                 collapsing it. */}
-            {seg.blockStart!=null && seg.blockEnd!=null && (
+            {seg.label && seg.blockStart!=null && seg.blockEnd!=null && (
               <span style={{ fontSize:11, color:'var(--muted)', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis', minWidth:0 }}>{rangeLabel(seg.blockStart, seg.blockEnd)}</span>
             )}
             <span style={{ marginLeft:'auto', flexShrink:0, display:'flex', alignItems:'center', gap:6 }}>
@@ -693,12 +697,15 @@ function RoutineCollapseRow({ routine, count, expanded, onToggle, menu = [] }) {
 // routine's first task and carries the same film, so the two read as one band —
 // the routine's answer to a time block's head segment. Without it a routine was
 // only ever a nameless wash of color you couldn't act on from the day view.
-function RoutineBandHead({ routine, onEdit, menu = [] }) {
+function RoutineBandHead({ routine, onEdit, menu = [], film = true }) {
   const tint = routine?.tint || '#EDE7F0'
   const name = (routine?.name || 'Routine').toUpperCase()
   return (
     <div style={{ position:'relative', minHeight:34 }}>
-      <div style={{ position:'absolute', top:6, bottom:0, left:44, right:0, background:tint, opacity:.5, zIndex:-1, borderTopLeftRadius:16, borderTopRightRadius:16 }} />
+      {/* No film of its own when the routine sits inside a time block — that
+          block's wash is already behind this row, and a second one would read
+          as a different container. */}
+      {film && <div style={{ position:'absolute', top:6, bottom:0, left:44, right:0, background:tint, opacity:.5, zIndex:-1, borderTopLeftRadius:16, borderTopRightRadius:16 }} />}
       <div style={{ position:'relative', display:'flex' }}>
         <div style={{ width:52, flexShrink:0 }} />
         <div style={{ paddingTop:9, paddingBottom:2, paddingLeft:11, paddingRight:8, flex:1, minWidth:0, display:'flex', alignItems:'center', gap:8 }}>
@@ -1476,7 +1483,7 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
       blockHeadIds.add(b.id)
     }
     if (lastEnd < b.end) {
-      blockSegments.push({ id:b.id+':tail', bid:b.id, start:lastEnd, end:b.end, color:b.color, label:null, roundTop:false, roundBottom:true })
+      blockSegments.push({ id:b.id+':tail', bid:b.id, start:lastEnd, end:b.end, color:b.color, label:null, showMenu:true, roundTop:false, roundBottom:true })
       blockTailIds.add(b.id)
     }
   }
@@ -2104,33 +2111,95 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
     }
     if (what && appendLog) appendLog({ date:dateKey, dateLabel:todayLabel(), label:`${what}: ${name}`, tag:'deleted', ts:new Date().toISOString() })
   }
-  // What a time block's ⋯ offers, wherever its band is drawn — its own edit and
-  // delete, never the tasks sitting inside it.
+  // Take a set of THIS day's tasks off the day without touching what they are
+  // on any other day: a repeating one is skipped for this date (a synced
+  // exception, so Week and Calendar agree), a one-off is deleted (undoable),
+  // a legacy local one joins this day's deleted list. Written as one batch so a
+  // loop can't fight the same piece of state several times over.
+  const clearTasksFromToday = (tasks) => {
+    const localIds = []
+    for (const t of tasks || []) {
+      if (t.isCommitment) deleteCommitment && deleteCommitment(t.id)
+      else if (t.isRecurring) skipRecurringOccurrence && skipRecurringOccurrence(t.recurringId || t.id, dateKey)
+      else localIds.push(t.id)
+    }
+    if (localIds.length) {
+      const next = [...deleted, ...localIds]
+      setDeleted(next)
+      try { localStorage.setItem('vivian_deleted_' + dateKey, JSON.stringify(next)) } catch {}
+    }
+    return (tasks || []).length
+  }
+  // Everything this routine actually puts on the day being viewed…
+  const routineTasksToday = (rid) => tasksWithStatus.filter(t => t.routine === rid)
+  // …and everything sitting inside this block's window.
+  const blockTasksToday = (bid) => {
+    const b = blocks.find(x => x.id === bid)
+    if (!b) return []
+    return tasksWithStatus.filter(t => t._mins != null && t._mins >= b.start && t._mins < b.end)
+  }
+  // Clear a block off ONE day, with what's inside it — the holiday case. The
+  // block's definition and every other day are untouched.
+  const clearBlockFromToday = (id) => {
+    const inside = blockTasksToday(id)
+    clearTasksFromToday(inside)
+    deleteContainer(id, 'day')
+    if (appendLog && inside.length) appendLog({ date:dateKey, dateLabel:todayLabel(),
+      label:`Cleared from today: ${inside.length} task${inside.length>1?'s':''} inside the block`, tag:'deleted', ts:new Date().toISOString() })
+  }
+  const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`
+  // What a time block's ⋯ offers. Day-scoped actions come FIRST and read as
+  // "today": clearing one day is the common ask (a holiday, a day off), and it
+  // must never sit next to something that changes the block for every day
+  // without saying so.
   const containerMenu = (id) => {
     const c = (commitments || []).find(x => x.id === id)
     const tmpl = c ? null : (recurringTasks || []).find(t => t.id === id)
     if (!c && !tmpl) return []
+    const n = blockTasksToday(id).length
     const items = [{ label:'Edit block', onClick:()=>openContainer(id) }]
-    if (c) {
-      if (deleteCommitment) items.push({ label:'Delete block', danger:true, onClick:()=>deleteContainer(id, 'all') })
-    } else {
-      if (skipRecurringOccurrence) items.push({ label:'Delete just this day', danger:true, onClick:()=>deleteContainer(id, 'day') })
-      if (updateRecurringTask)     items.push({ label:'Delete this & all future', danger:true, confirm:true, onClick:()=>deleteContainer(id, 'future') })
-      if (deleteRecurringTask)     items.push({ label:'Delete every day', danger:true, confirm:true, onClick:()=>deleteContainer(id, 'all') })
+    items.push({
+      label: n ? `Clear from today — block + ${plural(n, 'task')}` : 'Remove from today',
+      danger: true,
+      confirm: n ? `Take the block and ${plural(n, 'task')} off today? Every other day keeps them.` : null,
+      onClick: ()=>clearBlockFromToday(id),
+    })
+    if (n) items.push({ label:`Remove the block only, keep its ${plural(n, 'task')}`, onClick:()=>deleteContainer(id, 'day') })
+    if (tmpl) {
+      if (updateRecurringTask) items.push({ label:'Delete this & all future…', danger:true,
+        confirm:'End this block from today onward? Past days keep it.', onClick:()=>deleteContainer(id, 'future') })
+      if (deleteRecurringTask) items.push({ label:'Delete every day…', danger:true,
+        confirm:'Delete this block on every day, past and future? This cannot be undone.', onClick:()=>deleteContainer(id, 'all') })
     }
     return items
   }
-  // …and what a routine's ⋯ offers. Deleting a routine unfiles its tasks; it
-  // never deletes them, so this only ever removes the grouping.
+  // …and what a routine's ⋯ offers. Same shape: clear it off this one day first,
+  // and only then the group-wide delete — which is spelled out, because deleting
+  // the GROUP is not what "I didn't do my routine today" means.
   const routineMenu = (rid) => {
     const r = (routines || []).find(x => x.id === rid)
     if (!r) return []
+    const today = routineTasksToday(rid)
     const items = []
+    if (today.length) items.push({
+      label: `Clear from today — ${plural(today.length, 'task')}`,
+      danger: true,
+      confirm: `Take ${r.name}'s ${plural(today.length, 'task')} off today? Every other day keeps them.`,
+      onClick: ()=>{
+        clearTasksFromToday(today)
+        if (appendLog) appendLog({ date:dateKey, dateLabel:todayLabel(),
+          label:`Cleared from today: ${r.name} — ${plural(today.length, 'task')}`, tag:'deleted', ts:new Date().toISOString() })
+      },
+    })
     if (updateRoutine) items.push({ label:'Edit routine', onClick:()=>setEditingRoutine(r) })
-    if (deleteRoutine) items.push({ label:'Delete routine', danger:true, confirm:true, onClick:()=>{
-      deleteRoutine(rid)
-      if (appendLog) appendLog({ date:dateKey, dateLabel:todayLabel(), label:`Deleted routine: ${r.name}`, tag:'deleted', ts:new Date().toISOString() })
-    } })
+    if (deleteRoutine) items.push({
+      label:'Delete the routine group…', danger:true,
+      confirm:`Delete “${r.name}” from every day? Its tasks stay — they just stop being grouped.`,
+      onClick:()=>{
+        deleteRoutine(rid)
+        if (appendLog) appendLog({ date:dateKey, dateLabel:todayLabel(), label:`Deleted routine group: ${r.name}`, tag:'deleted', ts:new Date().toISOString() })
+      },
+    })
     return items
   }
   const routineById = (rid) => (routines || []).find(x => x.id === rid) || null
@@ -2287,6 +2356,12 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
         const doneRoutineCounts = {}
         tasksWithStatus.forEach(t => { if (t.routine && routineIds.has(t.routine) && t._status==='past') doneRoutineCounts[t.routine] = (doneRoutineCounts[t.routine]||0)+1 })
         const emittedCollapse = {}  // one summary/header per routine, per render
+        // One handle per routine per day, wherever its first task lands. A
+        // routine whose tasks sit INSIDE a time block loses the band to that
+        // block — without this it would get no header, and no way to act on it
+        // at all, which is how a routine ended up only reachable from its
+        // done-summary row.
+        const emittedRoutineHeads = new Set()
         const emittedBlocks = new Set()   // block band segments already placed
         // The "now" line is emitted exactly once. When it falls inside a block's
         // empty band we split the band and drop it in there (so "now" sits at its
@@ -2398,7 +2473,7 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
               // A gap opens before the routine if the day was idle up to it.
               const rtGap = firstOfRoutine && span ? maybeGap(span.start, r?.tint || null, null) : null
               const header = firstOfRoutine
-                ? (emittedCollapse[task.routine] = true,
+                ? (emittedCollapse[task.routine] = true, emittedRoutineHeads.add(task.routine),
                    <RoutineCollapseRow key={'rc-'+task.routine} routine={r} count={doneRoutineCounts[task.routine]} expanded={isExp}
                      menu={routineMenu(task.routine)}
                      onToggle={()=>setExpandedRoutines(p=>({...p,[task.routine]:!p[task.routine]}))} />)
@@ -2445,15 +2520,20 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
             const isLastInBand  = !!myBand && !nextSameRoutine
             const joinHead = !!(inBlockId && isFirstInBand && blockHeadIds.has(inBlockId))
             const joinTail = !!(inBlockId && isLastInBand  && blockTailIds.has(inBlockId))
-            // A routine band gets a header of its own above its first task —
-            // the routine's name plus the ⋯ that edits or deletes the group. It
-            // carries the film's rounded top, so the task below joins it flush.
-            const routineBandId = myBand?.id?.startsWith('rt-') ? myBand.id.slice(3) : null
-            const routineBand = (routineBandId && isFirstInBand) ? routineById(routineBandId) : null
+            // A routine gets a header of its own above its first task on the
+            // day — the routine's name plus the ⋯ that clears, edits or deletes
+            // it. Emitted for the first task filed under it whether or not the
+            // band belongs to a containing time block; when the routine IS the
+            // band it also carries the film's rounded top, so the task below
+            // joins it flush.
+            const myRoutineId = (task.routine && routineIds.has(task.routine)) ? task.routine : null
+            const routineBand = (myRoutineId && !emittedRoutineHeads.has(myRoutineId)) ? routineById(myRoutineId) : null
+            if (routineBand) emittedRoutineHeads.add(myRoutineId)
+            const routineIsBand = !!(routineBand && myBand?.id === 'rt-' + myRoutineId)
             const routineHead = routineBand ? (
-              <RoutineBandHead routine={routineBand}
+              <RoutineBandHead routine={routineBand} film={routineIsBand}
                 onEdit={updateRoutine ? ()=>setEditingRoutine(routineBand) : null}
-                menu={routineMenu(routineBandId)} />
+                menu={routineMenu(myRoutineId)} />
             ) : null
             // Free time before this task, measured from wherever the day last
             // ended (a task, a routine, or a block) — tinted with the block's
@@ -2474,7 +2554,7 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
                 <TimelineBlock
                   task={task} categories={categories} status={task._status} now={now}
                   routineTint={myTint} tintOpacity={inBlockId ? BLOCK_FILM_OPACITY : 0.5}
-                  filmTop={!prevSameRoutine && !joinHead && !routineHead} filmBottom={!nextSameRoutine && !joinTail}
+                  filmTop={!prevSameRoutine && !joinHead && !routineIsBand} filmBottom={!nextSameRoutine && !joinTail}
                   bandLabel={(isFirstInBand && !joinHead) ? (myBand?.label || null) : null}
                   bandIcon={inBlockBand?.icon || null}
                   onBandLabel={inBlockId ? () => openContainer(inBlockId) : null}

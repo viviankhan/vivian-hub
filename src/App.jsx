@@ -1224,31 +1224,70 @@ export default function App() {
   const updateRoutineFn = useCallback((id, changes) => {
     setRoutines_(prev => persistRoutines(prev.map(r => r.id === id ? { ...r, ...changes } : r)))
   }, [persistRoutines])
+  // Put a deleted routine group back, re-filing the tasks that were in it. Used
+  // by both Ctrl+Z and the Edits list, so the two agree on what "undo" means.
+  const restoreRoutineFn = useCallback((group, filings) => {
+    if (!group) return
+    const refile = (prev, keys) => {
+      if (!keys || !keys.length) return null
+      const next = { ...prev }
+      for (const k of keys) next[k] = { ...(next[k] || {}), routine: group.id }
+      return next
+    }
+    setRoutines_(prev => prev.some(r => r.id === group.id) ? prev : persistRoutines([...prev, group]))
+    setRecurringMeta_(prev => {
+      const next = refile(prev, filings?.recurring)
+      if (next) setRecurringMeta(next).catch(reportSaveError)
+      return next || prev
+    })
+    setCommitmentMeta_(prev => {
+      const next = refile(prev, filings?.commitment)
+      if (next) setCommitmentMeta(next).catch(reportSaveError)
+      return next || prev
+    })
+  }, [persistRoutines])
+
+  // Deleting a routine group is a whole-history change — it takes the group off
+  // every day at once — so it is snapshotted first and put on the undo stack and
+  // in the edit history, like every other destructive op. (It used to be
+  // neither, which made a mis-tap unrecoverable.)
   const deleteRoutineFn = useCallback(id => {
-    setRoutines_(prev => persistRoutines(prev.filter(r => r.id !== id)))
+    let snapGroup = null
+    const snapFilings = { recurring: [], commitment: [] }
+    setRoutines_(prev => {
+      snapGroup = prev.find(r => r.id === id) || null
+      return persistRoutines(prev.filter(r => r.id !== id))
+    })
     // Unfile everything that pointed at the group — repeating tasks AND one-off
     // commitments, both of which can be filed under a routine — so nothing is
-    // left tinted by a routine that no longer exists.
-    const unfile = (prev) => {
+    // left tinted by a routine that no longer exists. Which keys were unfiled is
+    // remembered so the undo can put the group back with its members.
+    const unfile = (prev, into) => {
       let touched = false
       const next = {}
       for (const [k, v] of Object.entries(prev)) {
-        if (v && v.routine === id) { const { routine, ...rest } = v; if (Object.keys(rest).length) next[k] = rest; touched = true }
+        if (v && v.routine === id) { const { routine, ...rest } = v; if (Object.keys(rest).length) next[k] = rest; into.push(k); touched = true }
         else next[k] = v
       }
       return touched ? next : null
     }
     setRecurringMeta_(prev => {
-      const next = unfile(prev)
+      const next = unfile(prev, snapFilings.recurring)
       if (next) setRecurringMeta(next).catch(reportSaveError)
       return next || prev
     })
     setCommitmentMeta_(prev => {
-      const next = unfile(prev)
+      const next = unfile(prev, snapFilings.commitment)
       if (next) setCommitmentMeta(next).catch(reportSaveError)
       return next || prev
     })
-  }, [persistRoutines])
+    if (!snapGroup) return
+    // The inverse is plain data, not a closure — the edit history is persisted,
+    // so a routine deleted days ago can still be put back from Settings → Edits.
+    recordChange({ kind: 'delete', entity: 'routine', label: 'Deleted routine “' + (snapGroup.name || 'routine') + '”',
+      inverse: { op: 'restoreRoutine', group: snapGroup, filings: snapFilings } })
+    pushUndo('deleted the routine “' + (snapGroup.name || 'routine') + '”', () => restoreRoutineFn(snapGroup, snapFilings))
+  }, [persistRoutines, restoreRoutineFn])
 
   const addScheduledTask = useCallback(async task => {
     setScheduled_(prev => { const next = [...prev, task]; setScheduledTasks(next); return next })
@@ -1593,6 +1632,8 @@ export default function App() {
         else { const s = inv.snapshot || {}; addCommitment({ ...(s.core || {}), ...(s.meta || {}) }, { silent: true }) }
       } else if (inv.op === 'update') {
         if (inv.entity === 'task') updateCommitment(inv.id, inv.before || {}, { silent: true })
+      } else if (inv.op === 'restoreRoutine') {
+        restoreRoutineFn(inv.group, inv.filings)
       }
     } catch (e) { reportSaveError(e) }
     setChangeHistory_(prev => {
@@ -1600,7 +1641,7 @@ export default function App() {
       setChangeHistory(next).catch(() => {})
       return next
     })
-  }, [addCommitment, updateCommitment, deleteCommitment, addEvent, deleteEvent])
+  }, [addCommitment, updateCommitment, deleteCommitment, addEvent, deleteEvent, restoreRoutineFn])
 
   // Wipe the history list (does not touch any tasks/events — just clears the log).
   const clearChangeHistory = useCallback(() => {
