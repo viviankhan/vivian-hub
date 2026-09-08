@@ -864,6 +864,9 @@ textarea { resize: vertical; min-height: 160px; line-height: 1.6; }
 .wl-active { background: var(--green-light); border: 1px solid var(--border); border-radius: 16px; padding: 12px 14px; }
 .wl-active-head { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 700; color: var(--teal); text-transform: uppercase; letter-spacing: .5px; margin-bottom: 9px; }
 .wl-active-list { display: flex; flex-wrap: wrap; gap: 7px; }
+/* One running condition: its pill, with its photos tucked underneath. */
+.wl-active-item { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
+.wl-active-item .photo-picker { margin-top: 0; }
 .wl-active-pill { display: inline-flex; align-items: center; gap: 6px; border: none; cursor: pointer; border-radius: 999px; padding: 6px 11px; font-size: 12.5px; font-weight: 600; font-family: inherit; }
 .wl-active-pill b { font-weight: 800; opacity: .9; }
 .wl-active-x { opacity: .7; font-size: 11px; }
@@ -1061,6 +1064,46 @@ textarea { resize: vertical; min-height: 160px; line-height: 1.6; }
 .wl-detail-cloud { flex-shrink: 0; }
 .wl-day-events { display: flex; flex-wrap: wrap; gap: 6px; }
 .wl-event-chip { display: inline-flex; align-items: center; gap: 5px; background: var(--cream); border-radius: 999px; padding: 4px 10px; font-size: 11.5px; font-weight: 600; color: var(--text); }
+
+/* ── Photo attachments (mood moments + condition episodes) ──────────
+   One strip serves both the compose-time picker and the read-back view, in the
+   rail sheets and in the wellness tab, so a photo looks the same everywhere. */
+.photo-picker { margin-top: 10px; }
+.photo-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-start; }
+.photo-row:empty { display: none; }
+.photo-thumb { position: relative; width: 62px; height: 62px; border-radius: 12px; overflow: hidden;
+  background: var(--cream); box-shadow: 0 1px 6px rgba(60,72,88,.16); flex: none; display: block; }
+.photo-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; cursor: zoom-in; }
+.photo-thumb-x { position: absolute; top: 2px; right: 2px; width: 18px; height: 18px; border-radius: 50%;
+  border: none; cursor: pointer; background: rgba(0,0,0,.55); color: #fff; font-size: 10px; line-height: 1;
+  display: flex; align-items: center; justify-content: center; padding: 0; }
+.photo-thumb-empty { display: grid; place-items: center; border: 1.5px dashed var(--border); background: var(--cream); }
+.photo-thumb-empty.gone { opacity: .55; }
+.photo-add { width: 62px; height: 62px; border: 2px dashed var(--border); border-radius: 12px; background: var(--cream);
+  cursor: pointer; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
+  color: var(--muted); font-size: 9.5px; font-weight: 700; font-family: inherit; line-height: 1.15; text-align: center;
+  padding: 4px; flex: none; }
+.photo-add:hover:not(:disabled) { border-color: var(--teal); color: var(--teal); }
+.photo-add:disabled { opacity: .6; cursor: default; }
+.photo-err { font-size: 11.5px; color: var(--muted); margin-top: 6px; }
+.rail-detail-photos { margin-top: 10px; justify-content: center; }
+.wl-moment-photos { margin-top: 6px; }
+.wl-fx-photos { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; margin-bottom: 12px; }
+
+/* A pip on a rail marker whose moment carries a picture. */
+.rail-mark-pic { position: absolute; right: -2px; bottom: -2px; width: 13px; height: 13px; border-radius: 50%;
+  background: var(--forest); display: grid; place-items: center; box-shadow: 0 0 0 1.5px #fff; pointer-events: none; }
+
+/* Full-size viewer. Portalled to <body> (see PhotoAttach.jsx) and stacked above
+   both places a thumbnail can be tapped: the rail overlay (z 1000) and the
+   wellness modal scrim (z 960). */
+.photo-lightbox { position: fixed; inset: 0; z-index: 1400; background: rgba(12,16,22,.88);
+  display: flex; align-items: center; justify-content: center; padding: 24px; cursor: zoom-out; }
+.photo-lightbox img { max-width: 100%; max-height: 100%; border-radius: 12px; cursor: default;
+  box-shadow: 0 12px 40px rgba(0,0,0,.5); }
+.photo-lightbox-x { position: absolute; top: max(14px, env(safe-area-inset-top)); right: 14px; width: 34px; height: 34px;
+  border-radius: 50%; border: none; cursor: pointer; background: rgba(255,255,255,.16); color: #fff; font-size: 14px;
+  display: flex; align-items: center; justify-content: center; }
 
 .wl-treasures { display: flex; flex-wrap: wrap; gap: 10px; }
 .wl-treasure { position: relative; width: 108px; margin: 0; border-radius: 12px; overflow: hidden; background: var(--cream); box-shadow: 0 2px 10px rgba(60,72,88,.12); }

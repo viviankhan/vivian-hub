@@ -757,10 +757,11 @@ export const setTrackerCats = v  => dbSet('tracker_cats', v)
 // ── Wellness (mood check-ins, status effects, companion game) ───
 // The gamified mental-health + physical-condition tab. Four synced kv_store
 // blobs, so the whole feature needs no schema migration and rides the same
-// cross-device sync as everything else:
-//   • wellness_checkins — [{ date:'YYYY-MM-DD', mood:1..5, energy:1..5, note, ts }]
+// cross-device sync as everything else. `photos` on a check-in or an episode is
+// a list of ids, never image data — see the wellness-photo rows below:
+//   • wellness_checkins — [{ date:'YYYY-MM-DD', mood:1..5, energy:1..5, note, photos:[id], ts }]
 //   • wellness_effects  — the user's DnD-style condition definitions (null → seed)
-//   • wellness_episodes — [{ id, effectId, start:ISO, end:ISO|null }] on/off spans
+//   • wellness_episodes — [{ id, effectId, start:ISO, end:ISO|null, note, photos:[id] }] on/off spans
 //   • wellness_game     — { xp, petals, streak, best, lastCheckIn, companionName, … }
 export const getWellnessCheckins = () => dbGet('wellness_checkins').then(v => Array.isArray(v) ? v : [])
 export const setWellnessCheckins = v  => dbSet('wellness_checkins', v)
@@ -783,6 +784,26 @@ export const setWellnessEmotions = v  => dbSet('wellness_emotions', v)
 // downscaled as data URLs. Each: { id, date, image, desc, ts }.
 export const getWellnessTreasures = () => dbGet('wellness_treasures').then(v => Array.isArray(v) ? v : [])
 export const setWellnessTreasures = v  => dbSet('wellness_treasures', v)
+// ── Wellness photos (ONE kv_store row per image) ────────────────
+// A photo attached to a mood moment or a condition episode is deliberately NOT
+// stored inside wellness_checkins / wellness_episodes. Those two blobs are
+// rewritten in full on every single log, so an inlined image would be
+// re-serialized, re-uploaded and re-queued in the offline outbox on every
+// later check-in too — a blob that grows without bound and gets heavier to
+// write the more you use it.
+//
+// Instead each image gets its own row, `wellness_photo_<id>`, and the check-in
+// or episode carries only the id string. Attaching a photo is one new row;
+// nothing that already exists is rewritten, the hot blobs stay exactly as small
+// as they are today, and reading a photo is lazy — it happens only when a
+// moment is actually opened, through the same batched kv reader as everything
+// else. No new table, no bucket, no migration.
+//   value: { v: 1, data: 'data:image/jpeg;base64,…', ts: ISO }
+// Deleting writes `null`, which reads back exactly like a row that never
+// existed — the same non-destructive shape every other absent key has.
+export const wellnessPhotoKey = id => `wellness_photo_${id}`
+export const getWellnessPhoto = id => dbGet(wellnessPhotoKey(id))
+export const setWellnessPhoto = (id, v) => dbSet(wellnessPhotoKey(id), v)
 // The Voyage meta-game state (unlocked planets, collected specimens, ship). One
 // synced kv_store blob; see src/lib/space.js. `null` → seed a fresh voyage.
 export const getWellnessSpace = () => dbGet('wellness_space').then(v => (v && typeof v === 'object') ? v : null)
