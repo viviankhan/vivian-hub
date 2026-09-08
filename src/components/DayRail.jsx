@@ -5,7 +5,9 @@
 // goes on. Tapping it dims the rest of the screen (a film tinted to your accent)
 // and fans two bubbles out to its right: an emotion cloud (log a mood moment,
 // with an optional note about *why*) and a lotus (log a physical/mental status
-// effect, with an optional description).
+// effect, with an optional description). Either one can carry photos — they are
+// stored a row apiece and referenced by id, so the trackers' own synced blobs
+// stay small no matter how many pictures you attach (see lib/photos.js).
 //
 // Everything you log lands on the rail at the time you logged it: mood clouds
 // float beside their moment; status effects drop an icon whose colour trails
@@ -19,9 +21,12 @@ import { GuideBlob, MoodCloud } from '../lib/critters.jsx'
 import ColorPickRow from './ColorPickRow.jsx'
 import { EffectIcon } from './IconPicker.jsx'
 import IconSearchSheet from './IconSearchSheet.jsx'
+import { PhotoPicker, PhotoStrip } from './PhotoAttach.jsx'
+import { savePhotos, deletePhoto, photoIds } from '../lib/photos.js'
 import {
   dayKey, keyToDate, MOODS, moodMeta, selectableEmotions, makeEmotion, emotionMeta, EMOTION_PALETTE, checkinsForDay,
   DEFAULT_EFFECTS, POSITIVE_EFFECTS, makeEffect, EFFECT_COLORS, isActive, activeEpisode, startEpisode, endEpisode, setEpisodeNote,
+  setEpisodePhotos, patchEpisode, patchCheckin,
   episodeMinutes, fmtDuration, applyCheckIn, awardPetals,
 } from '../lib/wellness.js'
 
@@ -206,8 +211,11 @@ export default function DayRail({
   const heldMarks = markers.filter(m => heldAloft(markerAt(m))).map(m => m.key)
 
   // ── Actions ──────────────────────────────────────────────
-  const logMood = (mood, emotions, note) => {
-    const entry = { id: 'ci-' + Date.now().toString(36), date: today, mood, energy: 3, emotions: emotions || [], note: (note || '').trim(), ts: new Date().toISOString() }
+  const logMood = (mood, emotions, note, photos) => {
+    // The images go to their own rows and only their ids ride along on the
+    // check-in — savePhotos hands the ids back straight away and uploads in the
+    // background, so the sheet closes without waiting on the network.
+    const entry = { id: 'ci-' + Date.now().toString(36), date: today, mood, energy: 3, emotions: emotions || [], note: (note || '').trim(), photos: savePhotos(photos), ts: new Date().toISOString() }
     persistCheckins([...(checkins || []), entry])
     if (persistGame && game) {
       if (todayMoments.length === 0) persistGame(applyCheckIn(game, { key: today, hasReflection: entry.note.length > 0 }).game)
@@ -215,11 +223,29 @@ export default function DayRail({
     }
     setSheet(null); setMenu(false)
   }
-  const addStatus = (effectId, note) => {
+  const addStatus = (effectId, note, photos) => {
     let next = startEpisode(episodes, effectId)
     if (note && note.trim()) next = setEpisodeNote(next, effectId, note.trim())
+    const ids = savePhotos(photos)
+    if (ids.length) next = setEpisodePhotos(next, effectId, ids)
     persistEpisodes(next)
     setSheet(null); setMenu(false)
+  }
+  // Take a photo back off something already logged: the id comes off the entry
+  // and its row is cleared. Nothing else in either blob is touched.
+  const removeMoodPhoto = (checkinId, photoId) => {
+    const c = (checkins || []).find(x => x.id === checkinId)
+    if (!c) return
+    persistCheckins(patchCheckin(checkins, checkinId, { photos: photoIds(c).filter(p => p !== photoId) }))
+    deletePhoto(photoId)
+    setMoodDetail(d => (d && d.id === checkinId ? { ...d, photos: photoIds(d).filter(p => p !== photoId) } : d))
+  }
+  const removeFxPhoto = (epId, photoId) => {
+    const ep = (episodes || []).find(x => x.id === epId)
+    if (!ep) return
+    persistEpisodes(patchEpisode(episodes, epId, { photos: photoIds(ep).filter(p => p !== photoId) }))
+    deletePhoto(photoId)
+    setMoodDetail(d => (d && d.epId === epId ? { ...d, photos: photoIds(d).filter(p => p !== photoId) } : d))
   }
   const endStatus = (effectId, ask = true) => {
     if (ask) {
@@ -311,6 +337,7 @@ export default function DayRail({
               style={held ? heldStyle : restStyle}
               title={`${moodMeta(c.mood).label} · ${clockTime(c.ts)}`} onClick={() => setMoodDetail(c)}>
               <MoodCloud v={c.mood} size={30} emotions={c.emotions} />
+              {photoIds(c).length > 0 && <span className="rail-mark-pic"><Glyph id="camera" size={8} color="#fff" /></span>}
             </button>
           )
         }
@@ -320,8 +347,9 @@ export default function DayRail({
           <button key={m.key} className={`rail-mark rail-fx ${e.end ? '' : 'live'} ${held ? 'held' : ''}`}
             style={{ ...(held ? heldStyle : restStyle), background: e.fx.color, color: iconColorOn(e.fx.color) }}
             title={`${e.fx.name}${e.note ? ' · ' + e.note : ''} · ${clockTime(e.start)}${endable ? ' · tap to end' : ''}`}
-            onClick={() => endable ? endStatus(e.effectId) : setMoodDetail({ fx: e.fx, note: e.note, ts: e.start, isFx: true })}>
+            onClick={() => endable ? endStatus(e.effectId) : setMoodDetail({ fx: e.fx, note: e.note, ts: e.start, epId: e.id, photos: photoIds(e), isFx: true })}>
             <EffectIcon icon={e.fx.icon} size={15} />
+            {photoIds(e).length > 0 && <span className="rail-mark-pic"><Glyph id="camera" size={8} color="#fff" /></span>}
           </button>
         )
       })}
@@ -362,7 +390,8 @@ export default function DayRail({
               onAdd={addStatus} onEnd={(id) => endStatus(id, false)} onClose={closeAll}
               onAddEffect={addEffect} onDeleteEffect={deleteEffect} />
           )}
-          {moodDetail && <DetailPopover item={moodDetail} onClose={closeAll} />}
+          {moodDetail && <DetailPopover item={moodDetail} onClose={closeAll}
+            onRemovePhoto={(pid) => (moodDetail.isFx ? removeFxPhoto(moodDetail.epId, pid) : removeMoodPhoto(moodDetail.id, pid))} />}
         </div>
       )}
     </>
@@ -374,6 +403,7 @@ function MomentSheet({ onClose, onLog, emotions: options = [], onAddEmotion, onD
   const [mood, setMood] = useState(null)
   const [emotions, setEmotions] = useState([])
   const [note, setNote] = useState('')
+  const [photos, setPhotos] = useState([])   // data URLs, only written on log
   const [noting, setNoting] = useState(false)
   const toggleEmo = (id) => setEmotions(p => p.includes(id) ? p.filter(x => x !== id) : (p.length < 4 ? [...p, id] : p))
 
@@ -417,7 +447,7 @@ function MomentSheet({ onClose, onLog, emotions: options = [], onAddEmotion, onD
       {mood != null && (
         <>
           {!noting
-            ? <button className="rail-addnote" onClick={() => setNoting(true)}>＋ Say why (optional)</button>
+            ? <button className="rail-addnote" onClick={() => setNoting(true)}>＋ Say why, or add a photo (optional)</button>
             : <>
                 <div className="rail-emos" onClick={e => e.stopPropagation()}>
                   {options.map(e => (
@@ -452,8 +482,9 @@ function MomentSheet({ onClose, onLog, emotions: options = [], onAddEmotion, onD
                   </div>
                 )}
                 <textarea className="rail-note" placeholder="What's behind this feeling? (only if you want to)" value={note} onChange={e => setNote(e.target.value)} rows={2} />
+                <PhotoPicker photos={photos} onChange={setPhotos} label="Add a photo" />
               </>}
-          <button className="rail-log" onClick={() => onLog(mood, emotions, note)}>Log this moment</button>
+          <button className="rail-log" onClick={() => onLog(mood, emotions, note, photos)}>Log this moment</button>
         </>
       )}
     </div>
@@ -464,6 +495,7 @@ function MomentSheet({ onClose, onLog, emotions: options = [], onAddEmotion, onD
 function StatusSheet({ effects, episodes, byId, onAdd, onEnd, onClose, onAddEffect, onDeleteEffect }) {
   const [pick, setPick] = useState(null)
   const [note, setNote] = useState('')
+  const [photos, setPhotos] = useState([])   // data URLs, only written on start
   const active = effects.filter(f => isActive(episodes, f.id))
   const options = effects.filter(f => !f.hidden)   // deleted conditions drop out of the picker
 
@@ -554,7 +586,8 @@ function StatusSheet({ effects, episodes, byId, onAdd, onEnd, onClose, onAddEffe
       {pick && (
         <>
           <textarea className="rail-note" placeholder={`Describe the ${(byId.get(pick)?.name || '').toLowerCase()} — as much or as little as you like`} value={note} onChange={e => setNote(e.target.value)} rows={2} />
-          <button className="rail-log" onClick={() => onAdd(pick, note)}>Start tracking this</button>
+          <PhotoPicker photos={photos} onChange={setPhotos} label="Add a photo" />
+          <button className="rail-log" onClick={() => onAdd(pick, note, photos)}>Start tracking this</button>
         </>
       )}
     </div>
@@ -562,13 +595,15 @@ function StatusSheet({ effects, episodes, byId, onAdd, onEnd, onClose, onAddEffe
 }
 
 // ── Detail popover — tap a marker to read it back ───────────────
-function DetailPopover({ item, onClose }) {
+function DetailPopover({ item, onClose, onRemovePhoto }) {
+  const pics = photoIds(item)
   if (item.isFx) {
     return (
       <div className="rail-detail" onClick={(e) => e.stopPropagation()}>
         <div className="rail-detail-head"><span className="rail-detail-ico" style={{ background: item.fx.color, color: iconColorOn(item.fx.color) }}><EffectIcon icon={item.fx.icon} size={16} /></span><b>{item.fx.name}</b></div>
         <div className="rail-detail-time">{clockTime(item.ts)}</div>
         {item.note ? <p className="rail-detail-note">{item.note}</p> : <p className="rail-detail-note muted">No description.</p>}
+        <PhotoStrip ids={pics} onRemove={onRemovePhoto} className="rail-detail-photos" />
         <button className="rail-log" onClick={onClose}>Close</button>
       </div>
     )
@@ -581,6 +616,7 @@ function DetailPopover({ item, onClose }) {
       <div className="rail-detail-time">{clockTime(c.ts)}</div>
       {emos.length > 0 && <div className="rail-detail-emos">{emos.join(' · ')}</div>}
       {c.note ? <p className="rail-detail-note">{c.note}</p> : <p className="rail-detail-note muted">No note — just the feeling.</p>}
+      <PhotoStrip ids={pics} onRemove={onRemovePhoto} className="rail-detail-photos" />
       <button className="rail-log" onClick={onClose}>Close</button>
     </div>
   )

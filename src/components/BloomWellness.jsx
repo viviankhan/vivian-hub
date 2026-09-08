@@ -5,12 +5,14 @@ import ColorPickRow from './ColorPickRow.jsx'
 import { EffectIcon } from './IconPicker.jsx'
 import IconSearchSheet from './IconSearchSheet.jsx'
 import { bloomBurst } from '../lib/bloom.js'
+import { PhotoStrip, PhotoPicker, PhotoAttacher } from './PhotoAttach.jsx'
+import { photoIds, savePhotos, MAX_PHOTOS } from '../lib/photos.js'
 import {
   dayKey, keyToDate, MOODS, ENERGY, moodMeta, promptForDay,
   selectableEmotions, emotionMeta, makeEmotion, EMOTION_PALETTE, checkinsForDay, daySegments, emotionWeights, pastDayKeys, effectOnDay,
   stageForLevel, nextStage, levelFromXp, liveStreak, applyCheckIn, awardPetals, REWARDS,
   DEFAULT_EFFECTS, POSITIVE_EFFECTS, makeEffect, EFFECT_COLORS,
-  activeEpisode, isActive, toggleEpisode, episodeMinutes, fmtDuration, effectTotals,
+  activeEpisode, isActive, toggleEpisode, patchEpisode, episodeMinutes, fmtDuration, effectTotals,
   buildDailyRecords, computeInsights, moodTrend, shareText,
 } from '../lib/wellness.js'
 
@@ -270,6 +272,12 @@ function DayDetail({ date, checkins, episodes, effects, log, treasures, onAddTre
   const dayTreasures = treasures.filter(t => t.date === date)
   const tasks = (log || []).filter(e => (e.date || (e.ts ? String(e.ts).slice(0, 10) : '')) === date)
   const conditions = (effects || []).filter(fx => effectOnDay(episodes, fx.id, date))
+  // The condition spans that touched this day and carry a photo, so a rash or a
+  // swelling logged with the episode is visible from the journal too.
+  const conditionPics = (episodes || [])
+    .filter(e => photoIds(e).length > 0 && effectOnDay([e], e.effectId, date))
+    .map(e => ({ id: e.id, fx: (effects || []).find(f => f.id === e.effectId), note: e.note, photos: photoIds(e) }))
+    .filter(e => e.fx)
   const fileRef = useRef(null)
   const [draft, setDraft] = useState(null)   // { image, desc } while adding
   const [busy, setBusy] = useState(false)
@@ -326,6 +334,7 @@ function DayDetail({ date, checkins, episodes, effects, log, treasures, onAddTre
                   <div className="wl-moment-emos">{m.emotions.map(id => emotionMeta(id)?.name).filter(Boolean).join(' · ')}</div>
                 )}
                 {m.note && <div className="wl-moment-note">“{m.note}”</div>}
+                <PhotoStrip ids={photoIds(m)} className="wl-moment-photos" />
               </div>
             </div>
           ))}
@@ -345,6 +354,21 @@ function DayDetail({ date, checkins, episodes, effects, log, treasures, onAddTre
                 <span key={i} className="wl-event-chip"><Glyph id="check" size={12} color="var(--teal)" /> {t.label}</span>
               ))}
             </div>
+          </>
+        )}
+
+        {/* Photos attached to a condition while it was running */}
+        {conditionPics.length > 0 && (
+          <>
+            <label className="wl-field-label">Condition photos</label>
+            {conditionPics.map(c => (
+              <div key={c.id} className="wl-fx-photos">
+                <span className="wl-lining-chip" style={{ borderColor: c.fx.color, color: '#4A5560' }}>
+                  <span className="wl-emo-dot" style={{ background: c.fx.color }} /> {c.fx.name}
+                </span>
+                <PhotoStrip ids={c.photos} />
+              </div>
+            ))}
           </>
         )}
 
@@ -423,6 +447,7 @@ export default function BloomWellness({
   const [energy, setEnergy] = useState(null)
   const [emotionsSel, setEmotionsSel] = useState([])
   const [note, setNote] = useState('')
+  const [photos, setPhotos] = useState([])   // data URLs; written as their own rows on submit
   // Start in the picker when nothing's logged yet today; otherwise show the day
   // cloud and let the user add another moment.
   const [editing, setEditing] = useState(todayMoments.length === 0)
@@ -438,7 +463,8 @@ export default function BloomWellness({
     const entry = {
       id: 'ci-' + Date.now().toString(36),
       date: today, mood, energy: energy || 3,
-      emotions: emotionsSel, note: note.trim(), ts: new Date().toISOString(),
+      emotions: emotionsSel, note: note.trim(), photos: savePhotos(photos),
+      ts: new Date().toISOString(),
     }
     persistCheckins([...(checkins || []), entry])
     // First moment of the day pays the full check-in (streak + reflection);
@@ -453,7 +479,7 @@ export default function BloomWellness({
     }
     if (checkInBtn.current) bloomBurst(checkInBtn.current)
     setTimeout(() => setReward(null), 4200)
-    setMood(null); setEnergy(null); setEmotionsSel([]); setNote('')
+    setMood(null); setEnergy(null); setEmotionsSel([]); setNote(''); setPhotos([])
     setEditing(false)
   }
 
@@ -501,7 +527,7 @@ export default function BloomWellness({
   }
 
   const activeNow = effectList.filter(fx => isActive(episodes, fx.id))
-    .map(fx => ({ fx, since: episodeMinutes(activeEpisode(episodes, fx.id)) }))
+    .map(fx => ({ fx, ep: activeEpisode(episodes, fx.id), since: episodeMinutes(activeEpisode(episodes, fx.id)) }))
   const physical = effectList.filter(f => f.kind !== 'mental' && !f.hidden)
   const mental = effectList.filter(f => f.kind === 'mental' && !f.hidden)
 
@@ -603,6 +629,9 @@ export default function BloomWellness({
             <textarea className="wl-note" rows={2} value={note} onChange={(e) => setNote(e.target.value)}
               placeholder="A line for future-you…" />
 
+            <div className="wl-ask">A photo? <span className="wl-optional">optional · up to {MAX_PHOTOS}</span></div>
+            <PhotoPicker photos={photos} onChange={setPhotos} />
+
             <button ref={checkInBtn} className="wl-btn primary block" disabled={!mood} onClick={submitCheckIn}>
               {todayMoments.length ? 'Add this moment' : 'Check in'}
               {mood ? ` · +${todayMoments.length ? 3 : REWARDS.checkIn + (note.trim() ? REWARDS.reflection : 0)} petals` : ''}
@@ -657,6 +686,7 @@ export default function BloomWellness({
                       <div className="wl-moment-emos">{m.emotions.map(id => emotionMeta(id)?.name).filter(Boolean).join(' · ')}</div>
                     )}
                     {m.note && <div className="wl-moment-note">“{m.note}”</div>}
+                    <PhotoStrip ids={photoIds(m)} className="wl-moment-photos" />
                   </div>
                 </div>
               ))}
@@ -676,12 +706,16 @@ export default function BloomWellness({
       {journal.length > 0 && (
         <section className="wl-card">
           <div className="wl-card-head"><h3 className="serif">Past skies</h3></div>
-          <p className="wl-card-sub">Every day becomes a cloud. Tap one to revisit its moments, feelings and treasures.</p>
+          <p className="wl-card-sub">Every day becomes a cloud. Tap one to revisit its moments, feelings, photos and treasures.</p>
           <div className="wl-journal">
             {journal.map(key => {
               const seg = daySegments(checkins, key)
               const w = emotionWeights(checkins, key)
+              // The camera pip means "there are pictures on this day" — a pinned
+              // treasure, or a photo attached to a moment or a condition.
               const hasTreasure = treasures.some(t => t.date === key)
+                || checkins.some(c => c.date === key && photoIds(c).length > 0)
+                || (episodes || []).some(e => photoIds(e).length > 0 && effectOnDay([e], e.effectId, key))
               return (
                 <button key={key} className="wl-journal-day" onClick={() => setOpenDate(key)}>
                   <span className="wl-journal-cloud">
@@ -702,12 +736,21 @@ export default function BloomWellness({
         <section className="wl-active">
           <div className="wl-active-head"><Glyph id="pulse" size={16} /> Active right now</div>
           <div className="wl-active-list">
-            {activeNow.map(({ fx, since }) => (
-              <button key={fx.id} className="wl-active-pill" style={{ background: fx.color, color: iconColorOn(fx.color) }} onClick={() => toggleEffect(fx.id)}>
-                <EffectIcon icon={fx.icon} size={14} color={iconColorOn(fx.color)} /> {fx.name}
-                <b>{fmtDuration(since)}</b>
-                <span className="wl-active-x">✕</span>
-              </button>
+            {activeNow.map(({ fx, ep, since }) => (
+              <div key={fx.id} className="wl-active-item">
+                <button className="wl-active-pill" style={{ background: fx.color, color: iconColorOn(fx.color) }} onClick={() => toggleEffect(fx.id)}>
+                  <EffectIcon icon={fx.icon} size={14} color={iconColorOn(fx.color)} /> {fx.name}
+                  <b>{fmtDuration(since)}</b>
+                  <span className="wl-active-x">✕</span>
+                </button>
+                {/* A condition flipped on from this tab never passed through the
+                    rail's sheet, so this is where it gets a photo — straight
+                    onto the span that's running. */}
+                {ep && (
+                  <PhotoAttacher ids={photoIds(ep)}
+                    onChange={next => persistEpisodes(patchEpisode(episodes, ep.id, { photos: next }))} />
+                )}
+              </div>
             ))}
           </div>
         </section>

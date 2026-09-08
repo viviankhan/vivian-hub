@@ -294,9 +294,11 @@ export function activeEpisode(episodes, effectId) {
 export function isActive(episodes, effectId) {
   return !!activeEpisode(episodes, effectId)
 }
-export function startEpisode(episodes, effectId, at = new Date(), note = '') {
+export function startEpisode(episodes, effectId, at = new Date(), note = '', photos = []) {
   if (isActive(episodes, effectId)) return episodes || []
-  return [{ id: 'ep-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 4), effectId, start: at.toISOString(), end: null, note: note || '' }, ...(episodes || [])]
+  // `photos` holds ids only — the images themselves live one row each, well
+  // away from this blob (see lib/photos.js).
+  return [{ id: 'ep-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 4), effectId, start: at.toISOString(), end: null, note: note || '', photos: [...(photos || [])] }, ...(episodes || [])]
 }
 // Attach / update the free-text description on an effect's active episode.
 export function setEpisodeNote(episodes, effectId, note) {
@@ -305,6 +307,23 @@ export function setEpisodeNote(episodes, effectId, note) {
     if (!done && e.effectId === effectId && !e.end) { done = true; return { ...e, note: note || '' } }
     return e
   })
+}
+// Attach / replace the photo ids on an effect's active episode.
+export function setEpisodePhotos(episodes, effectId, photos) {
+  let done = false
+  return (episodes || []).map(e => {
+    if (!done && e.effectId === effectId && !e.end) { done = true; return { ...e, photos: [...(photos || [])] } }
+    return e
+  })
+}
+// Change one recorded episode by its own id — how a photo is removed from a
+// span that has already been logged (or long since ended).
+export function patchEpisode(episodes, epId, patch) {
+  return (episodes || []).map(e => (e.id === epId ? { ...e, ...patch } : e))
+}
+// The same, for one check-in in the check-ins array.
+export function patchCheckin(checkins, id, patch) {
+  return (checkins || []).map(c => (c.id === id ? { ...c, ...patch } : c))
 }
 export function endEpisode(episodes, effectId, at = new Date()) {
   let done = false
