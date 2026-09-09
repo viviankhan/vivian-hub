@@ -424,8 +424,27 @@ export default function App() {
   // Arrival-started recurring occurrences (device-local): occKey → timestamp.
   // A recurring task with a location auto-starts on arrival like a one-off, but
   // per-day, so it needs its own started map keyed by occurrence.
+  // Only an arrival on a *current* occurrence means anything, so entries from
+  // past days are dropped on load. Without this the map grew by one entry per
+  // located occurrence forever and was re-serialized on every arrival — the
+  // same unbounded-store problem the timeline's day-keyed scratch stores had.
   const [occStarted, setOccStarted] = useState(() => {
-    try { return JSON.parse(localStorage.getItem('bloom_occ_started') || '{}') } catch { return {} }
+    try {
+      const all = JSON.parse(localStorage.getItem('bloom_occ_started') || '{}')
+      if (!all || typeof all !== 'object') return {}
+      const today = todayStr()
+      const kept = {}
+      // Keys are `${recurringId}@${YYYY-MM-DD}` (see lib/occurrences.js occKey).
+      for (const [k, v] of Object.entries(all)) {
+        const at = k.lastIndexOf('@')
+        if (at !== -1 && k.slice(at + 1) < today) continue
+        kept[k] = v
+      }
+      if (Object.keys(kept).length !== Object.keys(all).length) {
+        try { localStorage.setItem('bloom_occ_started', JSON.stringify(kept)) } catch {}
+      }
+      return kept
+    } catch { return {} }
   })
   // Each setter mirrors the choice to the synced prefs blob (pushPrefs), so the
   // look & settings follow the user to their other devices.

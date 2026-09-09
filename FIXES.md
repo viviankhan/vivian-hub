@@ -129,3 +129,67 @@ its mount-time width.
 
 **Fix:** the width now comes from state that tracks `resize` while the drawer is
 open.
+
+## 8. The timeline's per-day localStorage grew forever, and its writes could abort a click handler
+
+**Files:** `src/components/Today.jsx`, new `src/lib/dayStore.js`, new `tests/dayStore.test.mjs`
+
+The timeline keeps three scratch stores keyed by date — `vivian_custom_<date>`,
+`vivian_deleted_<date>`, `vivian_timeshift_<date>`. Two problems:
+
+1. **Unbounded.** One key per store per day, never pruned. A couple of years of
+   use is a few thousand keys against a ~5MB cap. (`bloom_focus_pauses` right
+   next to it *does* prune itself — these never did.)
+2. **Unguarded writes.** 14 of the 15 call sites wrote through a bare
+   `localStorage.setItem`. When the quota is full — or in Safari private
+   browsing, where `setItem` always throws — that throws *inside a click
+   handler*, aborting it partway. React state was already updated but nothing
+   persisted, and the statements after the write never ran. In
+   `applyDayShift` that means the day silently rearranged and the result toast
+   never appeared; on undo, the restore half-applied.
+
+**Fix:** extracted `writeDayStore` / `pruneDayStores` into `src/lib/dayStore.js`
+(matching the repo's `src/lib/` convention, and testable). All 15 call sites now
+go through `writeDayStore`, which is non-fatal and, on a quota error, prunes and
+retries once — stale days being exactly what filled it. `pruneDayStores` runs
+once per mount with a 60-day retention window.
+
+Covered by `tests/dayStore.test.mjs` (17 assertions, wired into `npm test`):
+retention boundaries, that lookalike keys (`vivian_collapsed_blocks`,
+`vivian_last_tab`, a malformed date suffix) are left alone, the prune-and-retry
+path, and a browser that denies storage outright.
+
+## 9. `bloom_occ_started` had the same unbounded-growth problem
+
+**File:** `src/App.jsx`
+
+Arrival-started recurring occurrences are keyed `<recurringId>@<YYYY-MM-DD>` and
+were never pruned — one entry per located occurrence, forever, re-serialized to
+localStorage on every arrival. Only a *current* occurrence's start time means
+anything.
+
+**Fix:** entries for past days are dropped when the map loads, and the trimmed
+map is written back.
+
+## 10. The timeline clock ran on days where it meant nothing
+
+**File:** `src/components/Today.jsx`
+
+```js
+useEffect(()=>{ const t=setInterval(()=>setNow(nowMins()),30000); return ()=>clearInterval(t) },[])
+```
+
+`now` drives the "now" marker, current/overdue states and the live progress
+pills — all of which only apply when you're looking at *today* (`isToday` gates
+every one of them). But the interval ran unconditionally, so paging back through
+the week strip kept re-rendering the whole timeline every 30 seconds to move a
+marker that wasn't drawn.
+
+**Fix:** the interval is only armed while `viewDate` is today. It also ticks
+immediately on `visibilitychange`, so a phone coming out of sleep shows the
+correct time at once instead of up to 30 seconds stale — previously the first
+post-wake frame drew a stale marker.
+
+(Kept keyed off `viewDate` rather than the `isToday` binding, which is derived
+further down the component — using it in the dep array would read it before
+initialization during render.)
