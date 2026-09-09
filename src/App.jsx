@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef, lazy, Suspense } from 'react'
 import {
   isUsingSupabase,
   getCompletions, setCompletion,
@@ -43,24 +43,24 @@ import { ACCENT_COLORS } from './lib/trackers.js'
 import TaskMenuSettings from './components/TaskMenuSettings.jsx'
 
 import Today       from './components/Today.jsx'
-import Calendar    from './components/Calendar.jsx'
+const Calendar = lazy(() => import('./components/Calendar.jsx'))
 import Notes       from './components/Notes.jsx'
 import Edits       from './components/Edits.jsx'
 import History     from './components/History.jsx'
-import RecurringTasksManager from './components/RecurringTasksManager.jsx'
+const RecurringTasksManager = lazy(() => import('./components/RecurringTasksManager.jsx'))
 import CategoriesManager from './components/CategoriesManager.jsx'
-import EventsManager from './components/EventsManager.jsx'
+const EventsManager = lazy(() => import('./components/EventsManager.jsx'))
 import ExternalCalendars from './components/ExternalCalendars.jsx'
-import Insights from './components/Insights.jsx'
-import Informatics from './components/Informatics.jsx'
-import BloomWellness from './components/BloomWellness.jsx'
-import ArtStudio from './components/ArtStudio.jsx'
+const Insights = lazy(() => import('./components/Insights.jsx'))
+const Informatics = lazy(() => import('./components/Informatics.jsx'))
+const BloomWellness = lazy(() => import('./components/BloomWellness.jsx'))
+const ArtStudio = lazy(() => import('./components/ArtStudio.jsx'))
 import { loadOverrides, isAdmin } from './lib/art.js'
-import TaskMenu from './components/TaskMenu.jsx'
+const TaskMenu = lazy(() => import('./components/TaskMenu.jsx'))
 import { authEnabled, getCurrentUser, isSessionUnverified, signOut } from './lib/auth.js'
 import { refreshCalendar, loadCachedCalendar, clearCachedCalendar, eventsToSpans } from './lib/calendars.js'
 import { importedKey } from './lib/importedTasks.js'
-import ThoughtsBoard from './components/ThoughtsBoard.jsx'
+const ThoughtsBoard = lazy(() => import('./components/ThoughtsBoard.jsx'))
 import NotificationsSettings from './components/NotificationsSettings.jsx'
 import SearchOverlay, { SearchIcon } from './components/SearchOverlay.jsx'
 import { registerServiceWorker, syncReminders, notifyArrival, getDefaultLeads } from './lib/notifications.js'
@@ -87,6 +87,11 @@ import SeasonalEffects from './components/SeasonalEffects.jsx'
 // Build id baked in at build time (see vite.config.js). Shown in Settings so
 // it's obvious on-device which version is actually running after a deploy.
 const BUILD_ID = typeof __BUILD_ID__ !== 'undefined' ? __BUILD_ID__ : 'dev'
+
+// One shared empty array for the "this task has none" case. Handing out the
+// same reference keeps a task object stable between renders; a fresh `[]` each
+// time would make every task look changed to any memoized child.
+const EMPTY_ARRAY = []
 
 // Today's date as a YYYY-MM-DD string (local time), matching how dates are
 // stored on commitments/recurring rows everywhere else in the app.
@@ -198,6 +203,24 @@ function AccountPanel() {
 
 // ── Settings Drawer ────────────────────────────────────────────
 function SettingsDrawer({ open, onClose, settingsTab, setSettingsTab, notes, updateNotes, categories, addCategory, updateCategory, deleteCategory, reorderCategories, labelMeta, updateLabelMeta, trackerFolders, events, commitments, recurring, locatedCount, changeHistory, undoChange, clearChangeHistory, externalCalendars, calendarStatuses, addCalendar, toggleCalendar, removeCalendar, refreshOneCalendar, updateCalendar, font, setFont, theme, setTheme, season, setSeason, customColor, setCustom, background, setBackground, customBg, setCustomBg, mobileBackground, setMobileBackground, mobileCustomBg, setMobileCustomBg, layout, setLayout, soundOn, setSound, summary, setSummary, effectsOn, setEffects, admin, persistArt }) {
+  // Escape closes the drawer, the way every other sheet in the app already
+  // behaves. Without it the only way out was to find the Done button.
+  useEffect(() => {
+    if (!open) return
+    const onKey = e => { if (e.key === 'Escape') onClose() }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [open, onClose])
+  // The drawer is capped to the viewport, so it has to re-measure on rotate /
+  // resize rather than keeping the width it happened to mount at.
+  const [vw, setVw] = useState(() => (typeof window === 'undefined' ? 520 : window.innerWidth))
+  useEffect(() => {
+    if (!open) return
+    const onResize = () => setVw(window.innerWidth)
+    onResize()
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [open])
   if (!open) return null
   const SECTIONS = [
     ['customize','Look','sun'],
@@ -216,7 +239,8 @@ function SettingsDrawer({ open, onClose, settingsTab, setSettingsTab, notes, upd
   return (
     <>
       <div onClick={onClose} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.45)', zIndex:400 }} />
-      <div style={{ position:'fixed', top:0, right:0, bottom:0, width:Math.min(520, window.innerWidth), background:'var(--cream)', zIndex:500, display:'flex', flexDirection:'column', boxShadow:'-8px 0 40px rgba(0,0,0,.2)' }}>
+      <div role="dialog" aria-modal="true" aria-label="Settings"
+        style={{ position:'fixed', top:0, right:0, bottom:0, width:Math.min(520, vw), background:'var(--cream)', zIndex:500, display:'flex', flexDirection:'column', boxShadow:'-8px 0 40px rgba(0,0,0,.2)' }}>
         {/* Header — title only; you leave via the bottom bar, not a top ✕. */}
         <div style={{ background:'var(--forest)', padding:'max(18px, calc(env(safe-area-inset-top) + 14px)) 22px 16px', flexShrink:0 }}>
           <div className="serif" style={{ color:'var(--green-light)', fontSize:23, fontWeight:600, lineHeight:1.1 }}>Settings</div>
@@ -236,7 +260,7 @@ function SettingsDrawer({ open, onClose, settingsTab, setSettingsTab, notes, upd
             {settingsTab==='history'    && <History history={changeHistory} onUndo={undoChange} onClear={clearChangeHistory} />}
             {settingsTab==='edits'      && <Edits />}
             {settingsTab==='account'    && <AccountPanel />}
-            {settingsTab==='artstudio' && admin && <ArtStudio persistArt={persistArt} />}
+            {settingsTab==='artstudio' && admin && <Suspense fallback={<TabFallback />}><ArtStudio persistArt={persistArt} /></Suspense>}
           </div>
           <div style={{ padding:'4px 24px 20px', textAlign:'center', fontSize:11, color:'var(--muted)' }}>
             Bloom · build {BUILD_ID}
@@ -269,6 +293,16 @@ function SettingsDrawer({ open, onClose, settingsTab, setSettingsTab, notes, upd
       </div>
     </>
   )
+}
+
+// Shown while a tab's chunk is still arriving. Every view except Today is
+// loaded on demand (see the lazy() imports above), so this is what fills the
+// content area for the moment between tapping a tab and its code landing —
+// normally imperceptible, since the service worker precaches every chunk and
+// serves them from cache. Deliberately quiet: a spinner that flashes for 20ms
+// reads as a glitch, so this is just a held space of the right height.
+function TabFallback() {
+  return <div style={{ minHeight: '60vh' }} aria-busy="true" aria-live="polite" />
 }
 
 // A simple 3-line "menu" icon for the mobile header hamburger.
@@ -315,10 +349,23 @@ function GripIcon() {
 function MobileNav({ open, onClose, tab, setTab, onOpenSettings, bind, barItems }) {
   const go = (id) => { setTab(id); onClose() }
   const onBar = (id) => barItems.includes(id)
+  // Escape closes the drawer, matching the Settings drawer and the sheets.
+  useEffect(() => {
+    if (!open) return
+    const onKey = e => { if (e.key === 'Escape') onClose() }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [open, onClose])
+  // The drawer is always mounted so it can animate, which meant that while it
+  // was closed its rows were still in the tab order — a keyboard user tabbing
+  // across the app fell into an off-screen menu, and a screen reader hit
+  // buttons inside an aria-hidden subtree (an accessibility violation in
+  // itself). `inert` takes the whole subtree out of focus, hit-testing and the
+  // a11y tree in one go, and is what aria-hidden alone never did.
   return (
     <>
       <div className={`mobile-nav-scrim ${open ? 'open' : ''}`} onClick={onClose} aria-hidden="true" />
-      <aside className={`mobile-nav ${open ? 'open' : ''}`} aria-hidden={!open}>
+      <aside className={`mobile-nav ${open ? 'open' : ''}`} aria-hidden={!open} inert={open ? undefined : ''}>
         <div className="mobile-nav-head">
           <div className="serif mobile-nav-brand">Bloom</div>
           <button className="mobile-nav-close" onClick={onClose} aria-label="Close menu">✕</button>
@@ -387,8 +434,27 @@ export default function App() {
   // Arrival-started recurring occurrences (device-local): occKey → timestamp.
   // A recurring task with a location auto-starts on arrival like a one-off, but
   // per-day, so it needs its own started map keyed by occurrence.
+  // Only an arrival on a *current* occurrence means anything, so entries from
+  // past days are dropped on load. Without this the map grew by one entry per
+  // located occurrence forever and was re-serialized on every arrival — the
+  // same unbounded-store problem the timeline's day-keyed scratch stores had.
   const [occStarted, setOccStarted] = useState(() => {
-    try { return JSON.parse(localStorage.getItem('bloom_occ_started') || '{}') } catch { return {} }
+    try {
+      const all = JSON.parse(localStorage.getItem('bloom_occ_started') || '{}')
+      if (!all || typeof all !== 'object') return {}
+      const today = todayStr()
+      const kept = {}
+      // Keys are `${recurringId}@${YYYY-MM-DD}` (see lib/occurrences.js occKey).
+      for (const [k, v] of Object.entries(all)) {
+        const at = k.lastIndexOf('@')
+        if (at !== -1 && k.slice(at + 1) < today) continue
+        kept[k] = v
+      }
+      if (Object.keys(kept).length !== Object.keys(all).length) {
+        try { localStorage.setItem('bloom_occ_started', JSON.stringify(kept)) } catch {}
+      }
+      return kept
+    } catch { return {} }
   })
   // Each setter mirrors the choice to the synced prefs blob (pushPrefs), so the
   // look & settings follow the user to their other devices.
@@ -620,9 +686,17 @@ export default function App() {
   useEffect(() => {
     if (!moreOpen) return
     const close = () => setMoreOpen(false)
+    // Escape dismisses it too, and returns focus to the button that opened it
+    // so keyboard focus isn't dumped back at the top of the document.
+    const onKey = e => { if (e.key === 'Escape') { close(); moreBtnRef.current?.focus() } }
     window.addEventListener('resize', close)
     window.addEventListener('scroll', close, true)
-    return () => { window.removeEventListener('resize', close); window.removeEventListener('scroll', close, true) }
+    window.addEventListener('keydown', onKey)
+    return () => {
+      window.removeEventListener('resize', close)
+      window.removeEventListener('scroll', close, true)
+      window.removeEventListener('keydown', onKey)
+    }
   }, [moreOpen])
   // Set when a search suggestion is picked → Calendar navigates to this date.
   // The nonce lets re-picking the same date re-trigger the jump.
@@ -885,10 +959,20 @@ export default function App() {
   // rows via lib/occurrences.js (one shared computation), so the app no longer
   // pre-splits them into week/day maps here. The Recurring tab still takes the
   // wrapped form for its editor.
-  const recurringTasksWrapped = { tasks: recurringTaskRows }
+  //
   // Rows enriched with their recurrence rule (freq/interval/monthDay) from the
   // meta blob — this is what Today/Week/Calendar compute occurrences from.
-  const recurringTasksEnriched = recurringTaskRows.map(t => ({ ...t, ...(recurringMeta[t.id] || {}) }))
+  // Memoized on purpose: this array is an effect dependency (the location
+  // arrival watch below) and a prop for several views, so rebuilding it on
+  // every render used to tear down and re-arm the geolocation watch each time
+  // anything at all in the app re-rendered.
+  const recurringTasksEnriched = useMemo(
+    () => recurringTaskRows.map(t => ({ ...t, ...(recurringMeta[t.id] || {}) })),
+    [recurringTaskRows, recurringMeta],
+  )
+  // The Recurring tab's editor takes the wrapped form; memoized so it too is a
+  // stable prop rather than a fresh object on every render.
+  const recurringTasksWrapped = useMemo(() => ({ tasks: recurringTasksEnriched }), [recurringTasksEnriched])
 
   // Expand the next week of timed recurring occurrences into reminder items so
   // notifications fire for them too (commitments/events already do). Each id
@@ -1869,9 +1953,15 @@ export default function App() {
       setCommitments_(prev => prev.map(c => doneCommitments.includes(c.id) ? {...c, done:nowDone} : c))
       doneCommitments.forEach(cid => dbUpdateCommitment(cid, { done: nowDone }).catch(reportSaveError))
     }
-    const nextCompletions = { ...completions, [storageKey]: nowDone }
-    twins.forEach(k => { nextCompletions[k] = nowDone })
-    setCompletions_(nextCompletions)
+    // Functional update, not a snapshot of the captured `completions`: checking
+    // off two tasks in the same tick (an easy thing to do on a fast list) had
+    // both callbacks build their next map from the same stale object, so the
+    // second one landed without the first one's tick and it silently came back.
+    setCompletions_(prev => {
+      const next = { ...prev, [storageKey]: nowDone }
+      twins.forEach(k => { next[k] = nowDone })
+      return next
+    })
     try {
       await setCompletion(storageKey, nowDone)
       for (const k of twins) await setCompletion(k, nowDone)
@@ -1889,14 +1979,26 @@ export default function App() {
       // Remove log entry on uncheck — match by label + storageKey
       setLog_(prev => {
         const next = prev.filter(e => !(e.label === label && e.storageKey === storageKey))
-        // Also try matching just by label (older entries may not have storageKey)
-        const next2 = next.length < prev.length ? next : prev.filter((e, i) => {
-          if (e.label !== label) return true
-          // Remove only the most recent matching entry
-          const laterIdx = prev.findIndex((e2, i2) => i2 > i && e2.label === label)
-          return laterIdx !== -1
-        })
-        return next2
+        if (next.length < prev.length) return next
+        // Nothing matched on the storage key, so fall back to matching on the
+        // label alone — entries written before storageKey existed don't carry
+        // one — and drop just the most recent of them.
+        //
+        // This used to call findIndex *inside* a filter to ask "is there a
+        // later entry with this label?" — quadratic over the whole completion
+        // log, which is never trimmed (one entry per check-off, and Informatics
+        // reads all of it for streaks and stats). Measured on a log of entries
+        // sharing one label: ~24ms at 3k rows, ~190ms at 20k, against ~0.5ms
+        // and ~4ms for the pass below. Not a freeze, but a jank on the main
+        // thread in the middle of a tap, and it grows with the square of a log
+        // that only ever gets longer. Same result in one pass: find the last
+        // match, then drop that one index.
+        let lastIdx = -1
+        for (let i = prev.length - 1; i >= 0; i--) {
+          if (prev[i].label === label) { lastIdx = i; break }
+        }
+        if (lastIdx === -1) return prev
+        return prev.filter((_, i) => i !== lastIdx)
       })
       deleteLogEntry(label, storageKey).catch(reportSaveError)
     }
@@ -1917,6 +2019,31 @@ export default function App() {
     })
   }, [])
 
+  // Commitments as the UI sees them: core rows merged with their description +
+  // subtasks from the meta blob. Internal logic (syncToggle, reminders) keeps
+  // using the raw `commitments` state; only children get this enriched view.
+  // Memoized: this is the task list every view renders from, so rebuilding it
+  // on every render handed each child a brand-new array (and brand-new task
+  // objects) each time — enough to defeat memoization all the way down the
+  // timeline. It only actually changes when the rows or their meta change.
+  const commitmentsView = useMemo(() => commitments.map(c => {
+    const m = commitmentMeta[c.id]
+    return {
+      ...c,
+      description: m?.description ?? '',
+      subtasks: m?.subtasks ?? EMPTY_ARRAY,
+      cats: m?.cats ?? (c.cat ? [c.cat] : EMPTY_ARRAY),
+      color: m?.color ?? null,
+      icon: m?.icon ?? null,
+      location: m?.location ?? null,
+      startedAt: m?.startedAt ?? null,
+      block: m?.block ?? false,
+      routine: m?.routine ?? null,
+      autoComplete: m?.autoComplete ?? false,
+      recordValues: m?.recordValues ?? null,
+    }
+  }), [commitments, commitmentMeta])
+
   if (loading) return (
     <div style={{ minHeight:'100vh', background:'#FAFAF7', display:'flex', alignItems:'center', justifyContent:'center' }}>
       <div style={{ textAlign:'center' }}>
@@ -1925,24 +2052,6 @@ export default function App() {
       </div>
     </div>
   )
-
-  // Commitments as the UI sees them: core rows merged with their description +
-  // subtasks from the meta blob. Internal logic (syncToggle, reminders) keeps
-  // using the raw `commitments` state; only children get this enriched view.
-  const commitmentsView = commitments.map(c => ({
-    ...c,
-    description: commitmentMeta[c.id]?.description ?? '',
-    subtasks: commitmentMeta[c.id]?.subtasks ?? [],
-    cats: commitmentMeta[c.id]?.cats ?? (c.cat ? [c.cat] : []),
-    color: commitmentMeta[c.id]?.color ?? null,
-    icon: commitmentMeta[c.id]?.icon ?? null,
-    location: commitmentMeta[c.id]?.location ?? null,
-    startedAt: commitmentMeta[c.id]?.startedAt ?? null,
-    block: commitmentMeta[c.id]?.block ?? false,
-    routine: commitmentMeta[c.id]?.routine ?? null,
-    autoComplete: commitmentMeta[c.id]?.autoComplete ?? false,
-    recordValues: commitmentMeta[c.id]?.recordValues ?? null,
-  }))
 
   const sharedProps = {
     // Every consumer reads todos[k] || weekState[k] — both point at the same
@@ -2018,7 +2127,8 @@ export default function App() {
         </div>
         <nav className="nav">
           {TABS.filter(t => !MORE_TAB_IDS.includes(t.id)).map(t => (
-            <button key={t.id} className={`nav-btn ${tab===t.id ? 'active' : ''}`} onClick={() => setTab(t.id)}>
+            <button key={t.id} className={`nav-btn ${tab===t.id ? 'active' : ''}`}
+              aria-current={tab===t.id ? 'page' : undefined} onClick={() => setTab(t.id)}>
               {t.label}
             </button>
           ))}
@@ -2054,6 +2164,7 @@ export default function App() {
       )}
 
       <main className="content">
+        <Suspense fallback={<TabFallback />}>
         {tab==='today'       && <Today       {...sharedProps} appendLog={appendLog} scheduled={scheduled} deleteCommitment={deleteCommitment}
           wlCheckins={wlCheckins} persistWlCheckins={persistWlCheckins}
           wlEffects={wlEffects} persistWlEffects={persistWlEffects}
@@ -2073,7 +2184,7 @@ export default function App() {
           appendLog={appendLog} />}
         {tab==='events'      && <EventsManager events={events} addEvent={addEvent} deleteEvent={deleteEvent}
           vacations={vacations} addVacation={addVacation} deleteVacation={deleteVacation} />}
-        {tab==='recurring'   && <RecurringTasksManager recurringTasks={{ tasks: recurringTasksEnriched }}
+        {tab==='recurring'   && <RecurringTasksManager recurringTasks={recurringTasksWrapped}
           addRecurringTask={addRecurringTaskFn} updateRecurringTask={updateRecurringTaskFn}
           deleteRecurringTask={deleteRecurringTaskFn} clearRecurringTasks={clearRecurringTasksFn}
           categories={categories} taskTemplates={taskTemplates} labelModel={labelModel}
@@ -2095,6 +2206,7 @@ export default function App() {
           addPerson={addTrackerPerson} updatePerson={updateTrackerPerson} deletePerson={deleteTrackerPerson}
           commitments={commitmentsView} categories={categories} labelMeta={labelMeta}
           addCategory={addCategoryFn} updateLabelMeta={saveLabelMeta} />}
+        </Suspense>
       </main>
 
       <SettingsDrawer
@@ -2131,7 +2243,8 @@ export default function App() {
       {/* Undo toast — appears after any change; tap Undo to reverse it (also
           Ctrl/Cmd+Z on desktop). */}
       {undoToast && (
-        <div style={{ position:'fixed', left:'50%', bottom:96, transform:'translateX(-50%)', zIndex:900,
+        <div role="status" aria-live="polite"
+          style={{ position:'fixed', left:'50%', bottom:96, transform:'translateX(-50%)', zIndex:900,
           background:'#2C3A34', color:'white', padding: undoToast.action ? '8px 8px 8px 18px' : '10px 18px', borderRadius:999, fontSize:13, fontWeight:600,
           boxShadow:'0 8px 30px rgba(0,0,0,.28)', fontFamily:'DM Sans,sans-serif', maxWidth:'calc(100vw - 32px)',
           display:'flex', alignItems:'center', gap:12, pointerEvents: undoToast.action ? 'auto' : 'none' }}>
@@ -2162,6 +2275,7 @@ export default function App() {
           const active = id === 'settings' ? settingsOpen : (tab === id && !settingsOpen)
           return (
             <button key={id} className={`bottom-nav-btn ${active ? 'active' : ''}`}
+              aria-current={active ? 'page' : undefined} aria-label={m.label}
               style={{ touchAction: 'none' }} {...bindDrag(id, 'bar', 'hold')}>
               <span className="bottom-nav-icon"><BottomBarGlyph id={id} /></span>
               <span className="bottom-nav-label">{m.label}</span>

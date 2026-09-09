@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useMemo, useLayoutEffect } from 'react'
+import { writeDayStore, pruneDayStores } from '../lib/dayStore.js'
 import { createPortal } from 'react-dom'
 import { recurringOccurrencesForDate, taskSegments, occKey, recurringActiveOn } from '../lib/occurrences.js'
 import { findSlots } from '../lib/scheduler.js'
@@ -46,6 +47,7 @@ function todayKey() {
 function todayLabel() {
   return new Date().toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'})
 }
+
 function nowMins() { const d=new Date(); return d.getHours()*60+d.getMinutes() }
 function parseTimeMins(label) {
   const m = label.match(/~?(\d{1,2}):(\d{2})\s*(AM|PM)/i)
@@ -1240,7 +1242,28 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
     try { return JSON.parse(localStorage.getItem('vivian_timeshift_'+todayKey())||'{}') } catch { return {} }
   })
 
-  useEffect(()=>{ const t=setInterval(()=>setNow(nowMins()),30000); return ()=>clearInterval(t) },[])
+  // Sweep the day-keyed scratch stores once per mount so they can't grow
+  // without bound (see pruneDayStores).
+  useEffect(() => { pruneDayStores() }, [])
+
+  // The clock that drives the "now" marker, the current/overdue states and the
+  // live progress pills. Only meaningful while we're looking at today, so the
+  // interval isn't armed at all on any other day — paging back through the week
+  // used to keep re-rendering the whole timeline every 30s for a marker that
+  // wasn't drawn. It also re-reads immediately on becoming visible again, so a
+  // phone that was asleep shows the right time straight away rather than up to
+  // 30 seconds stale.
+  // (`isToday` is derived further down, so this recomputes it rather than
+  // reading a binding that doesn't exist yet at this point in the render.)
+  useEffect(() => {
+    if (viewDate !== todayKey()) return
+    const tick = () => setNow(nowMins())
+    tick()
+    const t = setInterval(tick, 30000)
+    const onVis = () => { if (!document.hidden) tick() }
+    document.addEventListener('visibilitychange', onVis)
+    return () => { clearInterval(t); document.removeEventListener('visibilitychange', onVis) }
+  }, [viewDate])
 
   // Arriving from another view (holding a task on the Calendar): show that
   // task's day and remember which task to reveal. The jump is consumed right
@@ -1676,7 +1699,7 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
         })
         setDeleted(prev => {
           const next = [...prev, task.id]
-          localStorage.setItem('vivian_deleted_' + dateKey, JSON.stringify(next))
+          writeDayStore('vivian_deleted_' + dateKey, next)
           return next
         })
       } else {
@@ -1685,13 +1708,13 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
       }
     })
     setTimeOverrides(newOverrides)
-    localStorage.setItem('vivian_timeshift_' + dateKey, JSON.stringify(newOverrides))
+    writeDayStore('vivian_timeshift_' + dateKey, newOverrides)
     setShiftResult({ shifted, committed, fixed })
     setShiftDayOpen(false)
     if (pushUndo && shifted) {
       pushUndo('shifted the day', () => {
         setTimeOverrides(prevOverrides)
-        localStorage.setItem('vivian_timeshift_' + dateKey, JSON.stringify(prevOverrides))
+        writeDayStore('vivian_timeshift_' + dateKey, prevOverrides)
       })
     }
   }
@@ -1720,7 +1743,7 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
       if (t.isCommitment && updateCommitment) updateCommitment(t.id, { date: key, time: null })
       else if (addCommitment) {
         addCommitment({ id:'shifted-'+t.id+'-'+Date.now(), text:(t.title||t.label||'').replace(/^~?\d{1,2}:\d{2}\s*(?:AM|PM)\s*(?:—\s*)?/i,'').trim(), date:key, cat:t.tag, note:`Shifted from ${dateKey} — ran out of day`, done:false })
-        setDeleted(prev=>{ const next=[...prev,t.id]; localStorage.setItem('vivian_deleted_'+dateKey, JSON.stringify(next)); return next })
+        setDeleted(prev=>{ const next=[...prev,t.id]; writeDayStore('vivian_deleted_'+dateKey, next); return next })
       }
     }
 
@@ -1749,7 +1772,7 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
       })
 
     setTimeOverrides(overrides)
-    localStorage.setItem('vivian_timeshift_'+dateKey, JSON.stringify(overrides))
+    writeDayStore('vivian_timeshift_'+dateKey, overrides)
     setShiftResult({ shifted, committed, fixed })
     // Undo restores the timeline to exactly where it was: the recurring/local
     // overrides and any commitment start times we moved. Re-timed routine steps
@@ -1757,7 +1780,7 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
     if (pushUndo && (shifted || committed)) {
       pushUndo('shifted the schedule', () => {
         setTimeOverrides(prevOverrides)
-        localStorage.setItem('vivian_timeshift_'+dateKey, JSON.stringify(prevOverrides))
+        writeDayStore('vivian_timeshift_'+dateKey, prevOverrides)
         commitReverts.forEach(r => updateCommitment && updateCommitment(r.id, { time: r.time }))
       })
     }
@@ -1827,7 +1850,7 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
           if (t.isCommitment && updateCommitment) updateCommitment(t.id, { date: key, time: null })
           else if (addCommitment) {
             addCommitment({ id:'shifted-'+t.id+'-'+Date.now(), text:(t.title||t.label||'').replace(/^~?\d{1,2}:\d{2}\s*(?:AM|PM)\s*(?:—\s*)?/i,'').trim(), date:key, cat:t.tag, note:`Shifted from ${dateKey} — ran out of day`, done:false })
-            setDeleted(prev=>{ const next=[...prev,t.id]; localStorage.setItem('vivian_deleted_'+dateKey, JSON.stringify(next)); return next })
+            setDeleted(prev=>{ const next=[...prev,t.id]; writeDayStore('vivian_deleted_'+dateKey, next); return next })
           }
           return
         }
@@ -1838,12 +1861,12 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
         }
       })
     setTimeOverrides(overrides)
-    localStorage.setItem('vivian_timeshift_'+dateKey, JSON.stringify(overrides))
+    writeDayStore('vivian_timeshift_'+dateKey, overrides)
     setShiftResult({ shifted, committed, fixed:0 })
     if (pushUndo && (shifted || committed)) {
       pushUndo('rescheduled the routine', () => {
         setTimeOverrides(prevOverrides)
-        localStorage.setItem('vivian_timeshift_'+dateKey, JSON.stringify(prevOverrides))
+        writeDayStore('vivian_timeshift_'+dateKey, prevOverrides)
         commitReverts.forEach(r => updateCommitment && updateCommitment(r.id, { time: r.time }))
       })
     }
@@ -1919,10 +1942,10 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
     const prev = timeOverrides
     const next = { ...prev, [id]: mins }
     setTimeOverrides(next)
-    localStorage.setItem('vivian_timeshift_'+dateKey, JSON.stringify(next))
+    writeDayStore('vivian_timeshift_'+dateKey, next)
     if (pushUndo) pushUndo('moved the task', () => {
       setTimeOverrides(prev)
-      localStorage.setItem('vivian_timeshift_'+dateKey, JSON.stringify(prev))
+      writeDayStore('vivian_timeshift_'+dateKey, prev)
     })
   }
 
@@ -2126,7 +2149,7 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
     if (localIds.length) {
       const next = [...deleted, ...localIds]
       setDeleted(next)
-      try { localStorage.setItem('vivian_deleted_' + dateKey, JSON.stringify(next)) } catch {}
+      writeDayStore('vivian_deleted_' + dateKey, next)
     }
     return (tasks || []).length
   }
@@ -2232,7 +2255,7 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
       // Legacy local custom task — add to local deleted list for today only
       const next=[...deleted,task.id]
       setDeleted(next)
-      localStorage.setItem('vivian_deleted_'+dateKey, JSON.stringify(next))
+      writeDayStore('vivian_deleted_'+dateKey, next)
     }
     if (appendLog&&reason) appendLog({date:dateKey,dateLabel:todayLabel(),label:`${task.isRecurring?'Skipped':'Deleted'}: ${task.label||task.text} — ${reason}`,tag:'deleted',ts:new Date().toISOString()})
   }
@@ -2266,14 +2289,14 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
         const prevMins = timeOverrides[task.id]
         setTimeOverrides(prev => {
           const next = { ...prev, [task.id]: newMins }
-          localStorage.setItem('vivian_timeshift_' + dateKey, JSON.stringify(next))
+          writeDayStore('vivian_timeshift_' + dateKey, next)
           return next
         })
         if (pushUndo) pushUndo('moved “' + (task.title || stripTimePrefix(task.label)) + '”', () => {
           setTimeOverrides(prev => {
             const next = { ...prev }
             if (hadOverride) next[task.id] = prevMins; else delete next[task.id]
-            localStorage.setItem('vivian_timeshift_' + dateKey, JSON.stringify(next))
+            writeDayStore('vivian_timeshift_' + dateKey, next)
             return next
           })
         })

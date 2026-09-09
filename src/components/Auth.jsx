@@ -93,15 +93,23 @@ export default function Auth() {
           </div>
 
           <form onSubmit={submit}>
-            <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--muted)', display: 'block', marginBottom: 6 }}>Email</label>
-            <input type="email" autoComplete="email" value={email} onChange={e => setEmail(e.target.value)}
+            {/* htmlFor/id: without the pairing the label is decorative text —
+                a screen reader announces the field as unlabelled, tapping the
+                word "Email" doesn't focus it, and password managers have less
+                to go on. */}
+            <label htmlFor="bloom-email" style={{ fontSize: 12, fontWeight: 600, color: 'var(--muted)', display: 'block', marginBottom: 6 }}>Email</label>
+            <input id="bloom-email" name="email" type="email" autoComplete="email"
+              value={email} onChange={e => setEmail(e.target.value)}
+              aria-describedby={err ? 'bloom-auth-error' : undefined}
               placeholder="you@example.com" style={{ ...input, marginBottom: 14 }} />
 
             {mode !== 'reset' && (
               <>
-                <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--muted)', display: 'block', marginBottom: 6 }}>Password</label>
-                <input type="password" autoComplete={mode === 'up' ? 'new-password' : 'current-password'}
+                <label htmlFor="bloom-password" style={{ fontSize: 12, fontWeight: 600, color: 'var(--muted)', display: 'block', marginBottom: 6 }}>Password</label>
+                <input id="bloom-password" name="password" type="password"
+                  autoComplete={mode === 'up' ? 'new-password' : 'current-password'}
                   value={password} onChange={e => setPassword(e.target.value)}
+                  aria-describedby={err ? 'bloom-auth-error' : undefined}
                   placeholder={mode === 'up' ? 'At least 6 characters' : 'Your password'} style={{ ...input, marginBottom: 14 }} />
               </>
             )}
@@ -128,8 +136,8 @@ export default function Auth() {
                 You’re offline. Signing in needs a connection — after that, Bloom stays signed in and works offline.
               </div>
             )}
-            {err && <div style={{ fontSize: 12.5, color: '#B42318', background: '#FEF3F2', border: '1px solid #FECDCA', borderRadius: 10, padding: '9px 12px', marginBottom: 12, lineHeight: 1.45 }}>{err}</div>}
-            {note && <div style={{ fontSize: 12.5, color: '#155724', background: '#EAF6EC', border: '1px solid #BFE3C6', borderRadius: 10, padding: '9px 12px', marginBottom: 12, lineHeight: 1.45 }}>{note}</div>}
+            {err && <div id="bloom-auth-error" role="alert" style={{ fontSize: 12.5, color: '#B42318', background: '#FEF3F2', border: '1px solid #FECDCA', borderRadius: 10, padding: '9px 12px', marginBottom: 12, lineHeight: 1.45 }}>{err}</div>}
+            {note && <div role="status" aria-live="polite" style={{ fontSize: 12.5, color: '#155724', background: '#EAF6EC', border: '1px solid #BFE3C6', borderRadius: 10, padding: '9px 12px', marginBottom: 12, lineHeight: 1.45 }}>{note}</div>}
 
             <button type="submit" disabled={busy || !online}
               style={{ width: '100%', padding: '14px', borderRadius: 14, border: 'none', marginTop: 2,

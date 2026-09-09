@@ -48,4 +48,27 @@ export default defineConfig({
   define: {
     __BUILD_ID__: JSON.stringify(BUILD_ID),
   },
+  build: {
+    rollupOptions: {
+      output: {
+        // Split the dependencies that never change on a normal deploy out of
+        // the app chunk. Everything used to ship as one ~1MB file, so editing a
+        // single component invalidated React, React DOM and the Supabase client
+        // along with it and every returning user re-downloaded all of them.
+        // Splitting them out means a deploy usually only invalidates the app
+        // chunk (and the tab chunks that actually changed).
+        //
+        // This matters more here than in most apps: the service worker
+        // precaches every file in dist/assets on install, so a deploy that
+        // invalidates one 1MB chunk re-downloads 1MB before the update
+        // finishes — over a phone connection, on every release.
+        manualChunks(id) {
+          if (!id.includes('node_modules')) return
+          if (/[\\/]node_modules[\\/](react|react-dom|scheduler)[\\/]/.test(id)) return 'vendor-react'
+          if (id.includes('@supabase')) return 'vendor-supabase'
+          return 'vendor'
+        },
+      },
+    },
+  },
 })
