@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef, lazy, Suspense } from 'react'
 import {
   isUsingSupabase,
   getCompletions, setCompletion,
@@ -43,24 +43,24 @@ import { ACCENT_COLORS } from './lib/trackers.js'
 import TaskMenuSettings from './components/TaskMenuSettings.jsx'
 
 import Today       from './components/Today.jsx'
-import Calendar    from './components/Calendar.jsx'
+const Calendar = lazy(() => import('./components/Calendar.jsx'))
 import Notes       from './components/Notes.jsx'
 import Edits       from './components/Edits.jsx'
 import History     from './components/History.jsx'
-import RecurringTasksManager from './components/RecurringTasksManager.jsx'
+const RecurringTasksManager = lazy(() => import('./components/RecurringTasksManager.jsx'))
 import CategoriesManager from './components/CategoriesManager.jsx'
-import EventsManager from './components/EventsManager.jsx'
+const EventsManager = lazy(() => import('./components/EventsManager.jsx'))
 import ExternalCalendars from './components/ExternalCalendars.jsx'
-import Insights from './components/Insights.jsx'
-import Informatics from './components/Informatics.jsx'
-import BloomWellness from './components/BloomWellness.jsx'
-import ArtStudio from './components/ArtStudio.jsx'
+const Insights = lazy(() => import('./components/Insights.jsx'))
+const Informatics = lazy(() => import('./components/Informatics.jsx'))
+const BloomWellness = lazy(() => import('./components/BloomWellness.jsx'))
+const ArtStudio = lazy(() => import('./components/ArtStudio.jsx'))
 import { loadOverrides, isAdmin } from './lib/art.js'
-import TaskMenu from './components/TaskMenu.jsx'
+const TaskMenu = lazy(() => import('./components/TaskMenu.jsx'))
 import { authEnabled, getCurrentUser, isSessionUnverified, signOut } from './lib/auth.js'
 import { refreshCalendar, loadCachedCalendar, clearCachedCalendar, eventsToSpans } from './lib/calendars.js'
 import { importedKey } from './lib/importedTasks.js'
-import ThoughtsBoard from './components/ThoughtsBoard.jsx'
+const ThoughtsBoard = lazy(() => import('./components/ThoughtsBoard.jsx'))
 import NotificationsSettings from './components/NotificationsSettings.jsx'
 import SearchOverlay, { SearchIcon } from './components/SearchOverlay.jsx'
 import { registerServiceWorker, syncReminders, notifyArrival, getDefaultLeads } from './lib/notifications.js'
@@ -260,7 +260,7 @@ function SettingsDrawer({ open, onClose, settingsTab, setSettingsTab, notes, upd
             {settingsTab==='history'    && <History history={changeHistory} onUndo={undoChange} onClear={clearChangeHistory} />}
             {settingsTab==='edits'      && <Edits />}
             {settingsTab==='account'    && <AccountPanel />}
-            {settingsTab==='artstudio' && admin && <ArtStudio persistArt={persistArt} />}
+            {settingsTab==='artstudio' && admin && <Suspense fallback={<TabFallback />}><ArtStudio persistArt={persistArt} /></Suspense>}
           </div>
           <div style={{ padding:'4px 24px 20px', textAlign:'center', fontSize:11, color:'var(--muted)' }}>
             Bloom · build {BUILD_ID}
@@ -293,6 +293,16 @@ function SettingsDrawer({ open, onClose, settingsTab, setSettingsTab, notes, upd
       </div>
     </>
   )
+}
+
+// Shown while a tab's chunk is still arriving. Every view except Today is
+// loaded on demand (see the lazy() imports above), so this is what fills the
+// content area for the moment between tapping a tab and its code landing —
+// normally imperceptible, since the service worker precaches every chunk and
+// serves them from cache. Deliberately quiet: a spinner that flashes for 20ms
+// reads as a glitch, so this is just a held space of the right height.
+function TabFallback() {
+  return <div style={{ minHeight: '60vh' }} aria-busy="true" aria-live="polite" />
 }
 
 // A simple 3-line "menu" icon for the mobile header hamburger.
@@ -2142,6 +2152,7 @@ export default function App() {
       )}
 
       <main className="content">
+        <Suspense fallback={<TabFallback />}>
         {tab==='today'       && <Today       {...sharedProps} appendLog={appendLog} scheduled={scheduled} deleteCommitment={deleteCommitment}
           wlCheckins={wlCheckins} persistWlCheckins={persistWlCheckins}
           wlEffects={wlEffects} persistWlEffects={persistWlEffects}
@@ -2183,6 +2194,7 @@ export default function App() {
           addPerson={addTrackerPerson} updatePerson={updateTrackerPerson} deletePerson={deleteTrackerPerson}
           commitments={commitmentsView} categories={categories} labelMeta={labelMeta}
           addCategory={addCategoryFn} updateLabelMeta={saveLabelMeta} />}
+        </Suspense>
       </main>
 
       <SettingsDrawer

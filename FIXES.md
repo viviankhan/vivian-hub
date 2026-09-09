@@ -231,3 +231,48 @@ a header button, and `solid 2px` on the search input.
 (Measuring this needs care — `.icon-btn` carries `transition: all .2s`, so a
 reading taken immediately after focus catches the ring mid-animation and reports
 fractional widths. The values above are after the transition settles.)
+
+## 12. The whole app shipped as one 1MB chunk
+
+**Files:** `vite.config.js`, `src/App.jsx`, new `tests/offline-chunks.browser.test.mjs`
+
+`vite build` warned about this on every build and nothing had been done about
+it: a single `index.js` of 1,015 kB (306 kB gzipped) that had to be downloaded
+and parsed in full before anything rendered — including the Art Studio, which is
+admin-only and which no ordinary user can even open.
+
+Two changes:
+
+**Vendor split** (`manualChunks`). React/React DOM and the Supabase client are
+now their own chunks. They almost never change, so a normal deploy no longer
+invalidates them. That matters more here than in most apps: the service worker
+precaches every file in `dist/assets` on install, so a deploy that invalidates
+one 1MB chunk re-downloads 1MB before the update completes — over a phone
+connection, on every release.
+
+**Lazy tab views.** Every tab except Today (the default) is now `lazy()` +
+`Suspense`, as is the admin-only Art Studio.
+
+Initial payload, measured:
+
+| | before | after |
+|---|---|---|
+| initial JS (raw) | 1,015 kB | 779 kB (`index` 637 + `vendor-react` 142) |
+| initial JS (gzip) | 306 kB | 245 kB |
+| deferred into tab chunks | — | 242 kB across 9 chunks |
+
+(An unconfigured build tree-shakes Supabase away entirely, so
+`vendor-supabase` is empty there. Verified against a build with
+`VITE_SUPABASE_*` set, where it is a real 210 kB chunk — that is the split doing
+its job in an actual deployment.)
+
+The `Suspense` fallback is deliberately a blank held space rather than a
+spinner: the worker precaches every chunk and serves `/assets/` cache-first, so
+the gap is imperceptible, and a spinner that flashes for 20ms reads as a glitch.
+
+**This needed proving, not assuming.** Code-splitting an offline-first PWA is
+only safe because the worker precaches the new chunks. `tests/offline-chunks.browser.test.mjs`
+now holds that guarantee: it installs the worker online, cuts the network, and
+opens a tab whose chunk was never requested. It passes — but if someone later
+narrows the precache list, that test goes red instead of a user finding a blank
+screen on a plane.
