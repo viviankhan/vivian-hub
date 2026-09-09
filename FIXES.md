@@ -253,18 +253,26 @@ connection, on every release.
 **Lazy tab views.** Every tab except Today (the default) is now `lazy()` +
 `Suspense`, as is the admin-only Art Studio.
 
-Initial payload, measured:
+Initial payload. The figures that matter are the **configured** build, since
+that is what `.github/workflows/deploy.yml` ships (it builds with the
+`VITE_SUPABASE_*` secrets). Both branches built the same way, for comparison:
+
+*Configured — what actually deploys:*
 
 | | before | after |
 |---|---|---|
-| initial JS (raw) | 1,015 kB | 779 kB (`index` 637 + `vendor-react` 142) |
-| initial JS (gzip) | 306 kB | 245 kB |
-| deferred into tab chunks | — | 242 kB across 9 chunks |
+| initial JS (raw) | 1,275 kB (one chunk) | 1,038 kB (`index` 680 + `vendor-react` 142 + `vendor-supabase` 210 + `vendor` 6) |
+| initial JS (gzip) | 376 kB | 315 kB |
+| deferred into tab chunks | — | 243 kB raw / 72 kB gzip, across 9 chunks |
 
-(An unconfigured build tree-shakes Supabase away entirely, so
-`vendor-supabase` is empty there. Verified against a build with
-`VITE_SUPABASE_*` set, where it is a real 210 kB chunk — that is the split doing
-its job in an actual deployment.)
+That is −19% raw and −16% gzipped off the critical path, plus 358 kB of vendor
+code that a normal deploy no longer invalidates.
+
+*Unconfigured (`npm run build` with no secrets)* tree-shakes the Supabase client
+away entirely, so it reads better — 1,015 kB → 779 kB raw, 306 kB → 245 kB gzip.
+Worth stating explicitly because it is the number you get running the build
+locally, and it flatters the change by ~60 kB gzipped against what users
+actually download.
 
 The `Suspense` fallback is deliberately a blank held space rather than a
 spinner: the worker precaches every chunk and serves `/assets/` cache-first, so
