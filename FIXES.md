@@ -367,3 +367,77 @@ Two corrections worth recording, since both were in my own first pass:
 - My first comment in the code said this "froze the UI for seconds". The
   measurements don't support that at realistic sizes; it's a ~25–190ms jank.
   The comment now states the measured figures.
+
+---
+
+## Looked at and deliberately left alone
+
+Recording these so the next person doesn't re-derive them.
+
+**`src/lib/offline.js` — the sync engine.** Read closely for ordering and
+double-send bugs; found none. The outbox replay stops at the first network
+error to preserve edit order, serializes concurrent flushes so an op can't be
+sent twice, and drops server-rejected writes loudly rather than silently. The
+IndexedDB open has a 3s deadline with a memory fallback, which is the right
+call — a wedged database degrades durability instead of stranding everyone on
+the splash screen.
+
+**Module-level listeners in `src/lib/`** (`offline.js`, `auth.js`,
+`notifications.js`, `storage.js`) are registered without cleanup. That's
+correct — they're app-lifetime singletons, not per-component. Every listener in
+`src/components/` is properly cleaned up; I checked all of them programmatically.
+
+**`playwright` isn't a declared dependency**, so `npm run test:browser` fails
+from a clean checkout. That's intentional and documented (`OFFLINE.md:191`
+says "Needs `npm i -D playwright`"), so I left it and installed it locally.
+
+**The icon set.** `src/lib/iconset.js` is ~110 kB of source and the single
+biggest remaining item in the main chunk. It's reachable from `lib/glyphs.jsx`,
+which nearly every component imports, so it can't be split out without
+restructuring how glyphs are resolved. That's a real optimisation but it's an
+architectural change with wide visual blast radius — it wants its own pass, not
+a drive-by in this one.
+
+**`TimeField`'s scroll-wheel picker** (`src/components/TimeField.jsx:98`) is
+built from `onClick` divs with no keyboard path. I was going to fix it, then
+noticed the component's primary control is a typed text input and the wheel is
+an optional picker behind a button that's deliberately `tabIndex={-1}`.
+Keyboard users type the time. Not a blocker, so not worth the regression risk
+to the scroll-snap behaviour.
+
+## Known-remaining, not fixed
+
+- **Orphaned labels outside the sign-in form.** 39 `<label>` elements across
+  `src/components/`, only 2 (now 4) associated with their inputs. Detailed in §13.
+- **Interactive `<div onClick>` without keyboard access.** ~67 matches, of which
+  most are scrims and `stopPropagation` wrappers that are correctly
+  non-interactive; roughly a dozen are real controls (e.g. the task rows in
+  `TaskMenu.jsx:426`). Each needs judging individually — some want to become
+  `<button>`, others want `role` + `tabIndex` + key handlers.
+- **The completion log is unbounded.** §14 removed the quadratic scan over it,
+  but the log itself still grows one row per check-off forever, and Informatics
+  reads all of it. Capping it is a data-retention decision — it feeds streaks
+  and long-range stats — so it's the owner's call, not something to do quietly.
+
+## Verification
+
+Every change above was checked against the full suite, and the new behaviour was
+verified directly rather than assumed:
+
+| | before | after |
+|---|---|---|
+| `npm test` | 27 + 8 | 25 + 54 + 12 + 14 + 22 + **17 (new)** + 27 + 8 |
+| `npm run test:browser` | 11 + 12 + 45 | 11 + **4 (new)** + 12 + 45 |
+| `npm run build` | clean (1 chunk-size warning) | clean |
+
+Additional one-off verification, in a real Chromium:
+
+- the focus ring, measured before and after on a header button and a text input
+  (and re-measured after the button's `transition: all .2s` settles — an
+  immediate reading catches it mid-animation and reports fractional widths);
+- `inert` present on the closed mobile drawer;
+- a never-visited lazy tab opening with the network cut, now kept as
+  `tests/offline-chunks.browser.test.mjs`;
+- the sign-in fields reporting accessible names, and `role=alert` carrying the
+  app's own "Enter your email." rather than a browser bubble;
+- the §14 rewrite proven equivalent to the original over 66,429 exhaustive cases.
