@@ -276,3 +276,48 @@ now holds that guarantee: it installs the worker online, cuts the network, and
 opens a tab whose chunk was never requested. It passes — but if someone later
 narrows the precache list, that test goes red instead of a user finding a blank
 screen on a plane.
+
+## 13. The sign-in form's labels weren't attached to its fields
+
+**File:** `src/components/Auth.jsx`
+
+```jsx
+<label style={{…}}>Email</label>
+<input type="email" autoComplete="email" … />
+```
+
+No `htmlFor`, no `id`. The `<label>` is just styled text: a screen reader
+announces the field as unlabelled, tapping the word "Email" doesn't focus the
+input, and password managers have less to match on. This is the gate to the
+whole app — the one form every user has to complete.
+
+The validation errors had the same problem from the other side: `err` rendered
+into a plain `<div>`, so submitting with an empty email painted a message that
+was never announced. A screen-reader user got silence and a form that appeared
+to do nothing.
+
+**Fix:** `htmlFor`/`id` pairs on both fields (plus `name`, which helps password
+managers), `role="alert"` on the error and `role="status"` on the success note,
+and `aria-describedby` linking the fields to the error while one is showing.
+
+Verified in Chromium against a Supabase-configured build: both fields now report
+an accessible name, and submitting empty exposes `role=alert` reading
+"Enter your email."
+
+**One thing I deliberately did *not* do:** my first pass also added `required`
+and `minLength={6}` to the inputs. That was wrong and I reverted it. The
+component already does its own validation with better copy ("Password must be at
+least 6 characters."), and native constraint validation fires *first* — so the
+browser's generic bubble would have replaced the app's wording and quietly made
+that existing code unreachable. The accessibility fix shouldn't change the
+form's behaviour, and now it doesn't.
+
+### Related, not fixed: the same pattern is app-wide
+
+Across `src/components/` there are 39 `<label>` elements and only 2 use
+`htmlFor`. The rest have the same disconnect, mostly in the add-task sheet and
+the tracker forms. I fixed the sign-in gate because it is the highest-traffic
+form and the one nobody can skip; sweeping the other 37 is a mechanical but
+wide change (several are wrapping labels, several are styled as headings rather
+than true labels) and belongs in its own pass with its own review, rather than
+riding along unexamined in this one.
