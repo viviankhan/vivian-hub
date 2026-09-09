@@ -321,3 +321,49 @@ form and the one nobody can skip; sweeping the other 37 is a mechanical but
 wide change (several are wrapping labels, several are styled as headings rather
 than true labels) and belongs in its own pass with its own review, rather than
 riding along unexamined in this one.
+
+## 14. Unchecking a task was quadratic in the size of the completion log
+
+**File:** `src/App.jsx`, `syncToggle`
+
+The uncheck path first tries to remove the log entry by `label + storageKey`. If
+nothing matched — which happens for entries written before `storageKey` existed
+— it fell back to matching on the label alone and removing the most recent one:
+
+```js
+prev.filter((e, i) => {
+  if (e.label !== label) return true
+  const laterIdx = prev.findIndex((e2, i2) => i2 > i && e2.label === label)
+  return laterIdx !== -1
+})
+```
+
+`findIndex` inside `filter`, both over `prev` — quadratic. The completion log is
+never trimmed (one entry per check-off, and Informatics reads all of it for
+streaks and stats), so it only grows.
+
+Measured on a log whose entries share one label (what a daily recurring task
+produces), in the case that reaches this branch:
+
+| log size | before | after |
+|---|---|---|
+| 3,000 | 24.2 ms | 0.54 ms |
+| 7,300 | 24.8 ms | 1.30 ms |
+| 20,000 | 188.6 ms | 4.07 ms |
+
+**Fix:** find the last matching index in one backward pass, then drop that index.
+
+I checked equivalence rather than assuming it: an exhaustive differential test
+over every log of length 0–4 drawn from 3 labels × 3 storage-key values, against
+all 9 (label, key) removal arguments — **66,429 cases, 0 differences**.
+
+Two corrections worth recording, since both were in my own first pass:
+
+- My initial benchmark showed *no* speedup, because I'd built a log whose
+  `storageKey` was `undefined` while also passing `undefined` — so the first
+  filter matched and returned before the quadratic branch ever ran. The
+  branch only executes for legacy rows (no `storageKey`) unchecked via a real
+  key. The numbers above are from that path.
+- My first comment in the code said this "froze the UI for seconds". The
+  measurements don't support that at realistic sizes; it's a ~25–190ms jank.
+  The comment now states the measured figures.
