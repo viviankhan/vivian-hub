@@ -29,6 +29,39 @@
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
+/* ── Keyboard focus ───────────────────────────────────────────── */
+/* Almost every control in the app is a <button> styled inline with
+   `border:'none'`, and the input rule further down sets `outline: none`
+   outright. The result was that nothing in Bloom showed a focus ring: tabbing
+   through the app moved an invisible cursor, which makes it unusable by
+   keyboard and fails WCAG 2.4.7 (Focus Visible).
+
+   `:focus-visible` is the right selector — the browser only matches it for
+   keyboard/AT focus, so this never puts a ring around a tapped or clicked
+   button. Declared once, globally, so a control doesn't have to opt in.
+   `currentColor` under a contrasting outer ring keeps it legible on both the
+   pale surfaces and the deep forest/teal ones. */
+:where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
+  outline: 2px solid var(--teal, #2A6F7F);
+  outline-offset: 2px;
+  border-radius: 4px;
+  /* A light halo so the ring reads against dark backgrounds too. */
+  box-shadow: 0 0 0 4px rgba(255, 255, 255, .65);
+}
+/* Inputs already signal focus by recoloring their border, and they sit on
+   white, so give them the ring without the halo. */
+:where(input, select, textarea):focus-visible {
+  outline: 2px solid var(--sea, #4A9EB5);
+  outline-offset: 1px;
+  box-shadow: none;
+}
+/* Note on specificity: the `:where(...)` wrapper contributes nothing, so these
+   rules land at 0,1,0 (from the `:focus-visible` pseudo-class alone). That is
+   enough to beat the bare `input, select, textarea { outline: none }` element
+   rule below, while still letting any component that paints its own focus
+   treatment (.gh-micro, .tw-mood, .wl-note, .wl-input — all class-based, so
+   0,2,0) keep overriding it, as they already do. */
+
 /* ── Layout density (Settings → Look) ─────────────────────────── */
 /* Minimal hides the free-time gap rows on the timeline, for a calmer, less
    busy day. */

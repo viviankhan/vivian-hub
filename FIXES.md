@@ -193,3 +193,41 @@ post-wake frame drew a stale marker.
 (Kept keyed off `viewDate` rather than the `isToday` binding, which is derived
 further down the component — using it in the dep array would read it before
 initialization during render.)
+
+## 11. Nothing in the app showed a usable keyboard focus indicator
+
+**File:** `src/styles/index.css`
+
+Two separate holes, verified in a real Chromium:
+
+- `input, select, textarea { … outline: none; … }` (line 530) removes the focus
+  ring from **every** text field in the app. Confirmed: before this change,
+  focusing the search input by keyboard computed `outline: none`.
+- Nearly every other control is a `<button>` styled inline with `border:'none'`
+  and no focus style, so it fell back to Chromium's UA default —
+  `rgb(16,16,16) auto 1px`. A near-black hairline is effectively invisible on the
+  app's own surfaces: the header buttons sit on the deep forest/teal gradient,
+  and the bottom bar and Settings nav are similar.
+
+Tabbing through Bloom therefore moved an invisible cursor — unusable by keyboard,
+and a WCAG 2.4.7 (Focus Visible) failure.
+
+**Fix:** one global `:focus-visible` rule near the top of the stylesheet — a 2px
+`--teal` outline with a 2px offset and a translucent white halo so it reads
+against dark surfaces too. `:focus-visible` (not `:focus`) means it only appears
+for keyboard/AT focus, never around a tapped or clicked button, so the visual
+design is untouched for mouse and touch users.
+
+Specificity was chosen deliberately: the `:where(...)` wrapper contributes
+nothing, leaving the rules at 0,1,0 from the `:focus-visible` pseudo-class alone.
+That is enough to beat the bare `input, select, textarea { outline: none }`
+element rule (0,0,1), while components that already paint their own focus
+treatment — `.gh-micro`, `.tw-mood`, `.wl-note`, `.wl-input`, all class-based at
+0,2,0 — keep overriding it exactly as they do today.
+
+Verified after the change: `outline: rgb(74,158,181) solid 2px` with the halo on
+a header button, and `solid 2px` on the search input.
+
+(Measuring this needs care — `.icon-btn` carries `transition: all .2s`, so a
+reading taken immediately after focus catches the ring mid-animation and reports
+fractional widths. The values above are after the transition settles.)
