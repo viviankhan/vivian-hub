@@ -14,6 +14,18 @@
 // downward to show how long it has lasted, running to the blob (and vanishing
 // behind it) while still active. Tapping a trail ends that effect (asking, the
 // first time). Markers that crowd the same time shrink and fan diagonally.
+//
+// Time travel. Feelings rarely get written down while they're happening, so the
+// rail lets you place them after the fact:
+//   • A past day has no blob (there is no "now" on it) — instead a small clock
+//     winding backwards hovers at the top of the timeline and asks whether you
+//     want to record something for that day. It opens the same two bubbles.
+//   • Today's blob carries a third bubble: a clock that toggles *timed mode*.
+//     Off, everything lands at this instant, exactly as it always has. On, both
+//     sheets grow a "when" row so a moment can be given a time, and a feeling or
+//     a condition a whole time frame. The choice is remembered between visits.
+//   • Tapping any marker opens its detail card, which reads back the span it
+//     covers and lets you correct either end of it.
 // ─────────────────────────────────────────────────────────────
 import { useState, useMemo, useEffect, useRef } from 'react'
 import { Glyph, iconColorOn } from '../lib/glyphs.jsx'
@@ -22,11 +34,13 @@ import ColorPickRow from './ColorPickRow.jsx'
 import { EffectIcon } from './IconPicker.jsx'
 import IconSearchSheet from './IconSearchSheet.jsx'
 import { PhotoPicker, PhotoStrip } from './PhotoAttach.jsx'
+import TimeField from './TimeField.jsx'
 import { savePhotos, deletePhoto, photoIds } from '../lib/photos.js'
 import {
   dayKey, keyToDate, MOODS, moodMeta, selectableEmotions, makeEmotion, emotionMeta, EMOTION_PALETTE, checkinsForDay,
   DEFAULT_EFFECTS, POSITIVE_EFFECTS, makeEffect, EFFECT_COLORS, isActive, activeEpisode, startEpisode, endEpisode, setEpisodeNote,
-  setEpisodePhotos, patchEpisode, patchCheckin,
+  setEpisodePhotos, patchEpisode, patchCheckin, addEpisode,
+  atTimeOn, timeOf, spanOk, spanMinutes,
   episodeMinutes, fmtDuration, applyCheckIn, awardPetals,
 } from '../lib/wellness.js'
 
@@ -40,6 +54,44 @@ const clockTime = (ts) => { try { return new Date(ts).toLocaleTimeString('en-US'
 const fracInDay = (ms, dayStartMs) => {
   const h = (ms - dayStartMs) / 3600000
   return Math.max(0, Math.min(1, (h - DAY_START) / (DAY_END - DAY_START)))
+}
+
+// Timed mode is a preference, not a per-day choice: flip the blob's clock on and
+// every sheet keeps offering times until you flip it back.
+const TIMED_KEY = 'bloom_rail_timed'
+const readTimed = () => { try { return localStorage.getItem(TIMED_KEY) === '1' } catch { return false } }
+const writeTimed = (on) => { try { localStorage.setItem(TIMED_KEY, on ? '1' : '0') } catch {} }
+
+// "yesterday" reads wrong after "on", so the phrase and the bare name are two
+// different things: dayLabel gives the name, onDay the phrase you can drop into
+// a sentence ("on Friday", but plain "yesterday").
+const onDay = (name) => (name === 'yesterday' ? name : `on ${name}`)
+// "Friday" / "Sep 3" — how a past day names itself in the clock's invitation.
+function dayLabel(key) {
+  const d = keyToDate(key)
+  const today = new Date(); today.setHours(0, 0, 0, 0)
+  const diff = Math.round((today - d) / 86400000)
+  if (diff === 1) return 'yesterday'
+  if (diff < 7) return d.toLocaleDateString('en-US', { weekday: 'long' })
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+}
+
+// A clock whose hands sweep *backwards* — the rail's little time machine. It
+// marks a day that has already happened and, tapped, opens the same two bubbles
+// the blob does.
+function RewindClock({ size = 34 }) {
+  return (
+    <svg className="rail-clockface" viewBox="0 0 40 40" width={size} height={size} aria-hidden="true">
+      <circle cx="20" cy="20" r="17" fill="#fff" stroke="currentColor" strokeWidth="2" opacity="0.95" />
+      {[0, 90, 180, 270].map(a => (
+        <line key={a} x1="20" y1="6.5" x2="20" y2="9.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"
+          opacity="0.5" transform={`rotate(${a} 20 20)`} />
+      ))}
+      <g className="rail-hand rail-hand-h"><line x1="20" y1="20" x2="20" y2="12.5" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" /></g>
+      <g className="rail-hand rail-hand-m"><line x1="20" y1="20" x2="20" y2="9" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" /></g>
+      <circle cx="20" cy="20" r="1.9" fill="currentColor" />
+    </svg>
+  )
 }
 
 // A kind line for the blob to speak, shaped by what you're carrying right now.
@@ -69,8 +121,24 @@ export default function DayRail({
   const [menu, setMenu] = useState(false)          // radial open
   const [sheet, setSheet] = useState(null)         // 'mood' | 'status' | null
   const [moodDetail, setMoodDetail] = useState(null)   // a tapped cloud
+  // Timed mode: the sheets offer a time (and an end time) instead of stamping
+  // "now". It is a remembered preference on today, and simply how a past day
+  // works — there is no "now" back there to log against.
+  const [timedPref, setTimedPref] = useState(readTimed)
+  const timed = isToday ? timedPref : true
+  const toggleTimed = () => setTimedPref(v => { writeTimed(!v); return !v })
+  // The clock's invitation introduces itself when a past day opens, then gets
+  // out of the timeline's way. Hovering or focusing the clock brings it back.
+  const [asking, setAsking] = useState(false)
+  useEffect(() => { setAsking(!isToday) }, [isToday, dateKey])
+  useEffect(() => {
+    if (!asking) return
+    const t = setTimeout(() => setAsking(false), 6000)
+    return () => clearTimeout(t)
+  }, [asking])
   const nowFrac = fracInDay(nowMs, dayStartMs)
   const blobRef = useRef(null)
+  const clockRef = useRef(null)
   const railRef = useRef(null)
   const [anchor, setAnchor] = useState(null)       // blob centre in viewport px
   // The timeline lays tasks out proportionally (per-task minimums, blocks and
@@ -165,8 +233,10 @@ export default function DayRail({
   // recomputes whenever the prefs blob changes.
   const emotionOptions = useMemo(() => selectableEmotions(), [emotionPrefs])
   const closeAll = () => { setMenu(false); setSheet(null); setMoodDetail(null) }
+  // The menu fans out of whatever opened it — the blob today, the rewind clock
+  // on a past day — so the bubbles always appear to come out of that thing.
   const openMenu = () => {
-    const r = blobRef.current?.getBoundingClientRect()
+    const r = (isToday ? blobRef : clockRef).current?.getBoundingClientRect()
     if (r) setAnchor({ left: r.left + r.width / 2, top: r.top + r.height / 2 })
     setMenu(true)
   }
@@ -211,25 +281,71 @@ export default function DayRail({
   const heldMarks = markers.filter(m => heldAloft(markerAt(m))).map(m => m.key)
 
   // ── Actions ──────────────────────────────────────────────
-  const logMood = (mood, emotions, note, photos) => {
+  // `times` is { start, end } in "HH:MM" on the viewed day, and only arrives
+  // from a sheet in timed mode. With no start, a moment lands at this instant —
+  // the original behaviour, untouched. An end turns the moment into a span.
+  const logMood = (mood, emotions, note, photos, times) => {
+    const startIso = times?.start ? atTimeOn(today, times.start) : new Date().toISOString()
+    const endIso = times?.end ? atTimeOn(today, times.end) : null
     // The images go to their own rows and only their ids ride along on the
     // check-in — savePhotos hands the ids back straight away and uploads in the
     // background, so the sheet closes without waiting on the network.
-    const entry = { id: 'ci-' + Date.now().toString(36), date: today, mood, energy: 3, emotions: emotions || [], note: (note || '').trim(), photos: savePhotos(photos), ts: new Date().toISOString() }
+    const entry = {
+      id: 'ci-' + Date.now().toString(36), date: today, mood, energy: 3,
+      emotions: emotions || [], note: (note || '').trim(), photos: savePhotos(photos),
+      ts: startIso, ...(endIso ? { endTs: endIso } : {}),
+    }
     persistCheckins([...(checkins || []), entry])
+    // A day you're filling in after the fact shouldn't rewrite the streak —
+    // backdating still earns a few petals for the tending, but only a check-in
+    // made on the actual current day counts as today's check-in.
     if (persistGame && game) {
-      if (todayMoments.length === 0) persistGame(applyCheckIn(game, { key: today, hasReflection: entry.note.length > 0 }).game)
+      if (today !== dayKey()) persistGame(awardPetals(game, 3))
+      else if (todayMoments.length === 0) persistGame(applyCheckIn(game, { key: today, hasReflection: entry.note.length > 0 }).game)
       else if (todayMoments.length < 5) persistGame(awardPetals(game, 3))
     }
     setSheet(null); setMenu(false)
   }
-  const addStatus = (effectId, note, photos) => {
+  const addStatus = (effectId, note, photos, times) => {
+    const ids = savePhotos(photos)
+    if (times && (times.start || times.end)) {
+      // A span you're placing yourself: recorded whole, so a condition that ran
+      // from 2 to 5 last Tuesday is one closed episode rather than a toggle you
+      // have to remember to flip off.
+      persistEpisodes(addEpisode(episodes, effectId, {
+        start: times.start ? atTimeOn(today, times.start) : new Date().toISOString(),
+        end: times.end ? atTimeOn(today, times.end) : null,
+        note: (note || '').trim(), photos: ids,
+      }))
+      setSheet(null); setMenu(false)
+      return
+    }
     let next = startEpisode(episodes, effectId)
     if (note && note.trim()) next = setEpisodeNote(next, effectId, note.trim())
-    const ids = savePhotos(photos)
     if (ids.length) next = setEpisodePhotos(next, effectId, ids)
     persistEpisodes(next)
     setSheet(null); setMenu(false)
+  }
+  // Take the written note back off something already logged. The entry itself
+  // stays — only the words go, the same way a photo can be pulled off one.
+  const deleteMoodNote = (checkinId) => {
+    persistCheckins(patchCheckin(checkins, checkinId, { note: '' }))
+    setMoodDetail(d => (d && d.id === checkinId ? { ...d, note: '' } : d))
+  }
+  const deleteFxNote = (epId) => {
+    persistEpisodes(patchEpisode(episodes, epId, { note: '' }))
+    setMoodDetail(d => (d && d.epId === epId ? { ...d, note: '' } : d))
+  }
+  // Correct either end of something already on the rail, from its detail card.
+  // Both stamps arrive as ISO (or null for "still going") and are written
+  // straight onto the check-in or the episode.
+  const saveMoodTimes = (checkinId, startIso, endIso) => {
+    persistCheckins(patchCheckin(checkins, checkinId, { ts: startIso, endTs: endIso || null }))
+    setMoodDetail(d => (d && d.id === checkinId ? { ...d, ts: startIso, endTs: endIso || null } : d))
+  }
+  const saveFxTimes = (epId, startIso, endIso) => {
+    persistEpisodes(patchEpisode(episodes, epId, { start: startIso, end: endIso || null }))
+    setMoodDetail(d => (d && d.epId === epId ? { ...d, ts: startIso, end: endIso || null } : d))
   }
   // Take a photo back off something already logged: the id comes off the entry
   // and its row is cleared. Nothing else in either blob is touched.
@@ -313,6 +429,21 @@ export default function DayRail({
         )
       })}
 
+      {/* A feeling given an end time covers a stretch of the day too — drawn as
+          a slimmer trail in its mood's pigment, tucked behind the condition
+          trails so the two never fight for the same pixels. */}
+      {todayMoments.filter(c => c.endTs).map(c => {
+        const top = railFrac(Date.parse(c.ts))
+        const bottom = railFrac(Date.parse(c.endTs))
+        const h = Math.max(0, bottom - top)
+        const col = moodMeta(c.mood).color
+        return (
+          <div key={'mt' + c.id} className="rail-trail rail-mood-trail" aria-hidden="true"
+            title={`${moodMeta(c.mood).label} · ${clockTime(c.ts)} – ${clockTime(c.endTs)}`}
+            style={{ top: `${top * 100}%`, height: `${h * 100}%`, background: `linear-gradient(${col}, color-mix(in srgb, ${col} 45%, transparent))` }} />
+        )
+      })}
+
       {/* Markers — mood clouds + status icons, fanned when they crowd. */}
       {markers.map(m => {
         const dx = m.cluster * 13, scale = m.cluster ? 0.72 : 1
@@ -335,19 +466,18 @@ export default function DayRail({
           return (
             <button key={m.key} className={`rail-mark rail-mood ${held ? 'held' : ''}`}
               style={held ? heldStyle : restStyle}
-              title={`${moodMeta(c.mood).label} · ${clockTime(c.ts)}`} onClick={() => setMoodDetail(c)}>
+              title={`${moodMeta(c.mood).label} · ${clockTime(c.ts)}${c.endTs ? ' – ' + clockTime(c.endTs) : ''}`} onClick={() => setMoodDetail(c)}>
               <MoodCloud v={c.mood} size={30} emotions={c.emotions} />
               {photoIds(c).length > 0 && <span className="rail-mark-pic"><Glyph id="camera" size={8} color="#fff" /></span>}
             </button>
           )
         }
         const e = m.data
-        const endable = isToday && !e.end
         return (
           <button key={m.key} className={`rail-mark rail-fx ${e.end ? '' : 'live'} ${held ? 'held' : ''}`}
             style={{ ...(held ? heldStyle : restStyle), background: e.fx.color, color: iconColorOn(e.fx.color) }}
-            title={`${e.fx.name}${e.note ? ' · ' + e.note : ''} · ${clockTime(e.start)}${endable ? ' · tap to end' : ''}`}
-            onClick={() => endable ? endStatus(e.effectId) : setMoodDetail({ fx: e.fx, note: e.note, ts: e.start, epId: e.id, photos: photoIds(e), isFx: true })}>
+            title={`${e.fx.name}${e.note ? ' · ' + e.note : ''} · ${clockTime(e.start)}${e.end ? ' – ' + clockTime(e.end) : ' · still going'}`}
+            onClick={() => setMoodDetail({ fx: e.fx, note: e.note, ts: e.start, end: e.end, effectId: e.effectId, epId: e.id, photos: photoIds(e), isFx: true })}>
             <EffectIcon icon={e.fx.icon} size={15} />
             {photoIds(e).length > 0 && <span className="rail-mark-pic"><Glyph id="camera" size={8} color="#fff" /></span>}
           </button>
@@ -355,13 +485,26 @@ export default function DayRail({
       })}
 
       {/* The mind blob — only on today. It centres on the timeline's live "now"
-          nodule when one is on screen, else on the fractional day scale. A past
-          day is a read-only record, so it shows its markers without the blob. */}
+          nodule when one is on screen, else on the fractional day scale. */}
       {isToday && (
         <div className="rail-blob" style={{ top: `${blobFrac * 100}%`, transform: 'translateY(-50%)' }}>
           <button ref={blobRef} className="rail-blob-btn" onClick={() => (menu ? closeAll() : openMenu())} aria-label="Wellness">
             <GuideBlob size={54} tint="#8FB0D8" speaking={menu} />
           </button>
+        </div>
+      )}
+
+      {/* A past day has no "now" for the blob to ride, so it gets a little clock
+          winding backwards at the top of the timeline instead — the way back in
+          to a day you didn't get round to writing down. */}
+      {!isToday && (
+        <div className="rail-rewind">
+          <button ref={clockRef} className={`rail-clock ${menu ? 'on' : ''}`} onClick={() => (menu ? closeAll() : openMenu())}
+            onMouseEnter={() => setAsking(true)} onFocus={() => setAsking(true)}
+            aria-label={`Log a feeling or condition for ${dayLabel(dateKey)}`}>
+            <RewindClock size={34} />
+          </button>
+          {asking && !menu && <span className="rail-clock-ask">Log a feeling or condition for {dayLabel(dateKey)}?</span>}
         </div>
       )}
       </div>
@@ -372,25 +515,46 @@ export default function DayRail({
         <div className="rail-overlay">
           <div className="rail-film" onClick={closeAll} />
           {menu && !sheet && !moodDetail && anchor && (
-            <div className="rail-anchor" style={{ left: anchor.left, top: anchor.top }}>
-              <div className="rail-anchor-blob"><GuideBlob size={54} tint="#8FB0D8" speaking /></div>
+            <div className={`rail-anchor ${isToday ? '' : 'past'}`} style={{ left: anchor.left, top: anchor.top }}>
+              <div className="rail-anchor-blob">
+                {isToday ? <GuideBlob size={54} tint="#8FB0D8" speaking /> : <span className="rail-clock lg on"><RewindClock size={38} /></span>}
+              </div>
               <button className="rail-bub rail-bub-cloud" onClick={() => setSheet('mood')} aria-label="Log how you feel">
                 <MoodCloud v={lastMood} size={40} />
               </button>
               <button className="rail-bub rail-bub-lotus" onClick={() => setSheet('status')} aria-label="Log a status effect">
                 <Glyph id="flower" size={26} />
               </button>
-              <div className="rail-say">{affirm(activeEffects)}</div>
+              {/* The third bubble, today only: the clock that decides whether
+                  what you log carries a time of its own or simply happens now. */}
+              {isToday && (
+                <button className={`rail-bub rail-bub-clock ${timed ? 'on' : ''}`} onClick={toggleTimed}
+                  aria-pressed={timed} aria-label={timed ? 'Timed mode on — turn off' : 'Timed mode off — turn on'}>
+                  <RewindClock size={30} />
+                </button>
+              )}
+              <div className="rail-say">
+                {isToday
+                  ? (timed
+                      ? 'Clock’s on — you can say when a feeling started, and when it lifted. Tap it again to just log this moment.'
+                      : affirm(activeEffects))
+                  : `Looking back at ${dayLabel(dateKey)}. Anything you log here can carry the time it actually happened.`}
+              </div>
             </div>
           )}
           {sheet === 'mood' && <MomentSheet onClose={closeAll} onLog={logMood}
+            timed={timed} isToday={isToday} dayName={dayLabel(dateKey)}
             emotions={emotionOptions} onAddEmotion={addEmotion} onDeleteEmotion={deleteEmotion} />}
           {sheet === 'status' && (
             <StatusSheet effects={effectList} episodes={episodes} byId={byId}
+              timed={timed} isToday={isToday} dayName={dayLabel(dateKey)}
               onAdd={addStatus} onEnd={(id) => endStatus(id, false)} onClose={closeAll}
               onAddEffect={addEffect} onDeleteEffect={deleteEffect} />
           )}
-          {moodDetail && <DetailPopover item={moodDetail} onClose={closeAll}
+          {moodDetail && <DetailPopover item={moodDetail} dateKey={dateKey} isToday={isToday} onClose={closeAll}
+            onSaveTimes={(startIso, endIso) => (moodDetail.isFx ? saveFxTimes(moodDetail.epId, startIso, endIso) : saveMoodTimes(moodDetail.id, startIso, endIso))}
+            onEndNow={moodDetail.isFx && !moodDetail.end && isToday ? () => { endStatus(moodDetail.effectId, false); closeAll() } : null}
+            onDeleteNote={() => (moodDetail.isFx ? deleteFxNote(moodDetail.epId) : deleteMoodNote(moodDetail.id))}
             onRemovePhoto={(pid) => (moodDetail.isFx ? removeFxPhoto(moodDetail.epId, pid) : removeMoodPhoto(moodDetail.id, pid))} />}
         </div>
       )}
@@ -398,8 +562,57 @@ export default function DayRail({
   )
 }
 
+// ── When-row — timed mode's "when did this happen?" controls ────
+// Shared by both sheets. A start time, and an end you opt into: with no end an
+// entry is a single moment (or, for a condition, one that's still running);
+// with one it becomes a span the rail draws as a trail. Both fields speak the
+// viewed day's clock, so a time typed here lands on the day you're looking at.
+const nowHHMM = () => {
+  const d = new Date()
+  return `${String(d.getHours()).padStart(2, '0')}:${String(Math.floor(d.getMinutes() / 5) * 5).padStart(2, '0')}`
+}
+const hhmmMins = (t) => { const [h, m] = String(t || '').split(':').map(Number); return (h || 0) * 60 + (m || 0) }
+
+function WhenRow({ start, end, onStart, onEnd, isToday, dayName, openEndHint, endPlaceholder = 'no end' }) {
+  const [spanning, setSpanning] = useState(!!end)
+  const bad = !!(start && end && hhmmMins(end) <= hhmmMins(start))
+  const mins = start && end && !bad ? hhmmMins(end) - hhmmMins(start) : null
+  const dropEnd = () => { setSpanning(false); onEnd('') }
+  return (
+    <div className="rail-when" onClick={e => e.stopPropagation()}>
+      <div className="rail-when-head">
+        <RewindClock size={17} />
+        <span>{isToday ? 'When did this happen?' : `When ${onDay(dayName)}?`}</span>
+        {mins != null && <b className="rail-when-dur">{fmtDuration(mins)}</b>}
+      </div>
+      <div className="rail-when-row">
+        <label className="rail-when-field">
+          <span>Started</span>
+          <TimeField value={start} onChange={onStart} style={railTimeStyle} />
+        </label>
+        {spanning ? (
+          <label className="rail-when-field">
+            <span>Ended <button type="button" className="rail-when-clear" onClick={dropEnd}>clear</button></span>
+            <TimeField value={end} onChange={onEnd} style={railTimeStyle} placeholder={endPlaceholder} />
+          </label>
+        ) : (
+          <button type="button" className="rail-when-add" onClick={() => setSpanning(true)}>＋ add an end time</button>
+        )}
+      </div>
+      {bad
+        ? <div className="rail-when-warn">The end needs to come after the start.</div>
+        : (spanning ? null : <div className="rail-when-hint">{openEndHint}</div>)}
+    </div>
+  )
+}
+const railTimeStyle = { border: '1.5px solid var(--border)', borderRadius: 11, padding: '8px 10px', fontSize: 13, fontFamily: 'inherit', background: '#fff', color: 'var(--text)', boxSizing: 'border-box' }
+// Both sheets refuse to log a span that runs backwards.
+const whenOk = (timed, start, end) => !timed || !end || hhmmMins(end) > hhmmMins(start)
+
 // ── Moment sheet — pick a mood, optionally say why ──────────────
-function MomentSheet({ onClose, onLog, emotions: options = [], onAddEmotion, onDeleteEmotion }) {
+function MomentSheet({ onClose, onLog, timed, isToday, dayName, emotions: options = [], onAddEmotion, onDeleteEmotion }) {
+  const [start, setStart] = useState(nowHHMM)
+  const [end, setEnd] = useState('')
   const [mood, setMood] = useState(null)
   const [emotions, setEmotions] = useState([])
   const [note, setNote] = useState('')
@@ -435,7 +648,7 @@ function MomentSheet({ onClose, onLog, emotions: options = [], onAddEmotion, onD
 
   return (
     <div className="rail-sheet" onClick={(e) => { setArmed(null); e.stopPropagation() }}>
-      <div className="rail-sheet-title">How are you, right now?</div>
+      <div className="rail-sheet-title">{isToday ? 'How are you, right now?' : `How were you ${onDay(dayName)}?`}</div>
       <div className="rail-moods">
         {MOODS.map(m => (
           <button key={m.v} className={`rail-moodpick ${mood === m.v ? 'on' : ''}`} onClick={() => setMood(m.v)} title={m.label}>
@@ -446,6 +659,11 @@ function MomentSheet({ onClose, onLog, emotions: options = [], onAddEmotion, onD
       </div>
       {mood != null && (
         <>
+          {timed && (
+            <WhenRow start={start} end={end} onStart={setStart} onEnd={setEnd}
+              isToday={isToday} dayName={dayName} endPlaceholder="no end"
+              openEndHint="No end time — this gets logged as a single moment." />
+          )}
           {!noting
             ? <button className="rail-addnote" onClick={() => setNoting(true)}>＋ Say why, or add a photo (optional)</button>
             : <>
@@ -484,7 +702,10 @@ function MomentSheet({ onClose, onLog, emotions: options = [], onAddEmotion, onD
                 <textarea className="rail-note" placeholder="What's behind this feeling? (only if you want to)" value={note} onChange={e => setNote(e.target.value)} rows={2} />
                 <PhotoPicker photos={photos} onChange={setPhotos} label="Add a photo" />
               </>}
-          <button className="rail-log" onClick={() => onLog(mood, emotions, note, photos)}>Log this moment</button>
+          <button className="rail-log" disabled={!whenOk(timed, start, end)}
+            onClick={() => onLog(mood, emotions, note, photos, timed ? { start, end } : null)}>
+            {timed && end ? 'Log this stretch' : 'Log this moment'}
+          </button>
         </>
       )}
     </div>
@@ -492,11 +713,14 @@ function MomentSheet({ onClose, onLog, emotions: options = [], onAddEmotion, onD
 }
 
 // ── Status sheet — pick / describe / end a condition ────────────
-function StatusSheet({ effects, episodes, byId, onAdd, onEnd, onClose, onAddEffect, onDeleteEffect }) {
+function StatusSheet({ effects, episodes, byId, timed, isToday, dayName, onAdd, onEnd, onClose, onAddEffect, onDeleteEffect }) {
   const [pick, setPick] = useState(null)
   const [note, setNote] = useState('')
   const [photos, setPhotos] = useState([])   // data URLs, only written on start
+  const [start, setStart] = useState(nowHHMM)
+  const [end, setEnd] = useState('')
   const active = effects.filter(f => isActive(episodes, f.id))
+  const clash = !!pick && !end && isActive(episodes, pick)
   const options = effects.filter(f => !f.hidden)   // deleted conditions drop out of the picker
 
   // Long-press a condition tile to arm its delete ✕; the "＋" tile opens a
@@ -514,8 +738,8 @@ function StatusSheet({ effects, episodes, byId, onAdd, onEnd, onClose, onAddEffe
 
   return (
     <div className="rail-sheet" onClick={(e) => { setArmed(null); e.stopPropagation() }}>
-      <div className="rail-sheet-title">What are you feeling in your body or mind?</div>
-      {active.length > 0 && (
+      <div className="rail-sheet-title">{isToday ? 'What are you feeling in your body or mind?' : `What was your body or mind carrying ${onDay(dayName)}?`}</div>
+      {isToday && active.length > 0 && (
         <div className="rail-active">
           {active.map(f => {
             const ep = activeEpisode(episodes, f.id)
@@ -530,11 +754,15 @@ function StatusSheet({ effects, episodes, byId, onAdd, onEnd, onClose, onAddEffe
       <div className="rail-fxgrid">
         {options.map(f => {
           const on = isActive(episodes, f.id)
+          // Untimed, picking a running condition is meaningless — it's already
+          // on. Timed, you may well be recording a *different*, finished stretch
+          // of it, so the tile stays live and the log button does the checking.
+          const lock = on && !timed
           return (
             <span key={f.id} className="rail-fxpick-wrap">
-              <button className={`rail-fxpick ${pick === f.id ? 'sel' : ''} ${on ? 'on' : ''} ${armed === f.id ? 'armed' : ''}`} disabled={on}
+              <button className={`rail-fxpick ${pick === f.id ? 'sel' : ''} ${on ? 'on' : ''} ${armed === f.id ? 'armed' : ''}`} disabled={lock}
                 onClick={() => { if (longFired.current) { longFired.current = false; return } if (armed) { setArmed(null); return } setPick(f.id) }}
-                onPointerDown={() => !on && startHold(f.id)} onPointerUp={endHold} onPointerLeave={endHold}
+                onPointerDown={() => !lock && startHold(f.id)} onPointerUp={endHold} onPointerLeave={endHold}
                 onContextMenu={ev => ev.preventDefault()}
                 style={pick === f.id ? { borderColor: f.color, background: `color-mix(in srgb, ${f.color} 16%, #fff)` } : undefined}>
                 <span className="rail-fxpick-ico" style={{ background: f.color, color: iconColorOn(f.color) }}><EffectIcon icon={f.icon} size={15} /></span>
@@ -585,25 +813,105 @@ function StatusSheet({ effects, episodes, byId, onAdd, onEnd, onClose, onAddEffe
 
       {pick && (
         <>
+          {timed && (
+            <WhenRow start={start} end={end} onStart={setStart} onEnd={setEnd}
+              isToday={isToday} dayName={dayName} endPlaceholder="still going"
+              openEndHint="No end time — this keeps running until you end it." />
+          )}
           <textarea className="rail-note" placeholder={`Describe the ${(byId.get(pick)?.name || '').toLowerCase()} — as much or as little as you like`} value={note} onChange={e => setNote(e.target.value)} rows={2} />
           <PhotoPicker photos={photos} onChange={setPhotos} label="Add a photo" />
-          <button className="rail-log" onClick={() => onAdd(pick, note, photos)}>Start tracking this</button>
+          {clash && <div className="rail-when-warn">{byId.get(pick)?.name} is already running. Give this stretch an end time, or end the running one first.</div>}
+          <button className="rail-log" disabled={!whenOk(timed, start, end) || clash}
+            onClick={() => onAdd(pick, note, photos, timed ? { start, end } : null)}>
+            {timed && end ? 'Log this time frame' : 'Start tracking this'}
+          </button>
         </>
       )}
     </div>
   )
 }
 
-// ── Detail popover — tap a marker to read it back ───────────────
-function DetailPopover({ item, onClose, onRemovePhoto }) {
+// ── Detail popover — tap a marker to read it back, and fix its clock ──
+// Every marker on the rail — a mood cloud or a condition — opens this. It reads
+// back what was logged and, crucially, the span it covers: when it started and
+// when it lifted. Either end can be corrected here, which is the only way to
+// repair a moment logged at the wrong time (or to close a condition you forgot
+// to end days ago).
+function DetailPopover({ item, dateKey, isToday, onClose, onRemovePhoto, onSaveTimes, onEndNow, onDeleteNote }) {
   const pics = photoIds(item)
-  if (item.isFx) {
+  const isFx = !!item.isFx
+  const startIso = item.ts
+  const endIso = isFx ? item.end : item.endTs
+  const [editing, setEditing] = useState(false)
+  const [sVal, setSVal] = useState('')
+  const [eVal, setEVal] = useState('')
+  // Deleting the note takes two taps — the words are often the hardest part of
+  // a check-in to write, so they never go on a single mis-tap.
+  const [armed, setArmed] = useState(false)
+  const openEdit = () => { setSVal(timeOf(startIso)); setEVal(timeOf(endIso)); setEditing(true) }
+
+  const nextStart = sVal ? atTimeOn(dateKey, sVal) : startIso
+  const nextEnd = eVal ? atTimeOn(dateKey, eVal) : null
+  const ok = !!sVal && spanOk(nextStart, nextEnd)
+  const save = () => { if (ok) { onSaveTimes?.(nextStart, nextEnd); setEditing(false) } }
+
+  // The span as prose: a closed one carries its length, an open one says so.
+  const spanText = endIso
+    ? `${clockTime(startIso)} – ${clockTime(endIso)} · ${fmtDuration(spanMinutes(startIso, endIso))}`
+    : (isFx ? `${clockTime(startIso)} – still going · ${fmtDuration(spanMinutes(startIso, null))}` : clockTime(startIso))
+
+  // A written note, with the option to take it back off. Nothing is offered when
+  // there was never a note to begin with.
+  const noteBlock = (emptyText) => (item.note
+    ? (
+      <div className="rail-note-block">
+        <p className="rail-detail-note">{item.note}</p>
+        <button className={`rail-note-del ${armed ? 'armed' : ''}`}
+          onClick={() => { if (armed) { onDeleteNote?.(); setArmed(false) } else setArmed(true) }}
+          onBlur={() => setArmed(false)}>
+          {armed ? 'Tap again to delete' : 'Delete note'}
+        </button>
+      </div>
+    )
+    : <p className="rail-detail-note muted">{emptyText}</p>)
+
+  const times = (
+    <div className="rail-span">
+      {!editing ? (
+        <button className="rail-span-read" onClick={openEdit} title="Edit the start and end time">
+          <RewindClock size={15} />
+          <span>{spanText}</span>
+          <span className="rail-span-edit">Edit</span>
+        </button>
+      ) : (
+        <div className="rail-span-edit-box" onClick={e => e.stopPropagation()}>
+          <label className="rail-when-field">
+            <span>Started</span>
+            <TimeField value={sVal} onChange={setSVal} style={railTimeStyle} />
+          </label>
+          <label className="rail-when-field">
+            <span>Ended {eVal && <button type="button" className="rail-when-clear" onClick={() => setEVal('')}>clear</button>}</span>
+            <TimeField value={eVal} onChange={setEVal} style={railTimeStyle}
+              placeholder={isFx ? 'still going' : 'no end'} />
+          </label>
+          {!ok && <div className="rail-when-warn">{sVal ? 'The end needs to come after the start.' : 'A start time is needed.'}</div>}
+          <div className="rail-span-btns">
+            <button className="rail-span-cancel" onClick={() => setEditing(false)}>Cancel</button>
+            <button className="rail-span-save" disabled={!ok} onClick={save}>Save times</button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+
+  if (isFx) {
     return (
       <div className="rail-detail" onClick={(e) => e.stopPropagation()}>
         <div className="rail-detail-head"><span className="rail-detail-ico" style={{ background: item.fx.color, color: iconColorOn(item.fx.color) }}><EffectIcon icon={item.fx.icon} size={16} /></span><b>{item.fx.name}</b></div>
-        <div className="rail-detail-time">{clockTime(item.ts)}</div>
-        {item.note ? <p className="rail-detail-note">{item.note}</p> : <p className="rail-detail-note muted">No description.</p>}
+        {times}
+        {noteBlock('No description.')}
         <PhotoStrip ids={pics} onRemove={onRemovePhoto} className="rail-detail-photos" />
+        {onEndNow && <button className="rail-endnow" onClick={onEndNow}>End this now</button>}
         <button className="rail-log" onClick={onClose}>Close</button>
       </div>
     )
@@ -613,9 +921,9 @@ function DetailPopover({ item, onClose, onRemovePhoto }) {
   return (
     <div className="rail-detail" onClick={(e) => e.stopPropagation()}>
       <div className="rail-detail-head"><MoodCloud v={c.mood} size={40} emotions={c.emotions} /><b>{moodMeta(c.mood).label}</b></div>
-      <div className="rail-detail-time">{clockTime(c.ts)}</div>
+      {times}
       {emos.length > 0 && <div className="rail-detail-emos">{emos.join(' · ')}</div>}
-      {c.note ? <p className="rail-detail-note">{c.note}</p> : <p className="rail-detail-note muted">No note — just the feeling.</p>}
+      {noteBlock('No note — just the feeling.')}
       <PhotoStrip ids={pics} onRemove={onRemovePhoto} className="rail-detail-photos" />
       <button className="rail-log" onClick={onClose}>Close</button>
     </div>

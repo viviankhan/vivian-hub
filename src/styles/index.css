@@ -1570,6 +1570,90 @@ textarea { resize: vertical; min-height: 160px; line-height: 1.6; }
 .rail-detail-emos { font-size: 12px; color: var(--teal); font-weight: 600; margin-top: 6px; }
 .rail-detail-note { font-size: 13.5px; line-height: 1.5; color: var(--text); margin: 10px 0 4px; }
 .rail-detail-note.muted { color: var(--muted); font-style: italic; }
+/* A logged note can be taken back off — armed by one tap, gone on the second,
+   because the written part of a check-in is the bit worth protecting. */
+.rail-note-block { margin: 10px 0 2px; }
+.rail-note-block .rail-detail-note { margin: 0 0 7px; }
+.rail-note-del { border: 1px solid var(--border); background: #fff; color: var(--muted); border-radius: 999px;
+  padding: 4px 11px; font-size: 11px; font-weight: 700; cursor: pointer; font-family: inherit; }
+.rail-note-del.armed { border-color: #d98a8a; background: #FCF2F1; color: #C4635A; }
+
+/* ── Time travel: the rewind clock, the clock toggle, span editors ───── */
+/* A past day has no blob to ride its "now", so a small clock winding backwards
+   hovers at the top of the rail and offers to record something for that day. */
+/* The clock is pinned to the rail's axis and the invitation hangs off its right
+   — laid out independently, so a long invitation can never drag the clock out
+   of the gutter (a flex row centred on the axis did exactly that). */
+.rail-rewind { position: absolute; left: 0; right: 0; top: 4px; height: 34px; z-index: 21; pointer-events: none; }
+.rail-rewind > .rail-clock { pointer-events: auto; }
+.rail-clock { position: absolute; left: 27px; top: 0; transform: translateX(-50%);
+  border: none; background: none; padding: 0; cursor: pointer; color: var(--teal); display: block;
+  filter: drop-shadow(0 3px 8px rgba(80,110,150,.28)); animation: rail-clock-in .4s ease both; }
+/* The same clock, standing in for the blob at the centre of the fanned menu. */
+.rail-clock.lg { position: static; transform: none; cursor: default; filter: drop-shadow(0 3px 10px rgba(80,110,150,.4)); }
+.rail-clock.on { color: var(--forest); }
+@keyframes rail-clock-in { from { opacity: 0; transform: scale(.6) rotate(24deg); } to { opacity: 1; transform: none; } }
+/* The hands run anticlockwise — the whole point of the thing. The minute hand
+   sweeps a full turn every 3s, the hour hand trails it twelve times slower. */
+.rail-hand { transform-origin: 20px 20px; animation: rail-rewind 3s linear infinite; }
+.rail-hand-h { animation-duration: 36s; }
+@keyframes rail-rewind { from { transform: rotate(0deg); } to { transform: rotate(-360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .rail-hand { animation: none; }
+  .rail-hand-h { transform: rotate(-40deg); }
+  .rail-hand-m { transform: rotate(-150deg); }
+  .rail-clock { animation: none; }
+}
+/* The clock's invitation, sitting to its right, clear of the timeline's pills. */
+/* The invitation floats over the timeline for a few seconds and then leaves —
+   so it can speak in full on a phone without permanently crowding the gutter. */
+.rail-clock-ask { position: absolute; left: 50px; top: 5px; white-space: nowrap; font-size: 11px; font-weight: 700; color: var(--teal); background: #fff;
+  border: 1px solid var(--border); border-radius: 999px; padding: 5px 11px; box-shadow: 0 4px 14px rgba(40,60,90,.18);
+  animation: rail-pop .4s ease both .25s; pointer-events: none; }
+@media (max-width: 400px) { .rail-clock-ask { font-size: 10px; padding: 4px 9px; } }
+/* The blob's third bubble: the clock that decides whether what you log carries
+   a time of its own. Lit when timed mode is on. */
+.rail-bub-clock { width: 46px; height: 46px; left: 86px; top: 0; color: var(--muted); animation-delay: .1s; }
+.rail-bub-clock.on { color: var(--forest); background: var(--green-light); box-shadow: 0 0 0 2.5px var(--teal), 0 6px 20px rgba(40,60,90,.3); }
+/* With three bubbles the fan opens wider, and the speech bubble steps clear. */
+.rail-anchor .rail-bub-cloud { top: -50px; }
+.rail-anchor .rail-bub-lotus { top: 50px; }
+.rail-say { left: 140px; }
+.rail-anchor.past .rail-say { left: 104px; }
+@media (max-width: 420px) { .rail-say { left: 118px; width: min(190px, 50vw); } }
+
+/* "When did this happen?" — timed mode's start/end controls in both sheets. */
+.rail-when { margin: 14px 0 2px; border: 1.5px solid var(--border); border-radius: 16px; padding: 11px 12px 12px; background: #fff; }
+.rail-when-head { display: flex; align-items: center; gap: 7px; font-size: 12px; font-weight: 700; color: var(--forest); margin-bottom: 9px; }
+.rail-when-head .rail-clockface { color: var(--teal); flex-shrink: 0; }
+.rail-when-dur { margin-left: auto; font-size: 11.5px; color: var(--teal); }
+.rail-when-row { display: flex; gap: 9px; align-items: flex-end; }
+.rail-when-field { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.rail-when-field > span { font-size: 10.5px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; display: flex; align-items: center; gap: 6px; }
+.rail-when-clear { border: none; background: none; padding: 0; font-size: 10px; font-weight: 700; color: var(--teal); cursor: pointer; text-transform: none; letter-spacing: 0; text-decoration: underline; font-family: inherit; }
+.rail-when-add { flex: 1; border: 1px dashed var(--border); background: none; color: var(--teal); font-weight: 600; font-size: 11.5px; border-radius: 11px; padding: 10px 8px; cursor: pointer; font-family: inherit; }
+.rail-when-hint { font-size: 11px; color: var(--muted); margin-top: 8px; }
+.rail-when-warn { font-size: 11px; font-weight: 600; color: #C4635A; margin-top: 8px; }
+.rail-log:disabled { opacity: .45; cursor: default; }
+
+/* The span a marker covers, read back — and opened for correction — in its
+   detail card. */
+.rail-span { margin-top: 9px; }
+.rail-span-read { display: inline-flex; align-items: center; gap: 7px; border: 1px solid var(--border); background: #fff;
+  border-radius: 999px; padding: 6px 8px 6px 10px; font-size: 12px; font-weight: 600; color: var(--text); cursor: pointer; font-family: inherit; max-width: 100%; }
+.rail-span-read .rail-clockface { color: var(--teal); flex-shrink: 0; }
+.rail-span-edit { font-size: 10.5px; font-weight: 700; color: var(--teal); background: var(--green-light); border-radius: 999px; padding: 3px 8px; }
+.rail-span-edit-box { text-align: left; border: 1.5px solid var(--teal); border-radius: 16px; padding: 11px 12px 12px; background: #fff; display: flex; flex-direction: column; gap: 9px; }
+.rail-span-btns { display: flex; gap: 8px; }
+.rail-span-cancel { flex: 1; border: 1.5px solid var(--border); background: #fff; color: var(--muted); border-radius: 11px; padding: 9px; font-size: 12px; font-weight: 700; cursor: pointer; font-family: inherit; }
+.rail-span-save { flex: 2; border: none; background: var(--forest); color: var(--green-light); border-radius: 11px; padding: 9px; font-size: 12px; font-weight: 700; cursor: pointer; font-family: inherit; }
+.rail-span-save:disabled { opacity: .45; cursor: default; }
+.rail-endnow { display: block; width: 100%; margin-top: 10px; border: 1.5px solid var(--border); background: #fff; color: var(--text);
+  border-radius: 14px; padding: 11px; font-size: 13px; font-weight: 700; cursor: pointer; font-family: inherit; }
+/* A feeling given a time frame trails like a condition — but slimmer, and on
+   its own thread just left of the rail's axis, so a mood span and a condition
+   span running through the same hour both stay visible. */
+.rail-mood-trail { left: 18px; width: 4px; z-index: 7; opacity: .8; cursor: default; pointer-events: none; }
 
 /* Rail container — offset below the date header so markers ride the timeline. */
 .day-rail { position: absolute; left: 0; top: 158px; bottom: 12px; width: 54px; }

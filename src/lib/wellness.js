@@ -36,6 +36,37 @@ export function daysBetween(aKey, bKey) {
   return Math.round((b - a) / 86400000)
 }
 
+// ── Clock times on a given day ─────────────────────────────────
+// Backdating speaks two languages: the pickers deal in "HH:MM" clock time, the
+// stored moments in ISO timestamps. These convert between them *on a named
+// day*, so a time typed while looking at last Tuesday lands on last Tuesday.
+export function atTimeOn(key, hhmm) {
+  const d = keyToDate(key)
+  const [h, m] = String(hhmm || '').split(':').map(Number)
+  d.setHours(Number.isFinite(h) ? h : 12, Number.isFinite(m) ? m : 0, 0, 0)
+  return d.toISOString()
+}
+// An ISO timestamp → the "HH:MM" a TimeField wants. Empty for anything unset.
+export function timeOf(iso) {
+  if (!iso) return ''
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return ''
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+}
+// Is this span the right way round? An end before its start is the one thing
+// the time editors refuse to save.
+export function spanOk(startIso, endIso) {
+  if (!startIso || !endIso) return true
+  return Date.parse(endIso) > Date.parse(startIso)
+}
+// Minutes between two ISO stamps (or to `now` while the span is still open).
+export function spanMinutes(startIso, endIso, now = Date.now()) {
+  const s = Date.parse(startIso)
+  if (Number.isNaN(s)) return 0
+  const e = endIso ? Date.parse(endIso) : now
+  return Math.max(0, Math.round((e - s) / 60000))
+}
+
 // ── Mood & energy scales ───────────────────────────────────────
 // Five steps, warm and legible. `color` is the watercolor pigment of that mood's
 // cloud — reused for legends and the sparkline so everything reads as one palette.
@@ -324,6 +355,25 @@ export function patchEpisode(episodes, epId, patch) {
 // The same, for one check-in in the check-ins array.
 export function patchCheckin(checkins, id, patch) {
   return (checkins || []).map(c => (c.id === id ? { ...c, ...patch } : c))
+}
+// Record a span whose start — and possibly end — you are choosing yourself:
+// how a condition gets logged after the fact, for a day that has already gone
+// by, or for a stretch of this morning you only got round to writing down now.
+// Unlike startEpisode this never refuses a second span, except where it would
+// leave two open-ended episodes of the same condition running at once.
+export function addEpisode(episodes, effectId, { start, end = null, note = '', photos = [] } = {}) {
+  if (!end && isActive(episodes, effectId)) return episodes || []
+  const ep = {
+    id: 'ep-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 4),
+    effectId,
+    start: start || new Date().toISOString(),
+    end: end || null,
+    note: note || '',
+    photos: [...(photos || [])],
+  }
+  // Kept newest-first, like startEpisode leaves it, so "the open one" resolves
+  // to the most recent span rather than whichever was appended last.
+  return [ep, ...(episodes || [])].sort((a, b) => String(b.start).localeCompare(String(a.start)))
 }
 export function endEpisode(episodes, effectId, at = new Date()) {
   let done = false
