@@ -1374,7 +1374,12 @@ textarea { resize: vertical; min-height: 160px; line-height: 1.6; }
 @keyframes guide-pulse { 0%,100% { opacity: .7; transform: scale(.94); } 50% { opacity: 1; transform: scale(1.06); } }
 .guide-mote { animation: guide-mote 4.2s ease-in-out infinite; }
 @keyframes guide-mote { 0%,100% { opacity: 0; transform: translateY(3px) scale(.6); } 50% { opacity: .9; transform: translateY(-5px) scale(1); } }
-@media (prefers-reduced-motion: reduce) { .guide-float, .guide-pulse, .guide-mote { animation: none; } }
+/* The blob's clock ring, worn while timed mode is on. It winds backwards, like
+   the rewind clock on a past day, and settles in with a small bloom. */
+.guide-dial { animation: guide-dial-in .45s cubic-bezier(.34,1.56,.64,1) both, guide-dial-turn 28s linear infinite; }
+@keyframes guide-dial-in { from { opacity: 0; transform: scale(.55); } to { opacity: 1; transform: scale(1); } }
+@keyframes guide-dial-turn { from { transform: rotate(0deg); } to { transform: rotate(-360deg); } }
+@media (prefers-reduced-motion: reduce) { .guide-float, .guide-pulse, .guide-mote, .guide-dial { animation: none; } }
 
 .tw { position: relative; border-radius: 18px; padding: 14px 15px 16px; margin-bottom: 14px;
   background: linear-gradient(180deg, color-mix(in srgb, var(--lens,#8FD6CE) 12%, var(--cream)) 0%, var(--cream) 60%);
@@ -1492,6 +1497,9 @@ textarea { resize: vertical; min-height: 160px; line-height: 1.6; }
   padding: 10px 13px; font-size: 12.5px; line-height: 1.45; color: var(--text); box-shadow: 0 8px 26px rgba(40,60,90,.26);
   animation: rail-pop .3s ease both .1s; }
 .rail-say::before { content: ''; position: absolute; left: -6px; top: 30px; width: 11px; height: 11px; background: #fff; transform: rotate(45deg); }
+/* How the hold gesture introduces itself, since nothing on screen shows it. */
+.rail-say-hint { display: block; margin-top: 7px; padding-top: 7px; border-top: 1px solid var(--border);
+  font-size: 11px; font-weight: 700; color: var(--teal); }
 
 /* ── Sheets (mood moment / status effect) ─────────────────────── */
 .rail-sheet { position: fixed; left: 50%; bottom: max(20px, env(safe-area-inset-bottom)); transform: translateX(-50%); z-index: 340;
@@ -1611,16 +1619,38 @@ textarea { resize: vertical; min-height: 160px; line-height: 1.6; }
   border: 1px solid var(--border); border-radius: 999px; padding: 5px 11px; box-shadow: 0 4px 14px rgba(40,60,90,.18);
   animation: rail-pop .4s ease both .25s; pointer-events: none; }
 @media (max-width: 400px) { .rail-clock-ask { font-size: 10px; padding: 4px 9px; } }
-/* The blob's third bubble: the clock that decides whether what you log carries
-   a time of its own. Lit when timed mode is on. */
-.rail-bub-clock { width: 46px; height: 46px; left: 86px; top: 0; color: var(--muted); animation-delay: .1s; }
-.rail-bub-clock.on { color: var(--forest); background: var(--green-light); box-shadow: 0 0 0 2.5px var(--teal), 0 6px 20px rgba(40,60,90,.3); }
-/* With three bubbles the fan opens wider, and the speech bubble steps clear. */
-.rail-anchor .rail-bub-cloud { top: -50px; }
-.rail-anchor .rail-bub-lotus { top: 50px; }
-.rail-say { left: 140px; }
-.rail-anchor.past .rail-say { left: 104px; }
-@media (max-width: 420px) { .rail-say { left: 118px; width: min(190px, 50vw); } }
+/* Holding the blob switches the mode; it says which way it went, briefly, and
+   then the ring of clock ticks it grew is the standing answer. */
+.rail-blob-btn { touch-action: none; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+.rail-blob-flash { position: absolute; left: 58px; top: 50%; transform: translateY(-50%); width: max-content; max-width: min(220px, 56vw);
+  background: #fff; border: 1px solid var(--border); border-radius: 14px; padding: 8px 11px; font-size: 11.5px; line-height: 1.4;
+  font-weight: 600; color: var(--text); box-shadow: 0 6px 20px rgba(40,60,90,.22); pointer-events: none; z-index: 24;
+  animation: rail-pop .3s ease both; }
+
+/* The worst rating a condition reached that day, on its journal chip. */
+.wl-chip-int { margin-left: 5px; font-size: 10.5px; font-weight: 800; font-variant-numeric: tabular-nums; }
+
+/* ── Intensity: the 1–10 dot scale a condition is felt at ────────────── */
+.rail-scale { margin: 14px 0 2px; border: 1.5px solid var(--border); border-radius: 16px; padding: 11px 12px 10px; background: #fff; }
+.rail-scale-head { display: flex; align-items: baseline; gap: 8px; font-size: 12px; font-weight: 700; color: var(--forest); margin-bottom: 10px; }
+.rail-scale-head > b { margin-left: auto; font-size: 11.5px; white-space: nowrap; }
+.rail-scale-skip { margin-left: auto; font-size: 10.5px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+/* The dots grow left to right, so the ramp is legible before a single colour
+   lands. Baseline-aligned so the row reads as a rising scale, not a bar. */
+.rail-scale-dots { display: flex; align-items: flex-end; justify-content: space-between; gap: 3px; }
+.rail-scale-dot { flex: 0 0 auto; border: 1.5px solid var(--border); background: #fff; border-radius: 50%; padding: 0;
+  cursor: pointer; font-family: inherit; display: grid; place-items: center; transition: transform .12s, background .12s, border-color .12s; }
+.rail-scale-dot > span { font-size: 8.5px; font-weight: 700; color: var(--muted); line-height: 1; }
+.rail-scale-dot.on > span { color: #fff; }
+.rail-scale-dot.peak { box-shadow: 0 0 0 2.5px rgba(255,255,255,.9), 0 0 0 4px rgba(40,60,90,.16), 0 3px 9px rgba(40,60,90,.2); transform: translateY(-2px); }
+.rail-scale-ends { display: flex; justify-content: space-between; margin-top: 7px; font-size: 10px; color: var(--muted); }
+/* The rating, read back on a marker's detail card. */
+.rail-int-read { margin-top: 8px; }
+.rail-int-pip { width: 11px; height: 11px; border-radius: 50%; flex-shrink: 0; box-shadow: 0 0 0 1px rgba(0,0,0,.06); }
+/* …and on the marker itself, so a day can be scanned for its worst hours. */
+.rail-mark-int { position: absolute; right: -3px; top: -3px; min-width: 14px; height: 14px; padding: 0 2px; border-radius: 999px;
+  display: grid; place-items: center; font-size: 9px; font-weight: 800; color: #fff; line-height: 1;
+  box-shadow: 0 0 0 1.5px rgba(255,255,255,.85); }
 
 /* "When did this happen?" — timed mode's start/end controls in both sheets. */
 .rail-when { margin: 14px 0 2px; border: 1.5px solid var(--border); border-radius: 16px; padding: 11px 12px 12px; background: #fff; }

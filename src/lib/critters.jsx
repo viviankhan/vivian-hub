@@ -532,11 +532,32 @@ export function AlienSky({ className = '', tint = null }) {
 // A serene, glowing wisp that hovers beside its counsel. It softly pulses and
 // drifts; `speaking` brightens it while a tip is on screen. `tint` lets the
 // three lenses (mind / body / work) shade its glow to match the advice.
-export function GuideBlob({ size = 76, tint = '#8FD6CE', speaking = false, className = '' }) {
+//
+// `timed` is how the day-rail's blob wears its mode: a ring of clock ticks
+// gathers around the blob's amorphous edge — the hours of a dial, turning
+// slowly backwards — so you can see at a glance that what you log will carry a
+// time of its own. It is toggled by holding the blob down.
+export function GuideBlob({ size = 76, tint = '#8FD6CE', speaking = false, timed = false, className = '' }) {
   const uid = useId().replace(/:/g, '')
   const reduced = prefersReduced()
   const core = lighten(tint, 0.55), halo = tint, deep = blend(tint, '#2A3A5A', 0.4)
   const anim = reduced ? '' : 'guide-float'
+  // Twelve hour marks on a dial just outside the body, the quarters longer so
+  // the ring reads as a clock face rather than a halo of dashes.
+  // Twelve hour marks sitting on a faint dial ring, the quarters longer. The
+  // ring itself is what makes it read as a clock rather than a halo of rays —
+  // without it, ticks radiating off a round body are just a sun.
+  const DIAL_R = 45
+  const ticks = timed ? Array.from({ length: 12 }, (_, i) => {
+    const quarter = i % 3 === 0
+    const a = (i * 30 - 90) * Math.PI / 180
+    const r0 = quarter ? DIAL_R - 4.5 : DIAL_R - 2.4, r1 = quarter ? DIAL_R + 1.5 : DIAL_R + 0.8
+    return {
+      i, quarter,
+      x1: 50 + Math.cos(a) * r0, y1: 50 + Math.sin(a) * r0,
+      x2: 50 + Math.cos(a) * r1, y2: 50 + Math.sin(a) * r1,
+    }
+  }) : []
   return (
     <div className={`guide-blob ${className}`} style={{ width: size, height: size }}>
       <svg viewBox="0 0 100 100" width={size} height={size} className={anim} aria-hidden="true" style={{ display: 'block', overflow: 'visible' }}>
@@ -567,6 +588,16 @@ export function GuideBlob({ size = 76, tint = '#8FD6CE', speaking = false, class
         <path d="M40,52 q4,4 8,0" fill="none" stroke="#2C3A4E" strokeWidth="2.6" strokeLinecap="round" opacity="0.72" />
         <path d="M54,52 q4,4 8,0" fill="none" stroke="#2C3A4E" strokeWidth="2.6" strokeLinecap="round" opacity="0.72" />
         <path d="M46,62 q5,4 10,0" fill="none" stroke="#2C3A4E" strokeWidth="2.4" strokeLinecap="round" opacity="0.55" />
+        {/* the clock ring — only while timed mode is on */}
+        {timed && (
+          <g className="guide-dial" style={{ transformOrigin: '50px 50px' }}>
+            <circle cx="50" cy="50" r={DIAL_R} fill="none" stroke={deep} strokeWidth="1.1" opacity="0.3" />
+            {ticks.map(t => (
+              <line key={t.i} x1={t.x1} y1={t.y1} x2={t.x2} y2={t.y2} stroke={deep}
+                strokeWidth={t.quarter ? 3 : 1.7} strokeLinecap="round" opacity={t.quarter ? 0.75 : 0.45} />
+            ))}
+          </g>
+        )}
         {/* drifting motes */}
         {!reduced && [[24, 30, 0], [78, 40, 1.1], [70, 74, 2], [30, 70, 1.6]].map(([x, y, d], i) => (
           <circle key={i} cx={x} cy={y} r="1.6" fill={core} className="guide-mote" style={{ transformOrigin: `${x}px ${y}px`, animationDelay: `${d}s` }} />

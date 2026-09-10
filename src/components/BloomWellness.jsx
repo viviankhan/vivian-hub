@@ -13,6 +13,7 @@ import {
   stageForLevel, nextStage, levelFromXp, liveStreak, applyCheckIn, awardPetals, REWARDS,
   DEFAULT_EFFECTS, POSITIVE_EFFECTS, makeEffect, EFFECT_COLORS,
   activeEpisode, isActive, toggleEpisode, patchEpisode, episodeMinutes, fmtDuration, effectTotals,
+  INTENSITY_MAX, intensityColor,
   buildDailyRecords, computeInsights, moodTrend, shareText,
 } from '../lib/wellness.js'
 
@@ -271,7 +272,15 @@ function DayDetail({ date, checkins, episodes, effects, log, treasures, onAddTre
   const moments = checkinsForDay(checkins, date)
   const dayTreasures = treasures.filter(t => t.date === date)
   const tasks = (log || []).filter(e => (e.date || (e.ts ? String(e.ts).slice(0, 10) : '')) === date)
-  const conditions = (effects || []).filter(fx => effectOnDay(episodes, fx.id, date))
+  // Each condition that touched this day, carrying the worst intensity it was
+  // rated at while it ran — the journal is where a day gets read back before an
+  // appointment, so "migraine" alone is not enough; "migraine, 8/10" is.
+  const conditions = (effects || []).filter(fx => effectOnDay(episodes, fx.id, date)).map(fx => {
+    const rated = (episodes || [])
+      .filter(e => e.effectId === fx.id && e.intensity > 0 && effectOnDay([e], fx.id, date))
+      .map(e => e.intensity)
+    return { ...fx, peak: rated.length ? Math.max(...rated) : null }
+  })
   // The condition spans that touched this day and carry a photo, so a rash or a
   // swelling logged with the episode is visible from the journal too.
   const conditionPics = (episodes || [])
@@ -348,6 +357,7 @@ function DayDetail({ date, checkins, episodes, effects, log, treasures, onAddTre
               {conditions.map(fx => (
                 <span key={fx.id} className="wl-lining-chip" style={{ borderColor: fx.color, color: '#4A5560' }}>
                   <span className="wl-emo-dot" style={{ background: fx.color }} /> {fx.name}
+                  {fx.peak > 0 && <b className="wl-chip-int" style={{ color: intensityColor(fx.peak) }}>{fx.peak}/{INTENSITY_MAX}</b>}
                 </span>
               ))}
               {tasks.slice(0, 12).map((t, i) => (

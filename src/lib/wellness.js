@@ -315,6 +315,31 @@ export function makeEffect({ name, icon, color, kind }) {
   }
 }
 
+// ── Intensity (the 1–10 scale a condition is felt at) ──────────
+// Health tracking is only worth much to a clinician if it carries *how bad*, not
+// just *whether*. Ten steps, matching the 0–10 scale a doctor already asks in —
+// so a span read back from the rail can be quoted straight into a visit. The
+// bands are the standard mild / moderate / severe wording.
+export const INTENSITY_MAX = 10
+export function intensityLabel(n) {
+  const v = Math.round(n || 0)
+  if (v <= 0) return ''
+  if (v <= 3) return 'Mild'
+  if (v <= 6) return 'Moderate'
+  if (v <= 8) return 'Severe'
+  return 'Worst it gets'
+}
+// The scale runs cool → hot, so the row of dots reads as a ramp at a glance and
+// a severe day is visibly a severe day in the journal.
+export function intensityColor(n) {
+  const v = Math.round(n || 0)
+  if (v <= 0) return '#CFD6DE'
+  if (v <= 3) return '#7BB0A6'
+  if (v <= 6) return '#D9A05B'
+  if (v <= 8) return '#C97A6D'
+  return '#A8524C'
+}
+
 // ── Episodes (the recorded on/off spans) ───────────────────────
 // Each episode is { id, effectId, start:ISO, end:ISO|null }. An open episode
 // (end === null) is "active now". Toggling on opens one; toggling off closes the
@@ -339,6 +364,20 @@ export function setEpisodeNote(episodes, effectId, note) {
     return e
   })
 }
+// Set (or clear, with null) how hard an effect's active episode is being felt.
+export function setEpisodeIntensity(episodes, effectId, n) {
+  let done = false
+  return (episodes || []).map(e => {
+    if (!done && e.effectId === effectId && !e.end) { done = true; return { ...e, intensity: clampIntensity(n) } }
+    return e
+  })
+}
+// 1..10, or null for "not rated" — anything else is refused rather than stored.
+export function clampIntensity(n) {
+  const v = Math.round(Number(n))
+  if (!Number.isFinite(v) || v < 1) return null
+  return Math.min(INTENSITY_MAX, v)
+}
 // Attach / replace the photo ids on an effect's active episode.
 export function setEpisodePhotos(episodes, effectId, photos) {
   let done = false
@@ -361,7 +400,7 @@ export function patchCheckin(checkins, id, patch) {
 // by, or for a stretch of this morning you only got round to writing down now.
 // Unlike startEpisode this never refuses a second span, except where it would
 // leave two open-ended episodes of the same condition running at once.
-export function addEpisode(episodes, effectId, { start, end = null, note = '', photos = [] } = {}) {
+export function addEpisode(episodes, effectId, { start, end = null, note = '', photos = [], intensity = null } = {}) {
   if (!end && isActive(episodes, effectId)) return episodes || []
   const ep = {
     id: 'ep-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 4),
@@ -370,6 +409,7 @@ export function addEpisode(episodes, effectId, { start, end = null, note = '', p
     end: end || null,
     note: note || '',
     photos: [...(photos || [])],
+    intensity: clampIntensity(intensity),
   }
   // Kept newest-first, like startEpisode leaves it, so "the open one" resolves
   // to the most recent span rather than whichever was appended last.

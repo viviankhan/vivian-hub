@@ -20,10 +20,12 @@
 //   • A past day has no blob (there is no "now" on it) — instead a small clock
 //     winding backwards hovers at the top of the timeline and asks whether you
 //     want to record something for that day. It opens the same two bubbles.
-//   • Today's blob carries a third bubble: a clock that toggles *timed mode*.
-//     Off, everything lands at this instant, exactly as it always has. On, both
-//     sheets grow a "when" row so a moment can be given a time, and a feeling or
-//     a condition a whole time frame. The choice is remembered between visits.
+//   • Holding today's blob down toggles *timed mode*, and the blob wears the
+//     answer: a ring of clock ticks gathers around its amorphous edge, turning
+//     slowly backwards. Off, everything lands at this instant, exactly as it
+//     always has. On, both sheets grow a "when" row so a moment can be given a
+//     time, and a feeling or a condition a whole time frame. The choice is
+//     remembered between visits.
 //   • Tapping any marker opens its detail card, which reads back the span it
 //     covers and lets you correct either end of it.
 // ─────────────────────────────────────────────────────────────
@@ -39,8 +41,9 @@ import { savePhotos, deletePhoto, photoIds } from '../lib/photos.js'
 import {
   dayKey, keyToDate, MOODS, moodMeta, selectableEmotions, makeEmotion, emotionMeta, EMOTION_PALETTE, checkinsForDay,
   DEFAULT_EFFECTS, POSITIVE_EFFECTS, makeEffect, EFFECT_COLORS, isActive, activeEpisode, startEpisode, endEpisode, setEpisodeNote,
-  setEpisodePhotos, patchEpisode, patchCheckin, addEpisode,
+  setEpisodePhotos, patchEpisode, patchCheckin, addEpisode, setEpisodeIntensity,
   atTimeOn, timeOf, spanOk, spanMinutes,
+  INTENSITY_MAX, intensityLabel, intensityColor,
   episodeMinutes, fmtDuration, applyCheckIn, awardPetals,
 } from '../lib/wellness.js'
 
@@ -126,7 +129,37 @@ export default function DayRail({
   // works — there is no "now" back there to log against.
   const [timedPref, setTimedPref] = useState(readTimed)
   const timed = isToday ? timedPref : true
-  const toggleTimed = () => setTimedPref(v => { writeTimed(!v); return !v })
+  // The mode is switched by *holding* the blob, not by another bubble crowding
+  // its crown. A held press flips it, says so briefly, and is swallowed by the
+  // click that follows so the menu doesn't also open.
+  const [flash, setFlash] = useState(null)
+  const blobHold = useRef(null)
+  const heldFired = useRef(false)
+  const toggleTimed = () => {
+    const next = !timedPref
+    writeTimed(next)
+    setTimedPref(next)
+    setFlash(next
+      ? 'Timed mode — what you log can carry its own start and end.'
+      : 'Back to the present — everything lands at this moment.')
+    try { navigator.vibrate && navigator.vibrate(12) } catch {}
+  }
+  const startHoldBlob = () => {
+    heldFired.current = false
+    clearTimeout(blobHold.current)
+    blobHold.current = setTimeout(() => { heldFired.current = true; toggleTimed() }, 450)
+  }
+  const endHoldBlob = () => clearTimeout(blobHold.current)
+  const blobClick = () => {
+    if (heldFired.current) { heldFired.current = false; return }   // the press was a hold
+    if (menu) closeAll(); else openMenu()
+  }
+  useEffect(() => {
+    if (!flash) return
+    const t = setTimeout(() => setFlash(null), 3200)
+    return () => clearTimeout(t)
+  }, [flash])
+  useEffect(() => () => clearTimeout(blobHold.current), [])
   // The clock's invitation introduces itself when a past day opens, then gets
   // out of the timeline's way. Hovering or focusing the clock brings it back.
   const [asking, setAsking] = useState(false)
@@ -306,7 +339,7 @@ export default function DayRail({
     }
     setSheet(null); setMenu(false)
   }
-  const addStatus = (effectId, note, photos, times) => {
+  const addStatus = (effectId, note, photos, times, intensity) => {
     const ids = savePhotos(photos)
     if (times && (times.start || times.end)) {
       // A span you're placing yourself: recorded whole, so a condition that ran
@@ -315,7 +348,7 @@ export default function DayRail({
       persistEpisodes(addEpisode(episodes, effectId, {
         start: times.start ? atTimeOn(today, times.start) : new Date().toISOString(),
         end: times.end ? atTimeOn(today, times.end) : null,
-        note: (note || '').trim(), photos: ids,
+        note: (note || '').trim(), photos: ids, intensity,
       }))
       setSheet(null); setMenu(false)
       return
@@ -323,6 +356,7 @@ export default function DayRail({
     let next = startEpisode(episodes, effectId)
     if (note && note.trim()) next = setEpisodeNote(next, effectId, note.trim())
     if (ids.length) next = setEpisodePhotos(next, effectId, ids)
+    if (intensity) next = setEpisodeIntensity(next, effectId, intensity)
     persistEpisodes(next)
     setSheet(null); setMenu(false)
   }
@@ -335,6 +369,12 @@ export default function DayRail({
   const deleteFxNote = (epId) => {
     persistEpisodes(patchEpisode(episodes, epId, { note: '' }))
     setMoodDetail(d => (d && d.epId === epId ? { ...d, note: '' } : d))
+  }
+  // Re-rate a span after the fact — a migraine you called a 4 that turned into
+  // an 8 is exactly the kind of thing worth correcting before an appointment.
+  const saveFxIntensity = (epId, n) => {
+    persistEpisodes(patchEpisode(episodes, epId, { intensity: n }))
+    setMoodDetail(d => (d && d.epId === epId ? { ...d, intensity: n } : d))
   }
   // Correct either end of something already on the rail, from its detail card.
   // Both stamps arrive as ISO (or null for "still going") and are written
@@ -476,9 +516,10 @@ export default function DayRail({
         return (
           <button key={m.key} className={`rail-mark rail-fx ${e.end ? '' : 'live'} ${held ? 'held' : ''}`}
             style={{ ...(held ? heldStyle : restStyle), background: e.fx.color, color: iconColorOn(e.fx.color) }}
-            title={`${e.fx.name}${e.note ? ' · ' + e.note : ''} · ${clockTime(e.start)}${e.end ? ' – ' + clockTime(e.end) : ' · still going'}`}
-            onClick={() => setMoodDetail({ fx: e.fx, note: e.note, ts: e.start, end: e.end, effectId: e.effectId, epId: e.id, photos: photoIds(e), isFx: true })}>
+            title={`${e.fx.name}${e.intensity ? ` · ${e.intensity}/${INTENSITY_MAX} ${intensityLabel(e.intensity).toLowerCase()}` : ''}${e.note ? ' · ' + e.note : ''} · ${clockTime(e.start)}${e.end ? ' – ' + clockTime(e.end) : ' · still going'}`}
+            onClick={() => setMoodDetail({ fx: e.fx, note: e.note, ts: e.start, end: e.end, intensity: e.intensity ?? null, effectId: e.effectId, epId: e.id, photos: photoIds(e), isFx: true })}>
             <EffectIcon icon={e.fx.icon} size={15} />
+            {e.intensity > 0 && <span className="rail-mark-int" style={{ background: intensityColor(e.intensity) }}>{e.intensity}</span>}
             {photoIds(e).length > 0 && <span className="rail-mark-pic"><Glyph id="camera" size={8} color="#fff" /></span>}
           </button>
         )
@@ -488,9 +529,14 @@ export default function DayRail({
           nodule when one is on screen, else on the fractional day scale. */}
       {isToday && (
         <div className="rail-blob" style={{ top: `${blobFrac * 100}%`, transform: 'translateY(-50%)' }}>
-          <button ref={blobRef} className="rail-blob-btn" onClick={() => (menu ? closeAll() : openMenu())} aria-label="Wellness">
-            <GuideBlob size={54} tint="#8FB0D8" speaking={menu} />
+          <button ref={blobRef} className="rail-blob-btn" onClick={blobClick}
+            onPointerDown={startHoldBlob} onPointerUp={endHoldBlob} onPointerLeave={endHoldBlob} onPointerCancel={endHoldBlob}
+            onContextMenu={e => e.preventDefault()}
+            aria-pressed={timed}
+            aria-label={`Wellness — ${timed ? 'timed mode on' : 'logging in the present'}. Hold to switch.`}>
+            <GuideBlob size={54} tint="#8FB0D8" speaking={menu} timed={timed} />
           </button>
+          {flash && <span className="rail-blob-flash">{flash}</span>}
         </div>
       )}
 
@@ -517,7 +563,7 @@ export default function DayRail({
           {menu && !sheet && !moodDetail && anchor && (
             <div className={`rail-anchor ${isToday ? '' : 'past'}`} style={{ left: anchor.left, top: anchor.top }}>
               <div className="rail-anchor-blob">
-                {isToday ? <GuideBlob size={54} tint="#8FB0D8" speaking /> : <span className="rail-clock lg on"><RewindClock size={38} /></span>}
+                {isToday ? <GuideBlob size={54} tint="#8FB0D8" speaking timed={timed} /> : <span className="rail-clock lg on"><RewindClock size={38} /></span>}
               </div>
               <button className="rail-bub rail-bub-cloud" onClick={() => setSheet('mood')} aria-label="Log how you feel">
                 <MoodCloud v={lastMood} size={40} />
@@ -525,20 +571,16 @@ export default function DayRail({
               <button className="rail-bub rail-bub-lotus" onClick={() => setSheet('status')} aria-label="Log a status effect">
                 <Glyph id="flower" size={26} />
               </button>
-              {/* The third bubble, today only: the clock that decides whether
-                  what you log carries a time of its own or simply happens now. */}
-              {isToday && (
-                <button className={`rail-bub rail-bub-clock ${timed ? 'on' : ''}`} onClick={toggleTimed}
-                  aria-pressed={timed} aria-label={timed ? 'Timed mode on — turn off' : 'Timed mode off — turn on'}>
-                  <RewindClock size={30} />
-                </button>
-              )}
               <div className="rail-say">
                 {isToday
                   ? (timed
-                      ? 'Clock’s on — you can say when a feeling started, and when it lifted. Tap it again to just log this moment.'
+                      ? 'I’m wearing my clock — you can say when a feeling started and when it lifted. Hold me to come back to the present.'
                       : affirm(activeEffects))
                   : `Looking back at ${dayLabel(dateKey)}. Anything you log here can carry the time it actually happened.`}
+                {/* The hold is the only way to the mode, so it has to be said
+                    somewhere. Only while it's off — once the blob is wearing its
+                    clock, the line above already explains the way back. */}
+                {isToday && !timed && <span className="rail-say-hint">Hold me to log with times.</span>}
               </div>
             </div>
           )}
@@ -555,6 +597,7 @@ export default function DayRail({
             onSaveTimes={(startIso, endIso) => (moodDetail.isFx ? saveFxTimes(moodDetail.epId, startIso, endIso) : saveMoodTimes(moodDetail.id, startIso, endIso))}
             onEndNow={moodDetail.isFx && !moodDetail.end && isToday ? () => { endStatus(moodDetail.effectId, false); closeAll() } : null}
             onDeleteNote={() => (moodDetail.isFx ? deleteFxNote(moodDetail.epId) : deleteMoodNote(moodDetail.id))}
+            onSaveIntensity={(n) => saveFxIntensity(moodDetail.epId, n)}
             onRemovePhoto={(pid) => (moodDetail.isFx ? removeFxPhoto(moodDetail.epId, pid) : removeMoodPhoto(moodDetail.id, pid))} />}
         </div>
       )}
@@ -572,6 +615,42 @@ const nowHHMM = () => {
   return `${String(d.getHours()).padStart(2, '0')}:${String(Math.floor(d.getMinutes() / 5) * 5).padStart(2, '0')}`
 }
 const hhmmMins = (t) => { const [h, m] = String(t || '').split(':').map(Number); return (h || 0) * 60 + (m || 0) }
+
+// ── Intensity — the 1–10 dot scale a condition is felt at ───────
+// The same 0–10 scale a doctor asks in, so a span read back off the rail can be
+// quoted straight into a visit. The dots grow and warm left to right; every dot
+// up to the one you pick fills, the way a pain chart reads. Tapping the current
+// value again clears it — a rating is always optional.
+function IntensityScale({ value, onChange, label = 'How strong is it?' }) {
+  const v = value || 0
+  return (
+    <div className="rail-scale" onClick={e => e.stopPropagation()}>
+      <div className="rail-scale-head">
+        <span>{label}</span>
+        {v > 0
+          ? <b style={{ color: intensityColor(v) }}>{v}/{INTENSITY_MAX} · {intensityLabel(v)}</b>
+          : <span className="rail-scale-skip">optional</span>}
+      </div>
+      <div className="rail-scale-dots" role="radiogroup" aria-label={label}>
+        {Array.from({ length: INTENSITY_MAX }, (_, i) => i + 1).map(n => {
+          const filled = n <= v
+          return (
+            <button key={n} type="button" role="radio" aria-checked={n === v} aria-label={`${n} out of ${INTENSITY_MAX}`}
+              className={`rail-scale-dot ${filled ? 'on' : ''} ${n === v ? 'peak' : ''}`}
+              onClick={() => onChange(n === v ? null : n)}
+              style={{
+                width: 13 + n * 1.4, height: 13 + n * 1.4,
+                ...(filled ? { background: intensityColor(v), borderColor: intensityColor(v) } : {}),
+              }}>
+              <span>{n}</span>
+            </button>
+          )
+        })}
+      </div>
+      <div className="rail-scale-ends"><span>Barely there</span><span>Worst it gets</span></div>
+    </div>
+  )
+}
 
 function WhenRow({ start, end, onStart, onEnd, isToday, dayName, openEndHint, endPlaceholder = 'no end' }) {
   const [spanning, setSpanning] = useState(!!end)
@@ -719,6 +798,7 @@ function StatusSheet({ effects, episodes, byId, timed, isToday, dayName, onAdd, 
   const [photos, setPhotos] = useState([])   // data URLs, only written on start
   const [start, setStart] = useState(nowHHMM)
   const [end, setEnd] = useState('')
+  const [intensity, setIntensity] = useState(null)
   const active = effects.filter(f => isActive(episodes, f.id))
   const clash = !!pick && !end && isActive(episodes, pick)
   const options = effects.filter(f => !f.hidden)   // deleted conditions drop out of the picker
@@ -818,11 +898,13 @@ function StatusSheet({ effects, episodes, byId, timed, isToday, dayName, onAdd, 
               isToday={isToday} dayName={dayName} endPlaceholder="still going"
               openEndHint="No end time — this keeps running until you end it." />
           )}
+          <IntensityScale value={intensity} onChange={setIntensity}
+            label={`How strong is the ${(byId.get(pick)?.name || '').toLowerCase()}?`} />
           <textarea className="rail-note" placeholder={`Describe the ${(byId.get(pick)?.name || '').toLowerCase()} — as much or as little as you like`} value={note} onChange={e => setNote(e.target.value)} rows={2} />
           <PhotoPicker photos={photos} onChange={setPhotos} label="Add a photo" />
           {clash && <div className="rail-when-warn">{byId.get(pick)?.name} is already running. Give this stretch an end time, or end the running one first.</div>}
           <button className="rail-log" disabled={!whenOk(timed, start, end) || clash}
-            onClick={() => onAdd(pick, note, photos, timed ? { start, end } : null)}>
+            onClick={() => onAdd(pick, note, photos, timed ? { start, end } : null, intensity)}>
             {timed && end ? 'Log this time frame' : 'Start tracking this'}
           </button>
         </>
@@ -837,7 +919,7 @@ function StatusSheet({ effects, episodes, byId, timed, isToday, dayName, onAdd, 
 // when it lifted. Either end can be corrected here, which is the only way to
 // repair a moment logged at the wrong time (or to close a condition you forgot
 // to end days ago).
-function DetailPopover({ item, dateKey, isToday, onClose, onRemovePhoto, onSaveTimes, onEndNow, onDeleteNote }) {
+function DetailPopover({ item, dateKey, isToday, onClose, onRemovePhoto, onSaveTimes, onEndNow, onDeleteNote, onSaveIntensity }) {
   const pics = photoIds(item)
   const isFx = !!item.isFx
   const startIso = item.ts
@@ -848,6 +930,9 @@ function DetailPopover({ item, dateKey, isToday, onClose, onRemovePhoto, onSaveT
   // Deleting the note takes two taps — the words are often the hardest part of
   // a check-in to write, so they never go on a single mis-tap.
   const [armed, setArmed] = useState(false)
+  // A rating shows as one line and opens into the full scale — the card stays a
+  // card, but a span can still be re-rated before an appointment.
+  const [rating, setRating] = useState(false)
   const openEdit = () => { setSVal(timeOf(startIso)); setEVal(timeOf(endIso)); setEditing(true) }
 
   const nextStart = sVal ? atTimeOn(dateKey, sVal) : startIso
@@ -905,10 +990,26 @@ function DetailPopover({ item, dateKey, isToday, onClose, onRemovePhoto, onSaveT
   )
 
   if (isFx) {
+    const v = item.intensity || 0
     return (
       <div className="rail-detail" onClick={(e) => e.stopPropagation()}>
         <div className="rail-detail-head"><span className="rail-detail-ico" style={{ background: item.fx.color, color: iconColorOn(item.fx.color) }}><EffectIcon icon={item.fx.icon} size={16} /></span><b>{item.fx.name}</b></div>
         {times}
+        {rating
+          ? (
+            <div className="rail-span-edit-box">
+              <IntensityScale value={v || null} onChange={(n) => onSaveIntensity?.(n)} label="How strong was it?" />
+              <button className="rail-span-cancel" onClick={() => setRating(false)}>Done</button>
+            </div>
+          )
+          : (
+            <button className="rail-span-read rail-int-read" onClick={() => setRating(true)}
+              title="Rate how strong this was">
+              <span className="rail-int-pip" style={{ background: intensityColor(v) }} />
+              <span>{v ? `Intensity ${v}/${INTENSITY_MAX} · ${intensityLabel(v)}` : 'Not rated'}</span>
+              <span className="rail-span-edit">{v ? 'Edit' : 'Rate'}</span>
+            </button>
+          )}
         {noteBlock('No description.')}
         <PhotoStrip ids={pics} onRemove={onRemovePhoto} className="rail-detail-photos" />
         {onEndNow && <button className="rail-endnow" onClick={onEndNow}>End this now</button>}
