@@ -48,9 +48,11 @@ export default function IconSearchSheet({ icon, tint = '#2A9D8F', onPick, onClos
 
   // Portalled to <body> so a transformed ancestor (e.g. the rail sheet, which is
   // translateX-centred) can't capture this position:fixed overlay and clip it.
+  // zIndex sits above every sheet that can open it — the rail overlay (1000) and
+  // the wellness "Edit condition" modal (960) — or the grid paints behind them.
   return createPortal((
     <div onClick={e => { e.stopPropagation(); onClose() }}
-      style={{ position: 'fixed', inset: 0, background: 'rgba(20,28,38,.5)', zIndex: 800, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
+      style={{ position: 'fixed', inset: 0, background: 'rgba(20,28,38,.5)', zIndex: 1200, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
       <div onClick={e => e.stopPropagation()}
         style={{ background: 'white', borderRadius: '22px 22px 0 0', width: '100%', maxWidth: 480, height: '86vh', display: 'flex', flexDirection: 'column', boxShadow: '0 -10px 44px rgba(20,40,60,.28)' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 18px 12px', flexShrink: 0 }}>
