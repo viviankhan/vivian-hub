@@ -665,15 +665,21 @@ function WhenRow({ start, end, onStart, onEnd, isToday, dayName, openEndHint, en
         {mins != null && <b className="rail-when-dur">{fmtDuration(mins)}</b>}
       </div>
       <div className="rail-when-row">
-        <label className="rail-when-field">
+        {/* Not a <label>: TimeField is a composite — a text input, a wheel
+            picker that pops out below it, and buttons of its own. Wrapping it
+            in a label makes the browser forward every click inside it to the
+            input and focus it, which closed the wheel on mousedown before a
+            row could ever be picked. The caption is a plain span, and the
+            field carries its own aria-label instead. */}
+        <div className="rail-when-field">
           <span>Started</span>
-          <TimeField value={start} onChange={onStart} style={railTimeStyle} />
-        </label>
+          <TimeField value={start} onChange={onStart} style={railTimeStyle} aria-label="Started" />
+        </div>
         {spanning ? (
-          <label className="rail-when-field">
+          <div className="rail-when-field">
             <span>Ended <button type="button" className="rail-when-clear" onClick={dropEnd}>clear</button></span>
-            <TimeField value={end} onChange={onEnd} style={railTimeStyle} placeholder={endPlaceholder} />
-          </label>
+            <TimeField value={end} onChange={onEnd} style={railTimeStyle} placeholder={endPlaceholder} aria-label="Ended" />
+          </div>
         ) : (
           <button type="button" className="rail-when-add" onClick={() => setSpanning(true)}>＋ add an end time</button>
         )}
@@ -970,15 +976,15 @@ function DetailPopover({ item, dateKey, isToday, onClose, onRemovePhoto, onSaveT
         </button>
       ) : (
         <div className="rail-span-edit-box" onClick={e => e.stopPropagation()}>
-          <label className="rail-when-field">
+          <div className="rail-when-field">
             <span>Started</span>
-            <TimeField value={sVal} onChange={setSVal} style={railTimeStyle} />
-          </label>
-          <label className="rail-when-field">
+            <TimeField value={sVal} onChange={setSVal} style={railTimeStyle} aria-label="Started" />
+          </div>
+          <div className="rail-when-field">
             <span>Ended {eVal && <button type="button" className="rail-when-clear" onClick={() => setEVal('')}>clear</button>}</span>
-            <TimeField value={eVal} onChange={setEVal} style={railTimeStyle}
+            <TimeField value={eVal} onChange={setEVal} style={railTimeStyle} aria-label="Ended"
               placeholder={isFx ? 'still going' : 'no end'} />
-          </label>
+          </div>
           {!ok && <div className="rail-when-warn">{sVal ? 'The end needs to come after the start.' : 'A start time is needed.'}</div>}
           <div className="rail-span-btns">
             <button className="rail-span-cancel" onClick={() => setEditing(false)}>Cancel</button>
