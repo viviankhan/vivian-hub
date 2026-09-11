@@ -43,8 +43,13 @@ function todayKey() {
   const d = new Date()
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
 }
-function todayLabel() {
-  return new Date().toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'})
+// The written-out name of a day, for the log ("Thursday, September 10"). Takes
+// the day it is labelling rather than reading the clock: a log entry written
+// about another day — a task cleared off yesterday, a routine ended on a day
+// you scrolled back to — has to carry that day's name, not this one's.
+// (Noon anchor so the key parses the same either side of a DST change.)
+function dayLabel(key) {
+  return new Date(key + 'T12:00:00').toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'})
 }
 function nowMins() { const d=new Date(); return d.getHours()*60+d.getMinutes() }
 function parseTimeMins(label) {
@@ -1039,8 +1044,7 @@ function addDays(key, delta) {
 // to feel endless while you flick, bounded so the strip stays light.
 const WHEEL_BACK = 120
 const WHEEL_FWD  = 120
-function WeekStrip({ viewDate, setViewDate, commitments, categories, doneCount, total, dayProgress, isToday, summary, todos, recurringTasks, recurringExceptions, centerNonce = 0 }) {
-  const today = todayKey()
+function WeekStrip({ viewDate, setViewDate, today, commitments, categories, doneCount, total, dayProgress, isToday, summary, todos, recurringTasks, recurringExceptions, centerNonce = 0 }) {
   const base = new Date(viewDate + 'T12:00:00')
   const wheelRef = useRef(null)
   const colorFor = (c) => c.color || (categories || []).find(x => x.id === c.cat)?.color || TAG_COLORS[c.cat] || '#9CA3AF'
@@ -1093,6 +1097,16 @@ function WeekStrip({ viewDate, setViewDate, commitments, categories, doneCount, 
   // end never flashes) — not on every re-render, so a flick that scrolls away
   // is never yanked back.
   useLayoutEffect(() => { centerOn(today, false) }, [])  // eslint-disable-line react-hooks/exhaustive-deps
+  // Midnight passed with the app open: every cell in the wheel has just shifted
+  // along by one, so slide the day being shown back into the middle instead of
+  // leaving it sitting one place off where the user left it.
+  const rolledFrom = useRef(today)
+  useEffect(() => {
+    if (rolledFrom.current === today) return
+    rolledFrom.current = today
+    centerOn(viewDate, true)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [today])
   // A jump from another view (holding a task on the Calendar) can land on a day
   // well outside the wheel's current window, leaving the selected day scrolled
   // out of sight — slide it back into the middle.
@@ -1175,10 +1189,14 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
   wlCheckins = [], persistWlCheckins, wlEffects, persistWlEffects, wlEpisodes = [], persistWlEpisodes, wlGame, persistWlGame, wlLog = [], wlEmotions, persistWlEmotions, onOpenWellness,
   jumpTo = null, onJumpConsumed }) {
   const [now,         setNow]         = useState(nowMins())
+  // Which day IS today. Held in state and re-read as the clock moves, never
+  // frozen at mount: an installed app is rarely relaunched, so it routinely
+  // sits open (or asleep in the background) across midnight.
+  const [today,       setToday]       = useState(todayKey)
   // The day the timeline is showing. Defaults to today; the week strip up top
   // navigates to any day. "Now" logic (the progress marker, current/overdue,
   // start-now) only applies when we're actually looking at today.
-  const [viewDate,    setViewDate]    = useState(todayKey())
+  const [viewDate,    setViewDate]    = useState(today)
   // Set when we arrive here from another view (holding a task on the Calendar):
   // the id of the task to reveal on the timeline, plus a nonce so landing on the
   // same task twice re-runs the reveal.
@@ -1200,7 +1218,6 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
     try {
       const all = JSON.parse(localStorage.getItem('bloom_focus_pauses') || '{}')
       // Drop entries from earlier days so the store can't grow without bound.
-      const today = todayKey()
       const kept = {}
       for (const [k, v] of Object.entries(all)) { if (k.slice(0, 10) === today) kept[k] = v }
       return kept
@@ -1240,7 +1257,38 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
     try { return JSON.parse(localStorage.getItem('vivian_timeshift_'+todayKey())||'{}') } catch { return {} }
   })
 
-  useEffect(()=>{ const t=setInterval(()=>setNow(nowMins()),30000); return ()=>clearInterval(t) },[])
+  // The clock. `now` moves the progress marker and re-derives current/overdue;
+  // the DAY has to move with it. Left open overnight the timeline used to still
+  // be showing yesterday in the morning — and worse than looking wrong, every
+  // action taken on it (ticking something off, shifting the day, deleting a
+  // task) was writing to yesterday's date.
+  //
+  // Also ticks whenever the app comes back to the foreground: a backgrounded
+  // tab has its timers throttled to a crawl or stopped outright, so waking up
+  // to the new day must not wait on an interval that hasn't run since 11pm.
+  const todayRef = useRef(today)
+  useEffect(() => {
+    const tick = () => {
+      setNow(nowMins())
+      const key = todayKey()
+      if (key === todayRef.current) return
+      const ended = todayRef.current
+      todayRef.current = key
+      setToday(key)
+      // Carry the view over to the new day only if it was showing the day that
+      // just ended. A day the user deliberately navigated to stays where it is.
+      setViewDate(v => (v === ended ? key : v))
+    }
+    const t = setInterval(tick, 30000)
+    const onWake = () => { if (!document.hidden) tick() }
+    document.addEventListener('visibilitychange', onWake)
+    window.addEventListener('focus', onWake)
+    return () => {
+      clearInterval(t)
+      document.removeEventListener('visibilitychange', onWake)
+      window.removeEventListener('focus', onWake)
+    }
+  }, [])
 
   // Arriving from another view (holding a task on the Calendar): show that
   // task's day and remember which task to reveal. The jump is consumed right
@@ -1259,7 +1307,7 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
   const [shiftDayTime, setShiftDayTime] = useState('')
 
   const dateKey = viewDate
-  const isToday = viewDate === todayKey()
+  const isToday = viewDate === today
 
   // Per-day local collections (custom tasks, deletions, time overrides) are
   // keyed by date in localStorage — reload them whenever the viewed day
@@ -1366,7 +1414,7 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
   const routineIds = new Set((routines||[]).map(r=>r.id))
   const hasCompletionRecord = (task) => task.isCommitment ? (task.id in (todos||{})) : ((dateKey+'_'+task.id) in (todos||{}))
   const inAnyBlock = (task) => task._mins != null && blocks.some(b => task._mins >= b.start && task._mins < b.end)
-  const isPastDay = viewDate < todayKey()
+  const isPastDay = viewDate < today
   const effectiveDone = (task) => {
     if (hasCompletionRecord(task)) return isDoneCheck(task.id, task.isCommitment)
     // No record: a task auto-completes once its window has passed when it opts
@@ -1666,8 +1714,12 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
       const newTime = task._mins + offset
       if (newTime > END_OF_DAY_MINS) {
         committed++
-        const tomorrow = new Date(); tomorrow.setDate(tomorrow.getDate() + 1)
-        const tomorrowKey = `${tomorrow.getFullYear()}-${String(tomorrow.getMonth()+1).padStart(2,'0')}-${String(tomorrow.getDate()).padStart(2,'0')}`
+        // The day AFTER the one being shifted — not after the wall-clock today.
+        // Read off the clock, a task pushed off the end of any other day (a day
+        // navigated to, or the day still on screen when the app sat open past
+        // midnight) vanished from that day and landed on one the user was
+        // never looking at.
+        const tomorrowKey = addDays(dateKey, 1)
         if (addCommitment) addCommitment({
           id: 'shifted-' + task.id + '-' + Date.now(),
           text: task.label.replace(/^~?\d{1,2}:\d{2}\s*(?:AM|PM)\s*(?:—\s*)?/i, '').trim(),
@@ -1715,8 +1767,7 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
     }
     const sendToTomorrow = (t) => {
       committed++
-      const tm = new Date(); tm.setDate(tm.getDate()+1)
-      const key = `${tm.getFullYear()}-${String(tm.getMonth()+1).padStart(2,'0')}-${String(tm.getDate()).padStart(2,'0')}`
+      const key = addDays(dateKey, 1)   // the day after the one being shifted
       if (t.isCommitment && updateCommitment) updateCommitment(t.id, { date: key, time: null })
       else if (addCommitment) {
         addCommitment({ id:'shifted-'+t.id+'-'+Date.now(), text:(t.title||t.label||'').replace(/^~?\d{1,2}:\d{2}\s*(?:AM|PM)\s*(?:—\s*)?/i,'').trim(), date:key, cat:t.tag, note:`Shifted from ${dateKey} — ran out of day`, done:false })
@@ -1822,8 +1873,7 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
           if (t.isBlock) return
           // Ran off the end of the day → send it to tomorrow, like the other shifts.
           committed++
-          const tm = new Date(); tm.setDate(tm.getDate() + 1)
-          const key = `${tm.getFullYear()}-${String(tm.getMonth()+1).padStart(2,'0')}-${String(tm.getDate()).padStart(2,'0')}`
+          const key = addDays(dateKey, 1)   // the day after the one being shifted
           if (t.isCommitment && updateCommitment) updateCommitment(t.id, { date: key, time: null })
           else if (addCommitment) {
             addCommitment({ id:'shifted-'+t.id+'-'+Date.now(), text:(t.title||t.label||'').replace(/^~?\d{1,2}:\d{2}\s*(?:AM|PM)\s*(?:—\s*)?/i,'').trim(), date:key, cat:t.tag, note:`Shifted from ${dateKey} — ran out of day`, done:false })
@@ -2109,7 +2159,7 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
         deleteRecurringTask(id); what = 'Deleted repeating block'
       }
     }
-    if (what && appendLog) appendLog({ date:dateKey, dateLabel:todayLabel(), label:`${what}: ${name}`, tag:'deleted', ts:new Date().toISOString() })
+    if (what && appendLog) appendLog({ date:dateKey, dateLabel:dayLabel(dateKey), label:`${what}: ${name}`, tag:'deleted', ts:new Date().toISOString() })
   }
   // Take a set of THIS day's tasks off the day without touching what they are
   // on any other day: a repeating one is skipped for this date (a synced
@@ -2144,7 +2194,7 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
     const inside = blockTasksToday(id)
     clearTasksFromToday(inside)
     deleteContainer(id, 'day')
-    if (appendLog && inside.length) appendLog({ date:dateKey, dateLabel:todayLabel(),
+    if (appendLog && inside.length) appendLog({ date:dateKey, dateLabel:dayLabel(dateKey),
       label:`Cleared from today: ${inside.length} task${inside.length>1?'s':''} inside the block`, tag:'deleted', ts:new Date().toISOString() })
   }
   const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`
@@ -2179,16 +2229,16 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
   const routineMenu = (rid) => {
     const r = (routines || []).find(x => x.id === rid)
     if (!r) return []
-    const today = routineTasksToday(rid)
+    const onDay = routineTasksToday(rid)
     const items = []
-    if (today.length) items.push({
-      label: `Clear from today — ${plural(today.length, 'task')}`,
+    if (onDay.length) items.push({
+      label: `Clear from today — ${plural(onDay.length, 'task')}`,
       danger: true,
-      confirm: `Take ${r.name}'s ${plural(today.length, 'task')} off today? Every other day keeps them.`,
+      confirm: `Take ${r.name}'s ${plural(onDay.length, 'task')} off today? Every other day keeps them.`,
       onClick: ()=>{
-        clearTasksFromToday(today)
-        if (appendLog) appendLog({ date:dateKey, dateLabel:todayLabel(),
-          label:`Cleared from today: ${r.name} — ${plural(today.length, 'task')}`, tag:'deleted', ts:new Date().toISOString() })
+        clearTasksFromToday(onDay)
+        if (appendLog) appendLog({ date:dateKey, dateLabel:dayLabel(dateKey),
+          label:`Cleared from today: ${r.name} — ${plural(onDay.length, 'task')}`, tag:'deleted', ts:new Date().toISOString() })
       },
     })
     if (updateRoutine) items.push({ label:'Edit routine', onClick:()=>setEditingRoutine(r) })
@@ -2197,7 +2247,7 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
       confirm:`Delete “${r.name}” from every day? Its tasks stay — they just stop being grouped.`,
       onClick:()=>{
         deleteRoutine(rid)
-        if (appendLog) appendLog({ date:dateKey, dateLabel:todayLabel(), label:`Deleted routine group: ${r.name}`, tag:'deleted', ts:new Date().toISOString() })
+        if (appendLog) appendLog({ date:dateKey, dateLabel:dayLabel(dateKey), label:`Deleted routine group: ${r.name}`, tag:'deleted', ts:new Date().toISOString() })
       },
     })
     return items
@@ -2234,7 +2284,7 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
       setDeleted(next)
       localStorage.setItem('vivian_deleted_'+dateKey, JSON.stringify(next))
     }
-    if (appendLog&&reason) appendLog({date:dateKey,dateLabel:todayLabel(),label:`${task.isRecurring?'Skipped':'Deleted'}: ${task.label||task.text} — ${reason}`,tag:'deleted',ts:new Date().toISOString()})
+    if (appendLog&&reason) appendLog({date:dateKey,dateLabel:dayLabel(dateKey),label:`${task.isRecurring?'Skipped':'Deleted'}: ${task.label||task.text} — ${reason}`,tag:'deleted',ts:new Date().toISOString()})
   }
   // Delete the whole recurring series (every occurrence, all days).
   const handleDeleteSeries = (task) => {
@@ -2254,7 +2304,7 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
     x.setDate(x.getDate() - 1)
     const endDate = `${x.getFullYear()}-${String(x.getMonth()+1).padStart(2,'0')}-${String(x.getDate()).padStart(2,'0')}`
     updateRecurringTask(tmpl.id, { ...tmpl, endDate })
-    if (appendLog) appendLog({ date:dateKey, dateLabel:todayLabel(), label:`Ended recurring: ${task.label||task.text} — this day onward`, tag:'deleted', ts:new Date().toISOString() })
+    if (appendLog) appendLog({ date:dateKey, dateLabel:dayLabel(dateKey), label:`Ended recurring: ${task.label||task.text} — this day onward`, tag:'deleted', ts:new Date().toISOString() })
   }
   const handleReschedule = (task, date, time) => {
     if (date === dateKey) {
@@ -2291,12 +2341,12 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
         })
       }
     }
-    if (appendLog) appendLog({ date:dateKey, dateLabel:todayLabel(), label:'Rescheduled: ' + task.label + ' → ' + date + (time ? ' @ ' + fmt12(time) : ''), tag:'rescheduled', ts:new Date().toISOString() })
+    if (appendLog) appendLog({ date:dateKey, dateLabel:dayLabel(dateKey), label:'Rescheduled: ' + task.label + ' → ' + date + (time ? ' @ ' + fmt12(time) : ''), tag:'rescheduled', ts:new Date().toISOString() })
   }
 
   // Show the wellness rail for today and any past day (a read-only record of
   // what was tracked then); future days have nothing to show, so no rail.
-  const showRail = viewDate <= todayKey()
+  const showRail = viewDate <= today
   return (
     <div className={showRail ? 'today-root has-rail' : 'today-root'}>
       {/* The wellness day-rail: today, the mind blob rides the current time down
@@ -2313,7 +2363,7 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
       )}
       {/* Structured-style header: big date + week strip + progress bar */}
       <WeekStrip
-        viewDate={viewDate} setViewDate={setViewDate}
+        viewDate={viewDate} setViewDate={setViewDate} today={today}
         commitments={commitments} categories={categories}
         doneCount={doneCount} total={tasksWithStatus.length}
         dayProgress={dayProgress} isToday={isToday} centerNonce={spotNonce}
