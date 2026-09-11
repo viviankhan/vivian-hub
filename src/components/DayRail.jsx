@@ -70,13 +70,27 @@ const writeTimed = (on) => { try { localStorage.setItem(TIMED_KEY, on ? '1' : '0
 // a sentence ("on Friday", but plain "yesterday").
 const onDay = (name) => (name === 'yesterday' ? name : `on ${name}`)
 // "Friday" / "Sep 3" — how a past day names itself in the clock's invitation.
+// It also names days ahead of today, because a span that crossed midnight can
+// carry an end that lands on one.
 function dayLabel(key) {
   const d = keyToDate(key)
   const today = new Date(); today.setHours(0, 0, 0, 0)
   const diff = Math.round((today - d) / 86400000)
+  if (diff === 0) return 'today'
   if (diff === 1) return 'yesterday'
-  if (diff < 7) return d.toLocaleDateString('en-US', { weekday: 'long' })
+  if (diff === -1) return 'tomorrow'
+  if (diff > 1 && diff < 7) return d.toLocaleDateString('en-US', { weekday: 'long' })
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+}
+// A moment's clock time — with the day named whenever it falls outside the day
+// being looked at. A condition that started last night and is still going has
+// to read "yesterday 7:58 PM" on today's rail; bare "7:58 PM" would claim it
+// began this morning.
+function stampOn(iso, dayStartMs) {
+  const ms = typeof iso === 'number' ? iso : Date.parse(iso)
+  if (!Number.isFinite(ms)) return ''
+  if (ms >= dayStartMs && ms < dayStartMs + 86400000) return clockTime(ms)
+  return `${dayLabel(dayKey(new Date(ms)))} ${clockTime(ms)}`
 }
 
 // A clock whose hands sweep *backwards* — the rail's little time machine. It
@@ -281,24 +295,31 @@ export default function DayRail({
   // their effect. An open episode is capped at "now" today, or at the day's end
   // on a past day — so a past day keeps the trails exactly as they were tracked.
   const dayEndMs = dayStartMs + 86400000
-  // An episode belongs to the day it began. Matching on "any span touching this
-  // day" meant a condition you never explicitly ended haunted every day after
-  // it — and since its start sits outside this day's window, its marker clamped
-  // to the top of the rail still wearing yesterday's clock time. Scoping to the
-  // start day keeps each day's rail a record of what was logged on it.
+  const openCap = isToday ? nowMs : dayEndMs
+  // Any span that touches this day, including one that began earlier and was
+  // never ended: a condition doesn't stop at midnight, so swollen joints you
+  // were still carrying last night are still with you this morning, and the
+  // rail has to say so. What such a span must not do is pretend it began here —
+  // that was the old misreading, its marker clamped to the top of the rail
+  // still wearing yesterday's clock time. So anything carried in is flagged,
+  // drawn from the day's own start, and reads back with its real start day
+  // named.
   const todayEpisodes = useMemo(() => {
     return (episodes || []).filter(e => {
       const s = Date.parse(e.start)
-      return s >= dayStartMs && s < dayEndMs
-    }).map(e => ({ ...e, fx: byId.get(e.effectId) })).filter(e => e.fx)
-  }, [episodes, byId, dayStartMs, dayEndMs])
+      const en = e.end ? Date.parse(e.end) : openCap
+      return s < dayEndMs && en >= dayStartMs
+    }).map(e => ({ ...e, fx: byId.get(e.effectId), carried: Date.parse(e.start) < dayStartMs })).filter(e => e.fx)
+  }, [episodes, byId, openCap, dayStartMs, dayEndMs])
 
   // Markers that share a moment fan out diagonally and shrink so a cloud + an
   // effect at the same time read as one slot.
   const markers = useMemo(() => {
     const list = [
       ...todayMoments.map(c => ({ type: 'mood', key: c.id, frac: fracInDay(Date.parse(c.ts), dayStartMs), data: c })),
-      ...todayEpisodes.map(e => ({ type: 'fx', key: e.id, frac: fracInDay(Date.parse(e.start), dayStartMs), data: e })),
+      // A carried-in span has no start on this day's clock, so it clusters at
+      // the day's own beginning rather than wherever yesterday's time lands.
+      ...todayEpisodes.map(e => ({ type: 'fx', key: e.id, frac: fracInDay(e.carried ? dayStartMs : Date.parse(e.start), dayStartMs), data: e })),
     ].sort((a, b) => a.frac - b.frac)
     let cluster = -1, prev = -Infinity
     return list.map(m => {
@@ -310,7 +331,7 @@ export default function DayRail({
 
   // Everything the blob is currently holding — moods and status icons alike —
   // so each gets its own angle on the crown.
-  const markerAt = (m) => Date.parse(m.type === 'mood' ? m.data.ts : m.data.start)
+  const markerAt = (m) => (m.type === 'fx' && m.data.carried ? dayStartMs : Date.parse(m.type === 'mood' ? m.data.ts : m.data.start))
   const heldMarks = markers.filter(m => heldAloft(markerAt(m))).map(m => m.key)
 
   // ── Actions ──────────────────────────────────────────────
@@ -457,13 +478,18 @@ export default function DayRail({
       {/* Status-effect trails (behind everything; run down to the blob). */}
       {todayEpisodes.map(e => {
         // Placed through the timeline map, so a running trail's foot meets the
-        // blob exactly instead of drifting off on the clock scale.
-        const top = railFrac(Date.parse(e.start))
-        const bottom = e.end ? railFrac(Date.parse(e.end)) : (isToday ? blobFrac : 1)
+        // blob exactly instead of drifting off on the clock scale. A span that
+        // reaches past either edge of this day is cut at the edge — it enters
+        // at the top and leaves at the bottom, rather than folding back on
+        // itself once its stamps fall off this day's scale.
+        const top = railFrac(Math.max(Date.parse(e.start), dayStartMs))
+        const bottom = e.end ? railFrac(Math.min(Date.parse(e.end), dayEndMs)) : (isToday ? blobFrac : 1)
         const h = Math.max(0, bottom - top)
         const endable = isToday && !e.end
+        const when = `${e.carried ? 'since ' : ''}${stampOn(e.start, dayStartMs)}`
         return (
-          <button key={'t' + e.id} className="rail-trail" title={`${e.fx.name}${e.note ? ' · ' + e.note : ''}${endable ? ' · tap to end' : ''}`}
+          <button key={'t' + e.id} className={`rail-trail ${e.carried ? 'carried' : ''}`}
+            title={`${e.fx.name} · ${when}${e.note ? ' · ' + e.note : ''}${endable ? ' · tap to end' : ''}`}
             onClick={() => endable ? endStatus(e.effectId) : null}
             style={{ top: `${top * 100}%`, height: `${h * 100}%`, background: `linear-gradient(${e.fx.color}, color-mix(in srgb, ${e.fx.color} 55%, transparent))`, cursor: endable ? 'pointer' : 'default' }} />
         )
@@ -500,7 +526,11 @@ export default function DayRail({
         const step = n > 1 ? Math.min(40, 150 / (n - 1)) : 0
         const ang = -90 + (hi - (n - 1) / 2) * step
         const heldStyle = { top: `${blobFrac * 100}%`, '--held-a': `${Math.round(ang)}deg`, animationDelay: `${(hi * -0.6).toFixed(2)}s` }
-        const restStyle = { top: `${top * 100}%`, transform: `translate(${dx}px,-50%) scale(${scale})` }
+        // A carried-in condition hangs just under the start of the day rather
+        // than straddling it — it was already here when the day opened, so it
+        // shouldn't look like a moment logged at the stroke of the top.
+        const carried = m.type === 'fx' && m.data.carried
+        const restStyle = { top: `${top * 100}%`, transform: `translate(${dx}px,${carried ? '0' : '-50%'}) scale(${scale})` }
         if (m.type === 'mood') {
           const c = m.data
           return (
@@ -514,9 +544,9 @@ export default function DayRail({
         }
         const e = m.data
         return (
-          <button key={m.key} className={`rail-mark rail-fx ${e.end ? '' : 'live'} ${held ? 'held' : ''}`}
+          <button key={m.key} className={`rail-mark rail-fx ${e.end ? '' : 'live'} ${e.carried ? 'carried' : ''} ${held ? 'held' : ''}`}
             style={{ ...(held ? heldStyle : restStyle), background: e.fx.color, color: iconColorOn(e.fx.color) }}
-            title={`${e.fx.name}${e.intensity ? ` · ${e.intensity}/${INTENSITY_MAX} ${intensityLabel(e.intensity).toLowerCase()}` : ''}${e.note ? ' · ' + e.note : ''} · ${clockTime(e.start)}${e.end ? ' – ' + clockTime(e.end) : ' · still going'}`}
+            title={`${e.fx.name}${e.intensity ? ` · ${e.intensity}/${INTENSITY_MAX} ${intensityLabel(e.intensity).toLowerCase()}` : ''}${e.note ? ' · ' + e.note : ''} · ${e.carried ? 'since ' : ''}${stampOn(e.start, dayStartMs)}${e.end ? ' – ' + stampOn(e.end, dayStartMs) : ' · still going'}`}
             onClick={() => setMoodDetail({ fx: e.fx, note: e.note, ts: e.start, end: e.end, intensity: e.intensity ?? null, effectId: e.effectId, epId: e.id, photos: photoIds(e), isFx: true })}>
             <EffectIcon icon={e.fx.icon} size={15} />
             {e.intensity > 0 && <span className="rail-mark-int" style={{ background: intensityColor(e.intensity) }}>{e.intensity}</span>}
@@ -941,15 +971,27 @@ function DetailPopover({ item, dateKey, isToday, onClose, onRemovePhoto, onSaveT
   const [rating, setRating] = useState(false)
   const openEdit = () => { setSVal(timeOf(startIso)); setEVal(timeOf(endIso)); setEditing(true) }
 
-  const nextStart = sVal ? atTimeOn(dateKey, sVal) : startIso
-  const nextEnd = eVal ? atTimeOn(dateKey, eVal) : null
+  // Each end is edited on the day it actually sits on. A condition that began
+  // last night and is still running opens from today's rail, and re-typing its
+  // start must correct last night's time — not haul the whole span forward
+  // into today. Only an end being set for the first time belongs to the day
+  // you're looking at.
+  const dayStartMs = keyToDate(dateKey).getTime()
+  const startDay = startIso ? dayKey(new Date(startIso)) : dateKey
+  const endDay = endIso ? dayKey(new Date(endIso)) : dateKey
+  const nextStart = sVal ? atTimeOn(startDay, sVal) : startIso
+  const nextEnd = eVal ? atTimeOn(endDay, eVal) : null
   const ok = !!sVal && spanOk(nextStart, nextEnd)
   const save = () => { if (ok) { onSaveTimes?.(nextStart, nextEnd); setEditing(false) } }
 
   // The span as prose: a closed one carries its length, an open one says so.
+  // Either end names its day when it isn't the day on screen.
+  const at = (iso) => stampOn(iso, dayStartMs)
   const spanText = endIso
-    ? `${clockTime(startIso)} – ${clockTime(endIso)} · ${fmtDuration(spanMinutes(startIso, endIso))}`
-    : (isFx ? `${clockTime(startIso)} – still going · ${fmtDuration(spanMinutes(startIso, null))}` : clockTime(startIso))
+    ? `${at(startIso)} – ${at(endIso)} · ${fmtDuration(spanMinutes(startIso, endIso))}`
+    : (isFx ? `${at(startIso)} – still going · ${fmtDuration(spanMinutes(startIso, null))}` : at(startIso))
+  // Which day a field writes to, said out loud whenever it isn't this one.
+  const fieldDay = (key) => (key === dateKey ? null : <em className="rail-when-day">{dayLabel(key)}</em>)
 
   // A written note, with the option to take it back off. Nothing is offered when
   // there was never a note to begin with.
@@ -977,11 +1019,11 @@ function DetailPopover({ item, dateKey, isToday, onClose, onRemovePhoto, onSaveT
       ) : (
         <div className="rail-span-edit-box" onClick={e => e.stopPropagation()}>
           <div className="rail-when-field">
-            <span>Started</span>
+            <span>Started {fieldDay(startDay)}</span>
             <TimeField value={sVal} onChange={setSVal} style={railTimeStyle} aria-label="Started" />
           </div>
           <div className="rail-when-field">
-            <span>Ended {eVal && <button type="button" className="rail-when-clear" onClick={() => setEVal('')}>clear</button>}</span>
+            <span>Ended {fieldDay(endDay)} {eVal && <button type="button" className="rail-when-clear" onClick={() => setEVal('')}>clear</button>}</span>
             <TimeField value={eVal} onChange={setEVal} style={railTimeStyle} aria-label="Ended"
               placeholder={isFx ? 'still going' : 'no end'} />
           </div>

@@ -1,5 +1,6 @@
 // Real-browser test of the day-rail's time controls — the wheel picker inside
-// the "when" rows and the marker detail card's span editor.
+// the "when" rows and the marker detail card's span editor — plus a condition
+// that was never ended following you into the next day.
 //
 // The bug this guards against: those rows once wrapped TimeField (a composite —
 // text input, pop-out wheel, buttons of its own) in a <label>. The browser
@@ -149,6 +150,42 @@ await page.waitForTimeout(300)
 await openWheel()
 await pickOnWheel(8, 'PM')
 eq('the sheet’s end field takes the wheel too', await endValue(), '8:00 PM')
+
+// ── A condition that was never ended follows you into the next day ──────
+// Swollen joints logged at 7:58pm last night and never closed are still with
+// you this morning, so the rail has to carry them — while saying plainly that
+// they started yesterday rather than at the top of today.
+console.log('\n— an unended condition carries into today —')
+const yesterdayAt = (h, m = 0) => { const d = new Date(today); d.setDate(d.getDate() - 1); d.setHours(h, m, 0, 0); return d.toISOString() }
+await page.evaluate(({ eps }) => {
+  localStorage.setItem('vivian_wellness_episodes', JSON.stringify(eps))
+}, { eps: [{ id: 'ep-carried', effectId: 'fx-pain', start: yesterdayAt(19, 58), end: null, note: '', photos: [] }] })
+await page.reload({ waitUntil: 'networkidle' })
+await page.waitForSelector('.rail-fx', { timeout: 15000 })
+await page.waitForTimeout(1500)
+
+eq('it is on today’s rail', await page.locator('.rail-fx').count(), 1)
+eq('marked as carried in', await page.locator('.rail-fx.carried').count(), 1)
+eq('its trail runs from the top of the day', await page.locator('.rail-trail.carried').count(), 1)
+
+await page.click('.rail-fx >> nth=0', { force: true })
+await page.waitForTimeout(300)
+const spanRead = await page.locator('.rail-span-read').first().innerText()
+eq('the card says it started yesterday', /yesterday/i.test(spanRead) && /still going/i.test(spanRead), true)
+
+// Closing it out from today must land the end on today and leave last night's
+// start exactly where it was.
+await page.click('.rail-span-read')
+await page.waitForTimeout(300)
+await openWheel()
+await pickOnWheel(9, 'AM')
+await endField().getByRole('button', { name: 'Done' }).click()
+await page.waitForTimeout(200)
+await page.getByRole('button', { name: 'Save times' }).click()
+await page.waitForTimeout(600)
+const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('vivian_wellness_episodes') || '[]')[0] || {})
+eq('the start stays on last night', saved.start, yesterdayAt(19, 58))
+eq('and the end lands on today', (saved.end || '').slice(0, 16), new Date(at(9)).toISOString().slice(0, 16))
 
 eq('no uncaught errors', errors, [])
 
