@@ -187,6 +187,41 @@ const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('vivian_
 eq('the start stays on last night', saved.start, yesterdayAt(19, 58))
 eq('and the end lands on today', (saved.end || '').slice(0, 16), new Date(at(9)).toISOString().slice(0, 16))
 
+// ── An end before midnight ─────────────────────────────────────
+// The bug: the end was pinned to the day on screen, so a condition that eased
+// off at 11pm last night could not be written down at all — whatever time you
+// typed was read as today, which hasn't happened yet. The end now takes the
+// first day that clock reading comes round on after the start, and says which
+// day that is in a chip you can change.
+console.log('\n— saying a condition ended before midnight —')
+await page.click('.rail-span-read')
+await page.waitForTimeout(300)
+await openWheel()
+await pickOnWheel(11, 'PM')
+await endField().getByRole('button', { name: 'Done' }).click()
+await page.waitForTimeout(200)
+const dayPick = page.locator('.rail-when-daypick')
+eq('the end names last night as its day', (await dayPick.innerText()).trim().toLowerCase(), 'yesterday')
+
+await page.getByRole('button', { name: 'Save times' }).click()
+await page.waitForTimeout(600)
+const closed = await page.evaluate(() => JSON.parse(localStorage.getItem('vivian_wellness_episodes') || '[]')[0] || {})
+eq('and it is stored on last night, not tonight', closed.end, yesterdayAt(23, 0))
+eq('with the start still untouched', closed.start, yesterdayAt(19, 58))
+
+// The day is a guess at what you meant, so it has to be correctable — a span
+// really can run a whole day and end at the same hour the next night.
+console.log('\n— and moving that end to another day —')
+await page.click('.rail-span-read')
+await page.waitForTimeout(300)
+eq('it re-opens on the day it was saved to', (await dayPick.innerText()).trim().toLowerCase(), 'yesterday')
+await dayPick.click()
+await page.waitForTimeout(200)
+eq('tapping the chip walks it forward a day', (await dayPick.innerText()).trim().toLowerCase(), 'today')
+await dayPick.click()
+await page.waitForTimeout(200)
+eq('and round again, so nothing is a dead end', (await dayPick.innerText()).trim().toLowerCase(), 'yesterday')
+
 eq('no uncaught errors', errors, [])
 
 await browser.close()

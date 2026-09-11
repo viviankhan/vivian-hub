@@ -1672,6 +1672,12 @@ textarea { resize: vertical; min-height: 160px; line-height: 1.6; }
    screen — a span that crossed midnight is edited on both of its own days. */
 .rail-when-day { font-style: normal; font-size: 10px; font-weight: 700; color: var(--teal); background: var(--green-light);
   border-radius: 999px; padding: 2px 7px; text-transform: none; letter-spacing: 0; }
+/* The end's day is a choice, not a caption — a span that crossed midnight
+   ended on one of two days and only the person who lived it knows which, so
+   the chip is tappable and wears a dotted underline to say so. */
+.rail-when-daypick { border: none; cursor: pointer; font-family: inherit; line-height: 1.4;
+  text-decoration: underline dotted; text-underline-offset: 2px; }
+.rail-when-daypick:hover { filter: brightness(0.97); }
 .rail-when-clear { border: none; background: none; padding: 0; font-size: 10px; font-weight: 700; color: var(--teal); cursor: pointer; text-transform: none; letter-spacing: 0; text-decoration: underline; font-family: inherit; }
 .rail-when-add { flex: 1; border: 1px dashed var(--border); background: none; color: var(--teal); font-weight: 600; font-size: 11.5px; border-radius: 11px; padding: 10px 8px; cursor: pointer; font-family: inherit; }
 .rail-when-hint { font-size: 11px; color: var(--muted); margin-top: 8px; }

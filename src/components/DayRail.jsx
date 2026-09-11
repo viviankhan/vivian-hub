@@ -69,6 +69,9 @@ const writeTimed = (on) => { try { localStorage.setItem(TIMED_KEY, on ? '1' : '0
 // different things: dayLabel gives the name, onDay the phrase you can drop into
 // a sentence ("on Friday", but plain "yesterday").
 const onDay = (name) => (name === 'yesterday' ? name : `on ${name}`)
+// A day key moved along by `n` days. Local-midnight anchored, so it steps over
+// a DST boundary without landing on the wrong date.
+const shiftKey = (key, n) => { const d = keyToDate(key); d.setDate(d.getDate() + n); return dayKey(d) }
 // "Friday" / "Sep 3" — how a past day names itself in the clock's invitation.
 // It also names days ahead of today, because a span that crossed midnight can
 // carry an end that lands on one.
@@ -969,20 +972,55 @@ function DetailPopover({ item, dateKey, isToday, onClose, onRemovePhoto, onSaveT
   // A rating shows as one line and opens into the full scale — the card stays a
   // card, but a span can still be re-rated before an appointment.
   const [rating, setRating] = useState(false)
-  const openEdit = () => { setSVal(timeOf(startIso)); setEVal(timeOf(endIso)); setEditing(true) }
+  // The day the end sits on, when the user has named it by hand. Null means it
+  // follows the time typed, by the rule below.
+  const [eDay, setEDay] = useState(null)
 
   // Each end is edited on the day it actually sits on. A condition that began
   // last night and is still running opens from today's rail, and re-typing its
   // start must correct last night's time — not haul the whole span forward
-  // into today. Only an end being set for the first time belongs to the day
-  // you're looking at.
+  // into today.
   const dayStartMs = keyToDate(dateKey).getTime()
   const startDay = startIso ? dayKey(new Date(startIso)) : dateKey
-  const endDay = endIso ? dayKey(new Date(endIso)) : dateKey
   const nextStart = sVal ? atTimeOn(startDay, sVal) : startIso
+  // Which day a bare clock time means as an end: the first time that reading
+  // comes round at or after the start. "It stopped at 11:40 PM", on something
+  // that began at 10:59 last night, means last night — not tonight, which
+  // hasn't happened yet. The end used to be pinned to the day on screen, so
+  // there was no way to say a condition ended before midnight: whatever you
+  // typed was read as today, and an end in yesterday's evening couldn't be
+  // written down at all.
+  const dayOfEnd = (from, hhmm) =>
+    Date.parse(atTimeOn(startDay, hhmm)) >= Date.parse(from) ? startDay : shiftKey(startDay, 1)
+  const endDay = eDay || (eVal ? dayOfEnd(nextStart, eVal) : dateKey)
   const nextEnd = eVal ? atTimeOn(endDay, eVal) : null
   const ok = !!sVal && spanOk(nextStart, nextEnd)
   const save = () => { if (ok) { onSaveTimes?.(nextStart, nextEnd); setEditing(false) } }
+
+  const openEdit = () => {
+    const e = timeOf(endIso)
+    setSVal(timeOf(startIso)); setEVal(e)
+    // A stored end keeps the day it is already on. The rule above reproduces
+    // that day for any ordinary span, so only an unusual one — something
+    // carried for more than a day — has to pin it, and even then the chip
+    // says which day it is and can move it.
+    const stored = endIso ? dayKey(new Date(endIso)) : null
+    setEDay(stored && stored !== dayOfEnd(startIso, e) ? stored : null)
+    setEditing(true)
+  }
+
+  // The days this end could sit on: where the typed time first falls after the
+  // start, the morning after, the day whose rail this is, and today — the
+  // answers a person actually means by "when did it stop" — plus wherever it
+  // already sits, so re-opening an old end never quietly drops its day. Never
+  // before the start, and never on a day that hasn't happened.
+  const storedEndDay = endIso ? dayKey(new Date(endIso)) : null
+  const nowDay = dayKey()
+  const endDayChoices = [...new Set([startDay, shiftKey(startDay, 1), dateKey, nowDay, storedEndDay, endDay].filter(Boolean))]
+    .filter(k => k >= startDay && (k <= nowDay || k === storedEndDay || k === endDay))
+    .sort()
+  const stepEndDay = () => setEDay(endDayChoices[(endDayChoices.indexOf(endDay) + 1) % endDayChoices.length])
+  const clearEnd = () => { setEVal(''); setEDay(null) }
 
   // The span as prose: a closed one carries its length, an open one says so.
   // Either end names its day when it isn't the day on screen.
@@ -1023,7 +1061,14 @@ function DetailPopover({ item, dateKey, isToday, onClose, onRemovePhoto, onSaveT
             <TimeField value={sVal} onChange={setSVal} style={railTimeStyle} aria-label="Started" />
           </div>
           <div className="rail-when-field">
-            <span>Ended {fieldDay(endDay)} {eVal && <button type="button" className="rail-when-clear" onClick={() => setEVal('')}>clear</button>}</span>
+            {/* The end always names its day, and says it out loud as something
+                you can change: a span that crossed midnight ended on one of
+                two days, and only the person who lived it knows which. */}
+            <span>Ended {eVal && (endDayChoices.length > 1
+              ? <button type="button" className="rail-when-day rail-when-daypick" onClick={stepEndDay}
+                  title="Which day it ended on — tap to change">{dayLabel(endDay)}</button>
+              : <em className="rail-when-day">{dayLabel(endDay)}</em>)}
+              {eVal && <button type="button" className="rail-when-clear" onClick={clearEnd}>clear</button>}</span>
             <TimeField value={eVal} onChange={setEVal} style={railTimeStyle} aria-label="Ended"
               placeholder={isFx ? 'still going' : 'no end'} />
           </div>
