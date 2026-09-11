@@ -41,14 +41,30 @@ const supabase = createClient(SUPABASE_URL, SERVICE_ROLE)
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
 
+// How late a reminder may still be delivered. A reminder names a moment, so it
+// is only worth sending near that moment — one that couldn't go out at its own
+// time (the schedule was paused, this function was down, a push kept failing)
+// is noise by the time it lands, and arriving hours late is exactly the
+// notification the user never asked for. Anything older is retired unsent.
+const LATE_GRACE_MS = 10 * 60 * 1000 // 10 minutes
+// The same window, handed to the push service: if the device can't be reached
+// within it, the message expires there instead of being held and delivered
+// whenever the phone next comes back online — which is how a 2 PM reminder
+// arrives at 4 PM even though we sent it on time.
+const PUSH_TTL_SECONDS = Math.round(LATE_GRACE_MS / 1000)
+
 Deno.serve(async () => {
-  const nowISO = new Date().toISOString()
+  const now = Date.now()
+  const nowISO = new Date(now).toISOString()
+  const cutoffISO = new Date(now - LATE_GRACE_MS).toISOString()
 
   // Due, not-yet-sent reminders, each joined to the subscription that queued it.
+  // Bounded below by the cutoff: past that, a reminder is no longer delivered.
   const { data: due, error } = await supabase
     .from('scheduled_pushes')
     .select('device_id, tag, title, body, url, push_subscriptions!inner(subscription)')
     .lte('at', nowISO)
+    .gte('at', cutoffISO)
     .eq('sent', false)
     .limit(500)
 
@@ -64,6 +80,7 @@ Deno.serve(async () => {
       await webpush.sendNotification(
         sub,
         JSON.stringify({ title: row.title, body: row.body, url: row.url, tag: row.tag }),
+        { TTL: PUSH_TTL_SECONDS },
       )
       await supabase.from('scheduled_pushes')
         .update({ sent: true }).eq('device_id', row.device_id).eq('tag', row.tag)
@@ -93,9 +110,17 @@ Deno.serve(async () => {
     }
   }
 
+  // Retire anything that went past the cutoff while still unsent, so a later run
+  // can never pick it up and deliver it long after its moment. It's marked sent
+  // rather than deleted so the row still ages out with the rest below, and so a
+  // device that re-queues the same tag doesn't resurrect it.
+  const { count: missed } = await supabase.from('scheduled_pushes')
+    .update({ sent: true }, { count: 'exact' })
+    .eq('sent', false).lt('at', cutoffISO)
+
   // Keep the table small: drop anything older than a day (delivered or missed).
-  const dayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
+  const dayAgo = new Date(now - 24 * 60 * 60 * 1000).toISOString()
   await supabase.from('scheduled_pushes').delete().lt('at', dayAgo)
 
-  return json({ ok: true, considered: (due ?? []).length, sent, gone, failed, errors })
+  return json({ ok: true, considered: (due ?? []).length, sent, gone, failed, missed: missed ?? 0, errors })
 })

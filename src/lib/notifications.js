@@ -15,6 +15,10 @@
 //     reminder while Bloom is open, and on (re)open we "catch up" — anything
 //     whose reminder time passed while the app was closed, but whose event is
 //     still upcoming, fires right away so you don't miss it.
+// Catch-up never announces a moment that is already gone, though: a heads-up is
+// only caught up while the thing it points at is still ahead, and an alert for
+// the moment itself (a task ending) only within a short grace window. A
+// reminder that can't arrive near its own time doesn't arrive at all.
 // Each reminder is remembered as "fired" in localStorage so you only ever get
 // it once.
 // ─────────────────────────────────────────────────────────────
@@ -144,6 +148,23 @@ function leadsForItem(id, globalLeads) {
 // timer (setTimeout gets unreliable over long spans and the tab rarely stays
 // open that long). They still fire via catch-up whenever the app is reopened.
 const MAX_TIMER_MS = 6 * 60 * 60 * 1000 // 6 hours
+
+// How late a reminder that marks a moment already passed may still arrive.
+// Catch-up exists so a reminder isn't lost when Bloom was closed at its moment,
+// but an alert only means something near the moment it names: "finishing now"
+// hours after the task finished is a notification for a time you didn't ask to
+// be notified at. Anything later than this is recorded as handled and stays
+// quiet. Wide enough to cover a timer that drifted while the device slept
+// through the moment, narrow enough that whatever does fire still reads as now.
+const LATE_GRACE_MS = 10 * 60 * 1000 // 10 minutes
+
+// How long a "already fired" record is kept after its reminder leaves the live
+// set. Completing a task, hiding an occurrence for the day, or a sync that
+// briefly lands without it all drop a reminder out of the set — and forgetting
+// that it had fired is how the same alert arrives a second time when the item
+// comes back. Long enough that a returning item stays quiet; the record is
+// still dropped eventually so the map can't grow forever.
+const FIRED_RETENTION_MS = 30 * 24 * 60 * 60 * 1000 // 30 days
 
 let timers = []
 let swRegistration = null
@@ -435,6 +456,22 @@ export function buildScheduledPushes(events, commitments, recurring = []) {
     }))
 }
 
+// Is a reminder whose moment has already passed still worth firing now?
+//
+// A lead reminder points forward, so it keeps its worth for as long as the thing
+// it points at hasn't happened: opening Bloom two hours late still gets you
+// "Dinner in 4 hours", with the heading recomputed from the real gap. Once the
+// item has started there's nothing left to look ahead to, so it stays quiet.
+//
+// An end-of-task alert points at a moment that has arrived — it IS the end — so
+// it's only honest while that moment is fresh. Past the grace window, "finishing
+// now" would be announcing something that finished long ago, which is precisely
+// the reminder arriving at a time nobody asked to be reminded at.
+function stillWorthFiring(reminder, now) {
+  if (reminder.kind === 'end') return now - reminder.at <= LATE_GRACE_MS
+  return reminder.startMs > now
+}
+
 // ── The main entry point ────────────────────────────────────────
 // Call on app load and whenever events/commitments change. Fires anything
 // due now (catch-up) and sets live timers for anything due soon.
@@ -453,11 +490,17 @@ export function syncReminders(events, commitments, recurring = []) {
   const now = Date.now()
   let firedChanged = false
 
-  // Prune fired entries for reminders that no longer exist (deleted items),
-  // so the map doesn't grow forever.
+  // Prune fired entries for reminders that no longer exist (deleted items), so
+  // the map doesn't grow forever — but only once they're old enough that the
+  // reminder can't plausibly come back. An item that's completed, skipped for
+  // the day, or missing for one sync leaves the live set too, and dropping its
+  // record there is what lets an already-delivered alert fire again the moment
+  // the item returns.
   const liveIds = new Set(reminders.map(r => r.id))
-  for (const key of Object.keys(fired)) {
-    if (!liveIds.has(key)) { delete fired[key]; firedChanged = true }
+  for (const [key, when] of Object.entries(fired)) {
+    if (liveIds.has(key)) continue
+    if (typeof when === 'number' && now - when < FIRED_RETENTION_MS) continue
+    delete fired[key]; firedChanged = true
   }
 
   // Prefer OS-scheduled triggers when the browser supports them: they fire even
@@ -466,14 +509,6 @@ export function syncReminders(events, commitments, recurring = []) {
   const liveTags = new Set()
 
   for (const r of reminders) {
-    // Don't bother reminding about something that has already started — but an
-    // end-of-task alert fires at the END, so it's judged by its own moment (r.at)
-    // below, not by whether the task has started.
-    if (r.kind !== 'end' && r.startMs <= now) {
-      if (!fired[r.id]) { fired[r.id] = now; firedChanged = true }
-      continue
-    }
-
     if (r.at > now) {
       // Future reminder.
       if (useTriggers) {
@@ -485,7 +520,11 @@ export function syncReminders(events, commitments, recurring = []) {
         if (delay <= MAX_TIMER_MS) {
           // Due soon — schedule a live timer while the app stays open.
           const t = setTimeout(() => {
-            fire(r)
+            // A parked timer can come back long after the moment it was set for
+            // (a device that slept through it), so judge it when it actually
+            // goes off: on time it fires, late it has to still be worth saying.
+            const at = Date.now()
+            if (at - r.at <= LATE_GRACE_MS || stillWorthFiring(r, at)) fire(r)
             const f = loadFired(); f[r.id] = Date.now(); saveFired(f)
           }, delay)
           timers.push(t)
@@ -495,12 +534,12 @@ export function syncReminders(events, commitments, recurring = []) {
       continue
     }
 
-    // r.at <= now < startMs: the reminder moment has passed but the event is
-    // still ahead. With triggers, the OS already fired it (or will, if it's
-    // still queued) — mark it handled so the catch-up path doesn't double it.
-    // Without triggers, catch up now.
+    // r.at <= now: the reminder's moment has passed. Catch it up if it's still
+    // worth saying, otherwise just record it as handled and stay quiet. With
+    // triggers the OS already fired it (or will, if it's still queued), so it's
+    // only marked handled here so the catch-up path doesn't double it.
     if (!fired[r.id]) {
-      if (!useTriggers) fire(r)
+      if (!useTriggers && stillWorthFiring(r, now)) fire(r)
       fired[r.id] = now
       firedChanged = true
     }

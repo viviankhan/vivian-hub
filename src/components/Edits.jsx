@@ -4,6 +4,17 @@
 
 const EDIT_LOG = [
   {
+    date: '2026-09-11',
+    summary: 'Reminders arrive at their moment, or not at all',
+    changes: [
+      'Fixed: a task that ended hours ago no longer announces "finishing now — time to wrap up" the next time you open Bloom. End-of-task alerts were caught up with no limit on how late they were, so a 1:30–2:00 task could nudge you at 4:23',
+      'A reminder whose moment has passed now only fires if it still means something: an end alert within ten minutes of the end, or a heads-up for something that genuinely hasn\'t started yet (still re-worded to the real gap, e.g. "in 20 min")',
+      'A reminder timer that a sleeping phone parked and handed back hours later is checked before it shows, instead of firing whenever it happens to wake',
+      'Checking a task off and changing your mind no longer replays a reminder you already got — Bloom remembers what it has delivered even while the task is out of the schedule',
+      'Background push: a reminder that couldn\'t be sent near its time is retired instead of delivered late, and each push now expires if your phone can\'t be reached promptly, so nothing lands hours after it mattered',
+    ]
+  },
+  {
     date: '2026-09-05',
     summary: 'The leftover Morning / Night Routine dropdowns are gone from Today',
     changes: [
