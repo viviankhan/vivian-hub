@@ -1416,6 +1416,29 @@ textarea { resize: vertical; min-height: 160px; line-height: 1.6; }
 .tw-chip-ico { display: inline-flex; }
 .tw-chip-time { font-size: 10.5px; font-weight: 700; opacity: .82; padding-left: 2px; }
 
+/* ── Mood chart (shared: Wellness trend + Informatics) ────────── */
+/* The SVG's viewBox is measured to match its box 1:1, so it must never be
+   stretched by CSS either — width follows the box, height is the drawn height. */
+.mc-wrap { position: relative; }
+.mc-svg { display: block; width: 100%; overflow: visible; touch-action: pan-y; }
+.mc-line { fill: none; stroke: var(--teal); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+/* Days with no check-in: the line still spans the gap, but faintly, so it reads
+   as "we don't know" rather than as logged mood. */
+.mc-bridge { fill: none; stroke: var(--teal); stroke-width: 1.5; stroke-opacity: .28; stroke-linecap: round; }
+.mc-grid { stroke: var(--border); stroke-width: 1; stroke-opacity: .7; }
+.mc-dot { stroke: #fff; stroke-width: 1.75; transition: r .12s ease; }
+.mc-dot.on { r: 5.5; }
+.mc-cross { stroke: var(--muted); stroke-width: 1; stroke-opacity: .35; }
+.mc-ytick { font-size: 9.5px; font-weight: 700; fill: var(--muted); letter-spacing: .02em; }
+.mc-xaxis { display: flex; justify-content: space-between; margin-top: 3px;
+  font-size: 10px; font-weight: 700; letter-spacing: .03em; text-transform: uppercase; color: var(--muted); }
+.mc-tip { position: absolute; pointer-events: none;
+  background: var(--forest); color: #fff; border-radius: 9px; padding: 5px 9px; white-space: nowrap;
+  font-size: 11px; font-weight: 600; box-shadow: 0 6px 16px rgba(42,72,88,.22); z-index: 2; }
+.mc-tip b { font-weight: 800; }
+.mc-tip span { display: block; opacity: .72; font-size: 10px; font-weight: 600; }
+.mc-empty { font-size: 12px; color: var(--muted); }
+
 /* ── Wellness insights (Informatics: mind & body) ─────────────── */
 .wi-card { background: #fff; border: 1px solid var(--border); border-radius: 16px; padding: 15px 16px 16px; margin-bottom: 16px; box-shadow: 0 4px 18px rgba(60,72,88,.05); }
 .wi-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }

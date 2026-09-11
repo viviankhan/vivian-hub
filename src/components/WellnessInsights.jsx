@@ -7,29 +7,11 @@
 // ─────────────────────────────────────────────────────────────
 import { useMemo } from 'react'
 import { Glyph, iconColorOn } from '../lib/glyphs.jsx'
+import MoodChart from './MoodChart.jsx'
 import {
-  MOODS, moodMeta, DEFAULT_EFFECTS, effectTotals, fmtDuration,
+  DEFAULT_EFFECTS, effectTotals, fmtDuration,
   buildDailyRecords, computeInsights, moodTrend,
 } from '../lib/wellness.js'
-
-function Sparkline({ trend }) {
-  const pts = trend.map((d, i) => ({ i, mood: d.mood }))
-  const vals = pts.filter(p => p.mood != null)
-  if (vals.length < 2) return <div style={{ fontSize: 12, color: 'var(--muted)' }}>Check in a few days to see your trend.</div>
-  const W = 240, H = 46, n = trend.length
-  const x = i => (i / (n - 1)) * W
-  const y = m => H - 4 - ((m - 1) / 4) * (H - 8)
-  // Connect across gaps by carrying the last known value.
-  let last = null
-  const line = pts.map(p => { if (p.mood != null) last = p.mood; return last == null ? null : `${x(p.i).toFixed(1)},${y(last).toFixed(1)}` })
-    .filter(Boolean).join(' ')
-  return (
-    <svg viewBox={`0 0 ${W} ${H}`} width="100%" height={H} preserveAspectRatio="none" aria-hidden="true" style={{ display: 'block' }}>
-      <polyline points={line} fill="none" stroke="var(--teal)" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
-      {vals.map(p => <circle key={p.i} cx={x(p.i)} cy={y(p.mood)} r="2.6" fill={moodMeta(Math.round(p.mood)).color} />)}
-    </svg>
-  )
-}
 
 export default function WellnessInsights({ checkins = [], effects, episodes = [], log = [] }) {
   const effectList = (effects && effects.length) ? effects : DEFAULT_EFFECTS
@@ -65,7 +47,7 @@ export default function WellnessInsights({ checkins = [], effects, episodes = []
       ) : (
         <>
           <div className="wi-sub">Mood · last 21 days</div>
-          <Sparkline trend={trend} />
+          <MoodChart trend={trend} days={21} />
 
           {topConditions.length > 0 && (
             <>

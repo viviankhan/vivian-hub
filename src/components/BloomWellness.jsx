@@ -4,6 +4,7 @@ import { Companion, MoodCloud, DayCloud, AlienSky } from '../lib/critters.jsx'
 import ColorPickRow from './ColorPickRow.jsx'
 import { EffectIcon } from './IconPicker.jsx'
 import IconSearchSheet from './IconSearchSheet.jsx'
+import MoodChart from './MoodChart.jsx'
 import { bloomBurst } from '../lib/bloom.js'
 import { PhotoStrip, PhotoPicker, PhotoAttacher } from './PhotoAttach.jsx'
 import { photoIds, savePhotos, MAX_PHOTOS } from '../lib/photos.js'
@@ -67,33 +68,6 @@ function ProgressRing({ pct, size = 118, stroke = 8, children }) {
         {children}
       </div>
     </div>
-  )
-}
-
-// A tiny 14-day mood sparkline. Missing days leave a gap so streaks read clearly.
-function Sparkline({ points, width = 260, height = 46 }) {
-  const vals = points.map(p => p.mood)
-  const n = points.length
-  const stepX = n > 1 ? width / (n - 1) : width
-  const y = v => height - 6 - ((v - 1) / 4) * (height - 12)
-  // Build line segments only between consecutive present values.
-  const segs = []
-  let cur = []
-  points.forEach((p, i) => {
-    if (p.mood == null) { if (cur.length > 1) segs.push(cur); cur = [] }
-    else cur.push([i * stepX, y(p.mood)])
-  })
-  if (cur.length > 1) segs.push(cur)
-  return (
-    <svg width="100%" viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" style={{ display: 'block' }} aria-hidden="true">
-      {segs.map((s, si) => (
-        <polyline key={si} points={s.map(([x, yy]) => `${x},${yy}`).join(' ')}
-          fill="none" stroke="var(--teal)" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
-      ))}
-      {points.map((p, i) => p.mood != null && (
-        <circle key={i} cx={i * stepX} cy={y(p.mood)} r="3" fill={moodMeta(p.mood).color} />
-      ))}
-    </svg>
   )
 }
 
@@ -707,7 +681,7 @@ export default function BloomWellness({
         {trend.some(t => t.mood != null) && (
           <div className="wl-trend">
             <div className="wl-trend-head"><span>Mood · last 14 days</span></div>
-            <Sparkline points={trend} />
+            <MoodChart trend={trend} compact days={14} />
           </div>
         )}
       </section>
