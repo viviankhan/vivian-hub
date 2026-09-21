@@ -28,6 +28,17 @@
 //     remembered between visits.
 //   • Tapping any marker opens its detail card, which reads back the span it
 //     covers and lets you correct either end of it.
+//
+// And the blob notices when you *stop* coming. A mood tracker only ever hears
+// from the days you were well enough to open it, which is precisely backwards:
+// the stretches worth recording are the ones you disappear into. So when you
+// come back after being away longer than your rule allows (see lib/absence.js —
+// measured in waking hours, so a night's sleep is never mistaken for absence),
+// the blob says so and offers to fill that stretch in: one mood, written across
+// every day it covered, and any condition you were carrying recorded as the one
+// long span it really was. Declining files the question away for good rather
+// than asking again tomorrow — the rewind clock is still there if you change
+// your mind.
 // ─────────────────────────────────────────────────────────────
 import { useState, useMemo, useEffect, useRef } from 'react'
 import { Glyph, iconColorOn } from '../lib/glyphs.jsx'
@@ -38,6 +49,9 @@ import IconSearchSheet from './IconSearchSheet.jsx'
 import { PhotoPicker, PhotoStrip } from './PhotoAttach.jsx'
 import TimeField from './TimeField.jsx'
 import { savePhotos, deletePhoto, photoIds } from '../lib/photos.js'
+import {
+  DEFAULT_ABSENCE_RULE, absenceLine, absenceLength, whenPhrase, buildCatchUp,
+} from '../lib/absence.js'
 import {
   dayKey, keyToDate, MOODS, moodMeta, selectableEmotions, makeEmotion, emotionMeta, EMOTION_PALETTE, checkinsForDay,
   DEFAULT_EFFECTS, POSITIVE_EFFECTS, makeEffect, EFFECT_COLORS, isActive, activeEpisode, startEpisode, endEpisode, setEpisodeNote,
@@ -127,6 +141,7 @@ export default function DayRail({
   checkins = [], persistCheckins, effects, persistEffects,
   episodes = [], persistEpisodes, game, persistGame,
   emotionPrefs, persistEmotionPrefs,
+  rules, absence = null, onResolveAbsence,
   dateKey = dayKey(), isToday = true,
 }) {
   // The day this rail represents. Today is interactive (the blob logs new
@@ -139,7 +154,7 @@ export default function DayRail({
   useEffect(() => { const t = setInterval(() => setNowMs(Date.now()), 30000); return () => clearInterval(t) }, [])
 
   const [menu, setMenu] = useState(false)          // radial open
-  const [sheet, setSheet] = useState(null)         // 'mood' | 'status' | null
+  const [sheet, setSheet] = useState(null)         // 'mood' | 'status' | 'catchup' | null
   const [moodDetail, setMoodDetail] = useState(null)   // a tapped cloud
   // Timed mode: the sheets offer a time (and an end time) instead of stamping
   // "now". It is a remembered preference on today, and simply how a past day
@@ -363,6 +378,39 @@ export default function DayRail({
     }
     setSheet(null); setMenu(false)
   }
+  // Fill in a stretch you were away for. The blob asked; this is the answer.
+  //
+  // One mood becomes a check-in per calendar day the absence touched, each
+  // covering only that day's own hours — so it lands on the rail as a trail
+  // across the days it really spanned, and every chart, streak and insight
+  // counts it exactly as if it had been logged at the time. A condition, by
+  // contrast, is written as ONE continuous episode: a depressive or manic
+  // stretch is a span you lived through, not a row of daily fragments.
+  const logCatchUp = ({ mood, emotions, note, conditionIds, intensity, photos }) => {
+    if (!absence) return
+    const built = buildCatchUp(absence, {
+      mood, emotions, note, conditionIds, intensity, photos: savePhotos(photos),
+    })
+    if (built.checkins.length) persistCheckins([...(checkins || []), ...built.checkins])
+    if (built.episodes.length) {
+      let next = episodes || []
+      for (const ep of built.episodes) {
+        next = addEpisode(next, ep.effectId, { start: ep.start, end: ep.end, note: ep.note, intensity: ep.intensity })
+      }
+      persistEpisodes(next)
+    }
+    // Writing down a hard stretch is tending, and is paid as such — but it
+    // never touches the streak, which only a check-in made on its own day earns.
+    if (persistGame && game && (built.checkins.length || built.episodes.length)) {
+      persistGame(awardPetals(game, 8))
+    }
+    onResolveAbsence?.(absence.id)
+    setSheet(null); setMenu(false)
+  }
+  // "Not this time." The absence is marked answered so it is never raised
+  // again — a question re-asked every morning is one you stop reading.
+  const dismissAbsence = () => { onResolveAbsence?.(absence?.id); setSheet(null); setMenu(false) }
+
   const addStatus = (effectId, note, photos, times, intensity) => {
     const ids = savePhotos(photos)
     if (times && (times.start || times.end)) {
@@ -475,6 +523,14 @@ export default function DayRail({
   const activeEffects = effectList.filter(f => isActive(episodes, f.id))
     .map(f => ({ id: f.id, name: f.name, good: POSITIVE_EFFECTS.has(f.id) }))
 
+  // An absence waiting to be asked about — but only on today (there is no
+  // "coming back" on a day already gone), and only while the rail is otherwise
+  // quiet, so the question never lands on top of something you're mid-way
+  // through saying. Late in the day the blob has drifted to the foot of the
+  // rail, where a bubble beside it would sit under the bottom nav — so past
+  // halfway it speaks upward instead (see `up` below).
+  const nudging = isToday && !!absence && !menu && !sheet && !moodDetail
+
   return (
     <>
       <div className="day-rail" ref={railRef}>
@@ -561,7 +617,7 @@ export default function DayRail({
       {/* The mind blob — only on today. It centres on the timeline's live "now"
           nodule when one is on screen, else on the fractional day scale. */}
       {isToday && (
-        <div className="rail-blob" style={{ top: `${blobFrac * 100}%`, transform: 'translateY(-50%)' }}>
+        <div className={`rail-blob ${nudging ? 'asking' : ''}`} style={{ top: `${blobFrac * 100}%`, transform: 'translateY(-50%)' }}>
           <button ref={blobRef} className="rail-blob-btn" onClick={blobClick}
             onPointerDown={startHoldBlob} onPointerUp={endHoldBlob} onPointerLeave={endHoldBlob} onPointerCancel={endHoldBlob}
             onContextMenu={e => e.preventDefault()}
@@ -570,6 +626,20 @@ export default function DayRail({
             <GuideBlob size={54} tint="#8FB0D8" speaking={menu} timed={timed} />
           </button>
           {flash && <span className="rail-blob-flash">{flash}</span>}
+          {/* You were gone longer than your rule allows, and the blob noticed.
+              It asks once, quietly, beside itself — no modal, nothing dimmed —
+              and either answer settles it for good. */}
+          {nudging && !flash && (
+            <div className={`rail-nudge ${blobFrac > 0.5 ? 'up' : ''}`} role="status">
+              <p className="rail-nudge-say">{absenceLine(absence, rules)}</p>
+              <div className="rail-nudge-btns">
+                <button className="rail-nudge-yes" onClick={() => { setMenu(false); setSheet('catchup') }}>
+                  Fill it in
+                </button>
+                <button className="rail-nudge-no" onClick={dismissAbsence}>Not this time</button>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -620,6 +690,10 @@ export default function DayRail({
           {sheet === 'mood' && <MomentSheet onClose={closeAll} onLog={logMood}
             timed={timed} isToday={isToday} dayName={dayLabel(dateKey)}
             emotions={emotionOptions} onAddEmotion={addEmotion} onDeleteEmotion={deleteEmotion} />}
+          {sheet === 'catchup' && absence && (
+            <CatchUpSheet gap={absence} rule={rules} effects={effectList} emotions={emotionOptions}
+              onLog={logCatchUp} onSkip={dismissAbsence} />
+          )}
           {sheet === 'status' && (
             <StatusSheet effects={effectList} episodes={episodes} byId={byId}
               timed={timed} isToday={isToday} dayName={dayLabel(dateKey)}
@@ -826,6 +900,105 @@ function MomentSheet({ onClose, onLog, timed, isToday, dayName, emotions: option
           </button>
         </>
       )}
+    </div>
+  )
+}
+
+// ── Catch-up sheet — the stretch you were away for ──────────────
+// The blob's question, opened out. It states the span it is about to write
+// (the one thing that must be unambiguous — this is backdating, and backdating
+// silently would be worse than not asking at all), takes one mood for the whole
+// stretch, and optionally the conditions you were carrying through it and how
+// hard they were felt.
+//
+// Deliberately shorter than the moment sheet: someone filling in three lost
+// days is not in the mood for a form. Mood alone is a complete answer, and
+// anything written here can be corrected afterwards by tapping its marker.
+function CatchUpSheet({ gap, rule, effects, emotions: options = [], onLog, onSkip }) {
+  const [mood, setMood] = useState(null)
+  const [emotions, setEmotions] = useState([])
+  const [conditionIds, setConditionIds] = useState([])
+  const [intensity, setIntensity] = useState(null)
+  const [note, setNote] = useState('')
+  const [photos, setPhotos] = useState([])
+  const [more, setMore] = useState(false)
+  const r = { ...DEFAULT_ABSENCE_RULE, ...(rule || {}) }
+  const conditionOptions = (effects || []).filter(f => !f.hidden)
+  const toggleEmo = (id) => setEmotions(p => p.includes(id) ? p.filter(x => x !== id) : (p.length < 4 ? [...p, id] : p))
+  const toggleFx = (id) => setConditionIds(p => p.includes(id) ? p.filter(x => x !== id) : [...p, id])
+  const dayCount = (gap.days || []).length
+
+  return (
+    <div className="rail-sheet" onClick={e => e.stopPropagation()}>
+      <div className="rail-sheet-title">Where were you?</div>
+      {/* The span, said plainly and up front — this writes into the past, so it
+          never does so without showing exactly which hours it means. */}
+      <div className="rail-gap">
+        <RewindClock size={18} />
+        <div>
+          <b>{whenPhrase(gap.startMs)} → now</b>
+          <span>{absenceLength(gap, r)}{dayCount > 1 ? ` · ${dayCount} days` : ''}</span>
+        </div>
+      </div>
+      <div className="rail-gap-hint">
+        Whatever you say here is written where it happened — across {dayCount > 1 ? `all ${dayCount} days` : 'that stretch'}, not onto today.
+      </div>
+
+      <div className="rail-moods">
+        {MOODS.map(m => (
+          <button key={m.v} className={`rail-moodpick ${mood === m.v ? 'on' : ''}`} onClick={() => setMood(m.v)} title={m.label}>
+            <MoodCloud v={m.v} size={mood === m.v ? 56 : 46} animate={mood === m.v} />
+            <span>{m.label}</span>
+          </button>
+        ))}
+      </div>
+
+      {mood != null && (
+        <>
+          {r.askConditions && conditionOptions.length > 0 && (
+            <>
+              <div className="rail-gap-ask">Were you carrying anything through it? <span>optional</span></div>
+              <div className="rail-fxgrid">
+                {conditionOptions.map(f => (
+                  <button key={f.id} className={`rail-fxpick ${conditionIds.includes(f.id) ? 'sel' : ''}`}
+                    onClick={() => toggleFx(f.id)}
+                    style={conditionIds.includes(f.id) ? { borderColor: f.color, background: `color-mix(in srgb, ${f.color} 16%, #fff)` } : undefined}>
+                    <span className="rail-fxpick-ico" style={{ background: f.color, color: iconColorOn(f.color) }}><EffectIcon icon={f.icon} size={15} /></span>
+                    <span>{f.name}</span>
+                  </button>
+                ))}
+              </div>
+              {conditionIds.length > 0 && (
+                <IntensityScale value={intensity} onChange={setIntensity} label="How hard was it, at its worst?" />
+              )}
+            </>
+          )}
+
+          {!more
+            ? <button className="rail-addnote" onClick={() => setMore(true)}>＋ Say more, or add a photo (optional)</button>
+            : <>
+                <div className="rail-emos">
+                  {options.map(e => (
+                    <button key={e.id} className={`rail-emo ${emotions.includes(e.id) ? 'on' : ''}`}
+                      style={emotions.includes(e.id) ? { borderColor: e.color, background: `color-mix(in srgb, ${e.color} 16%, #fff)` } : undefined}
+                      onClick={() => toggleEmo(e.id)}>
+                      <span className="rail-emo-dot" style={{ background: e.color }} />{e.name}
+                    </button>
+                  ))}
+                </div>
+                <textarea className="rail-note" rows={2} value={note} onChange={e => setNote(e.target.value)}
+                  placeholder="What were those days like? (only if you want to)" />
+                <PhotoPicker photos={photos} onChange={setPhotos} label="Add a photo" />
+              </>}
+
+          <button className="rail-log" onClick={() => onLog({ mood, emotions, note, conditionIds, intensity, photos })}>
+            Write it down{dayCount > 1 ? ` · ${dayCount} days` : ''}
+          </button>
+        </>
+      )}
+      <button className="rail-gap-skip" onClick={onSkip}>
+        Not this time — don’t ask about these days again
+      </button>
     </div>
   )
 }

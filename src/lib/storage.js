@@ -804,6 +804,19 @@ export const setWellnessTreasures = v  => dbSet('wellness_treasures', v)
 export const wellnessPhotoKey = id => `wellness_photo_${id}`
 export const getWellnessPhoto = id => dbGet(wellnessPhotoKey(id))
 export const setWellnessPhoto = (id, v) => dbSet(wellnessPhotoKey(id), v)
+// ── When you go quiet (the blob's absence rule) ─────────────────
+// Two small synced blobs behind the catch-up nudge (see lib/absence.js):
+//   • wellness_rules    — { enabled, hours, skipSleep, sleepStart, sleepEnd, … }
+//     the rule itself: how long away, measured in waking hours, before the blob
+//     asks. Synced so the rule you set on your laptop holds on your phone.
+//   • wellness_presence — { seen: epochMs, handled: 'gap-…' }
+//     when the app last had you, and the last absence you answered or declined.
+//     It rides the cloud as well as localStorage precisely so a night spent on
+//     one device isn't read as absence by another.
+export const getWellnessRules    = () => dbGet('wellness_rules').then(v => (v && typeof v === 'object') ? v : null)
+export const setWellnessRules    = v  => dbSet('wellness_rules', v)
+export const getWellnessPresence = () => dbGet('wellness_presence').then(v => (v && typeof v === 'object') ? v : null)
+export const setWellnessPresence = v  => dbSet('wellness_presence', v)
 // The Voyage meta-game state (unlocked planets, collected specimens, ship). One
 // synced kv_store blob; see src/lib/space.js. `null` → seed a fresh voyage.
 export const getWellnessSpace = () => dbGet('wellness_space').then(v => (v && typeof v === 'object') ? v : null)

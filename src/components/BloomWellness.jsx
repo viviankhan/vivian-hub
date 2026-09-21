@@ -6,7 +6,11 @@ import { EffectIcon } from './IconPicker.jsx'
 import IconSearchSheet from './IconSearchSheet.jsx'
 import { bloomBurst } from '../lib/bloom.js'
 import { PhotoStrip, PhotoPicker, PhotoAttacher } from './PhotoAttach.jsx'
+import TimeField from './TimeField.jsx'
 import { photoIds, savePhotos, MAX_PHOTOS } from '../lib/photos.js'
+import {
+  DEFAULT_ABSENCE_RULE, HOUR_CHOICES, normalizeRule, wakingMinutes,
+} from '../lib/absence.js'
 import {
   dayKey, keyToDate, MOODS, ENERGY, moodMeta, promptForDay,
   selectableEmotions, emotionMeta, makeEmotion, EMOTION_PALETTE, checkinsForDay, daySegments, emotionWeights, pastDayKeys, effectOnDay,
@@ -424,6 +428,95 @@ function DayDetail({ date, checkins, episodes, effects, log, treasures, onAddTre
 }
 
 // ── The tab ────────────────────────────────────────────────────
+// ── "When I go quiet" — the rule behind the blob's catch-up nudge ──
+// A mood tracker only ever hears from the days you were well enough to open
+// it. This is the setting that fixes that: how long you can be away before the
+// blob asks what the silence was like, and writes your answer onto the days you
+// missed rather than onto today.
+//
+// The night window is the part that makes it usable. Measured in plain elapsed
+// time, "8 hours away" is just a normal night's sleep, and a nudge that fires
+// every single morning is one you stop reading. Only waking hours count, so the
+// threshold means what it says. The preview line below spells that out with the
+// user's own numbers rather than asking them to take it on trust.
+function QuietRule({ rule, onChange }) {
+  const r = normalizeRule(rule)
+  const set = (patch) => onChange?.({ ...r, ...patch })
+
+  // Last night, through this rule: the clearest possible answer to "will this
+  // pester me every morning?"
+  const preview = useMemo(() => {
+    const from = new Date(); from.setDate(from.getDate() - 1); from.setHours(22, 0, 0, 0)
+    const to = new Date(from); to.setDate(to.getDate() + 1); to.setHours(9, 0, 0, 0)
+    const mins = wakingMinutes(from.getTime(), to.getTime(), r)
+    return { mins, asks: mins >= r.hours * 60 }
+  }, [r.skipSleep, r.sleepStart, r.sleepEnd, r.hours])
+
+  return (
+    <section className="wl-card">
+      <div className="wl-card-head">
+        <h3 className="serif">When I go quiet</h3>
+        <button className="wl-link" onClick={() => set({ enabled: !r.enabled })}>{r.enabled ? 'Turn off' : 'Turn on'}</button>
+      </div>
+      <p className="wl-card-sub">
+        The days worth recording are often the ones you don't open anything. Come back after a long
+        stretch away and the blob will ask how it was — then write your answer onto the days it covered,
+        at the hours they really happened.
+      </p>
+
+      {r.enabled ? (
+        <>
+          <div className="wl-rule-ask">Ask me after I've been away this long</div>
+          <div className="wl-rule-chips">
+            {HOUR_CHOICES.map(h => (
+              <button key={h} className={`wl-rule-chip ${r.hours === h ? 'on' : ''}`} onClick={() => set({ hours: h })}>
+                {h >= 24 && h % 24 === 0 ? `${h / 24}d` : `${h}h`}
+              </button>
+            ))}
+          </div>
+
+          <div className="wl-rule-ask">
+            Sleeping isn't being away
+            <button className={`wl-rule-toggle ${r.skipSleep ? 'on' : ''}`} onClick={() => set({ skipSleep: !r.skipSleep })}
+              role="switch" aria-checked={r.skipSleep}>
+              {r.skipSleep ? 'Skipping nights' : 'Counting nights'}
+            </button>
+          </div>
+          {r.skipSleep && (
+            <div className="wl-rule-night">
+              <div className="wl-rule-field">
+                <span>My night starts</span>
+                <TimeField value={r.sleepStart} onChange={v => set({ sleepStart: v })} style={ruleTimeStyle} aria-label="Night starts" />
+              </div>
+              <div className="wl-rule-field">
+                <span>and ends</span>
+                <TimeField value={r.sleepEnd} onChange={v => set({ sleepEnd: v })} style={ruleTimeStyle} aria-label="Night ends" />
+              </div>
+            </div>
+          )}
+          <div className={`wl-rule-preview ${preview.asks ? 'warn' : ''}`}>
+            {preview.asks
+              ? `Heads up: closing at 10pm and opening at 9am would count as ${fmtDuration(preview.mins)} away — so an ordinary night would set this off.`
+              : `Closing at 10pm and opening at 9am counts as ${fmtDuration(preview.mins)} away, well under ${r.hours}h — an ordinary night stays quiet.`}
+          </div>
+
+          <button className={`wl-rule-toggle block ${r.askConditions ? 'on' : ''}`} onClick={() => set({ askConditions: !r.askConditions })}
+            role="switch" aria-checked={r.askConditions}>
+            {r.askConditions ? '✓ ' : ''}Also ask which conditions I was carrying
+          </button>
+          <div className="wl-rule-foot">
+            Answering writes a mood across every day the stretch covered, and any condition you name as the
+            one long span it was. Saying no thanks closes that question for good — it won't come back tomorrow.
+          </div>
+        </>
+      ) : (
+        <div className="wl-rule-foot">Bloom won't ask about the days you were away. You can still fill any of them in yourself from the rewind clock on the day rail.</div>
+      )}
+    </section>
+  )
+}
+const ruleTimeStyle = { border: '1.5px solid var(--border)', borderRadius: 11, padding: '8px 10px', fontSize: 13, fontFamily: 'inherit', background: '#fff', color: 'var(--text)', boxSizing: 'border-box', width: '100%' }
+
 export default function BloomWellness({
   checkins, persistCheckins,
   effects, persistEffects,
@@ -431,6 +524,7 @@ export default function BloomWellness({
   game, persistGame,
   treasures = [], persistTreasures,
   emotionPrefs, persistEmotionPrefs,
+  rules, persistRules,
   log = [],
 }) {
   const today = dayKey()
@@ -829,6 +923,9 @@ export default function BloomWellness({
           </div>
         )}
       </section>
+
+      {/* ── The rule for when you go quiet ── */}
+      <QuietRule rule={rules} onChange={persistRules} />
 
       <p className="wl-footer">Bloom's wellness tools are for reflection and self-awareness, not a substitute for professional care. If you're struggling, reach out to someone you trust.</p>
 

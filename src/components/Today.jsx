@@ -1187,6 +1187,7 @@ function WeekStrip({ viewDate, setViewDate, today, commitments, categories, done
 // ── Main ───────────────────────────────────────────────────────
 export default function Today({ todos, weekState, syncToggle, clearCompletion, pushUndo, commitments, addCommitment, updateCommitment, deleteCommitment, moveCommitmentToThoughts, addEvent, appendLog, scheduled, categories, recurringTasks, recurringExceptions, occStarted = {}, skipRecurringOccurrence, deleteRecurringTask, addRecurringTask, updateRecurringTask, routines = [], updateRoutine, deleteRoutine, taskTemplates = [], summary, labelModel = null, externalEvents = [], externalCalendars = [], toggleCalendar, importedAdoptions = {}, adoptImportedEvent, markImportedAdopted,
   wlCheckins = [], persistWlCheckins, wlEffects, persistWlEffects, wlEpisodes = [], persistWlEpisodes, wlGame, persistWlGame, wlLog = [], wlEmotions, persistWlEmotions, onOpenWellness,
+  wlRules, wlAbsence = null, onResolveAbsence,
   jumpTo = null, onJumpConsumed }) {
   const [now,         setNow]         = useState(nowMins())
   // Which day IS today. Held in state and re-read as the clock moves, never
@@ -2359,6 +2360,7 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
           episodes={wlEpisodes} persistEpisodes={persistWlEpisodes}
           game={wlGame} persistGame={persistWlGame}
           emotionPrefs={wlEmotions} persistEmotionPrefs={persistWlEmotions}
+          rules={wlRules} absence={wlAbsence} onResolveAbsence={onResolveAbsence}
           dateKey={viewDate} isToday={isToday} />
       )}
       {/* Structured-style header: big date + week strip + progress bar */}

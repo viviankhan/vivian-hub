@@ -1706,3 +1706,74 @@ textarea { resize: vertical; min-height: 160px; line-height: 1.6; }
 /* Rail container — offset below the date header so markers ride the timeline. */
 .day-rail { position: absolute; left: 0; top: 158px; bottom: 12px; width: 54px; }
 @media (min-width: 760px) { .day-rail { top: 150px; } }
+
+/* ── "Where were you?" — the blob's absence nudge ─────────────────────
+   You came back after a stretch away, and the blob says so. It sits beside
+   the blob rather than over the day: nothing is dimmed, nothing is blocked,
+   and the timeline behind it stays usable — a question about days you lost
+   should never be the thing standing between you and today. */
+.rail-blob.asking .rail-blob-btn { animation: rail-ask 2.8s ease-in-out infinite; }
+@keyframes rail-ask {
+  0%, 100% { transform: translateY(0); filter: drop-shadow(0 3px 8px rgba(80,110,150,.3)); }
+  50% { transform: translateY(-3px); filter: drop-shadow(0 6px 16px rgba(80,110,150,.5)); }
+}
+.rail-nudge { position: absolute; left: 58px; top: 50%; transform: translateY(-50%); z-index: 25;
+  width: max-content; max-width: min(250px, 58vw); background: #fff; border: 1px solid var(--border);
+  border-radius: 16px; padding: 11px 13px 10px; box-shadow: 0 8px 26px rgba(40,60,90,.26);
+  animation: rail-pop .35s ease both .2s; }
+.rail-nudge::before { content: ''; position: absolute; left: -5px; top: 50%; margin-top: -5px; width: 10px; height: 10px;
+  background: #fff; border-left: 1px solid var(--border); border-bottom: 1px solid var(--border); transform: rotate(45deg); }
+/* Late in the day the blob rides the foot of the rail, so the bubble stands on
+   its shoulders instead of beside it — otherwise the one thing the app most
+   wants to say is the one thing hidden behind the bottom nav. */
+.rail-nudge.up { top: auto; bottom: calc(100% + 10px); transform: none; left: 4px; }
+.rail-nudge.up::before { left: 24px; top: auto; bottom: -6px; margin-top: 0;
+  border-left: none; border-bottom: none; border-right: 1px solid var(--border); border-top: none;
+  box-shadow: 1px 1px 0 0 var(--border); }
+.rail-nudge-say { margin: 0; font-size: 12px; line-height: 1.45; color: var(--text); }
+.rail-nudge-btns { display: flex; gap: 7px; margin-top: 10px; }
+.rail-nudge-yes { flex: 1; border: none; background: var(--forest); color: var(--green-light); border-radius: 999px;
+  padding: 7px 12px; font-size: 11.5px; font-weight: 700; cursor: pointer; font-family: inherit; white-space: nowrap; }
+.rail-nudge-no { border: none; background: none; color: var(--muted); padding: 7px 4px; font-size: 11.5px;
+  font-weight: 600; cursor: pointer; font-family: inherit; white-space: nowrap; }
+@media (prefers-reduced-motion: reduce) {
+  .rail-blob.asking .rail-blob-btn { animation: none; }
+  .rail-nudge { animation: none; }
+}
+
+/* The catch-up sheet: the span it is about to write, said plainly before
+   anything is written — backdating in silence would be worse than not
+   asking at all. */
+.rail-gap { display: flex; align-items: center; gap: 10px; border: 1.5px solid var(--teal); border-radius: 16px;
+  background: #fff; padding: 10px 13px; margin-bottom: 8px; }
+.rail-gap .rail-clockface { color: var(--teal); flex-shrink: 0; }
+.rail-gap > div { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.rail-gap b { font-size: 13px; color: var(--forest); }
+.rail-gap span { font-size: 11px; color: var(--muted); font-weight: 600; }
+.rail-gap-hint { font-size: 11px; line-height: 1.45; color: var(--muted); margin-bottom: 14px; }
+.rail-gap-ask { font-size: 12px; font-weight: 700; color: var(--forest); margin: 16px 0 9px; }
+.rail-gap-ask span { font-size: 10.5px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; margin-left: 5px; }
+.rail-gap-skip { display: block; width: 100%; margin-top: 10px; border: none; background: none; color: var(--muted);
+  font-size: 11.5px; font-weight: 600; cursor: pointer; font-family: inherit; padding: 8px; }
+
+/* ── "When I go quiet" — the absence rule's settings card ────────────── */
+.wl-rule-ask { display: flex; align-items: center; gap: 10px; font-size: 12.5px; font-weight: 700;
+  color: var(--forest); margin: 16px 0 9px; }
+.wl-rule-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.wl-rule-chip { border: 1.5px solid var(--border); background: #fff; border-radius: 999px; padding: 6px 13px;
+  font-size: 12.5px; font-weight: 700; color: var(--text); cursor: pointer; font-family: inherit;
+  font-variant-numeric: tabular-nums; }
+.wl-rule-chip.on { border-color: var(--teal); background: var(--green-light); color: var(--teal); }
+.wl-rule-toggle { margin-left: auto; border: 1.5px solid var(--border); background: #fff; border-radius: 999px;
+  padding: 5px 12px; font-size: 11.5px; font-weight: 700; color: var(--muted); cursor: pointer; font-family: inherit; }
+.wl-rule-toggle.on { border-color: var(--teal); background: var(--green-light); color: var(--teal); }
+.wl-rule-toggle.block { display: block; width: 100%; margin: 14px 0 0; padding: 10px; font-size: 12.5px; text-align: center; }
+.wl-rule-night { display: flex; gap: 10px; margin-top: 4px; }
+.wl-rule-field { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.wl-rule-field > span { font-size: 10.5px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+/* The rule, said back in the user's own numbers — the answer to "will this
+   pester me every morning?", shown rather than promised. */
+.wl-rule-preview { margin-top: 12px; border-radius: 12px; background: var(--green-light); color: var(--teal);
+  padding: 9px 12px; font-size: 11.5px; font-weight: 600; line-height: 1.45; }
+.wl-rule-preview.warn { background: #FBF0E4; color: #A8703A; }
+.wl-rule-foot { font-size: 11.5px; color: var(--muted); line-height: 1.5; margin-top: 12px; }

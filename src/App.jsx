@@ -28,11 +28,14 @@ import {
   getWellnessGame, setWellnessGame,
   getWellnessEmotions, setWellnessEmotions,
   getWellnessTreasures, setWellnessTreasures,
+  getWellnessRules, setWellnessRules,
   getArtOverrides, setArtOverrides,
   addCategory as dbAddCategory, updateCategory as dbUpdateCategory, deleteCategory as dbDeleteCategory,
 } from './lib/storage.js'
 import { occKey, recurringOccurrencesForDate } from './lib/occurrences.js'
 import { registerEmotionPrefs } from './lib/wellness.js'
+import { DEFAULT_ABSENCE_RULE, normalizeRule, evaluateAbsence } from './lib/absence.js'
+import { loadPresence, startPresence, markAbsenceHandled } from './lib/presence.js'
 import { runMigrationIfNeeded, seedCategoriesIfNeeded } from './lib/migrate.js'
 import {
   registerLabelMeta, registerRecordFolders, normalizeLabelMeta,
@@ -677,6 +680,10 @@ export default function App() {
   const [wlGame,           setWlGame_]           = useState(null)
   const [wlEmotions,       setWlEmotions_]       = useState({ custom: [], hidden: [] })
   const [wlTreasures,      setWlTreasures_]      = useState([])
+  // The rule for when the blob should ask about a stretch you were gone, and
+  // the absence (if any) it found waiting when the app opened. See lib/absence.js.
+  const [wlRules,          setWlRules_]          = useState(DEFAULT_ABSENCE_RULE)
+  const [wlAbsence,        setWlAbsence_]        = useState(null)
   const [loading,          setLoading]          = useState(true)
 
   // Pull everything out of storage and into React state. Runs at launch, and
@@ -691,7 +698,7 @@ export default function App() {
   const loadAll = useCallback(async ({ migrate = false } = {}) => {
     try {
       if (migrate) await runMigrationIfNeeded()
-      const [comp, l, n, fcp, fcs, sch, com, rt, vac, evs, cats, cmeta, rexc, rmeta, rout, tlogs, tpls, chist, wlc, wlfx, wlep, wlg, wlem, wltr, artov, lmeta, tfolders, tpeople, tentries] = await Promise.all([
+      const [comp, l, n, fcp, fcs, sch, com, rt, vac, evs, cats, cmeta, rexc, rmeta, rout, tlogs, tpls, chist, wlc, wlfx, wlep, wlg, wlem, wltr, artov, wlrules, lmeta, tfolders, tpeople, tentries] = await Promise.all([
         getCompletions(), getLogEntries(), getNotes(),
         getFcProgress(), getFcStudied(), getScheduledTasks(),
         getCommitments(), getRecurringTasks(), getVacations(), getEvents(),
@@ -699,6 +706,7 @@ export default function App() {
         getRoutineGroups(), getTimeLogs(), getTaskTemplates(), getChangeHistory(),
         getWellnessCheckins(), getWellnessEffects(), getWellnessEpisodes(), getWellnessGame(),
         getWellnessEmotions(), getWellnessTreasures(), getArtOverrides(),
+        getWellnessRules(),
         getLabelMeta(), getTrackerFolders(), getTrackerPeople(), getTrackerEntries(),
       ])
       // Mirror the label/record wiring into the module registers before the
@@ -727,6 +735,7 @@ export default function App() {
       registerEmotionPrefs(emPrefs)
       setWlEmotions_(emPrefs)
       setWlTreasures_(Array.isArray(wltr) ? wltr : [])
+      setWlRules_(normalizeRule(wlrules))
       // Seed the custom-art override store from the synced blob so any uploaded
       // images replace their code-drawn defaults on first paint.
       loadOverrides(artov)
@@ -755,6 +764,36 @@ export default function App() {
   }, [])
 
   useEffect(() => { loadAll({ migrate: true }) }, [loadAll])
+
+  // ── When you go quiet ────────────────────────────────────────
+  // While the app is in front of you it quietly records that it had you, every
+  // few minutes (lib/presence.js). Coming back in, whatever that record said
+  // BEFORE this visit overwrote it is the only witness to how long you were
+  // away — so it is read first, measured against your rule, and handed to the
+  // day rail as a question for the blob to ask. Then the heartbeat starts over.
+  //
+  // It waits for `loading` because the rule itself is one of the blobs being
+  // loaded, and runs exactly once: the rule is read through a ref so changing
+  // it later can't tear down a running heartbeat.
+  const wlRulesRef = useRef(wlRules)
+  useEffect(() => { wlRulesRef.current = wlRules }, [wlRules])
+  const presenceStarted = useRef(false)
+  useEffect(() => {
+    if (loading || presenceStarted.current) return
+    presenceStarted.current = true
+    let stop = null, alive = true
+    const begin = (prev) => {
+      if (!alive) return
+      if (prev) {
+        try {
+          const _g = evaluateAbsence({ lastSeenMs: prev.seen, rule: wlRulesRef.current, handledId: prev.handled }); console.log('[dbg] prev', JSON.stringify(prev), 'rule', JSON.stringify(wlRulesRef.current), 'gap', JSON.stringify(_g && {id:_g.id, waking:_g.wakingMins, days:_g.days.length})); setWlAbsence_(_g)
+        } catch (e) { console.warn('[Bloom] absence check failed:', e) }
+      }
+      stop = startPresence()
+    }
+    loadPresence().then(begin).catch(() => begin(null))
+    return () => { alive = false; if (stop) stop() }
+  }, [loading])
 
   // Queued offline changes just finished uploading — re-read so the app shows
   // the reconciled result rather than only this device's optimistic copy.
@@ -1834,6 +1873,18 @@ export default function App() {
   const persistWlGame     = useCallback(next => { setWlGame_(next);     setWellnessGame(next).catch(reportSaveError) }, [])
   const persistWlEmotions = useCallback(next => { registerEmotionPrefs(next); setWlEmotions_(next); setWellnessEmotions(next).catch(reportSaveError) }, [])
   const persistWlTreasures = useCallback(next => { setWlTreasures_(next); setWellnessTreasures(next).catch(reportSaveError) }, [])
+  const persistWlRules     = useCallback(next => {
+    const clean = normalizeRule(next)
+    setWlRules_(clean)
+    setWellnessRules(clean).catch(reportSaveError)
+    // A rule loosened or switched off shouldn't leave an old question hanging
+    // on screen; one tightened can't conjure an absence mid-session either, so
+    // the pending nudge simply clears and the next arrival asks afresh.
+    setWlAbsence_(null)
+  }, [])
+  // The blob's question, answered or declined: either way that absence is done
+  // with, and the clock starts again from this moment.
+  const resolveWlAbsence = useCallback(id => { markAbsenceHandled(id); setWlAbsence_(null) }, [])
   // Custom-art uploads: the Art Studio mutates the in-memory override store
   // (lib/art.js) for an instant re-render, then hands us the whole map to sync.
   const persistArt         = useCallback(map  => { setArtOverrides(map).catch(reportSaveError) }, [])
@@ -2060,6 +2111,7 @@ export default function App() {
           wlEpisodes={wlEpisodes} persistWlEpisodes={persistWlEpisodes}
           wlGame={wlGame} persistWlGame={persistWlGame} wlLog={log}
           wlEmotions={wlEmotions} persistWlEmotions={persistWlEmotions}
+          wlRules={wlRules} wlAbsence={wlAbsence} onResolveAbsence={resolveWlAbsence}
           jumpTo={todayJump} onJumpConsumed={() => setTodayJump(null)}
           onOpenWellness={() => setTab('wellness')} />}
         {tab==='taskmenu'    && <TaskMenu templates={taskTemplates} addTemplate={addTaskTemplate}
@@ -2085,6 +2137,7 @@ export default function App() {
           game={wlGame} persistGame={persistWlGame}
           treasures={wlTreasures} persistTreasures={persistWlTreasures}
           emotionPrefs={wlEmotions} persistEmotionPrefs={persistWlEmotions}
+          rules={wlRules} persistRules={persistWlRules}
           log={log} />}
         {tab==='informatics' && <Informatics commitments={commitmentsView} recurringTasks={recurringTasksEnriched} completions={completions} log={log} categories={categories} timeLogs={timeLogs} addTimeLog={addTimeLog} deleteTimeLog={deleteTimeLog} wlCheckins={wlCheckins} wlEffects={wlEffects} wlEpisodes={wlEpisodes} />}
         {tab==='records'     && <Insights
