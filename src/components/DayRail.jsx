@@ -137,6 +137,20 @@ function affirm(activeEffects) {
   return 'However today is going, you showed up for it. That counts. I\'m right here.'
 }
 
+// What the blob says once a stretch has been written down: the names, the
+// length, and then nothing more to do.
+function loggedLine(built, conditions, byId) {
+  const names = (conditions || []).map(c => byId.get(c.effectId)?.name).filter(Boolean)
+  const dayCount = new Set(built.checkins.map(c => c.date)).size || null
+  const over = dayCount ? ` across ${dayCount === 1 ? 'that day' : dayCount + ' days'}` : ''
+  if (names.length) {
+    const list = names.length === 1 ? names[0].toLowerCase()
+      : names.slice(0, -1).map(n => n.toLowerCase()).join(', ') + ' and ' + names[names.length - 1].toLowerCase()
+    return `Written down: ${list}${over}. Those days are logged — today can start from here.`
+  }
+  return `Written down${over}. Those days are logged — today can start from here.`
+}
+
 export default function DayRail({
   checkins = [], persistCheckins, effects, persistEffects,
   episodes = [], persistEpisodes, game, persistGame,
@@ -188,7 +202,9 @@ export default function DayRail({
   }
   useEffect(() => {
     if (!flash) return
-    const t = setTimeout(() => setFlash(null), 3200)
+    // Long enough to actually be read: a mode switch is a glance, but "those
+    // days are logged" is the one line the whole catch-up was for.
+    const t = setTimeout(() => setFlash(null), Math.min(9000, 2800 + flash.length * 45))
     return () => clearTimeout(t)
   }, [flash])
   useEffect(() => () => clearTimeout(blobHold.current), [])
@@ -378,19 +394,30 @@ export default function DayRail({
     }
     setSheet(null); setMenu(false)
   }
+  // Mint a condition from the catch-up sheet and hand it straight back, so a
+  // word you had to invent for what you were carrying is usable in the same
+  // breath you named it.
+  const createEffect = (name) => {
+    const base = (effects && effects.length) ? effects : DEFAULT_EFFECTS
+    const fx = makeEffect({
+      name, kind: 'mental',
+      color: EFFECT_COLORS[base.length % EFFECT_COLORS.length],
+      icon: 'sparkle',
+    })
+    persistEffects?.([...base, fx])
+    return fx
+  }
   // Fill in a stretch you were away for. The blob asked; this is the answer.
   //
-  // One mood becomes a check-in per calendar day the absence touched, each
+  // A mood becomes a check-in per calendar day the absence touched, each
   // covering only that day's own hours — so it lands on the rail as a trail
   // across the days it really spanned, and every chart, streak and insight
-  // counts it exactly as if it had been logged at the time. A condition, by
-  // contrast, is written as ONE continuous episode: a depressive or manic
-  // stretch is a span you lived through, not a row of daily fragments.
-  const logCatchUp = ({ mood, emotions, note, conditionIds, intensity, photos }) => {
+  // counts it exactly as if it had been logged at the time. Each condition is
+  // written across the days you said it was there, its consecutive days joined
+  // into whole spans: what you lived through, not a row of daily fragments.
+  const logCatchUp = ({ mood, note, conditions }) => {
     if (!absence) return
-    const built = buildCatchUp(absence, {
-      mood, emotions, note, conditionIds, intensity, photos: savePhotos(photos),
-    })
+    const built = buildCatchUp(absence, { mood, note, conditions })
     if (built.checkins.length) persistCheckins([...(checkins || []), ...built.checkins])
     if (built.episodes.length) {
       let next = episodes || []
@@ -404,6 +431,10 @@ export default function DayRail({
     if (persistGame && game && (built.checkins.length || built.episodes.length)) {
       persistGame(awardPetals(game, 8))
     }
+    // Say what was written, in the blob's own voice. The point of the whole
+    // feature is the feeling that those days are down — so it is said out loud
+    // once, and then the day is yours again.
+    setFlash(loggedLine(built, conditions, byId))
     onResolveAbsence?.(absence.id)
     setSheet(null); setMenu(false)
   }
@@ -625,7 +656,7 @@ export default function DayRail({
             aria-label={`Wellness — ${timed ? 'timed mode on' : 'logging in the present'}. Hold to switch.`}>
             <GuideBlob size={54} tint="#8FB0D8" speaking={menu} timed={timed} />
           </button>
-          {flash && <span className="rail-blob-flash">{flash}</span>}
+          {flash && <span className={`rail-blob-flash ${blobFrac > 0.5 ? 'up' : ''}`}>{flash}</span>}
           {/* You were gone longer than your rule allows, and the blob noticed.
               It asks once, quietly, beside itself — no modal, nothing dimmed —
               and either answer settles it for good. */}
@@ -691,8 +722,8 @@ export default function DayRail({
             timed={timed} isToday={isToday} dayName={dayLabel(dateKey)}
             emotions={emotionOptions} onAddEmotion={addEmotion} onDeleteEmotion={deleteEmotion} />}
           {sheet === 'catchup' && absence && (
-            <CatchUpSheet gap={absence} rule={rules} effects={effectList} emotions={emotionOptions}
-              onLog={logCatchUp} onSkip={dismissAbsence} />
+            <CatchUpSheet gap={absence} rule={rules} effects={effectList}
+              onLog={logCatchUp} onSkip={dismissAbsence} onCreateEffect={createEffect} />
           )}
           {sheet === 'status' && (
             <StatusSheet effects={effectList} episodes={episodes} byId={byId}
@@ -905,28 +936,58 @@ function MomentSheet({ onClose, onLog, timed, isToday, dayName, emotions: option
 }
 
 // ── Catch-up sheet — the stretch you were away for ──────────────
-// The blob's question, opened out. It states the span it is about to write
-// (the one thing that must be unambiguous — this is backdating, and backdating
-// silently would be worse than not asking at all), takes one mood for the whole
-// stretch, and optionally the conditions you were carrying through it and how
-// hard they were felt.
+// The blob's question, opened out — and deliberately the shortest sheet in the
+// app. Someone surfacing from a depressive or manic stretch is not in the mood
+// for a form; what they need is the feeling that those days are *down*, and a
+// short path back into today.
 //
-// Deliberately shorter than the moment sheet: someone filling in three lost
-// days is not in the mood for a form. Mood alone is a complete answer, and
-// anything written here can be corrected afterwards by tapping its marker.
-function CatchUpSheet({ gap, rule, effects, emotions: options = [], onLog, onSkip }) {
-  const [mood, setMood] = useState(null)
-  const [emotions, setEmotions] = useState([])
-  const [conditionIds, setConditionIds] = useState([])
-  const [intensity, setIntensity] = useState(null)
-  const [note, setNote] = useState('')
-  const [photos, setPhotos] = useState([])
-  const [more, setMore] = useState(false)
+// So it asks one thing: what were you carrying? Conditions are chips you tap —
+// including ones you name here, on the spot, because nobody's list has your
+// words in it until you put them there. Each one you pick keeps the whole
+// stretch by default and shows the days it covers, so narrowing "manic
+// Saturday and Sunday, low Monday" is two taps rather than two time pickers.
+// Mood is one optional row underneath. Nothing else is asked; intensity, photos
+// and exact hours can all be corrected later by tapping the marker it leaves.
+function CatchUpSheet({ gap, rule, effects, onLog, onSkip, onCreateEffect }) {
+  const days = gap.days || []
+  const multiDay = days.length > 1
   const r = { ...DEFAULT_ABSENCE_RULE, ...(rule || {}) }
-  const conditionOptions = (effects || []).filter(f => !f.hidden)
-  const toggleEmo = (id) => setEmotions(p => p.includes(id) ? p.filter(x => x !== id) : (p.length < 4 ? [...p, id] : p))
-  const toggleFx = (id) => setConditionIds(p => p.includes(id) ? p.filter(x => x !== id) : [...p, id])
-  const dayCount = (gap.days || []).length
+  // effectId → the day keys it covered. Everything starts as the whole stretch.
+  const [picked, setPicked] = useState({})
+  const [mood, setMood] = useState(null)
+  const [note, setNote] = useState('')
+  const [noting, setNoting] = useState(false)
+  const [naming, setNaming] = useState(false)
+  const [draft, setDraft] = useState('')
+  const options = (effects || []).filter(f => !f.hidden)
+  const order = Object.keys(picked)
+
+  const allDays = () => days.map(d => d.key)
+  const toggle = (id) => setPicked(p => {
+    if (p[id]) { const { [id]: _drop, ...rest } = p; return rest }
+    return { ...p, [id]: allDays() }
+  })
+  // Narrowing a condition to the days it was actually there. Taking its last
+  // day away is how you take the condition back off — no separate undo.
+  const toggleDay = (id, key) => setPicked(p => {
+    const cur = p[id] || []
+    const next = cur.includes(key) ? cur.filter(k => k !== key) : allDays().filter(k => cur.includes(k) || k === key)
+    if (!next.length) { const { [id]: _drop, ...rest } = p; return rest }
+    return { ...p, [id]: next }
+  })
+  // A condition named here and then used immediately — the palette catches up
+  // with your words instead of the other way round.
+  const commitName = () => {
+    const name = draft.trim()
+    setDraft(''); setNaming(false)
+    if (!name) return
+    const existing = options.find(f => f.name.toLowerCase() === name.toLowerCase())
+    const fx = existing || onCreateEffect?.(name)
+    if (fx) setPicked(p => (p[fx.id] ? p : { ...p, [fx.id]: allDays() }))
+  }
+
+  const conditions = order.map(id => ({ effectId: id, days: picked[id] }))
+  const ready = order.length > 0 || mood != null
 
   return (
     <div className="rail-sheet" onClick={e => e.stopPropagation()}>
@@ -937,70 +998,96 @@ function CatchUpSheet({ gap, rule, effects, emotions: options = [], onLog, onSki
         <RewindClock size={18} />
         <div>
           <b>{whenPhrase(gap.startMs)} → now</b>
-          <span>{absenceLength(gap, r)}{dayCount > 1 ? ` · ${dayCount} days` : ''}</span>
+          <span>{absenceLength(gap, r)}{multiDay ? ` · ${days.length} days` : ''}</span>
         </div>
       </div>
-      <div className="rail-gap-hint">
-        Whatever you say here is written where it happened — across {dayCount > 1 ? `all ${dayCount} days` : 'that stretch'}, not onto today.
-      </div>
 
-      <div className="rail-moods">
+      <div className="rail-gap-ask">What were you carrying?</div>
+      <div className="rail-conds">
+        {options.map(f => (
+          <button key={f.id} className={`rail-cond ${picked[f.id] ? 'on' : ''}`} onClick={() => toggle(f.id)}
+            style={picked[f.id] ? { borderColor: f.color, background: `color-mix(in srgb, ${f.color} 16%, #fff)` } : undefined}>
+            <span className="rail-cond-dot" style={{ background: f.color }} />{f.name}
+          </button>
+        ))}
+        {!naming && (
+          <button className="rail-cond rail-cond-new" onClick={() => setNaming(true)}>＋ name one</button>
+        )}
+      </div>
+      {naming && (
+        <div className="rail-cond-adder">
+          <input className="rail-emo-input" autoFocus value={draft} maxLength={24} placeholder="manic, depressed, numb…"
+            onChange={e => setDraft(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') commitName(); if (e.key === 'Escape') { setDraft(''); setNaming(false) } }} />
+          <button className="rail-emo-ok" disabled={!draft.trim()} onClick={commitName}>Add</button>
+        </div>
+      )}
+
+      {/* One line per condition you picked: which days it was there for. On a
+          stretch inside a single day there is nothing to narrow, so it says so
+          and stays out of the way. */}
+      {order.length > 0 && (
+        <div className="rail-when-days">
+          {order.map(id => {
+            const fx = options.find(f => f.id === id) || { name: 'Condition', color: '#89B0AE' }
+            const mine = picked[id]
+            return (
+              <div key={id} className="rail-whenday">
+                <span className="rail-whenday-name"><span className="rail-cond-dot" style={{ background: fx.color }} />{fx.name}</span>
+                {multiDay ? (
+                  <span className="rail-whenday-days">
+                    {days.map(d => (
+                      <button key={d.key} className={`rail-day ${mine.includes(d.key) ? 'on' : ''}`}
+                        onClick={() => toggleDay(id, d.key)}
+                        style={mine.includes(d.key) ? { borderColor: fx.color, background: `color-mix(in srgb, ${fx.color} 20%, #fff)` } : undefined}
+                        title={`${fx.name} on ${shortDay(d.key)}`}>
+                        {shortDay(d.key)}
+                      </button>
+                    ))}
+                  </span>
+                ) : <span className="rail-whenday-all">the whole stretch</span>}
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      <div className="rail-gap-ask soft">And how did it feel, overall? <span>optional</span></div>
+      <div className="rail-moods sm">
         {MOODS.map(m => (
-          <button key={m.v} className={`rail-moodpick ${mood === m.v ? 'on' : ''}`} onClick={() => setMood(m.v)} title={m.label}>
-            <MoodCloud v={m.v} size={mood === m.v ? 56 : 46} animate={mood === m.v} />
+          <button key={m.v} className={`rail-moodpick ${mood === m.v ? 'on' : ''}`} onClick={() => setMood(mood === m.v ? null : m.v)} title={m.label}>
+            <MoodCloud v={m.v} size={mood === m.v ? 46 : 38} animate={mood === m.v} />
             <span>{m.label}</span>
           </button>
         ))}
       </div>
 
-      {mood != null && (
-        <>
-          {r.askConditions && conditionOptions.length > 0 && (
-            <>
-              <div className="rail-gap-ask">Were you carrying anything through it? <span>optional</span></div>
-              <div className="rail-fxgrid">
-                {conditionOptions.map(f => (
-                  <button key={f.id} className={`rail-fxpick ${conditionIds.includes(f.id) ? 'sel' : ''}`}
-                    onClick={() => toggleFx(f.id)}
-                    style={conditionIds.includes(f.id) ? { borderColor: f.color, background: `color-mix(in srgb, ${f.color} 16%, #fff)` } : undefined}>
-                    <span className="rail-fxpick-ico" style={{ background: f.color, color: iconColorOn(f.color) }}><EffectIcon icon={f.icon} size={15} /></span>
-                    <span>{f.name}</span>
-                  </button>
-                ))}
-              </div>
-              {conditionIds.length > 0 && (
-                <IntensityScale value={intensity} onChange={setIntensity} label="How hard was it, at its worst?" />
-              )}
-            </>
-          )}
+      {!noting
+        ? <button className="rail-addnote" onClick={() => setNoting(true)}>＋ Add a line about it (optional)</button>
+        : <textarea className="rail-note" rows={2} value={note} onChange={e => setNote(e.target.value)} autoFocus
+            placeholder="Anything you want future-you to know." />}
 
-          {!more
-            ? <button className="rail-addnote" onClick={() => setMore(true)}>＋ Say more, or add a photo (optional)</button>
-            : <>
-                <div className="rail-emos">
-                  {options.map(e => (
-                    <button key={e.id} className={`rail-emo ${emotions.includes(e.id) ? 'on' : ''}`}
-                      style={emotions.includes(e.id) ? { borderColor: e.color, background: `color-mix(in srgb, ${e.color} 16%, #fff)` } : undefined}
-                      onClick={() => toggleEmo(e.id)}>
-                      <span className="rail-emo-dot" style={{ background: e.color }} />{e.name}
-                    </button>
-                  ))}
-                </div>
-                <textarea className="rail-note" rows={2} value={note} onChange={e => setNote(e.target.value)}
-                  placeholder="What were those days like? (only if you want to)" />
-                <PhotoPicker photos={photos} onChange={setPhotos} label="Add a photo" />
-              </>}
-
-          <button className="rail-log" onClick={() => onLog({ mood, emotions, note, conditionIds, intensity, photos })}>
-            Write it down{dayCount > 1 ? ` · ${dayCount} days` : ''}
-          </button>
-        </>
-      )}
+      <button className="rail-log" disabled={!ready} onClick={() => onLog({ mood, note, conditions })}>
+        {ready ? 'That’s logged — take me back' : 'Pick anything above'}
+      </button>
+      <div className="rail-gap-hint">
+        Everything lands on the days you picked, at the hours they happened — not on today.
+        You can fix any of it later by tapping it on the rail.
+      </div>
       <button className="rail-gap-skip" onClick={onSkip}>
         Not this time — don’t ask about these days again
       </button>
     </div>
   )
+}
+// "Sat" / "today" — a day named as briefly as a chip allows.
+function shortDay(key) {
+  const d = keyToDate(key)
+  const today = new Date(); today.setHours(0, 0, 0, 0)
+  const diff = Math.round((today - d) / 86400000)
+  if (diff === 0) return 'today'
+  if (diff === 1) return 'yest.'
+  return d.toLocaleDateString('en-US', { weekday: 'short' })
 }
 
 // ── Status sheet — pick / describe / end a condition ────────────

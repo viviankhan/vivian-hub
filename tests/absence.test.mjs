@@ -107,6 +107,37 @@ eq('running start to end, at the intensity given',
 eq('declining to name a mood writes no check-ins',
   A.buildCatchUp(gap, { mood: null, conditionIds: ['fx-low'] }).checkins.length, 0)
 
+console.log('\n— conditions, on the days they were actually there —')
+const week = ask(at(2026, 3, 9, 14), at(2026, 3, 13, 9))     // Mon afternoon → Fri morning
+eq('the stretch is five days', week.days.map(d => d.key),
+  ['2026-03-09', '2026-03-10', '2026-03-11', '2026-03-12', '2026-03-13'])
+const mixed = A.buildCatchUp(week, {
+  conditions: [
+    { effectId: 'fx-manic', days: ['2026-03-09', '2026-03-10'] },
+    { effectId: 'fx-low', days: ['2026-03-12', '2026-03-13'] },
+  ],
+})
+eq('two conditions, one span each', mixed.episodes.map(e => e.effectId), ['fx-manic', 'fx-low'])
+eq('the manic span runs from when you went quiet to the end of its last day',
+  [mixed.episodes[0].start, mixed.episodes[0].end],
+  [new Date(at(2026, 3, 9, 14)).toISOString(), new Date(at(2026, 3, 11, 0)).toISOString()])
+eq('and the low one from the start of its first day to now',
+  [mixed.episodes[1].start, mixed.episodes[1].end],
+  [new Date(at(2026, 3, 12, 0)).toISOString(), new Date(at(2026, 3, 13, 9)).toISOString()])
+eq('a day left out of both is left out of both',
+  mixed.episodes.some(e => Date.parse(e.start) <= at(2026, 3, 11, 12) && Date.parse(e.end) > at(2026, 3, 11, 12)), false)
+
+const split = A.buildCatchUp(week, { conditions: [{ effectId: 'fx-manic', days: ['2026-03-09', '2026-03-11', '2026-03-12'] }] })
+eq('a condition that came and went is two spans, not one long lie', split.episodes.length, 2)
+eq('the gap between them is the day it lifted',
+  [split.episodes[0].end, split.episodes[1].start],
+  [new Date(at(2026, 3, 10, 0)).toISOString(), new Date(at(2026, 3, 11, 0)).toISOString()])
+eq('a condition given no days at all covers the whole stretch',
+  A.buildCatchUp(week, { conditions: [{ effectId: 'fx-low' }] }).episodes.map(e => [e.start, e.end]),
+  [[new Date(at(2026, 3, 9, 14)).toISOString(), new Date(at(2026, 3, 13, 9)).toISOString()]])
+eq('naming no conditions writes no episodes', A.buildCatchUp(week, { mood: 3 }).episodes.length, 0)
+eq('…while the mood still covers every day', A.buildCatchUp(week, { mood: 3 }).checkins.length, 5)
+
 console.log('\n— a rule read back from storage is never trusted blindly —')
 eq('nonsense falls back to the defaults',
   A.normalizeRule({ hours: 'lots', sleepStart: 'bedtime' }).hours, A.DEFAULT_ABSENCE_RULE.hours)

@@ -1726,7 +1726,7 @@ textarea { resize: vertical; min-height: 160px; line-height: 1.6; }
 /* Late in the day the blob rides the foot of the rail, so the bubble stands on
    its shoulders instead of beside it — otherwise the one thing the app most
    wants to say is the one thing hidden behind the bottom nav. */
-.rail-nudge.up { top: auto; bottom: calc(100% + 10px); transform: none; left: 4px; }
+.rail-nudge.up, .rail-blob-flash.up { top: auto; bottom: calc(100% + 10px); transform: none; left: 4px; }
 .rail-nudge.up::before { left: 24px; top: auto; bottom: -6px; margin-top: 0;
   border-left: none; border-bottom: none; border-right: 1px solid var(--border); border-top: none;
   box-shadow: 1px 1px 0 0 var(--border); }
@@ -1750,7 +1750,7 @@ textarea { resize: vertical; min-height: 160px; line-height: 1.6; }
 .rail-gap > div { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .rail-gap b { font-size: 13px; color: var(--forest); }
 .rail-gap span { font-size: 11px; color: var(--muted); font-weight: 600; }
-.rail-gap-hint { font-size: 11px; line-height: 1.45; color: var(--muted); margin-bottom: 14px; }
+.rail-gap-hint { font-size: 11px; line-height: 1.45; color: var(--muted); margin-top: 10px; text-align: center; }
 .rail-gap-ask { font-size: 12px; font-weight: 700; color: var(--forest); margin: 16px 0 9px; }
 .rail-gap-ask span { font-size: 10.5px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; margin-left: 5px; }
 .rail-gap-skip { display: block; width: 100%; margin-top: 10px; border: none; background: none; color: var(--muted);
@@ -1777,3 +1777,31 @@ textarea { resize: vertical; min-height: 160px; line-height: 1.6; }
   padding: 9px 12px; font-size: 11.5px; font-weight: 600; line-height: 1.45; }
 .wl-rule-preview.warn { background: #FBF0E4; color: #A8703A; }
 .wl-rule-foot { font-size: 11.5px; color: var(--muted); line-height: 1.5; margin-top: 12px; }
+
+/* ── The catch-up sheet's condition picker ───────────────────────────
+   Chips, not a tile grid: after a hard stretch the sheet has to be answerable
+   in a few taps, and the list has to be able to learn your words — "manic",
+   "numb" — the moment you need them rather than a settings screen later. */
+.rail-conds { display: flex; flex-wrap: wrap; gap: 6px; }
+.rail-cond { display: inline-flex; align-items: center; gap: 7px; border: 1.5px solid var(--border); background: #fff;
+  border-radius: 999px; padding: 7px 13px; font-size: 12.5px; font-weight: 600; color: var(--text);
+  cursor: pointer; font-family: inherit; }
+.rail-cond.on { font-weight: 700; }
+.rail-cond-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; box-shadow: 0 0 0 1px rgba(0,0,0,.06); }
+.rail-cond-new { border-style: dashed; color: var(--teal); font-weight: 700; }
+.rail-cond-adder { display: flex; align-items: center; gap: 8px; margin-top: 9px; }
+/* Which days each condition was actually there for — the one piece of
+   time-shaping the sheet asks for, as taps rather than clock fields. */
+.rail-when-days { display: flex; flex-direction: column; gap: 7px; margin-top: 12px;
+  border: 1.5px solid var(--border); border-radius: 16px; background: #fff; padding: 10px 12px; }
+.rail-whenday { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.rail-whenday-name { display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px; font-weight: 700; color: var(--forest); }
+.rail-whenday-days { display: inline-flex; gap: 5px; margin-left: auto; flex-wrap: wrap; }
+.rail-whenday-all { margin-left: auto; font-size: 11px; color: var(--muted); font-weight: 600; }
+.rail-day { border: 1.5px solid var(--border); background: #fff; border-radius: 999px; padding: 4px 10px;
+  font-size: 11px; font-weight: 700; color: var(--muted); cursor: pointer; font-family: inherit; }
+.rail-day.on { color: var(--forest); }
+/* Mood is the quieter half of this sheet, so its clouds sit smaller here. */
+.rail-moods.sm { margin-top: 2px; }
+.rail-moods.sm .rail-moodpick span { font-size: 10px; }
+.rail-gap-ask.soft { color: var(--muted); font-weight: 600; margin-top: 18px; }

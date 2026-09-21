@@ -99,13 +99,32 @@ const spanText = (await page.locator('.rail-gap').innerText()).replace(/\s+/g, '
 ok('the sheet states the span before writing anything', /→ now/.test(spanText), spanText)
 ok('and says how many days it covers', /3 days/.test(spanText), spanText)
 
-// Rough, carrying a low mood through it, felt at a 7.
+// The words for what you were carrying are yours, and they have to be usable
+// the moment you need them — not after a detour through a settings screen.
+await page.getByRole('button', { name: /name one/ }).click()
+await page.locator('.rail-cond-adder input').fill('Depressed')
+await page.keyboard.press('Enter')
+await page.waitForTimeout(400)
+const rows = page.locator('.rail-whenday')
+eq('a condition named here is added and picked in one go', await rows.count(), 1)
+ok('with your own word on it', /Depressed/.test(await rows.first().innerText()))
+ok('and it is in the palette for next time',
+  await page.evaluate(() => (JSON.parse(localStorage.getItem('vivian_wellness_effects') || '[]'))
+    .some(f => f.name === 'Depressed')))
+
+// A second condition, narrowed to the days it was actually there — the whole
+// point of the day chips: "depressed all week, anxious only since yesterday".
+await page.getByRole('button', { name: /^Anxious$/ }).click()
+await page.waitForTimeout(300)
+eq('two conditions, each with their own days', await rows.count(), 2)
+const anxiousDays = rows.nth(1).locator('.rail-day')
+eq('a condition starts as the whole stretch', await anxiousDays.evaluateAll(b => b.filter(x => x.className.includes('on')).length), 3)
+await anxiousDays.first().click()
+await page.waitForTimeout(250)
+eq('and a day can be taken off it', await anxiousDays.evaluateAll(b => b.filter(x => x.className.includes('on')).length), 2)
+
 await page.locator('.rail-moodpick').first().click()
 await page.waitForTimeout(250)
-await page.getByRole('button', { name: /Low mood/ }).click()
-await page.waitForTimeout(250)
-await page.locator('.rail-scale-dot').nth(6).click()
-await page.waitForTimeout(150)
 await page.locator('.rail-log').click()
 await page.waitForTimeout(900)
 
@@ -113,6 +132,7 @@ const stored = await page.evaluate(() => ({
   checkins: JSON.parse(localStorage.getItem('vivian_wellness_checkins') || '[]'),
   episodes: JSON.parse(localStorage.getItem('vivian_wellness_episodes') || '[]'),
   presence: JSON.parse(localStorage.getItem('bloom_presence') || '{}'),
+  effects: JSON.parse(localStorage.getItem('vivian_wellness_effects') || '[]'),
 }))
 
 const days = [...new Set(stored.checkins.map(c => c.date))].sort()
@@ -125,11 +145,21 @@ ok('each covers a stretch of its own day rather than an instant',
 eq('all of them carry the one mood you gave', [...new Set(stored.checkins.map(c => c.mood))], [1])
 ok('and are marked as filled in after the fact', stored.checkins.every(c => c.via === 'absence'))
 
-eq('the condition is one span, not three fragments', stored.episodes.length, 1)
-eq('rated at what you said, and already closed', [stored.episodes[0].intensity, !!stored.episodes[0].end], [7, true])
-ok('running from when you went quiet',
-  Math.abs(Date.parse(stored.episodes[0].start) - awaySince.getTime()) < 120000,
-  stored.episodes[0].start)
+const named = stored.effects.find(f => f.name === 'Depressed')
+const mine = stored.episodes.find(e => e.effectId === named.id)
+const anxious = stored.episodes.find(e => e.effectId === 'fx-anxious')
+eq('one span per condition, not one per day', stored.episodes.length, 2)
+ok('the one you named runs the whole stretch',
+  Math.abs(Date.parse(mine.start) - awaySince.getTime()) < 120000, mine.start)
+ok('while the narrowed one starts a day later, at that day’s own beginning',
+  Date.parse(anxious.start) > Date.parse(mine.start) && new Date(anxious.start).getHours() === 0,
+  anxious.start)
+ok('both are closed, not left running', !!mine.end && !!anxious.end)
+
+// The point of the whole feature is the feeling that those days are down.
+const flash = (await page.locator('.rail-blob-flash').innerText()).replace(/\s+/g, ' ').trim()
+ok('the blob says what it wrote down', /Written down: depressed and anxious/i.test(flash), flash)
+ok('and hands the day back', /today can start from here/i.test(flash), flash)
 
 console.log('\n— and never asked twice —')
 ok('the absence is remembered as handled', !!stored.presence.handled, JSON.stringify(stored.presence))

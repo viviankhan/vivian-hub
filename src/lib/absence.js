@@ -185,15 +185,21 @@ export function absenceLength(gap, rule) {
 }
 
 // ── Writing the absence down ───────────────────────────────────
-// Turn an answered catch-up into the entries the trackers already understand:
-// one mood check-in per calendar day the stretch touched (each covering that
-// day's own hours, so the rail draws it as a trail and every chart counts it),
-// plus one continuous episode per condition you say you were carrying — a
-// depressive or manic stretch is one span, not a row of daily fragments.
+// Turn an answered catch-up into the entries the trackers already understand.
+//
+// A mood becomes one check-in per calendar day the stretch touched, each
+// covering that day's own hours — so the rail draws it as a trail and every
+// chart, streak and insight counts it as if it had been logged at the time.
+//
+// A condition becomes as few episodes as it honestly can. Given the days it was
+// actually present, its runs of consecutive days are each written as ONE span:
+// "manic Saturday and Sunday, depressed Monday" is two spans, not five daily
+// fragments, because that is what those days were. A condition given no days is
+// taken to have run the whole stretch.
 //
 // Returns descriptors, not stored rows: the caller mints episodes through
 // wellness.addEpisode so ids and open-span rules stay in one place.
-export function buildCatchUp(gap, { mood = null, emotions = [], note = '', conditionIds = [], intensity = null, photos = [], now = Date.now() } = {}) {
+export function buildCatchUp(gap, { mood = null, emotions = [], note = '', conditions = [], conditionIds = [], intensity = null, photos = [], now = Date.now() } = {}) {
   const days = (gap && gap.days && gap.days.length) ? gap.days : splitByDay(gap.startMs, gap.endMs)
   const text = (note || '').trim()
   const checkins = mood
@@ -212,13 +218,37 @@ export function buildCatchUp(gap, { mood = null, emotions = [], note = '', condi
         via: 'absence',
       }))
     : []
-  const episodes = (conditionIds || []).map(effectId => ({
-    effectId,
-    start: new Date(gap.startMs).toISOString(),
-    end: new Date(gap.endMs).toISOString(),
-    note: text,
-    intensity: intensity || null,
-    via: 'absence',
-  }))
+  // `conditionIds` is the shorthand for "this one ran the whole stretch".
+  const picked = [
+    ...(conditions || []).filter(c => c && c.effectId),
+    ...(conditionIds || []).map(effectId => ({ effectId, days: null })),
+  ]
+  const episodes = []
+  for (const c of picked) {
+    for (const run of dayRuns(days, c.days)) {
+      episodes.push({
+        effectId: c.effectId,
+        start: new Date(run[0].startMs).toISOString(),
+        end: new Date(run[run.length - 1].endMs).toISOString(),
+        note: text,
+        intensity: (c.intensity ?? intensity) || null,
+        via: 'absence',
+      })
+    }
+  }
   return { checkins, episodes }
+}
+// The day segments a condition covers, split into runs of consecutive days.
+// No selection at all means the whole stretch, in one run.
+function dayRuns(days, keys) {
+  if (!keys || !keys.length) return days.length ? [days] : []
+  const want = new Set(keys)
+  const runs = []
+  let run = null
+  for (const seg of days) {
+    if (!want.has(seg.key)) { run = null; continue }
+    if (!run) { run = []; runs.push(run) }
+    run.push(seg)
+  }
+  return runs
 }
