@@ -63,7 +63,7 @@ const errors = []
 // rather than an evaluate-then-reload, because the app writes "I'm here" the
 // moment it boots: any presence planted after a first load is simply the
 // present again, and the absence under test never existed.
-const arriveAfter = async (hoursAgo, rules = null) => {
+const arriveAfter = async (hoursAgo, rules = null, cs = COMMITMENTS) => {
   const ctx = await browser.newContext({ viewport: { width: 430, height: 940 } })
   await ctx.addInitScript(({ seen, cs, rules }) => {
     if (localStorage.getItem('__seeded')) return      // survive a reload untouched
@@ -76,7 +76,7 @@ const arriveAfter = async (hoursAgo, rules = null) => {
     localStorage.setItem('vivian_wellness_presence', JSON.stringify(rec))
     localStorage.setItem('vivian_commitments', JSON.stringify(cs))
     if (rules) localStorage.setItem('vivian_wellness_rules', JSON.stringify(rules))
-  }, { seen: Date.now() - hoursAgo * 3600 * 1000, cs: COMMITMENTS, rules })
+  }, { seen: Date.now() - hoursAgo * 3600 * 1000, cs, rules })
   const page = await ctx.newPage()
   page.on('pageerror', e => errors.push(String(e)))
   page.on('console', m => { if (m.type() === 'error' && !/ERR_|Failed to load resource/i.test(m.text())) errors.push('console: ' + m.text()) })
@@ -217,6 +217,63 @@ await card.getByRole('button', { name: 'Turn off' }).click()
 await rulePage.waitForTimeout(600)
 eq('and turning it off is saved too',
   await rulePage.evaluate(() => JSON.parse(localStorage.getItem('vivian_wellness_rules') || 'null').enabled), false)
+
+// The blob can only notice the absences it sees. A streak you came back from
+// before it counted — or one on a device this app wasn't on — still has to be
+// loggable, which is what the third bubble on the blob's crown is for.
+console.log('\n— logging a streak nobody asked about —')
+const past = (n) => { const d = new Date(); d.setDate(d.getDate() - n); return keyOf(d) }
+const hand = await arriveAfter(1, null, [
+  { id: 'h0', text: 'Stats lecture', date: dayKey, cat: 'school', done: false, time: '10:00', durationMins: 90 },
+  { id: 'h1', text: 'Email advisor', date: past(1), cat: 'school', done: false, time: '09:00', durationMins: 30 },
+  { id: 'h2', text: 'Groceries', date: past(1), cat: 'home', done: false, time: '17:00', durationMins: 45 },
+  { id: 'h3', text: 'Lab write-up', date: past(2), cat: 'school', done: false, time: '14:00', durationMins: 60 },
+  { id: 'h4', text: 'Call mum', date: past(2), cat: 'home', done: true, time: '19:00', durationMins: 20 },
+])
+await hand.page.waitForTimeout(1200)
+eq('an hour away raises no question of its own', await hand.page.locator('.rail-nudge').count(), 0)
+await hand.page.click('.rail-blob-btn')
+await hand.page.waitForTimeout(400)
+await hand.page.click('.rail-bub-streak')
+await hand.page.waitForSelector('.rail-gap', { timeout: 5000 })
+ok('the sheet opens asking how far back it goes', await hand.page.locator('.rail-backs').count() > 0)
+eq('it starts on three days', (await hand.page.locator('.rail-gap').innerText()).includes('3 days'), true)
+await hand.page.getByRole('button', { name: 'a week', exact: true }).click()
+await hand.page.waitForTimeout(300)
+eq('and reaches back as far as you say', (await hand.page.locator('.rail-gap').innerText()).includes('7 days'), true)
+await hand.page.getByRole('button', { name: '3 days', exact: true }).click()
+await hand.page.waitForTimeout(300)
+
+// The pile those days are still holding. Offered, never assumed — and today's
+// own task is not part of it.
+const letgo = hand.page.locator('.rail-letgo')
+ok('it offers to let go of what was waiting', await letgo.count() > 0)
+ok('counting only the unfinished, and not today’s',
+  /3 things/.test(await letgo.innerText()), (await letgo.innerText()).replace(/\n/g, ' '))
+
+await hand.page.getByRole('button', { name: /name one/ }).click()
+await hand.page.locator('.rail-cond-adder input').fill('Depressed')
+await hand.page.keyboard.press('Enter')
+await hand.page.waitForTimeout(300)
+await hand.page.getByRole('button', { name: /What set it off/ }).click()
+await hand.page.waitForTimeout(200)
+await hand.page.locator('.rail-note').fill('Three nights of no sleep.')
+await letgo.click()
+await hand.page.waitForTimeout(200)
+await hand.page.locator('.rail-log').click()
+await hand.page.waitForTimeout(1200)
+
+const after = await hand.page.evaluate(() => ({
+  left: JSON.parse(localStorage.getItem('vivian_commitments') || '[]').map(c => c.text).sort(),
+  episodes: JSON.parse(localStorage.getItem('vivian_wellness_episodes') || '[]'),
+}))
+eq('what was waiting on those days is gone', after.left, ['Call mum', 'Stats lecture'])
+eq('the streak itself is one span', after.episodes.length, 1)
+eq('carrying the answer to what set it off', after.episodes[0].note, 'Three nights of no sleep.')
+const handFlash = (await hand.page.locator('.rail-blob-flash').innerText()).replace(/\s+/g, ' ').trim()
+ok('and the blob names it as a streak', /a depressed streak across 3 days/i.test(handFlash), handFlash)
+ok('…and says what it swept up', /3 things let go of/i.test(handFlash), handFlash)
+await hand.ctx.close()
 
 eq('no uncaught errors', errors, [])
 

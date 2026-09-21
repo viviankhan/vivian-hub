@@ -249,7 +249,7 @@ function ShareSheet({ game, tracked, stage, onClose }) {
           <div className="wl-share-emoji"><Companion level={lv.level} size={104} /></div>
           <div className="wl-share-name serif">Level {lv.level} · {stage.name}</div>
           <div className="wl-share-stats">
-            <div><b><Glyph id="flame" size={16} /> {liveStreak(game)}</b><span>day streak</span></div>
+            <div><b><Glyph id="flame" size={16} /> {liveStreak(game)}</b><span>days in a row</span></div>
             <div><b><Glyph id="flower" size={16} /> {game?.petals || 0}</b><span>petals</span></div>
             <div><b><Glyph id="chart" size={16} /> {tracked}</b><span>days tracked</span></div>
           </div>
@@ -676,7 +676,11 @@ export default function BloomWellness({
             </button>
           </div>
           <div className="wl-chips">
-            <span className="wl-stat"><Glyph id="flame" size={15} /> {streak}<i>streak</i></span>
+            {/* "Streak" belongs to the condition stretches now (a depressed
+                streak, a manic one — see lib/absence.js); the companion's
+                consecutive check-in days take the plainer name so one screen
+                never uses the word for two different things. */}
+            <span className="wl-stat"><Glyph id="flame" size={15} /> {streak}<i>in a row</i></span>
             <span className="wl-stat"><Glyph id="flower" size={15} /> {game?.petals || 0}<i>petals</i></span>
             <span className="wl-stat"><Glyph id="calendar" size={15} /> {trackedDays}<i>days</i></span>
           </div>

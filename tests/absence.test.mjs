@@ -138,6 +138,26 @@ eq('a condition given no days at all covers the whole stretch',
 eq('naming no conditions writes no episodes', A.buildCatchUp(week, { mood: 3 }).episodes.length, 0)
 eq('…while the mood still covers every day', A.buildCatchUp(week, { mood: 3 }).checkins.length, 5)
 
+console.log('\n— a stretch logged on purpose —')
+const back = A.daysAgoStart(2, at(2026, 3, 12, 15))
+eq('“3 days” starts at local midnight two days back', new Date(back).getHours(), 0)
+eq('…on the right day', new Date(back).getDate(), 10)
+const hand = A.makeStretch(back, at(2026, 3, 12, 15), RULE)
+eq('a hand-logged stretch covers the same days a found one would',
+  hand.days.map(d => d.key), ['2026-03-10', '2026-03-11', '2026-03-12'])
+eq('and is shaped like one, so everything downstream treats them alike',
+  [typeof hand.id, hand.manual, hand.clipped], ['string', true, false])
+eq('its waking hours are measured by the same rule', hand.wakingMins, A.wakingMinutes(back, at(2026, 3, 12, 15), RULE))
+eq('a backwards span is taken the right way round',
+  A.makeStretch(at(2026, 3, 12), at(2026, 3, 10)).days.length > 0, true)
+
+console.log('\n— calling it what it is —')
+eq('one condition over days is a streak', A.streakPhrase(['Depressed'], 4), 'a depressed streak across 4 days')
+eq('one condition over a single day drops the count', A.streakPhrase(['Manic'], 1), 'a manic streak')
+eq('several are just named', A.streakPhrase(['Depressed', 'Anxious'], 3), 'depressed and anxious across 3 days')
+eq('three read as a list', A.streakPhrase(['Low', 'Anxious', 'Foggy'], 2), 'low, anxious and foggy across 2 days')
+eq('none says nothing at all', A.streakPhrase([], 3), '')
+
 console.log('\n— a rule read back from storage is never trusted blindly —')
 eq('nonsense falls back to the defaults',
   A.normalizeRule({ hours: 'lots', sleepStart: 'bedtime' }).hours, A.DEFAULT_ABSENCE_RULE.hours)

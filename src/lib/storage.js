@@ -43,6 +43,25 @@ async function lsGet(key) {
 async function lsSet(key, value) {
   try { localStorage.setItem('vivian_'+key, JSON.stringify(value)) } catch {}
 }
+// Read-modify-write in ONE synchronous turn.
+//
+// `const all = await lsGet(k); await lsSet(k, f(all))` looks equivalent and
+// isn't: the await between the read and the write yields, so two deletes fired
+// in the same tick both read the original array and the second write puts the
+// first one's row back. Clearing several tasks at once — a block emptied for a
+// holiday, the days let go of after a streak away — lost all but the last.
+// localStorage is synchronous, so doing both halves without yielding removes
+// the window entirely.
+async function lsMutate(key, fn, fallback) {
+  let cur = fallback
+  try {
+    const raw = localStorage.getItem('vivian_'+key)
+    if (raw) cur = JSON.parse(raw)
+  } catch { cur = fallback }
+  const next = fn(cur ?? fallback)
+  try { localStorage.setItem('vivian_'+key, JSON.stringify(next)) } catch {}
+  return next
+}
 
 // ── Value fingerprinting ────────────────────────────────────────
 // A fast, low-collision 53-bit string hash (cyrb53). We fingerprint a value's
@@ -1181,8 +1200,7 @@ export async function addCommitment(c) {
     await mirrorUpsert('commitments', created, 'id', true)
     return created
   }
-  const all = (await lsGet('commitments')) ?? []
-  await lsSet('commitments', [...all, c])
+  await lsMutate('commitments', all => [...all, c], [])
   return c
 }
 export async function updateCommitment(id, changes) {
@@ -1195,9 +1213,7 @@ export async function updateCommitment(id, changes) {
     if (!queued) await mirrorUpsert('commitments', updated)
     return updated
   }
-  const all = (await lsGet('commitments')) ?? []
-  const next = all.map(c => c.id===id ? { ...c, ...changes } : c)
-  await lsSet('commitments', next)
+  const next = await lsMutate('commitments', all => all.map(c => c.id===id ? { ...c, ...changes } : c), [])
   return next.find(c => c.id===id)
 }
 export async function deleteCommitment(id) {
@@ -1209,8 +1225,7 @@ export async function deleteCommitment(id) {
     await mirrorRemove('commitments', id)
     return
   }
-  const all = (await lsGet('commitments')) ?? []
-  await lsSet('commitments', all.filter(c => c.id !== id))
+  await lsMutate('commitments', all => all.filter(c => c.id !== id), [])
 }
 
 // ── Vacations / time-off blocks ──────────────────────────────────

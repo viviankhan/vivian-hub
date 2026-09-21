@@ -1498,10 +1498,13 @@ textarea { resize: vertical; min-height: 160px; line-height: 1.6; }
 .rail-bub { position: absolute; margin-left: -28px; margin-top: -28px; border: none; cursor: pointer; border-radius: 50%;
   display: grid; place-items: center; background: #fff; box-shadow: 0 6px 20px rgba(40,60,90,.3);
   animation: rail-pop .28s cubic-bezier(.34,1.56,.64,1) both; }
-.rail-bub-cloud { width: 58px; height: 58px; left: 50px; top: -36px; }
-.rail-bub-lotus { width: 54px; height: 54px; left: 50px; top: 36px; color: var(--teal); animation-delay: .05s; }
+/* Three bubbles on an arc around the blob, far enough apart not to touch:
+   a cloud for a moment, a lotus for a condition, a clock for a whole streak
+   of days. */
+.rail-bub-cloud { width: 58px; height: 58px; left: 58px; top: -54px; }
+.rail-bub-lotus { width: 54px; height: 54px; left: 58px; top: 54px; color: var(--teal); animation-delay: .05s; }
 @keyframes rail-pop { from { opacity: 0; transform: translate(-16px, 4px) scale(.4); } to { opacity: 1; transform: none; } }
-.rail-say { position: absolute; left: 104px; top: -30px; margin: 0; width: min(210px, 52vw); background: #fff; border-radius: 14px;
+.rail-say { position: absolute; left: 146px; top: -30px; margin: 0; width: min(210px, 52vw); background: #fff; border-radius: 14px;
   padding: 10px 13px; font-size: 12.5px; line-height: 1.45; color: var(--text); box-shadow: 0 8px 26px rgba(40,60,90,.26);
   animation: rail-pop .3s ease both .1s; }
 .rail-say::before { content: ''; position: absolute; left: -6px; top: 30px; width: 11px; height: 11px; background: #fff; transform: rotate(45deg); }
@@ -1805,3 +1808,26 @@ textarea { resize: vertical; min-height: 160px; line-height: 1.6; }
 .rail-moods.sm { margin-top: 2px; }
 .rail-moods.sm .rail-moodpick span { font-size: 10px; }
 .rail-gap-ask.soft { color: var(--muted); font-weight: 600; margin-top: 18px; }
+
+/* A third bubble on the blob's crown: a streak of days, logged on purpose. */
+.rail-bub-streak { width: 52px; height: 52px; left: 104px; top: 0; color: var(--teal); animation-delay: .1s; }
+/* The one bubble that gets a word: a clock could mean several things, and this
+   is the way in to logging a stretch you already lived through. */
+.rail-bub-tag { position: absolute; bottom: -12px; left: 50%; transform: translateX(-50%);
+  background: var(--forest); color: var(--green-light); border-radius: 999px; padding: 2px 7px;
+  font-size: 8.5px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; line-height: 1.5; }
+/* How far back a hand-logged streak reaches. */
+.rail-backs { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; margin-bottom: 12px; }
+.rail-back { border: 1.5px solid var(--border); background: #fff; border-radius: 999px; padding: 6px 12px;
+  font-size: 12px; font-weight: 700; color: var(--muted); cursor: pointer; font-family: inherit; }
+.rail-back.on { border-color: var(--teal); background: var(--green-light); color: var(--teal); }
+/* The pile those days are still holding — offered, never assumed, and never
+   dressed up as having got it all done. */
+.rail-letgo { display: flex; align-items: flex-start; gap: 10px; width: 100%; text-align: left; margin-top: 14px;
+  border: 1.5px solid var(--border); border-radius: 16px; background: #fff; padding: 11px 13px;
+  font-size: 12.5px; font-weight: 600; color: var(--text); cursor: pointer; font-family: inherit; }
+.rail-letgo.on { border-color: var(--teal); background: var(--green-light); }
+.rail-letgo-box { flex-shrink: 0; width: 19px; height: 19px; border-radius: 6px; border: 1.5px solid var(--border);
+  background: #fff; display: grid; place-items: center; font-size: 11px; font-weight: 800; color: var(--teal); margin-top: 1px; }
+.rail-letgo.on .rail-letgo-box { border-color: var(--teal); }
+.rail-letgo i { display: block; font-style: normal; font-size: 11px; font-weight: 500; color: var(--muted); margin-top: 3px; line-height: 1.4; }

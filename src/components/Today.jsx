@@ -1409,6 +1409,61 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
     ? !!(todos[id]||weekState[id])
     : !!(todos[dateKey+'_'+id]||weekState[dateKey+'_'+id])
 
+  // ── The pile waiting after a stretch away ────────────────────
+  // Coming back from a depressive or manic streak, the days you were gone are
+  // still holding everything you didn't do, and the first thing the app shows
+  // you is a column of OVERDUE. That is the opposite of a way back in. So the
+  // catch-up sheet can offer to let those days go — and these two are what it
+  // offers from: what is actually still sitting there, and the clearing of it.
+  //
+  // Today is deliberately excluded. Today is the day you're getting back into;
+  // its tasks are yours to do, not something to sweep up.
+  const dayDeletions = (key) => { try { return JSON.parse(localStorage.getItem('vivian_deleted_' + key) || '[]') } catch { return [] } }
+  const unfinishedOn = (keys) => {
+    const out = []
+    for (const key of keys || []) {
+      if (!key || key >= today) continue
+      const gone = dayDeletions(key)
+      for (const c of commitments || []) {
+        if (c.date !== key || c.block || gone.includes(c.id)) continue
+        if (todos[c.id] || weekState[c.id] || c.done) continue
+        out.push({ key, id: c.id, isCommitment: true, text: c.text || 'task' })
+      }
+      for (const o of recurringOccurrencesForDate(recurringTasks, key, recurringExceptions)) {
+        if (o.block || gone.includes(o.id)) continue
+        if (todos[key + '_' + o.id] || weekState[key + '_' + o.id]) continue
+        out.push({ key, id: o.recurringId || o.id, localId: o.id, isRecurring: true, text: o.title || o.text || 'task' })
+      }
+    }
+    return out
+  }
+  // Let them go. A one-off is deleted (each registers its own undo, exactly as
+  // clearing a block's tasks does), a repeating one is skipped for that date
+  // only — its template and every other day are untouched — and a legacy local
+  // one joins that day's deleted list. Nothing is marked "done": these were not
+  // done, and saying so would be a lie told to make a number look better.
+  const releaseDays = (keys) => {
+    const items = unfinishedOn(keys)
+    if (!items.length) return 0
+    const localByDay = {}
+    for (const t of items) {
+      if (t.isCommitment) deleteCommitment && deleteCommitment(t.id)
+      else if (t.isRecurring && skipRecurringOccurrence) skipRecurringOccurrence(t.id, t.key)
+      else (localByDay[t.key] = localByDay[t.key] || []).push(t.localId || t.id)
+    }
+    for (const [key, ids] of Object.entries(localByDay)) {
+      const next = [...dayDeletions(key), ...ids]
+      try { localStorage.setItem('vivian_deleted_' + key, JSON.stringify(next)) } catch {}
+      if (key === viewDate) setDeleted(next)
+    }
+    if (appendLog) appendLog({
+      date: today, dateLabel: dayLabel(today),
+      label: `Let go of ${items.length} thing${items.length > 1 ? 's' : ''} from the days away`,
+      tag: 'deleted', ts: new Date().toISOString(),
+    })
+    return items.length
+  }
+
   // Whether a stored check/uncheck record exists (vs. no record at all). A
   // routine task with no record auto-completes once its time has passed; an
   // explicit tap (check or uncheck) always wins over that default.
@@ -2361,6 +2416,7 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
           game={wlGame} persistGame={persistWlGame}
           emotionPrefs={wlEmotions} persistEmotionPrefs={persistWlEmotions}
           rules={wlRules} absence={wlAbsence} onResolveAbsence={onResolveAbsence}
+          countWaiting={(keys) => unfinishedOn(keys).length} onReleaseDays={releaseDays}
           dateKey={viewDate} isToday={isToday} />
       )}
       {/* Structured-style header: big date + week strip + progress bar */}

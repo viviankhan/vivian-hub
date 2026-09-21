@@ -154,6 +154,45 @@ export function evaluateAbsence({ lastSeenMs, nowMs = Date.now(), rule, handledI
   }
 }
 
+// ── A stretch you're logging on purpose ────────────────────────
+// The blob notices the absences it can, but plenty go unrecorded: a stretch
+// you came back from before it counted, one on a device this app wasn't on, or
+// a week you only recognise as a week once it's over. So the same sheet can be
+// opened by hand, with the span chosen rather than measured. Shaped exactly
+// like a found absence so everything downstream treats them identically.
+export function makeStretch(startMs, endMs = Date.now(), rule) {
+  // Ordered, not assumed: a span handed over the wrong way round is the same
+  // span, and silently keeping it backwards would make it cover no days at all.
+  const from = Math.min(startMs, endMs), to = Math.max(startMs, endMs)
+  return {
+    id: absenceId(from),
+    startMs: from,
+    endMs: to,
+    awayMins: Math.round((to - from) / 60000),
+    wakingMins: wakingMinutes(from, to, rule),
+    clipped: false,
+    manual: true,
+    days: splitByDay(from, to),
+  }
+}
+// How far back a hand-logged stretch can be said to start, in days back from
+// this morning. 0 is "it started today".
+export const STRETCH_CHOICES = [
+  { days: 0, label: 'today' },
+  { days: 1, label: 'yesterday' },
+  { days: 2, label: '3 days' },
+  { days: 4, label: '5 days' },
+  { days: 6, label: 'a week' },
+  { days: 13, label: '2 weeks' },
+]
+// Local midnight `back` days ago — where a hand-logged stretch begins.
+export function daysAgoStart(back, now = Date.now()) {
+  const d = new Date(now)
+  d.setHours(0, 0, 0, 0)
+  d.setDate(d.getDate() - Math.max(0, back))
+  return d.getTime()
+}
+
 // ── Saying it out loud ─────────────────────────────────────────
 const clock = (ms) => { try { return new Date(ms).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) } catch { return '' } }
 // "yesterday 9:40 PM" / "Thursday 2:10 PM" / "Sep 3, 2:10 PM" — how far back a
@@ -182,6 +221,19 @@ export function absenceLength(gap, rule) {
   if (!gap) return ''
   const r = normalizeRule(rule)
   return r.skipSleep ? `${fmtDuration(gap.wakingMins)} awake` : fmtDuration(gap.awayMins)
+}
+
+// A stretch of days spent under one condition has a name, and the name matters:
+// "a depressed streak" is a thing that happened to you and ended, which is a
+// kinder and truer shape than a scatter of bad days. Used wherever the app
+// reads a logged stretch back.
+export function streakPhrase(names, dayCount) {
+  const list = (names || []).filter(Boolean)
+  if (!list.length) return ''
+  const over = dayCount > 1 ? ` across ${dayCount} days` : ''
+  if (list.length === 1) return `a ${list[0].toLowerCase()} streak${over}`
+  const lc = list.map(n => n.toLowerCase())
+  return `${lc.slice(0, -1).join(', ')} and ${lc[lc.length - 1]}${over}`
 }
 
 // ── Writing the absence down ───────────────────────────────────

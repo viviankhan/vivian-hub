@@ -51,6 +51,7 @@ import TimeField from './TimeField.jsx'
 import { savePhotos, deletePhoto, photoIds } from '../lib/photos.js'
 import {
   DEFAULT_ABSENCE_RULE, absenceLine, absenceLength, whenPhrase, buildCatchUp,
+  makeStretch, daysAgoStart, STRETCH_CHOICES, streakPhrase,
 } from '../lib/absence.js'
 import {
   dayKey, keyToDate, MOODS, moodMeta, selectableEmotions, makeEmotion, emotionMeta, EMOTION_PALETTE, checkinsForDay,
@@ -137,18 +138,16 @@ function affirm(activeEffects) {
   return 'However today is going, you showed up for it. That counts. I\'m right here.'
 }
 
-// What the blob says once a stretch has been written down: the names, the
-// length, and then nothing more to do.
-function loggedLine(built, conditions, byId) {
-  const names = (conditions || []).map(c => byId.get(c.effectId)?.name).filter(Boolean)
-  const dayCount = new Set(built.checkins.map(c => c.date)).size || null
-  const over = dayCount ? ` across ${dayCount === 1 ? 'that day' : dayCount + ' days'}` : ''
-  if (names.length) {
-    const list = names.length === 1 ? names[0].toLowerCase()
-      : names.slice(0, -1).map(n => n.toLowerCase()).join(', ') + ' and ' + names[names.length - 1].toLowerCase()
-    return `Written down: ${list}${over}. Those days are logged — today can start from here.`
-  }
-  return `Written down${over}. Those days are logged — today can start from here.`
+// What the blob says once a stretch has been written down: what it was, how
+// long it ran, what was swept off those days, and then nothing more to do.
+function loggedLine({ names, dayCount, released }) {
+  const what = streakPhrase(names, dayCount)
+  const over = dayCount > 1 ? ` across ${dayCount} days` : ''
+  const head = what ? `Written down: ${what}.` : `Written down${over}.`
+  const swept = released > 0
+    ? ` ${released} thing${released > 1 ? 's' : ''} let go of, too.`
+    : ''
+  return `${head}${swept} Those days are logged — today can start from here.`
 }
 
 export default function DayRail({
@@ -156,6 +155,7 @@ export default function DayRail({
   episodes = [], persistEpisodes, game, persistGame,
   emotionPrefs, persistEmotionPrefs,
   rules, absence = null, onResolveAbsence,
+  countWaiting, onReleaseDays,
   dateKey = dayKey(), isToday = true,
 }) {
   // The day this rail represents. Today is interactive (the blob logs new
@@ -415,9 +415,10 @@ export default function DayRail({
   // counts it exactly as if it had been logged at the time. Each condition is
   // written across the days you said it was there, its consecutive days joined
   // into whole spans: what you lived through, not a row of daily fragments.
-  const logCatchUp = ({ mood, note, conditions }) => {
-    if (!absence) return
-    const built = buildCatchUp(absence, { mood, note, conditions })
+  const logCatchUp = ({ stretch, mood, note, conditions, release }) => {
+    const span = stretch || absence
+    if (!span) return
+    const built = buildCatchUp(span, { mood, note, conditions })
     if (built.checkins.length) persistCheckins([...(checkins || []), ...built.checkins])
     if (built.episodes.length) {
       let next = episodes || []
@@ -427,15 +428,22 @@ export default function DayRail({
       persistEpisodes(next)
     }
     // Writing down a hard stretch is tending, and is paid as such — but it
-    // never touches the streak, which only a check-in made on its own day earns.
+    // never touches the check-in streak, which only a check-in made on its own
+    // day earns.
     if (persistGame && game && (built.checkins.length || built.episodes.length)) {
       persistGame(awardPetals(game, 8))
     }
+    // And, if you asked, the days let go of what they were still holding.
+    const released = release ? (onReleaseDays?.(span.days.map(d => d.key)) || 0) : 0
     // Say what was written, in the blob's own voice. The point of the whole
     // feature is the feeling that those days are down — so it is said out loud
     // once, and then the day is yours again.
-    setFlash(loggedLine(built, conditions, byId))
-    onResolveAbsence?.(absence.id)
+    setFlash(loggedLine({
+      names: (conditions || []).map(c => byId.get(c.effectId)?.name).filter(Boolean),
+      dayCount: new Set(built.checkins.map(c => c.date)).size || span.days.length,
+      released,
+    }))
+    if (absence && span === absence) onResolveAbsence?.(absence.id)
     setSheet(null); setMenu(false)
   }
   // "Not this time." The absence is marked answered so it is never raised
@@ -705,6 +713,13 @@ export default function DayRail({
               <button className="rail-bub rail-bub-lotus" onClick={() => setSheet('status')} aria-label="Log a status effect">
                 <Glyph id="flower" size={26} />
               </button>
+              {/* A stretch of days, logged on purpose — the same sheet the blob
+                  opens when it notices you were gone, for every streak it
+                  didn't catch. */}
+              <button className="rail-bub rail-bub-streak" onClick={() => setSheet('catchup')} aria-label="Log a streak of days">
+                <RewindClock size={26} />
+                <span className="rail-bub-tag">streak</span>
+              </button>
               <div className="rail-say">
                 {isToday
                   ? (timed
@@ -721,9 +736,10 @@ export default function DayRail({
           {sheet === 'mood' && <MomentSheet onClose={closeAll} onLog={logMood}
             timed={timed} isToday={isToday} dayName={dayLabel(dateKey)}
             emotions={emotionOptions} onAddEmotion={addEmotion} onDeleteEmotion={deleteEmotion} />}
-          {sheet === 'catchup' && absence && (
+          {sheet === 'catchup' && (
             <CatchUpSheet gap={absence} rule={rules} effects={effectList}
-              onLog={logCatchUp} onSkip={dismissAbsence} onCreateEffect={createEffect} />
+              onLog={logCatchUp} onSkip={absence ? dismissAbsence : closeAll} onCreateEffect={createEffect}
+              countWaiting={countWaiting} />
           )}
           {sheet === 'status' && (
             <StatusSheet effects={effectList} episodes={episodes} byId={byId}
@@ -935,9 +951,9 @@ function MomentSheet({ onClose, onLog, timed, isToday, dayName, emotions: option
   )
 }
 
-// ── Catch-up sheet — the stretch you were away for ──────────────
+// ── Catch-up sheet — a stretch of days, written down ────────────
 // The blob's question, opened out — and deliberately the shortest sheet in the
-// app. Someone surfacing from a depressive or manic stretch is not in the mood
+// app. Someone surfacing from a depressive or manic streak is not in the mood
 // for a form; what they need is the feeling that those days are *down*, and a
 // short path back into today.
 //
@@ -946,10 +962,20 @@ function MomentSheet({ onClose, onLog, timed, isToday, dayName, emotions: option
 // words in it until you put them there. Each one you pick keeps the whole
 // stretch by default and shows the days it covers, so narrowing "manic
 // Saturday and Sunday, low Monday" is two taps rather than two time pickers.
-// Mood is one optional row underneath. Nothing else is asked; intensity, photos
-// and exact hours can all be corrected later by tapping the marker it leaves.
-function CatchUpSheet({ gap, rule, effects, onLog, onSkip, onCreateEffect }) {
-  const days = gap.days || []
+// Mood is one optional row underneath, and so is the only question worth asking
+// in hindsight: looking back, what set it off?
+//
+// The same sheet serves both ways in: opened by the blob it arrives knowing the
+// span it found, and opened by hand it asks how far back the streak goes. And
+// because coming back to a column of OVERDUE is the opposite of a way back in,
+// it offers — never assumes — to let go of what those days were still holding.
+function CatchUpSheet({ gap, rule, effects, onLog, onSkip, onCreateEffect, countWaiting }) {
+  const found = !!gap
+  // Hand-logged: how far back the streak goes, in days. The blob's own answer
+  // is exact, so it is kept exactly.
+  const [back, setBack] = useState(2)
+  const stretch = useMemo(() => (found ? gap : makeStretch(daysAgoStart(back), Date.now(), rule)), [found, gap, back, rule])
+  const days = stretch.days || []
   const multiDay = days.length > 1
   const r = { ...DEFAULT_ABSENCE_RULE, ...(rule || {}) }
   // effectId → the day keys it covered. Everything starts as the whole stretch.
@@ -959,10 +985,18 @@ function CatchUpSheet({ gap, rule, effects, onLog, onSkip, onCreateEffect }) {
   const [noting, setNoting] = useState(false)
   const [naming, setNaming] = useState(false)
   const [draft, setDraft] = useState('')
+  const [release, setRelease] = useState(false)
   const options = (effects || []).filter(f => !f.hidden)
   const order = Object.keys(picked)
 
   const allDays = () => days.map(d => d.key)
+  // Reaching further back changes which days there are to speak for, so every
+  // condition re-takes the whole (new) stretch rather than keeping a selection
+  // that referred to days no longer on the sheet.
+  useEffect(() => {
+    setPicked(p => (Object.keys(p).length ? Object.fromEntries(Object.keys(p).map(id => [id, days.map(d => d.key)])) : p))
+  }, [stretch.startMs])
+
   const toggle = (id) => setPicked(p => {
     if (p[id]) { const { [id]: _drop, ...rest } = p; return rest }
     return { ...p, [id]: allDays() }
@@ -986,19 +1020,44 @@ function CatchUpSheet({ gap, rule, effects, onLog, onSkip, onCreateEffect }) {
     if (fx) setPicked(p => (p[fx.id] ? p : { ...p, [fx.id]: allDays() }))
   }
 
+  // What those days are still holding, if anything. Counted when the span moves
+  // — a longer streak has a bigger pile behind it — and not on every keystroke
+  // in the note below, since counting walks every recurring task's calendar.
+  const countRef = useRef(countWaiting)
+  countRef.current = countWaiting
+  const [waiting, setWaiting] = useState(0)
+  useEffect(() => {
+    let n = 0
+    try { n = countRef.current ? countRef.current(days.map(d => d.key)) : 0 } catch { n = 0 }
+    setWaiting(n)
+    if (!n) setRelease(false)
+  }, [stretch.startMs, stretch.endMs])
+
   const conditions = order.map(id => ({ effectId: id, days: picked[id] }))
   const ready = order.length > 0 || mood != null
 
   return (
     <div className="rail-sheet" onClick={e => e.stopPropagation()}>
-      <div className="rail-sheet-title">Where were you?</div>
+      <div className="rail-sheet-title">{found ? 'Where were you?' : 'Log a streak'}</div>
+
+      {/* How far back it goes. The blob's own answer is a statement; a
+          hand-logged one is a question, asked in days rather than clock time. */}
+      {!found && (
+        <div className="rail-backs">
+          {STRETCH_CHOICES.map(c => (
+            <button key={c.days} className={`rail-back ${back === c.days ? 'on' : ''}`} onClick={() => setBack(c.days)}>
+              {c.label}
+            </button>
+          ))}
+        </div>
+      )}
       {/* The span, said plainly and up front — this writes into the past, so it
           never does so without showing exactly which hours it means. */}
       <div className="rail-gap">
         <RewindClock size={18} />
         <div>
-          <b>{whenPhrase(gap.startMs)} → now</b>
-          <span>{absenceLength(gap, r)}{multiDay ? ` · ${days.length} days` : ''}</span>
+          <b>{found ? whenPhrase(stretch.startMs) : `Since ${whenPhrase(stretch.startMs)}`} → now</b>
+          <span>{found ? absenceLength(stretch, r) : fmtDuration(stretch.awayMins)}{multiDay ? ` · ${days.length} days` : ''}</span>
         </div>
       </div>
 
@@ -1062,12 +1121,31 @@ function CatchUpSheet({ gap, rule, effects, onLog, onSkip, onCreateEffect }) {
         ))}
       </div>
 
+      {/* The one question only hindsight can answer. Asked gently, and never
+          required — sometimes a streak has no reason, and being asked to supply
+          one is its own small cruelty. */}
       {!noting
-        ? <button className="rail-addnote" onClick={() => setNoting(true)}>＋ Add a line about it (optional)</button>
-        : <textarea className="rail-note" rows={2} value={note} onChange={e => setNote(e.target.value)} autoFocus
-            placeholder="Anything you want future-you to know." />}
+        ? <button className="rail-addnote" onClick={() => setNoting(true)}>＋ What set it off? (optional)</button>
+        : <>
+            <div className="rail-gap-ask soft">Looking back, what do you think set it off?</div>
+            <textarea className="rail-note" rows={2} value={note} onChange={e => setNote(e.target.value)} autoFocus
+              placeholder="A bad night, a change of routine, nothing at all…" />
+          </>}
 
-      <button className="rail-log" disabled={!ready} onClick={() => onLog({ mood, note, conditions })}>
+      {/* Those days are still holding everything you didn't do. Offered, never
+          assumed — and it says plainly that nothing is being marked done. */}
+      {waiting > 0 && (
+        <button className={`rail-letgo ${release ? 'on' : ''}`} onClick={() => setRelease(v => !v)}
+          role="switch" aria-checked={release}>
+          <span className="rail-letgo-box">{release ? '✓' : ''}</span>
+          <span>
+            Let go of the {waiting} thing{waiting > 1 ? 's' : ''} still waiting on those days
+            <i>They come off those days — not marked done, just no longer owed.</i>
+          </span>
+        </button>
+      )}
+
+      <button className="rail-log" disabled={!ready} onClick={() => onLog({ stretch, mood, note, conditions, release })}>
         {ready ? 'That’s logged — take me back' : 'Pick anything above'}
       </button>
       <div className="rail-gap-hint">
@@ -1075,11 +1153,12 @@ function CatchUpSheet({ gap, rule, effects, onLog, onSkip, onCreateEffect }) {
         You can fix any of it later by tapping it on the rail.
       </div>
       <button className="rail-gap-skip" onClick={onSkip}>
-        Not this time — don’t ask about these days again
+        {found ? 'Not this time — don’t ask about these days again' : 'Never mind'}
       </button>
     </div>
   )
 }
+
 // "Sat" / "today" — a day named as briefly as a chip allows.
 function shortDay(key) {
   const d = keyToDate(key)
