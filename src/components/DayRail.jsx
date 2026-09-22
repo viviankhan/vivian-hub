@@ -48,6 +48,7 @@ import { EffectIcon } from './IconPicker.jsx'
 import IconSearchSheet from './IconSearchSheet.jsx'
 import { PhotoPicker, PhotoStrip } from './PhotoAttach.jsx'
 import TimeField from './TimeField.jsx'
+import MiniCalendar from './MiniCalendar.jsx'
 import { savePhotos, deletePhoto, photoIds } from '../lib/photos.js'
 import {
   DEFAULT_ABSENCE_RULE, absenceLine, absenceLength, whenPhrase, buildCatchUp,
@@ -458,7 +459,7 @@ export default function DayRail({
       // have to remember to flip off.
       persistEpisodes(addEpisode(episodes, effectId, {
         start: times.start ? atTimeOn(today, times.start) : new Date().toISOString(),
-        end: times.end ? atTimeOn(today, times.end) : null,
+        end: times.end ? atTimeOn(times.endDay || today, times.end) : null,
         note: (note || '').trim(), photos: ids, intensity,
       }))
       setSheet(null); setMenu(false)
@@ -743,7 +744,7 @@ export default function DayRail({
           )}
           {sheet === 'status' && (
             <StatusSheet effects={effectList} episodes={episodes} byId={byId}
-              timed={timed} isToday={isToday} dayName={dayLabel(dateKey)}
+              timed={timed} isToday={isToday} dayName={dayLabel(dateKey)} dateKey={dateKey}
               onAdd={addStatus} onEnd={(id) => endStatus(id, false)} onClose={closeAll}
               onAddEffect={addEffect} onDeleteEffect={deleteEffect} />
           )}
@@ -806,11 +807,30 @@ function IntensityScale({ value, onChange, label = 'How strong is it?' }) {
   )
 }
 
-function WhenRow({ start, end, onStart, onEnd, isToday, dayName, openEndHint, endPlaceholder = 'no end' }) {
+// The day an end lands on, as a chip that opens a month calendar — so a span
+// can end on any date, not just the day on screen.
+function EndDayPick({ value, open, onToggle }) {
+  return (
+    <button type="button" className="rail-when-day rail-when-daypick" onClick={onToggle}
+      aria-expanded={open} title="Which day it ended on — tap to pick a date">{dayLabel(value)}</button>
+  )
+}
+function EndDayCalendar({ value, onPick }) {
+  return <div className="rail-when-cal" onClick={e => e.stopPropagation()}><MiniCalendar value={value} onChange={onPick} /></div>
+}
+
+function WhenRow({ start, end, onStart, onEnd, isToday, dayName, openEndHint, endPlaceholder = 'no end', dayKey: baseDay, endDay, onEndDay }) {
   const [spanning, setSpanning] = useState(!!end)
-  const bad = !!(start && end && hhmmMins(end) <= hhmmMins(start))
-  const mins = start && end && !bad ? hhmmMins(end) - hhmmMins(start) : null
-  const dropEnd = () => { setSpanning(false); onEnd('') }
+  const [cal, setCal] = useState(false)
+  // With an end day of its own, the span is measured across the dates;
+  // otherwise both times sit on the day on screen.
+  const dated = !!(baseDay && endDay)
+  const diff = start && end
+    ? (dated ? Math.round((Date.parse(atTimeOn(endDay, end)) - Date.parse(atTimeOn(baseDay, start))) / 60000) : hhmmMins(end) - hhmmMins(start))
+    : null
+  const bad = diff != null && diff <= 0
+  const mins = diff != null && !bad ? diff : null
+  const dropEnd = () => { setSpanning(false); setCal(false); onEnd(''); onEndDay?.(baseDay) }
   return (
     <div className="rail-when" onClick={e => e.stopPropagation()}>
       <div className="rail-when-head">
@@ -831,13 +851,15 @@ function WhenRow({ start, end, onStart, onEnd, isToday, dayName, openEndHint, en
         </div>
         {spanning ? (
           <div className="rail-when-field">
-            <span>Ended <button type="button" className="rail-when-clear" onClick={dropEnd}>clear</button></span>
+            <span>Ended {onEndDay && endDay && <EndDayPick value={endDay} open={cal} onToggle={() => setCal(c => !c)} />}
+              <button type="button" className="rail-when-clear" onClick={dropEnd}>clear</button></span>
             <TimeField value={end} onChange={onEnd} style={railTimeStyle} placeholder={endPlaceholder} aria-label="Ended" />
           </div>
         ) : (
           <button type="button" className="rail-when-add" onClick={() => setSpanning(true)}>＋ add an end time</button>
         )}
       </div>
+      {spanning && cal && onEndDay && <EndDayCalendar value={endDay} onPick={(k) => { onEndDay(k); setCal(false) }} />}
       {bad
         ? <div className="rail-when-warn">The end needs to come after the start.</div>
         : (spanning ? null : <div className="rail-when-hint">{openEndHint}</div>)}
@@ -1170,12 +1192,13 @@ function shortDay(key) {
 }
 
 // ── Status sheet — pick / describe / end a condition ────────────
-function StatusSheet({ effects, episodes, byId, timed, isToday, dayName, onAdd, onEnd, onClose, onAddEffect, onDeleteEffect }) {
+function StatusSheet({ effects, episodes, byId, timed, isToday, dayName, dateKey, onAdd, onEnd, onClose, onAddEffect, onDeleteEffect }) {
   const [pick, setPick] = useState(null)
   const [note, setNote] = useState('')
   const [photos, setPhotos] = useState([])   // data URLs, only written on start
   const [start, setStart] = useState(nowHHMM)
   const [end, setEnd] = useState('')
+  const [endDay, setEndDay] = useState(dateKey)
   const [intensity, setIntensity] = useState(null)
   const active = effects.filter(f => isActive(episodes, f.id))
   const clash = !!pick && !end && isActive(episodes, pick)
@@ -1273,6 +1296,7 @@ function StatusSheet({ effects, episodes, byId, timed, isToday, dayName, onAdd, 
         <>
           {timed && (
             <WhenRow start={start} end={end} onStart={setStart} onEnd={setEnd}
+              dayKey={dateKey} endDay={endDay} onEndDay={setEndDay}
               isToday={isToday} dayName={dayName} endPlaceholder="still going"
               openEndHint="No end time — this keeps running until you end it." />
           )}
@@ -1281,8 +1305,8 @@ function StatusSheet({ effects, episodes, byId, timed, isToday, dayName, onAdd, 
           <textarea className="rail-note" placeholder={`Describe the ${(byId.get(pick)?.name || '').toLowerCase()} — as much or as little as you like`} value={note} onChange={e => setNote(e.target.value)} rows={2} />
           <PhotoPicker photos={photos} onChange={setPhotos} label="Add a photo" />
           {clash && <div className="rail-when-warn">{byId.get(pick)?.name} is already running. Give this stretch an end time, or end the running one first.</div>}
-          <button className="rail-log" disabled={!whenOk(timed, start, end) || clash}
-            onClick={() => onAdd(pick, note, photos, timed ? { start, end } : null, intensity)}>
+          <button className="rail-log" disabled={(timed && !spanOk(atTimeOn(dateKey, start), end ? atTimeOn(endDay, end) : null)) || clash}
+            onClick={() => onAdd(pick, note, photos, timed ? { start, end, endDay } : null, intensity)}>
             {timed && end ? 'Log this time frame' : 'Start tracking this'}
           </button>
         </>
@@ -1314,6 +1338,7 @@ function DetailPopover({ item, dateKey, isToday, onClose, onRemovePhoto, onSaveT
   // The day the end sits on, when the user has named it by hand. Null means it
   // follows the time typed, by the rule below.
   const [eDay, setEDay] = useState(null)
+  const [cal, setCal] = useState(false)
 
   // Each end is edited on the day it actually sits on. A condition that began
   // last night and is still running opens from today's rail, and re-typing its
@@ -1345,21 +1370,11 @@ function DetailPopover({ item, dateKey, isToday, onClose, onRemovePhoto, onSaveT
     // says which day it is and can move it.
     const stored = endIso ? dayKey(new Date(endIso)) : null
     setEDay(stored && stored !== dayOfEnd(startIso, e) ? stored : null)
+    setCal(false)
     setEditing(true)
   }
 
-  // The days this end could sit on: where the typed time first falls after the
-  // start, the morning after, the day whose rail this is, and today — the
-  // answers a person actually means by "when did it stop" — plus wherever it
-  // already sits, so re-opening an old end never quietly drops its day. Never
-  // before the start, and never on a day that hasn't happened.
-  const storedEndDay = endIso ? dayKey(new Date(endIso)) : null
-  const nowDay = dayKey()
-  const endDayChoices = [...new Set([startDay, shiftKey(startDay, 1), dateKey, nowDay, storedEndDay, endDay].filter(Boolean))]
-    .filter(k => k >= startDay && (k <= nowDay || k === storedEndDay || k === endDay))
-    .sort()
-  const stepEndDay = () => setEDay(endDayChoices[(endDayChoices.indexOf(endDay) + 1) % endDayChoices.length])
-  const clearEnd = () => { setEVal(''); setEDay(null) }
+  const clearEnd = () => { setEVal(''); setEDay(null); setCal(false) }
 
   // The span as prose: a closed one carries its length, an open one says so.
   // Either end names its day when it isn't the day on screen.
@@ -1401,16 +1416,14 @@ function DetailPopover({ item, dateKey, isToday, onClose, onRemovePhoto, onSaveT
           </div>
           <div className="rail-when-field">
             {/* The end always names its day, and says it out loud as something
-                you can change: a span that crossed midnight ended on one of
-                two days, and only the person who lived it knows which. */}
-            <span>Ended {eVal && (endDayChoices.length > 1
-              ? <button type="button" className="rail-when-day rail-when-daypick" onClick={stepEndDay}
-                  title="Which day it ended on — tap to change">{dayLabel(endDay)}</button>
-              : <em className="rail-when-day">{dayLabel(endDay)}</em>)}
+                you can change: tap it for a calendar and pick any date — a
+                condition you forgot to close can have ended days ago. */}
+            <span>Ended {eVal && <EndDayPick value={endDay} open={cal} onToggle={() => setCal(c => !c)} />}
               {eVal && <button type="button" className="rail-when-clear" onClick={clearEnd}>clear</button>}</span>
             <TimeField value={eVal} onChange={setEVal} style={railTimeStyle} aria-label="Ended"
               placeholder={isFx ? 'still going' : 'no end'} />
           </div>
+          {eVal && cal && <EndDayCalendar value={endDay} onPick={(k) => { setEDay(k); setCal(false) }} />}
           {!ok && <div className="rail-when-warn">{sVal ? 'The end needs to come after the start.' : 'A start time is needed.'}</div>}
           <div className="rail-span-btns">
             <button className="rail-span-cancel" onClick={() => setEditing(false)}>Cancel</button>

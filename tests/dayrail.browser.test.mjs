@@ -150,6 +150,7 @@ await page.waitForTimeout(300)
 await openWheel()
 await pickOnWheel(8, 'PM')
 eq('the sheet’s end field takes the wheel too', await endValue(), '8:00 PM')
+eq('and its end names a day you can change', await page.locator('.rail-sheet .rail-when-daypick').count(), 1)
 
 // ── A condition that was never ended follows you into the next day ──────
 // Swollen joints logged at 7:58pm last night and never closed are still with
@@ -209,18 +210,40 @@ const closed = await page.evaluate(() => JSON.parse(localStorage.getItem('vivian
 eq('and it is stored on last night, not tonight', closed.end, yesterdayAt(23, 0))
 eq('with the start still untouched', closed.start, yesterdayAt(19, 58))
 
-// The day is a guess at what you meant, so it has to be correctable — a span
-// really can run a whole day and end at the same hour the next night.
-console.log('\n— and moving that end to another day —')
+// The day is a guess at what you meant, so it has to be correctable — and not
+// just to the next day or two: a condition you forgot to close can have eased
+// off on any date, so the chip opens a calendar.
+console.log('\n— and moving that end to any other day —')
 await page.click('.rail-span-read')
 await page.waitForTimeout(300)
 eq('it re-opens on the day it was saved to', (await dayPick.innerText()).trim().toLowerCase(), 'yesterday')
 await dayPick.click()
 await page.waitForTimeout(200)
-eq('tapping the chip walks it forward a day', (await dayPick.innerText()).trim().toLowerCase(), 'today')
+eq('tapping the chip opens a calendar', await page.locator('.rail-when-cal').count(), 1)
+const twoDaysAgo = new Date(today); twoDaysAgo.setDate(twoDaysAgo.getDate() - 2)
+if (twoDaysAgo.getMonth() !== today.getMonth()) {
+  await page.locator('.rail-when-cal').getByRole('button', { name: 'Previous month' }).click()
+  await page.waitForTimeout(150)
+}
+// Two days ago is before the start (last night) — the save must refuse it.
+await page.locator('.rail-when-cal').getByRole('button', { name: String(twoDaysAgo.getDate()), exact: true }).click()
+await page.waitForTimeout(200)
+eq('the calendar closes on a pick', await page.locator('.rail-when-cal').count(), 0)
+eq('an end before the start cannot be saved', await page.getByRole('button', { name: 'Save times' }).isDisabled(), true)
+// Pick today instead — the whole day later, at the same 11 PM.
 await dayPick.click()
 await page.waitForTimeout(200)
-eq('and round again, so nothing is a dead end', (await dayPick.innerText()).trim().toLowerCase(), 'yesterday')
+if (twoDaysAgo.getMonth() !== today.getMonth()) {
+  await page.locator('.rail-when-cal').getByRole('button', { name: 'Next month' }).click()
+  await page.waitForTimeout(150)
+}
+await page.locator('.rail-when-cal').getByRole('button', { name: String(today.getDate()), exact: true }).click()
+await page.waitForTimeout(200)
+eq('the chip names the picked day', (await dayPick.innerText()).trim().toLowerCase(), 'today')
+await page.getByRole('button', { name: 'Save times' }).click()
+await page.waitForTimeout(600)
+const moved = await page.evaluate(() => JSON.parse(localStorage.getItem('vivian_wellness_episodes') || '[]')[0] || {})
+eq('and the end is stored on the picked date', moved.end, new Date(at(23)).toISOString())
 
 eq('no uncaught errors', errors, [])
 
