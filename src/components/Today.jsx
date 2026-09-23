@@ -1035,7 +1035,7 @@ function WeekStrip({ viewDate, setViewDate, today, commitments, categories, done
 }
 
 // ── Main ───────────────────────────────────────────────────────
-export default function Today({ todos, weekState, syncToggle, clearCompletion, pushUndo, commitments, addCommitment, updateCommitment, deleteCommitment, moveCommitmentToThoughts, addEvent, appendLog, scheduled, categories, recurringTasks, recurringExceptions, occStarted = {}, skipRecurringOccurrence, deleteRecurringTask, addRecurringTask, updateRecurringTask, taskTemplates = [], summary, labelModel = null, externalEvents = [], externalCalendars = [], toggleCalendar, importedAdoptions = {}, adoptImportedEvent, markImportedAdopted,
+export default function Today({ todos, weekState, log = [], syncToggle, clearCompletion, pushUndo, commitments, addCommitment, updateCommitment, deleteCommitment, moveCommitmentToThoughts, addEvent, appendLog, scheduled, categories, recurringTasks, recurringExceptions, occStarted = {}, skipRecurringOccurrence, deleteRecurringTask, addRecurringTask, updateRecurringTask, taskTemplates = [], summary, labelModel = null, externalEvents = [], externalCalendars = [], toggleCalendar, importedAdoptions = {}, adoptImportedEvent, markImportedAdopted,
   wlCheckins = [], persistWlCheckins, wlEffects, persistWlEffects, wlEpisodes = [], persistWlEpisodes, wlGame, persistWlGame, wlLog = [], wlEmotions, persistWlEmotions, onOpenWellness,
   wlRules, wlAbsence = null, onResolveAbsence,
   jumpTo = null, onJumpConsumed }) {
@@ -1265,6 +1265,24 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
   //
   // Today is deliberately excluded. Today is the day you're getting back into;
   // its tasks are yours to do, not something to sweep up.
+  // The last moment on a day you were visibly getting on with things — the
+  // latest task you added or ticked off by hand. A streak logged without a
+  // start time begins there: that's when the day stopped being an ordinary one.
+  // Ticks come from the completion log (its own ts); the other log lines
+  // (deleted / rescheduled notes) are not activity. null when the day has none.
+  const lastActivityOn = (key) => {
+    let best = null
+    const take = (iso) => {
+      const ms = Date.parse(iso || '')
+      if (Number.isNaN(ms)) return
+      const d = new Date(ms)
+      const k = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
+      if (k === key && (best == null || ms > best)) best = ms
+    }
+    for (const e of log || []) if (e && e.storageKey && e.tag !== 'deleted' && e.tag !== 'rescheduled') take(e.ts)
+    for (const c of commitments || []) take(c.createdAt)
+    return best
+  }
   const dayDeletions = (key) => { try { return JSON.parse(localStorage.getItem('vivian_deleted_' + key) || '[]') } catch { return [] } }
   const unfinishedOn = (keys) => {
     const out = []
@@ -2195,6 +2213,7 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
           emotionPrefs={wlEmotions} persistEmotionPrefs={persistWlEmotions}
           rules={wlRules} absence={wlAbsence} onResolveAbsence={onResolveAbsence}
           countWaiting={(keys) => unfinishedOn(keys).length} onReleaseDays={releaseDays}
+          lastActivityOn={lastActivityOn}
           dateKey={viewDate} isToday={isToday} />
       )}
       {/* Structured-style header: big date + week strip + progress bar */}

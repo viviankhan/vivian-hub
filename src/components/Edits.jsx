@@ -9,6 +9,8 @@ const EDIT_LOG = [
     changes: [
       'Wellness → Log a streak now has From and To fields under the quick picks. Tap either one for a calendar and choose any day, so a streak that already ended (say Monday to Wednesday last week) can be logged as exactly that',
       'The quick picks (today, 3 days, a week…) still work as before and run the streak up to now; a streak that ends on an earlier day runs to the end of that day',
+      'The date pickers pop up over the sheet, say what today is, mark it on the grid, and won\'t offer a day that hasn\'t happened yet',
+      'After picking the start day you can set the time it started, or skip. Skipped, the streak starts at the last task you added or ticked off that day (or at midnight if you did neither)',
     ]
   },
   {

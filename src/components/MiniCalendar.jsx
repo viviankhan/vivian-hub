@@ -15,7 +15,7 @@ function parse(v) {
   return new Date(+m[1], +m[2]-1, +m[3], 12)
 }
 
-export default function MiniCalendar({ value, onChange }) {
+export default function MiniCalendar({ value, onChange, max = null }) {
   // The month currently shown. Follows `value` when it changes to another month.
   const [view, setView] = useState(() => parse(value) || new Date())
   useEffect(() => {
@@ -60,9 +60,12 @@ export default function MiniCalendar({ value, onChange }) {
           const key = ymd(d)
           const sel = key === value
           const isToday = key === today
+          // Past `max` (e.g. a day that hasn't happened yet) can't be picked.
+          const off = !!(max && key > max)
           return (
-            <button key={i} type="button" onClick={() => onChange(key)}
-              style={{ aspectRatio:'1 / 1', border:'none', cursor:'pointer', borderRadius:'50%', fontSize:13, fontFamily:'DM Sans,sans-serif',
+            <button key={i} type="button" onClick={() => onChange(key)} disabled={off}
+              aria-current={isToday ? 'date' : undefined}
+              style={{ aspectRatio:'1 / 1', border:'none', cursor:off?'default':'pointer', opacity:off?.35:1, borderRadius:'50%', fontSize:13, fontFamily:'DM Sans,sans-serif',
                 display:'flex', alignItems:'center', justifyContent:'center',
                 fontWeight: sel ? 700 : (isToday ? 700 : 500),
                 background: sel ? 'var(--teal)' : 'transparent',

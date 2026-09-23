@@ -40,11 +40,11 @@
 // than asking again tomorrow — the rewind clock is still there if you change
 // your mind.
 // ─────────────────────────────────────────────────────────────
-import { useState, useMemo, useEffect, useRef } from 'react'
+import { useState, useMemo, useEffect, useRef, useCallback } from 'react'
 import { Glyph, iconColorOn } from '../lib/glyphs.jsx'
 import { GuideBlob, MoodCloud } from '../lib/critters.jsx'
 import ColorPickRow from './ColorPickRow.jsx'
-import { EffectIcon } from './IconPicker.jsx'
+import { EffectIcon, useOutsideClose } from './IconPicker.jsx'
 import IconSearchSheet from './IconSearchSheet.jsx'
 import { PhotoPicker, PhotoStrip } from './PhotoAttach.jsx'
 import TimeField from './TimeField.jsx'
@@ -156,7 +156,7 @@ export default function DayRail({
   episodes = [], persistEpisodes, game, persistGame,
   emotionPrefs, persistEmotionPrefs,
   rules, absence = null, onResolveAbsence,
-  countWaiting, onReleaseDays,
+  countWaiting, onReleaseDays, lastActivityOn,
   dateKey = dayKey(), isToday = true,
 }) {
   // The day this rail represents. Today is interactive (the blob logs new
@@ -740,7 +740,7 @@ export default function DayRail({
           {sheet === 'catchup' && (
             <CatchUpSheet gap={absence} rule={rules} effects={effectList}
               onLog={logCatchUp} onSkip={absence ? dismissAbsence : closeAll} onCreateEffect={createEffect}
-              countWaiting={countWaiting} />
+              countWaiting={countWaiting} lastActivityOn={lastActivityOn} />
           )}
           {sheet === 'status' && (
             <StatusSheet effects={effectList} episodes={episodes} byId={byId}
@@ -991,28 +991,48 @@ function MomentSheet({ onClose, onLog, timed, isToday, dayName, emotions: option
 // span it found, and opened by hand it asks how far back the streak goes. And
 // because coming back to a column of OVERDUE is the opposite of a way back in,
 // it offers — never assumes — to let go of what those days were still holding.
-function CatchUpSheet({ gap, rule, effects, onLog, onSkip, onCreateEffect, countWaiting }) {
+function CatchUpSheet({ gap, rule, effects, onLog, onSkip, onCreateEffect, countWaiting, lastActivityOn }) {
   const found = !!gap
   // Hand-logged: the first and last day of the streak. The presets set the
-  // start and run it up to now; either end can also be picked on a calendar.
-  // The blob's own answer is exact, so it is kept exactly.
+  // start and run it up to now; either end can also be picked from a small
+  // calendar that pops up over the sheet. The blob's own answer is exact, so
+  // it is kept exactly.
   const todayKey = dayKey()
   const [fromKey, setFromKey] = useState(() => dayKey(new Date(daysAgoStart(2))))
+  // The start's clock time, when given. Left blank, the streak starts at the
+  // last thing you visibly did that day — the latest task you added or ticked
+  // off by hand — which is when the day stopped being an ordinary one. A day
+  // with no such trace starts at its midnight.
+  const [fromTime, setFromTime] = useState('')
   const [toKey, setToKey] = useState(todayKey)
-  const [cal, setCal] = useState(null)   // 'from' | 'to' while its calendar is open
+  const [cal, setCal] = useState(null)   // 'from' | 'to' while its popup is open
+  const [step, setStep] = useState('day') // the start popup: pick a day, then a time
+  const [draftTime, setDraftTime] = useState('')
+  const closePop = useCallback(() => setCal(null), [])
+  const popRef = useOutsideClose(!!cal, closePop)
   const endsNow = toKey >= todayKey
+  const activityMs = useMemo(() => (lastActivityOn ? lastActivityOn(fromKey) : null), [lastActivityOn, fromKey])
+  const autoStart = !fromTime
   // A streak that ended on an earlier day runs to the close of that day (11:59
   // PM); one that runs to today runs up to now.
   const stretch = useMemo(() => {
     if (found) return gap
     const endMs = endsNow ? Date.now() : keyToDate(shiftKey(toKey, 1)).getTime() - 60000
-    return makeStretch(keyToDate(fromKey).getTime(), endMs, rule)
-  }, [found, gap, fromKey, toKey, endsNow, rule])
-  const pickPreset = (back) => { setFromKey(dayKey(new Date(daysAgoStart(back)))); setToKey(todayKey); setCal(null) }
+    const startMs = fromTime ? Date.parse(atTimeOn(fromKey, fromTime)) : (activityMs ?? keyToDate(fromKey).getTime())
+    return makeStretch(Math.min(startMs, endMs), endMs, rule)
+  }, [found, gap, fromKey, fromTime, activityMs, toKey, endsNow, rule])
+  const pickPreset = (back) => { setFromKey(dayKey(new Date(daysAgoStart(back)))); setFromTime(''); setToKey(todayKey); setCal(null) }
+  const openFrom = () => { if (cal === 'from') { setCal(null); return } setStep('day'); setCal('from') }
   // Never a day that hasn't happened, and never an end before the start — a
-  // pick that would cross the other end moves that end along with it.
-  const pickFrom = (k) => { const v = k > todayKey ? todayKey : k; setFromKey(v); if (v > toKey) setToKey(v); setCal(null) }
-  const pickTo = (k) => { const v = k > todayKey ? todayKey : k; setToKey(v); if (v < fromKey) setFromKey(v); setCal(null) }
+  // pick that would cross the other end moves that end along with it. Picking
+  // the start's day then asks for its time, which can be skipped.
+  const pickFrom = (k) => {
+    const v = k > todayKey ? todayKey : k
+    setFromKey(v); if (v > toKey) setToKey(v)
+    setDraftTime(v === fromKey ? fromTime : ''); setStep('time')
+  }
+  const setStartTime = (t) => { setFromTime(t); setCal(null) }
+  const pickTo = (k) => { const v = k > todayKey ? todayKey : k; setToKey(v); if (v < fromKey) { setFromKey(v); setFromTime('') } setCal(null) }
   const days = stretch.days || []
   const multiDay = days.length > 1
   const r = { ...DEFAULT_ABSENCE_RULE, ...(rule || {}) }
@@ -1092,19 +1112,49 @@ function CatchUpSheet({ gap, rule, effects, onLog, onSkip, onCreateEffect, count
               )
             })}
           </div>
-          <div className="rail-range">
+          <div className="rail-range" ref={popRef}>
             <div className="rail-range-field">
               <span>From</span>
               <button type="button" className={`rail-range-pick ${cal === 'from' ? 'open' : ''}`} aria-expanded={cal === 'from'}
-                aria-label="Start date" onClick={() => setCal(c => (c === 'from' ? null : 'from'))}>{rangeDay(fromKey)}</button>
+                aria-label="Start date" onClick={openFrom}>
+                {rangeDay(fromKey)}<i>{autoStart ? (activityMs != null ? clockTime(activityMs) + ' · auto' : 'start of day') : clockTime(atTimeOn(fromKey, fromTime))}</i>
+              </button>
             </div>
             <div className="rail-range-field">
               <span>To</span>
               <button type="button" className={`rail-range-pick ${cal === 'to' ? 'open' : ''}`} aria-expanded={cal === 'to'}
-                aria-label="End date" onClick={() => setCal(c => (c === 'to' ? null : 'to'))}>{endsNow ? 'now' : rangeDay(toKey)}</button>
+                aria-label="End date" onClick={() => setCal(c => (c === 'to' ? null : 'to'))}>
+                {endsNow ? 'now' : rangeDay(toKey)}<i>{endsNow ? 'still going' : 'end of day'}</i>
+              </button>
             </div>
+            {/* The picker pops up over the sheet rather than pushing it down,
+                names today up top, and won't offer a day still to come. */}
+            {cal && (
+              <div className={`rail-range-pop ${cal === 'to' ? 'right' : ''}`} role="dialog"
+                aria-label={cal === 'from' ? 'Pick the start' : 'Pick the end'} onClick={e => e.stopPropagation()}>
+                {cal === 'from' && step === 'time' ? (
+                  <div className="rail-range-time">
+                    <div className="rail-range-pop-head">
+                      <button type="button" className="rail-range-back" onClick={() => setStep('day')} aria-label="Back to the calendar">‹</button>
+                      <b>What time did it start on {rangeDay(fromKey)}?</b>
+                    </div>
+                    <TimeField value={draftTime} onChange={setDraftTime} style={railTimeStyle} aria-label="Start time" placeholder="pick a time" />
+                    <button type="button" className="rail-range-set" disabled={!draftTime} onClick={() => setStartTime(draftTime)}>Set time</button>
+                    <button type="button" className="rail-range-skip" onClick={() => setStartTime('')}>
+                      Skip — {activityMs != null
+                        ? `start at your last activity (${clockTime(activityMs)})`
+                        : 'start at the beginning of the day'}
+                    </button>
+                  </div>
+                ) : (
+                  <>
+                    <div className="rail-range-pop-head"><b>Today is {keyToDate(todayKey).toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}</b></div>
+                    <MiniCalendar value={cal === 'from' ? fromKey : toKey} onChange={cal === 'from' ? pickFrom : pickTo} max={todayKey} />
+                  </>
+                )}
+              </div>
+            )}
           </div>
-          {cal && <EndDayCalendar value={cal === 'from' ? fromKey : toKey} onPick={cal === 'from' ? pickFrom : pickTo} />}
         </>
       )}
       {/* The span, said plainly and up front — this writes into the past, so it
@@ -1113,7 +1163,7 @@ function CatchUpSheet({ gap, rule, effects, onLog, onSkip, onCreateEffect, count
         <RewindClock size={18} />
         <div>
           <b>{found ? whenPhrase(stretch.startMs) : `Since ${whenPhrase(stretch.startMs)}`} → {found || endsNow ? 'now' : whenPhrase(stretch.endMs)}</b>
-          <span>{found ? absenceLength(stretch, r) : fmtDuration(stretch.awayMins)}{multiDay ? ` · ${days.length} days` : ''}</span>
+          <span>{found ? absenceLength(stretch, r) : fmtDuration(stretch.awayMins)}{multiDay ? ` · ${days.length} days` : ''}{!found && autoStart && activityMs != null ? ' · from your last activity' : ''}</span>
         </div>
       </div>
 

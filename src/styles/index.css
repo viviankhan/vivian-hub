@@ -1825,7 +1825,24 @@ textarea { resize: vertical; min-height: 160px; line-height: 1.6; }
 .rail-range-pick { border: 1.5px solid var(--border); border-radius: 11px; background: #fff; color: var(--text); padding: 8px 10px;
   font-size: 13px; font-weight: 600; font-family: inherit; text-align: left; cursor: pointer; }
 .rail-range-pick.open { border-color: var(--teal); }
-.rail-range + .rail-when-cal { margin: -4px 0 12px; }
+.rail-range-pick i { display: block; font-style: normal; font-size: 11px; font-weight: 600; color: var(--muted); margin-top: 1px; }
+.rail-range { position: relative; }
+/* The pop-up picker: floats over the sheet under its field, never wider than
+   the sheet itself. */
+.rail-range-pop { position: absolute; top: calc(100% + 6px); left: 0; z-index: 30; width: min(290px, 100%);
+  background: #fff; border: 1px solid var(--border); border-radius: 16px; padding: 10px;
+  box-shadow: 0 14px 38px rgba(30, 45, 60, .22); box-sizing: border-box; }
+.rail-range-pop.right { left: auto; right: 0; }
+.rail-range-pop > div:last-child { margin-top: 0 !important; border: none !important; padding: 0 !important; }
+.rail-range-pop-head { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--forest); padding: 2px 4px 8px; }
+.rail-range-back { border: none; background: var(--green-light); color: var(--teal); width: 26px; height: 26px; border-radius: 50%;
+  font-size: 17px; line-height: 1; cursor: pointer; flex-shrink: 0; font-family: inherit; }
+.rail-range-time { display: flex; flex-direction: column; gap: 8px; }
+.rail-range-set { border: none; border-radius: 11px; padding: 10px; background: var(--teal); color: #fff; font-weight: 700;
+  font-size: 13px; font-family: inherit; cursor: pointer; }
+.rail-range-set:disabled { opacity: .45; cursor: default; }
+.rail-range-skip { border: none; background: none; color: var(--teal); font-weight: 600; font-size: 12px; font-family: inherit;
+  cursor: pointer; text-decoration: underline; padding: 4px; }
 /* The pile those days are still holding — offered, never assumed, and never
    dressed up as having got it all done. */
 .rail-letgo { display: flex; align-items: flex-start; gap: 10px; width: 100%; text-align: left; margin-top: 14px;

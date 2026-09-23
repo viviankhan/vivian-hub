@@ -277,44 +277,107 @@ await hand.ctx.close()
 
 // ── A streak that is already over ─────────────────────────────
 // The presets all run up to now. A streak that began five days ago and lifted
-// three days ago needs both ends picked — a start date AND an end date.
+// three days ago needs both ends picked — each from a small calendar that pops
+// up over the sheet. The start then asks for a time, which can be skipped:
+// skipped, it starts at the last task you added or ticked off that day.
 console.log('\n— a streak with its own start and end —')
-const range = await arriveAfter(1, null, [])
-await range.page.waitForTimeout(1200)
-await range.page.click('.rail-blob-btn')
-await range.page.waitForTimeout(400)
-await range.page.click('.rail-bub-streak')
-await range.page.waitForSelector('.rail-range', { timeout: 5000 })
-// Tap a day on the open calendar, stepping back a month if it's in the last one.
+const at = (key, h, m) => new Date(`${key}T${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:00`).toISOString()
+const openStreak = async (cs) => {
+  const r = await arriveAfter(1, null, cs)
+  await r.page.waitForTimeout(1200)
+  await r.page.click('.rail-blob-btn')
+  await r.page.waitForTimeout(400)
+  await r.page.click('.rail-bub-streak')
+  await r.page.waitForSelector('.rail-range', { timeout: 5000 })
+  return r
+}
+// Tap a day on the open pop-up calendar, stepping back a month if needed.
 const pickDay = async (p, key) => {
   const d = new Date(key + 'T12:00:00')
   if (d.getMonth() !== new Date().getMonth()) {
-    await p.locator('.rail-when-cal').getByRole('button', { name: 'Previous month' }).click()
+    await p.locator('.rail-range-pop').getByRole('button', { name: 'Previous month' }).click()
     await p.waitForTimeout(150)
   }
-  await p.locator('.rail-when-cal').getByRole('button', { name: String(d.getDate()), exact: true }).click()
+  await p.locator('.rail-range-pop').getByRole('button', { name: String(d.getDate()), exact: true }).click()
   await p.waitForTimeout(250)
 }
-eq('the end starts at now', (await range.page.getByRole('button', { name: 'End date' }).innerText()).trim(), 'now')
+const logFirst = async (p) => {
+  await p.locator('.rail-cond').first().click()
+  await p.waitForTimeout(200)
+  await p.locator('.rail-log').click()
+  await p.waitForTimeout(1000)
+  return p.evaluate(() => JSON.parse(localStorage.getItem('vivian_wellness_episodes') || '[]'))
+}
+
+// 1) No trace of you that day: skipping the time starts it at midnight.
+const range = await openStreak([])
+eq('the end starts at now', (await range.page.getByRole('button', { name: 'End date' }).innerText()).split('\n')[0].trim(), 'now')
 await range.page.getByRole('button', { name: 'Start date' }).click()
 await range.page.waitForTimeout(200)
+ok('the start pops up a calendar', await range.page.locator('.rail-range-pop').count() === 1)
+ok('which says what day it is', /Today is/.test(await range.page.locator('.rail-range-pop').innerText()))
+eq('and marks today on the grid', await range.page.locator('.rail-range-pop [aria-current="date"]').count(), 1)
+eq('a day still to come cannot be picked', await range.page.locator('.rail-range-pop button[disabled]').count() > 0 || new Date().getDate() === new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).getDate(), true)
 await pickDay(range.page, past(5))
+ok('picking a day asks for the time', await range.page.getByRole('button', { name: 'Set time' }).count() === 1)
+const skipText = await range.page.locator('.rail-range-skip').innerText()
+ok('…which can be skipped (no activity → start of day)', /beginning of the day/.test(skipText), skipText)
+await range.page.locator('.rail-range-skip').click()
+await range.page.waitForTimeout(200)
+eq('the pop-up closes', await range.page.locator('.rail-range-pop').count(), 0)
 await range.page.getByRole('button', { name: 'End date' }).click()
 await range.page.waitForTimeout(200)
 await pickDay(range.page, past(3))
 const rangeSpan = (await range.page.locator('.rail-gap').innerText()).replace(/\s+/g, ' ').trim()
 ok('the span no longer runs to now', !/→ now/.test(rangeSpan) && /3 days/.test(rangeSpan), rangeSpan)
 eq('no preset claims it', await range.page.locator('.rail-back.on').count(), 0)
-await range.page.locator('.rail-cond').first().click()
-await range.page.waitForTimeout(200)
-await range.page.locator('.rail-log').click()
-await range.page.waitForTimeout(1000)
-const rangeEps = await range.page.evaluate(() => JSON.parse(localStorage.getItem('vivian_wellness_episodes') || '[]'))
-const midnight = (key) => new Date(key + 'T00:00:00').toISOString()
-const closeOf = (key) => new Date(key + 'T23:59:00').toISOString()
-eq('one span, from the start day…', rangeEps.map(e => e.start), [midnight(past(5))])
-eq('…to the close of the end day', rangeEps.map(e => e.end), [closeOf(past(3))])
+const rangeEps = await logFirst(range.page)
+eq('one span, from the start day’s midnight…', rangeEps.map(e => e.start), [at(past(5), 0, 0)])
+eq('…to the close of the end day', rangeEps.map(e => e.end), [at(past(3), 23, 59)])
 await range.ctx.close()
+
+// 2) Skipped on a day you were active: it starts at your last activity — the
+// later of a task added (4:12 PM) and one ticked off (2:05 PM).
+const busy = await openStreak([
+  { id: 'b1', text: 'Laundry', date: past(4), cat: 'home', done: false, time: '09:00', durationMins: 30, createdAt: at(past(4), 16, 12) },
+  { id: 'b2', text: 'Older', date: past(4), cat: 'home', done: false, time: '11:00', durationMins: 30, createdAt: at(past(6), 10, 0) },
+])
+await busy.page.evaluate(({ ts, key }) => {
+  localStorage.setItem('vivian_log', JSON.stringify([
+    { date: key, dateLabel: '', label: 'Stretch', tag: 'health', ts, storageKey: key + '_r1' },
+  ]))
+}, { ts: at(past(4), 14, 5), key: past(4) })
+await busy.page.reload({ waitUntil: 'networkidle' })
+await busy.page.waitForSelector('.rail-blob', { timeout: 20000 })
+await busy.page.waitForTimeout(800)
+await busy.page.click('.rail-blob-btn')
+await busy.page.waitForTimeout(400)
+await busy.page.click('.rail-bub-streak')
+await busy.page.waitForSelector('.rail-range', { timeout: 5000 })
+await busy.page.getByRole('button', { name: 'Start date' }).click()
+await busy.page.waitForTimeout(200)
+await pickDay(busy.page, past(4))
+const busySkip = await busy.page.locator('.rail-range-skip').innerText()
+ok('the skip names your last activity', /last activity \(4:12 PM\)/.test(busySkip), busySkip)
+await busy.page.locator('.rail-range-skip').click()
+await busy.page.waitForTimeout(200)
+ok('the field says it was worked out for you', /4:12 PM · auto/.test(await busy.page.getByRole('button', { name: 'Start date' }).innerText()))
+const busyEps = await logFirst(busy.page)
+eq('and the streak starts there', busyEps.map(e => e.start), [at(past(4), 16, 12)])
+await busy.ctx.close()
+
+// 3) A time you give wins.
+const timed = await openStreak([])
+await timed.page.getByRole('button', { name: 'Start date' }).click()
+await timed.page.waitForTimeout(200)
+await pickDay(timed.page, past(2))
+await timed.page.locator('input[aria-label="Start time"]').fill('8:30 pm')
+await timed.page.waitForTimeout(150)
+await timed.page.getByRole('button', { name: 'Set time' }).click()
+await timed.page.waitForTimeout(200)
+const timedEps = await logFirst(timed.page)
+eq('a picked time is the start', timedEps.map(e => e.start), [at(past(2), 20, 30)])
+await timed.ctx.close()
 
 eq('no uncaught errors', errors, [])
 
