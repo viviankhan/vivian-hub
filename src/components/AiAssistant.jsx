@@ -5,9 +5,10 @@
 // syllabus page, a flyer, a handwritten list. It plans the actions against your
 // current tasks, shows the plan for you to confirm, then the parent applies it.
 // Nothing changes until you tap Apply.
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { runAssistant, MAX_ASSISTANT_IMAGES } from '../lib/parseEvent.js'
 import { compressImage, dataUrlToBase64 } from '../lib/trackers.js'
+import { holdUpdateReload } from '../lib/notifications.js'
 
 function fmt12(t) {
   if (!t) return ''
@@ -224,6 +225,10 @@ export default function AiAssistant({ categories = [], tasks = [], onApply, onCl
   const [photos, setPhotos]   = useState([])     // { id, url, data, mimeType }
   const [loadingPhotos, setLoadingPhotos] = useState(0)
   const fileRef = useRef(null)
+
+  // Don't let an app update reload the page while this sheet is open — it
+  // would throw away the request in flight, the photos, and an unapplied plan.
+  useEffect(() => holdUpdateReload(), [])
 
   // Take photos from the picker, the camera, or a paste. Each is downscaled in
   // the browser (a full-res phone photo is far more than the model needs and

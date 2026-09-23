@@ -294,6 +294,43 @@ export async function requestPermission() {
 // swaps to the new bundle. Without this, an installed PWA (especially on
 // iOS) can keep showing a stale version after a deploy.
 let reloadingForUpdate = false
+// While something in-flight would be lost by a reload — the AI assistant
+// waiting on the model, a plan you haven't applied yet — the update reload is
+// held. Before this, a deploy landing mid-request (the heartbeat below checks
+// every minute, and picking a photo backgrounds the app, which checks again on
+// return) reloaded the page out from under the assistant: the sheet just
+// vanished. A held update is applied the next time the app goes to the
+// background, so it never interrupts what you're looking at or a save that
+// was just kicked off.
+let reloadHolds = 0
+let reloadDeferred = false
+function reloadForUpdate() {
+  if (reloadingForUpdate) return
+  if (reloadHolds > 0) { reloadDeferred = true; return }
+  reloadingForUpdate = true
+  window.location.reload()
+}
+function reloadWhenHidden() {
+  if (document.hidden) { reloadForUpdate(); return }
+  const onHide = () => {
+    if (!document.hidden) return
+    document.removeEventListener('visibilitychange', onHide)
+    if (reloadHolds === 0) reloadForUpdate()
+    else reloadDeferred = true
+  }
+  document.addEventListener('visibilitychange', onHide)
+}
+// Hold off the auto-update reload until the returned release() is called.
+export function holdUpdateReload() {
+  reloadHolds++
+  let released = false
+  return () => {
+    if (released) return
+    released = true
+    reloadHolds = Math.max(0, reloadHolds - 1)
+    if (reloadHolds === 0 && reloadDeferred) { reloadDeferred = false; reloadWhenHidden() }
+  }
+}
 // Registration is now kicked off at startup (main.jsx) so the offline shell is
 // cached whether or not anyone is signed in, and it's still called from the
 // notifications panel. Memoized so the second caller joins the first rather
@@ -317,9 +354,8 @@ async function doRegisterServiceWorker() {
     // Reload once when a new deploy's worker takes control of an already
     // controlled page (so the running app swaps onto the fresh bundle).
     navigator.serviceWorker.addEventListener('controllerchange', () => {
-      if (reloadingForUpdate || !hadController) return
-      reloadingForUpdate = true
-      window.location.reload()
+      if (!hadController) return
+      reloadForUpdate()
     })
 
     // A freshly-found worker sits in "waiting" until it takes control. It's set

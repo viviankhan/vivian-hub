@@ -196,7 +196,7 @@ INSTRUCTION:
 ${command || 'Schedule what the attached photo shows.'}
 """`
 
-  const reqBody = JSON.stringify({
+  const reqObj = {
     contents: [{ parts: [
       { text: prompt },
       // Photos ride alongside the prompt; the flash models read them directly.
@@ -206,8 +206,18 @@ ${command || 'Schedule what the attached photo shows.'}
     // required fields and drops the rest on a schema this size — it was omitting
     // event dates entirely. Plain JSON mode + explicit per-kind templates in the
     // prompt gets complete objects out of the free flash models.
-    generationConfig: { temperature: 0.2, responseMimeType: 'application/json' },
-  })
+    generationConfig: { temperature: 0.2, responseMimeType: 'application/json' } as Record<string, unknown>,
+  }
+  const reqBody = JSON.stringify(reqObj)
+  // 2.5-flash "thinks" before answering by default, which made a plan take
+  // many seconds longer (much more with a photo) for no gain on a task this
+  // simple. Turn it off for the models that accept a zero budget.
+  const bodyFor = (model: string) => /^gemini-2\.5-flash/.test(model)
+    ? JSON.stringify({ ...reqObj, generationConfig: { ...reqObj.generationConfig, thinkingConfig: { thinkingBudget: 0 } } })
+    : reqBody
+  // A model that hangs shouldn't hold the whole request; give up on it and
+  // move to the next one.
+  const PER_MODEL_TIMEOUT_MS = 25_000
 
   let resp: Response | null = null
   let lastDetail = ''
@@ -222,8 +232,9 @@ ${command || 'Schedule what the attached photo shows.'}
       const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(GEMINI_KEY)}`
       let r: Response
       try {
-        r = await fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: reqBody })
+        r = await fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: bodyFor(model), signal: AbortSignal.timeout(PER_MODEL_TIMEOUT_MS) })
       } catch (e) {
+        if ((e as Error)?.name === 'TimeoutError') { lastStatus = 503; lastDetail = `${model} timed out`; continue }
         hardStop = json({ error: `Couldn't reach the AI service: ${(e as Error)?.message || e}` }, 502)
         return false
       }

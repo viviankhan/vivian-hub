@@ -52,8 +52,11 @@ export async function runAssistant(command, { categories = [], tasks = [], image
         tasks: (tasks || []).slice(0, 150),
         images: photos,
       }),
+      // Never leave "Reading the photo…" spinning forever on a stalled request.
+      signal: typeof AbortSignal !== 'undefined' && AbortSignal.timeout ? AbortSignal.timeout(90_000) : undefined,
     })
-  } catch {
+  } catch (e) {
+    if (e && (e.name === 'TimeoutError' || e.name === 'AbortError')) throw new Error('The AI took too long to answer. Try again — it’s usually quicker the second time.')
     throw new Error('Couldn’t reach the AI service. Check your connection and that the parse-event function is deployed.')
   }
 
