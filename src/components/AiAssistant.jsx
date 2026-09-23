@@ -47,11 +47,180 @@ function headline(a, titleOf) {
   return 'Change'
 }
 
+const REMIND_PRESETS = [0, 5, 10, 15, 30, 60, 120, 1440, 2880, 10080]
+
+const field = { width:'100%', fontSize:13.5, padding:'8px 10px', borderRadius:9, border:'1px solid var(--border)', fontFamily:'DM Sans,sans-serif', outline:'none', background:'white', color:'var(--text)', boxSizing:'border-box' }
+const lbl = { fontSize:11, fontWeight:700, color:'var(--muted)', textTransform:'uppercase', letterSpacing:.6, marginBottom:4, display:'block' }
+const pill = (on) => ({ fontSize:12, fontWeight:600, borderRadius:8, padding:'4px 9px', cursor:'pointer', fontFamily:'DM Sans,sans-serif',
+  border: on ? '1px solid var(--forest)' : '1px solid var(--border)', background: on ? 'var(--forest)' : 'white', color: on ? 'var(--green-light)' : 'var(--muted)' })
+
+function Field({ label, children, style }) {
+  return <label style={{ display:'block', ...style }}><span style={lbl}>{label}</span>{children}</label>
+}
+
+// Inline editor for one planned action. Works on a draft copy so Cancel throws
+// the edits away; Done hands the edited action back to the plan.
+function ActionEditor({ action, categories, onSave, onCancel }) {
+  const [d, setD] = useState(() => ({ ...action,
+    subtasks: Array.isArray(action.subtasks) ? action.subtasks.map(s => ({ ...s })) : action.subtasks,
+    reminders: Array.isArray(action.reminders) ? [...action.reminders] : [],
+    categoryIds: Array.isArray(action.categoryIds) ? [...action.categoryIds] : [] }))
+  const set = (k, v) => setD(prev => ({ ...prev, [k]: v }))
+  const row = { display:'flex', gap:8, marginTop:10 }
+  const hasTitle = d.kind === 'create' || d.kind === 'event'
+  const hasWhen  = d.kind === 'create' || d.kind === 'reschedule'
+  const canSave  = !hasTitle || !!(d.title || '').trim()
+
+  const save = () => {
+    if (!canSave) return
+    const out = { ...d }
+    if (hasTitle) out.title = d.title.trim()
+    if (hasWhen) {
+      out.date = d.date || null
+      out.time = d.time || null
+      const mins = parseInt(d.durationMins, 10)
+      out.durationMins = mins > 0 ? mins : null
+    }
+    if (d.kind === 'event') {
+      if (d.endDate && d.startDate && d.endDate < d.startDate) out.endDate = d.startDate
+      if (d.allDay === false && d.startTime && d.endTime && d.endTime <= d.startTime && (!out.endDate || out.endDate === d.startDate)) out.endTime = null
+    }
+    if (Array.isArray(d.subtasks)) out.subtasks = d.subtasks.filter(s => (s.text || '').trim()).map(s => ({ ...s, text: s.text.trim() }))
+    out.reminders = [...new Set(d.reminders)].sort((a, b) => a - b)
+    onSave(out)
+  }
+
+  const setSub = (j, patch) => set('subtasks', d.subtasks.map((s, k) => k === j ? { ...s, ...patch } : s))
+
+  return (
+    <div>
+      {hasTitle && (
+        <Field label="Title">
+          <textarea value={d.title || ''} onChange={e => set('title', e.target.value)} rows={2} autoFocus
+            style={{ ...field, resize:'vertical', lineHeight:1.45 }} />
+        </Field>
+      )}
+
+      {hasWhen && (<>
+        <div style={row}>
+          <Field label="Date" style={{ flex:1 }}>
+            <input type="date" value={d.date || ''} onChange={e => set('date', e.target.value)} style={field} />
+          </Field>
+          <Field label="Time" style={{ flex:1 }}>
+            <input type="time" value={d.time || ''} onChange={e => set('time', e.target.value)} style={field} />
+          </Field>
+        </div>
+        <Field label="Duration (minutes)" style={{ marginTop:10 }}>
+          <input type="number" min="0" step="5" inputMode="numeric" value={d.durationMins || ''} onChange={e => set('durationMins', e.target.value)} style={field} />
+        </Field>
+      </>)}
+
+      {d.kind === 'event' && (<>
+        <div style={row}>
+          <Field label="Start" style={{ flex:1 }}>
+            <input type="date" value={d.startDate || ''} onChange={e => set('startDate', e.target.value)} style={field} />
+          </Field>
+          <Field label="End" style={{ flex:1 }}>
+            <input type="date" value={d.endDate || ''} onChange={e => set('endDate', e.target.value)} style={field} />
+          </Field>
+        </div>
+        <label style={{ display:'flex', alignItems:'center', gap:8, marginTop:10, fontSize:13, color:'var(--text)' }}>
+          <input type="checkbox" checked={d.allDay !== false} onChange={e => set('allDay', e.target.checked)} /> All day
+        </label>
+        {d.allDay === false && (
+          <div style={row}>
+            <Field label="From" style={{ flex:1 }}>
+              <input type="time" value={d.startTime || ''} onChange={e => set('startTime', e.target.value)} style={field} />
+            </Field>
+            <Field label="To" style={{ flex:1 }}>
+              <input type="time" value={d.endTime || ''} onChange={e => set('endTime', e.target.value)} style={field} />
+            </Field>
+          </div>
+        )}
+      </>)}
+
+      {d.kind === 'setDone' && (
+        <div style={{ ...row, alignItems:'center' }}>
+          <button type="button" onClick={() => set('done', true)} style={pill(!!d.done)}>Mark complete</button>
+          <button type="button" onClick={() => set('done', false)} style={pill(!d.done)}>Mark not complete</button>
+        </div>
+      )}
+
+      {d.kind === 'create' && categories.length > 0 && (
+        <div style={{ marginTop:10 }}>
+          <span style={lbl}>Labels</span>
+          <div style={{ display:'flex', flexWrap:'wrap', gap:6 }}>
+            {categories.map(c => {
+              const on = d.categoryIds.includes(c.id)
+              return <button key={c.id} type="button" style={pill(on)}
+                onClick={() => set('categoryIds', on ? d.categoryIds.filter(x => x !== c.id) : [...d.categoryIds, c.id])}>{c.label}</button>
+            })}
+          </div>
+        </div>
+      )}
+
+      {d.kind === 'create' && (
+        <Field label="Notes" style={{ marginTop:10 }}>
+          <textarea value={d.description || ''} onChange={e => set('description', e.target.value)} rows={3}
+            style={{ ...field, resize:'vertical', lineHeight:1.45 }} />
+        </Field>
+      )}
+
+      {Array.isArray(d.subtasks) && (d.kind === 'create' || d.kind === 'addSubtasks') && (
+        <div style={{ marginTop:10 }}>
+          <span style={lbl}>Subtasks</span>
+          {d.subtasks.map((s, j) => (
+            <div key={j} style={{ display:'flex', gap:6, alignItems:'center', marginBottom:5 }}>
+              <input type="checkbox" checked={!!s.done} onChange={e => setSub(j, { done: e.target.checked })} aria-label="Done" />
+              <input value={s.text || ''} onChange={e => setSub(j, { text: e.target.value })} style={{ ...field, padding:'6px 9px' }} />
+              <button type="button" aria-label="Remove subtask" onClick={() => set('subtasks', d.subtasks.filter((_, k) => k !== j))}
+                style={{ border:'none', background:'none', color:'var(--muted)', cursor:'pointer', fontSize:13, padding:4 }}>✕</button>
+            </div>
+          ))}
+          <button type="button" onClick={() => set('subtasks', [...d.subtasks, { text:'', done:false }])}
+            style={{ ...pill(false), marginTop:2 }}>+ Subtask</button>
+        </div>
+      )}
+      {d.kind === 'create' && !Array.isArray(d.subtasks) && (
+        <button type="button" onClick={() => set('subtasks', [{ text:'', done:false }])} style={{ ...pill(false), marginTop:10 }}>+ Subtask</button>
+      )}
+
+      {d.kind === 'create' && (
+        <div style={{ marginTop:10 }}>
+          <span style={lbl}>Reminders</span>
+          <div style={{ display:'flex', flexWrap:'wrap', gap:6, alignItems:'center' }}>
+            {d.reminders.map((m, j) => (
+              <span key={j} style={{ fontSize:12, background:'#F3F2F6', border:'1px solid var(--border)', borderRadius:8, padding:'3px 4px 3px 8px', display:'inline-flex', alignItems:'center', gap:4 }}>
+                {remindLabel(m)}
+                <button type="button" aria-label="Remove reminder" onClick={() => set('reminders', d.reminders.filter((_, k) => k !== j))}
+                  style={{ border:'none', background:'none', color:'var(--muted)', cursor:'pointer', fontSize:11, padding:'0 3px' }}>✕</button>
+              </span>
+            ))}
+            <select value="" onChange={e => { if (e.target.value !== '') set('reminders', [...d.reminders, Number(e.target.value)]) }}
+              style={{ ...field, width:'auto', padding:'4px 8px', fontSize:12 }}>
+              <option value="">+ Add reminder</option>
+              {REMIND_PRESETS.filter(m => !d.reminders.includes(m)).map(m => <option key={m} value={m}>{remindLabel(m)}</option>)}
+            </select>
+          </div>
+        </div>
+      )}
+
+      <div style={{ display:'flex', gap:8, marginTop:12, justifyContent:'flex-end' }}>
+        <button type="button" onClick={onCancel}
+          style={{ padding:'8px 14px', borderRadius:10, border:'1px solid var(--border)', background:'white', color:'var(--muted)', cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:600, fontSize:13 }}>Cancel</button>
+        <button type="button" onClick={save} disabled={!canSave}
+          style={{ padding:'8px 16px', borderRadius:10, border:'none', background: canSave ? 'var(--forest)' : '#E1E1E6', color: canSave ? 'var(--green-light)' : '#9CA3AF', cursor: canSave ? 'pointer' : 'default', fontFamily:'DM Sans,sans-serif', fontWeight:700, fontSize:13 }}>Done</button>
+      </div>
+    </div>
+  )
+}
+
 export default function AiAssistant({ categories = [], tasks = [], onApply, onClose }) {
   const [command, setCommand] = useState('')
   const [busy, setBusy]       = useState(false)
   const [err, setErr]         = useState('')
   const [plan, setPlan]       = useState(null)   // { summary, actions }
+  const [editingIdx, setEditingIdx] = useState(null) // which planned action is open for editing
   const [photos, setPhotos]   = useState([])     // { id, url, data, mimeType }
   const [loadingPhotos, setLoadingPhotos] = useState(0)
   const fileRef = useRef(null)
@@ -107,13 +276,17 @@ export default function AiAssistant({ categories = [], tasks = [], onApply, onCl
         categories, tasks,
         images: photos.map(p => ({ data: p.data, mimeType: p.mimeType })),
       })
-      setPlan(res)
+      setPlan(res); setEditingIdx(null)
     } catch (e) {
       setErr((e && e.message) || 'Something went wrong.')
     } finally { setBusy(false) }
   }
 
-  const apply = () => { onApply(plan.actions); onClose() }
+  const canApply = !!plan && plan.actions.length > 0 && editingIdx === null
+  const apply = () => { if (canApply) { onApply(plan.actions); onClose() } }
+
+  const updateAction = (i, next) => { setPlan(p => ({ ...p, actions: p.actions.map((a, k) => k === i ? next : a) })); setEditingIdx(null) }
+  const removeAction = (i) => { setPlan(p => ({ ...p, actions: p.actions.filter((_, k) => k !== i) })); setEditingIdx(null) }
 
   const card = { background:'white', borderRadius:12, border:'1px solid var(--border)', padding:'12px 14px', marginBottom:8 }
 
@@ -216,9 +389,22 @@ export default function AiAssistant({ categories = [], tasks = [], onApply, onCl
               }
               labelsOf(a.categoryIds).forEach(l => chips.push(l))
               const reminders = Array.isArray(a.reminders) ? a.reminders : []
+              if (editingIdx === i) return (
+                <div key={i} style={{ ...card, borderColor:'var(--forest)' }}>
+                  <ActionEditor action={a} categories={categories}
+                    onSave={next => updateAction(i, next)} onCancel={() => setEditingIdx(null)} />
+                </div>
+              )
+              const small = { border:'1px solid var(--border)', background:'white', borderRadius:8, padding:'3px 9px', fontSize:12, fontWeight:600, cursor:'pointer', fontFamily:'DM Sans,sans-serif' }
               return (
               <div key={i} style={card}>
-                <div style={{ fontSize:13.5, fontWeight:600, color:'var(--text)', lineHeight:1.4, overflowWrap:'anywhere' }}>{headline(a, titleOf)}</div>
+                <div style={{ display:'flex', gap:8, alignItems:'flex-start' }}>
+                  <div style={{ flex:1, minWidth:0, fontSize:13.5, fontWeight:600, color:'var(--text)', lineHeight:1.4, overflowWrap:'anywhere' }}>{headline(a, titleOf)}</div>
+                  <div style={{ display:'flex', gap:5, flexShrink:0 }}>
+                    <button type="button" onClick={() => setEditingIdx(i)} style={{ ...small, color:'var(--forest)' }}>Edit</button>
+                    <button type="button" onClick={() => removeAction(i)} aria-label="Remove this change" style={{ ...small, color:'var(--muted)' }}>✕</button>
+                  </div>
+                </div>
                 {chips.length > 0 && (
                   <div style={{ marginTop:7, display:'flex', flexWrap:'wrap', gap:6 }}>
                     {chips.map((c, j) => (
@@ -249,11 +435,12 @@ export default function AiAssistant({ categories = [], tasks = [], onApply, onCl
                 )}
               </div>
             )})}
+            {editingIdx !== null && <div style={{ fontSize:11.5, color:'var(--muted)', marginTop:6 }}>Tap Done on the change you’re editing to apply.</div>}
             <div style={{ display:'flex', gap:8, marginTop:14 }}>
-              <button onClick={()=>setPlan(null)}
+              <button onClick={()=>{ setPlan(null); setEditingIdx(null) }}
                 style={{ padding:'13px 16px', borderRadius:12, border:'1px solid var(--border)', background:'white', color:'var(--muted)', cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:600, fontSize:14 }}>Back</button>
-              <button onClick={apply} disabled={!plan.actions.length}
-                style={{ flex:1, padding:'13px', borderRadius:12, border:'none', background: plan.actions.length ? 'var(--forest)' : '#E1E1E6', color: plan.actions.length ? 'var(--green-light)' : '#9CA3AF', cursor: plan.actions.length ? 'pointer' : 'default', fontFamily:'DM Sans,sans-serif', fontWeight:700, fontSize:15 }}>
+              <button onClick={apply} disabled={!canApply}
+                style={{ flex:1, padding:'13px', borderRadius:12, border:'none', background: canApply ? 'var(--forest)' : '#E1E1E6', color: canApply ? 'var(--green-light)' : '#9CA3AF', cursor: canApply ? 'pointer' : 'default', fontFamily:'DM Sans,sans-serif', fontWeight:700, fontSize:15 }}>
                 Apply {plan.actions.length ? `${plan.actions.length} change${plan.actions.length > 1 ? 's' : ''}` : ''}
               </button>
             </div>
