@@ -41,7 +41,7 @@ function endTimeFrom(start, mins) {
   return `${String(Math.floor(total/60)).padStart(2,'0')}:${String(total%60).padStart(2,'0')}`
 }
 
-export default function Calendar({ commitments, vacations, events, log, categories, jumpTo, addCommitment, updateCommitment, deleteCommitment, moveCommitmentToThoughts, todos, weekState, syncToggle, recurringTasks, recurringExceptions, skipRecurringOccurrence, addRecurringTask, updateRecurringTask, deleteRecurringTask, routines = [], taskTemplates = [], labelModel = null, externalCalendars = [], toggleCalendar, importedAdoptions = {}, adoptImportedEvent, openInToday }) {
+export default function Calendar({ commitments, vacations, events, log, categories, jumpTo, addCommitment, updateCommitment, deleteCommitment, moveCommitmentToThoughts, todos, weekState, syncToggle, recurringTasks, recurringExceptions, skipRecurringOccurrence, addRecurringTask, updateRecurringTask, deleteRecurringTask, taskTemplates = [], labelModel = null, externalCalendars = [], toggleCalendar, importedAdoptions = {}, adoptImportedEvent, openInToday }) {
   // monthOffset shifts by whole months from the current month: 0 = this month,
   // -1 = last month, +1 = next month, and so on — unbounded either way.
   const [monthOffset, setMonthOffset] = useState(0)
@@ -130,14 +130,13 @@ export default function Calendar({ commitments, vacations, events, log, categori
   }
 
   // ── Effective done, mirroring Today & Week ───────────────────
-  // A task that sits inside a time block, belongs to a routine, or opts in via
+  // A task that sits inside a time block or opts in via
   // autoComplete gets ticked once its window has passed WITHOUT storing a
   // record (that's the whole point of clock-based completion). The Calendar used
   // to read only the stored record, so those items — checked off on Today —
   // still looked un-done here. These helpers reproduce that logic so the three
   // views agree. An explicit tap (a stored record) always wins over the default.
   const nowMins = (() => { const d = new Date(); return d.getHours() * 60 + d.getMinutes() })()
-  const routineIdSet = new Set((routines || []).map(r => r.id))
   const hhmm = (t) => { if (!t) return null; const [h, m] = String(t).split(':').map(Number); return h * 60 + m }
 
   // Add a commitment on any date (long-term planning), with its own optional
@@ -214,7 +213,7 @@ export default function Calendar({ commitments, vacations, events, log, categori
         done: c.done,
         isRecurring: false,
         _mins: c.time ? hhmm(c.time) : null, _dur: c.durationMins || null,
-        autoComplete: !!c.autoComplete, routine: c.routine || null,
+        autoComplete: !!c.autoComplete,
         description: c.description, subtasks: Array.isArray(c.subtasks) ? c.subtasks : [],
         color: cat.color, icon: cat.icon, catLabel: cat.label,
       }
@@ -233,7 +232,7 @@ export default function Calendar({ commitments, vacations, events, log, categori
       text: o.text, label: o.label, cat: o.cat,
       done: !!(todos && todos[`${dateStr}_${o.id}`]),
       _mins: o._time ? hhmm(o._time) : null, _dur: o._dur || null,
-      autoComplete: !!o.autoComplete, routine: o.routine || null,
+      autoComplete: !!o.autoComplete,
       color: cat.color, icon: cat.icon, catLabel: cat.label,
     }
   })
@@ -249,15 +248,14 @@ export default function Calendar({ commitments, vacations, events, log, categori
       .map(c => ({ start: hhmm(c.time), end: hhmm(c.time) + c.durationMins })),
   ]
   // The done-state actually shown: an explicit record (or a commitment's own
-  // stored done) wins; otherwise a block/routine/autoComplete task ticks once
+  // stored done) wins; otherwise a block/autoComplete task ticks once
   // its window has passed (today) or the whole day is over (a past day).
   const effectiveDone = (e, dateStr, dayBlocks) => {
     const key = e.isRecurring ? `${dateStr}_${e.id}` : e.id
     if (todos && key in todos) return !!todos[key]
     if (!e.isRecurring && e.done) return true
-    const autoRoutine = e.routine && routineIdSet.has(e.routine)
     const inBlock = e._mins != null && (dayBlocks || []).some(b => e._mins >= b.start && e._mins < b.end)
-    if ((e.autoComplete === true || autoRoutine || inBlock) && e._mins != null) {
+    if ((e.autoComplete === true || inBlock) && e._mins != null) {
       return dateStr === today ? nowMins >= e._mins + (e._dur || 0) : dateStr < today
     }
     return false
@@ -287,7 +285,7 @@ export default function Calendar({ commitments, vacations, events, log, categori
               This month
             </button>
           )}
-          <RecurringFilter routines={routines} rows={recurringTasks} />
+          <RecurringFilter rows={recurringTasks} />
           <button onClick={()=>setAdding(true)}
             style={{ fontSize:11, padding:'7px 14px', borderRadius:9, border:'none', background:'var(--forest)', color:'var(--green-light)', cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:600 }}>
             + Add
@@ -487,7 +485,6 @@ export default function Calendar({ commitments, vacations, events, log, categori
 
       {adding && (
         <AddItemModal
-          routines={routines}
           presetDate={selected || ''}
           categories={categories}
           templates={taskTemplates}
@@ -501,7 +498,6 @@ export default function Calendar({ commitments, vacations, events, log, categori
         <AddItemModal
           existing={editing}
           categories={categories}
-          routines={routines}
           onSave={handleEdit}
           onSaveRecurring={addRecurringTask}
           onDelete={c => deleteCommitment && deleteCommitment(c.id)}
@@ -515,7 +511,6 @@ export default function Calendar({ commitments, vacations, events, log, categori
           existingRecurring={editingRec}
           occurrenceDate={editingRecDate}
           categories={categories}
-          routines={routines}
           onSaveOccurrence={(origDate, occ, reminderMins) => {
             // Detach this one day: hide the series on its ORIGINAL day and add a
             // one-off on whatever day it now lands (occ.date) — so moving a single

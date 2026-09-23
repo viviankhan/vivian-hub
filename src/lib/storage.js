@@ -688,14 +688,6 @@ export const setRecurringExceptions = v  => dbSet('recurring_exceptions', v)
 export const getRecurringMeta = () => dbGet('recurring_meta').then(v => v ?? {})
 export const setRecurringMeta = v  => dbSet('recurring_meta', v)
 
-// ── Routine groups ─────────────────────────────────────────────
-// User-defined groups (Morning routine, Night routine, …) that recurring tasks
-// can be filed under. Each: { id, name, tint }. A synced kv_store blob (like
-// the meta above) so grouping needs no schema migration. Stored under its own
-// key — separate from the legacy `routines` item-list blob. `null` → seed.
-export const getRoutineGroups = () => dbGet('routine_groups').then(v => Array.isArray(v) ? v : null)
-export const setRoutineGroups = v  => dbSet('routine_groups', v)
-
 // ── Subscribed (external) calendars ─────────────────────────────
 // Read-only calendar feeds the user subscribes to by ICS URL — e.g. a published
 // Apple Family / iCloud calendar. Just the subscription config lives here (one
@@ -1114,8 +1106,6 @@ export async function uploadFile(weekId, file) {
   await lsSet('files_'+weekId, [...all, record])
   return record
 }
-export const getRoutineLog    = () => dbGet('routine_log').then(v => v ?? {})
-export const setRoutineLog    = v  => dbSet('routine_log', v)
 
 export async function deleteStudyFile(id, weekId, storagePath) {
   if (USE_SUPABASE) {

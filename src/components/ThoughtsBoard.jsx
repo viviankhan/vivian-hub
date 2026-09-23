@@ -59,7 +59,7 @@ function Sticky({ t, onSchedule, onComplete, onDelete, style, compact }) {
 }
 
 // ── Board ──────────────────────────────────────────────────────
-export default function ThoughtsBoard({ addCommitment, addRecurringTask, categories, routines = [], taskTemplates = [], labelModel = null, appendLog }) {
+export default function ThoughtsBoard({ addCommitment, addRecurringTask, categories, taskTemplates = [], labelModel = null, appendLog }) {
   const [thoughts, setThoughtsState] = useState([])
   const [loaded, setLoaded] = useState(false)
   const [text, setText]   = useState('')
@@ -264,7 +264,6 @@ export default function ThoughtsBoard({ addCommitment, addRecurringTask, categor
         <AddItemModal
           presetText={scheduling.text}
           categories={categories}
-          routines={routines}
           templates={taskTemplates}
           labelModel={labelModel}
           onSave={handleScheduled}

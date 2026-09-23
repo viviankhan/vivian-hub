@@ -21,7 +21,6 @@ import {
   getRecurringTasks, addRecurringTask, updateRecurringTask, deleteRecurringTask, clearRecurringTasks,
   getRecurringExceptions, setRecurringExceptions,
   getRecurringMeta, setRecurringMeta,
-  getRoutineGroups, setRoutineGroups,
   getWellnessCheckins, setWellnessCheckins,
   getWellnessEffects, setWellnessEffects,
   getWellnessEpisodes, setWellnessEpisodes,
@@ -100,18 +99,6 @@ function todayStr() {
 // A YYYY-MM-DD date that's already gone (strictly before today). Scheduling
 // something onto such a day means it already happened, so it lands checked off.
 function isPastDate(dateStr) { return !!dateStr && dateStr < todayStr() }
-
-// Routine groups tasks can be filed under. Each carries a soft "film" tint that
-// washes behind its tasks on the timeline (pink morning, blue night by default).
-// Users can rename/add/delete these; these two are just the initial seed.
-const DEFAULT_ROUTINES = [
-  { id:'morning', name:'Morning routine', tint:'#FBE79E' },
-  { id:'night',   name:'Night routine',   tint:'#BBD5F0' },
-]
-// Old seed tints we quietly upgrade on load (so an existing morning routine
-// still on the original pink picks up the new pale yellow, without touching a
-// tint the user has since customized).
-const LEGACY_ROUTINE_TINTS = { morning: '#F9C9D9' }
 
 const TABS = [
   { id:'today',       label:'Today',       glyph:'list' },
@@ -662,7 +649,6 @@ export default function App() {
   const [categories,       setCategories_]      = useState([])
   const [timeLogs,         setTimeLogs_]        = useState([])   // manual hours logged on the Informatics page
   const [taskTemplates,    setTaskTemplates_]   = useState([])   // reusable date-less task presets (the Task Menu)
-  const [routines,         setRoutines_]         = useState(DEFAULT_ROUTINES)
   // ── Labels & records ──────────────────────────────────────────
   // `labelMeta` is what turns a plain label into a record label: the folders it
   // files into and the fields it adds to the add-task sheet (see lib/labels.js).
@@ -698,12 +684,12 @@ export default function App() {
   const loadAll = useCallback(async ({ migrate = false } = {}) => {
     try {
       if (migrate) await runMigrationIfNeeded()
-      const [comp, l, n, fcp, fcs, sch, com, rt, vac, evs, cats, cmeta, rexc, rmeta, rout, tlogs, tpls, chist, wlc, wlfx, wlep, wlg, wlem, wltr, artov, wlrules, lmeta, tfolders, tpeople, tentries] = await Promise.all([
+      const [comp, l, n, fcp, fcs, sch, com, rt, vac, evs, cats, cmeta, rexc, rmeta, tlogs, tpls, chist, wlc, wlfx, wlep, wlg, wlem, wltr, artov, wlrules, lmeta, tfolders, tpeople, tentries] = await Promise.all([
         getCompletions(), getLogEntries(), getNotes(),
         getFcProgress(), getFcStudied(), getScheduledTasks(),
         getCommitments(), getRecurringTasks(), getVacations(), getEvents(),
         seedCategoriesIfNeeded(), getCommitmentMeta(), getRecurringExceptions(), getRecurringMeta(),
-        getRoutineGroups(), getTimeLogs(), getTaskTemplates(), getChangeHistory(),
+        getTimeLogs(), getTaskTemplates(), getChangeHistory(),
         getWellnessCheckins(), getWellnessEffects(), getWellnessEpisodes(), getWellnessGame(),
         getWellnessEmotions(), getWellnessTreasures(), getArtOverrides(),
         getWellnessRules(),
@@ -724,7 +710,9 @@ export default function App() {
       setCategories_(sortLabels(cats)); setCommitmentMeta_(cmeta); setRecurringExceptions_(rexc); setRecurringMeta_(rmeta)
       setTimeLogs_(Array.isArray(tlogs) ? tlogs : [])
       setTaskTemplates_(Array.isArray(tpls) ? tpls : [])
-      setChangeHistory_(Array.isArray(chist) ? chist : [])
+      // Routine groups are gone, so a "Deleted routine" entry has nothing left
+      // to undo — drop those rather than offer an Undo that does nothing.
+      setChangeHistory_(Array.isArray(chist) ? chist.filter(h => h && h.entity !== 'routine') : [])
       setWlCheckins_(Array.isArray(wlc) ? wlc : [])
       setWlEffects_(Array.isArray(wlfx) ? wlfx : null)
       setWlEpisodes_(Array.isArray(wlep) ? wlep : [])
@@ -739,23 +727,6 @@ export default function App() {
       // Seed the custom-art override store from the synced blob so any uploaded
       // images replace their code-drawn defaults on first paint.
       loadOverrides(artov)
-      // Routine groups: use what's saved, or seed the Morning/Night defaults.
-      if (rout) {
-        // One-time tint upgrade: bump any routine still on an old seed tint to
-        // its current default (leaves customized tints alone).
-        let changed = false
-        const upgraded = rout.map(r => {
-          const legacy = LEGACY_ROUTINE_TINTS[r.id]
-          if (legacy && (r.tint || '').toUpperCase() === legacy.toUpperCase()) {
-            changed = true
-            const def = DEFAULT_ROUTINES.find(d => d.id === r.id)
-            return { ...r, tint: def ? def.tint : r.tint }
-          }
-          return r
-        })
-        setRoutines_(upgraded)
-        if (changed) setRoutineGroups(upgraded).catch(() => {})
-      } else setRoutineGroups(DEFAULT_ROUTINES).catch(() => {})
     } catch (e) {
       console.error('[Bloom] loading your data failed:', e)
     } finally {
@@ -1109,18 +1080,17 @@ export default function App() {
     try {
       const created = await addRecurringTask(task)
       setRecurringTaskRows(prev => [...prev, created])
-      // Repeat rule extras (freq/interval/monthDay/durationMins) + routine group
-      // aren't table columns — stash them in the synced recurring_meta blob
+      // Repeat rule extras (freq/interval/monthDay/durationMins) aren't table
+      // columns — stash them in the synced recurring_meta blob
       // keyed by row id.
-      const { freq, interval, monthDay, durationMins, routine, icon, color, block, location, autoComplete } = task
-      if ((freq && freq !== 'weekly') || (interval && interval > 1) || monthDay || durationMins || routine || icon || color || block || location || autoComplete) {
+      const { freq, interval, monthDay, durationMins, icon, color, block, location, autoComplete } = task
+      if ((freq && freq !== 'weekly') || (interval && interval > 1) || monthDay || durationMins || icon || color || block || location || autoComplete) {
         setRecurringMeta_(prev => {
           const next = { ...prev, [created.id]: {
             ...(freq ? { freq } : {}),
             ...(interval && interval > 1 ? { interval } : {}),
             ...(monthDay ? { monthDay } : {}),
             ...(durationMins ? { durationMins } : {}),
-            ...(routine ? { routine } : {}),
             ...(icon ? { icon } : {}),
             ...(color ? { color } : {}),
             ...(block ? { block: true } : {}),
@@ -1138,16 +1108,15 @@ export default function App() {
       const updated = await updateRecurringTask(id, task)
       setRecurringTaskRows(prev => prev.map(t => t.id===id ? updated : t))
     } catch (e) { reportSaveError(e) }
-    // Keep the rule extras (freq/interval/monthDay/durationMins) + routine group
-    // in sync with the edit — set them when present, clear them when it's back
-    // to plain weekly with no duration and no routine.
-    const { freq, interval, monthDay, durationMins, routine, icon, color, block, location, autoComplete } = task
+    // Keep the rule extras (freq/interval/monthDay/durationMins) in sync with
+    // the edit — set them when present, clear them when it's back to plain
+    // weekly with no duration.
+    const { freq, interval, monthDay, durationMins, icon, color, block, location, autoComplete } = task
     const extra = {
       ...(freq && freq !== 'weekly' ? { freq } : {}),
       ...(interval && interval > 1 ? { interval } : {}),
       ...(monthDay ? { monthDay } : {}),
       ...(durationMins ? { durationMins } : {}),
-      ...(routine ? { routine } : {}),
       ...(icon ? { icon } : {}),
       ...(color ? { color } : {}),
       ...(block ? { block: true } : {}),
@@ -1251,83 +1220,6 @@ export default function App() {
   // so the chain there reaches for the commit through the register.
   useEffect(() => { registerLabelReorder(reorderCategoriesFn); return () => registerLabelReorder(null) }, [reorderCategoriesFn])
 
-  // ── Routine groups CRUD (one synced kv blob) ─────────────────
-  // The whole list is one blob, so each op writes the next array. Deleting a
-  // group also unfiles any recurring task that pointed at it (clears the
-  // routine key in the meta blob) so no task references a ghost group.
-  const persistRoutines = useCallback(next => { setRoutines_(next); setRoutineGroups(next).catch(reportSaveError); return next }, [])
-  const addRoutineFn = useCallback((name, tint) => {
-    const id = 'rt-' + Date.now().toString(36)
-    setRoutines_(prev => persistRoutines([...prev, { id, name: (name || 'New routine').trim(), tint: tint || '#D9C7EE' }]))
-  }, [persistRoutines])
-  const updateRoutineFn = useCallback((id, changes) => {
-    setRoutines_(prev => persistRoutines(prev.map(r => r.id === id ? { ...r, ...changes } : r)))
-  }, [persistRoutines])
-  // Put a deleted routine group back, re-filing the tasks that were in it. Used
-  // by both Ctrl+Z and the Edits list, so the two agree on what "undo" means.
-  const restoreRoutineFn = useCallback((group, filings) => {
-    if (!group) return
-    const refile = (prev, keys) => {
-      if (!keys || !keys.length) return null
-      const next = { ...prev }
-      for (const k of keys) next[k] = { ...(next[k] || {}), routine: group.id }
-      return next
-    }
-    setRoutines_(prev => prev.some(r => r.id === group.id) ? prev : persistRoutines([...prev, group]))
-    setRecurringMeta_(prev => {
-      const next = refile(prev, filings?.recurring)
-      if (next) setRecurringMeta(next).catch(reportSaveError)
-      return next || prev
-    })
-    setCommitmentMeta_(prev => {
-      const next = refile(prev, filings?.commitment)
-      if (next) setCommitmentMeta(next).catch(reportSaveError)
-      return next || prev
-    })
-  }, [persistRoutines])
-
-  // Deleting a routine group is a whole-history change — it takes the group off
-  // every day at once — so it is snapshotted first and put on the undo stack and
-  // in the edit history, like every other destructive op. (It used to be
-  // neither, which made a mis-tap unrecoverable.)
-  const deleteRoutineFn = useCallback(id => {
-    let snapGroup = null
-    const snapFilings = { recurring: [], commitment: [] }
-    setRoutines_(prev => {
-      snapGroup = prev.find(r => r.id === id) || null
-      return persistRoutines(prev.filter(r => r.id !== id))
-    })
-    // Unfile everything that pointed at the group — repeating tasks AND one-off
-    // commitments, both of which can be filed under a routine — so nothing is
-    // left tinted by a routine that no longer exists. Which keys were unfiled is
-    // remembered so the undo can put the group back with its members.
-    const unfile = (prev, into) => {
-      let touched = false
-      const next = {}
-      for (const [k, v] of Object.entries(prev)) {
-        if (v && v.routine === id) { const { routine, ...rest } = v; if (Object.keys(rest).length) next[k] = rest; into.push(k); touched = true }
-        else next[k] = v
-      }
-      return touched ? next : null
-    }
-    setRecurringMeta_(prev => {
-      const next = unfile(prev, snapFilings.recurring)
-      if (next) setRecurringMeta(next).catch(reportSaveError)
-      return next || prev
-    })
-    setCommitmentMeta_(prev => {
-      const next = unfile(prev, snapFilings.commitment)
-      if (next) setCommitmentMeta(next).catch(reportSaveError)
-      return next || prev
-    })
-    if (!snapGroup) return
-    // The inverse is plain data, not a closure — the edit history is persisted,
-    // so a routine deleted days ago can still be put back from Settings → Edits.
-    recordChange({ kind: 'delete', entity: 'routine', label: 'Deleted routine “' + (snapGroup.name || 'routine') + '”',
-      inverse: { op: 'restoreRoutine', group: snapGroup, filings: snapFilings } })
-    pushUndo('deleted the routine “' + (snapGroup.name || 'routine') + '”', () => restoreRoutineFn(snapGroup, snapFilings))
-  }, [persistRoutines, restoreRoutineFn])
-
   const addScheduledTask = useCallback(async task => {
     setScheduled_(prev => { const next = [...prev, task]; setScheduledTasks(next); return next })
   }, [])
@@ -1409,7 +1301,9 @@ export default function App() {
   }, [])
 
   const addCommitment = useCallback(async (c, opts = {}) => {
-    const { description, subtasks, cats, color, icon, location, startedAt, block, routine, autoComplete, recordValues, ...core } = c
+    // `routine` is a leftover field from the removed routine groups — dropped,
+    // never written to the row or the meta blob.
+    const { description, subtasks, cats, color, icon, location, startedAt, block, routine: _routine, autoComplete, recordValues, ...core } = c
     // Scheduling an item onto a day that's already passed means it happened —
     // land it already checked off (a real completion that counts toward
     // progress), unless it's a time block or the caller already set done.
@@ -1432,8 +1326,8 @@ export default function App() {
       if (!opts.silent) recordChange({ kind: 'add', entity: 'task', label: 'Added “' + (created.text || 'task') + '”', inverse: { op: 'delete', entity: 'task', id: created.id } })
       const hasCats = Array.isArray(cats) && cats.length > 1
       const hasRecord = recordValues && Object.keys(recordValues).length > 0
-      const extra = { ...(hasCats ? { cats } : {}), ...(color ? { color } : {}), ...(icon ? { icon } : {}), ...(location ? { location } : {}), ...(startedAt ? { startedAt } : {}), ...(block ? { block: true } : {}), ...(routine ? { routine } : {}), ...(autoComplete ? { autoComplete: true } : {}), ...(hasRecord ? { recordValues } : {}) }
-      if ((description && description.trim()) || (subtasks && subtasks.length) || hasCats || color || icon || location || startedAt || block || routine || autoComplete || hasRecord) {
+      const extra = { ...(hasCats ? { cats } : {}), ...(color ? { color } : {}), ...(icon ? { icon } : {}), ...(location ? { location } : {}), ...(startedAt ? { startedAt } : {}), ...(block ? { block: true } : {}), ...(autoComplete ? { autoComplete: true } : {}), ...(hasRecord ? { recordValues } : {}) }
+      if ((description && description.trim()) || (subtasks && subtasks.length) || hasCats || color || icon || location || startedAt || block || autoComplete || hasRecord) {
         setCommitmentMeta_(prev => {
           const next = { ...prev, [created.id]: { description: description || '', subtasks: subtasks || [], ...extra } }
           setCommitmentMeta(next).catch(reportSaveError)
@@ -1486,7 +1380,7 @@ export default function App() {
     markImportedAdopted(key, cid)
   }, [importedAdoptions, addCommitment, markImportedAdopted])
   const updateCommitment = useCallback(async (id, changes, opts = {}) => {
-    const { description, subtasks, cats, color, icon, location, startedAt, block, routine, autoComplete, recordValues, ...core } = changes
+    const { description, subtasks, cats, color, icon, location, startedAt, block, routine: _routine, autoComplete, recordValues, ...core } = changes
     // Snapshot the prior values of exactly the fields being changed, so this
     // edit can be reversed later. Pure check-offs (only `done`) and pure subtask
     // check-offs (same subtask count) are skipped — they're not "edits".
@@ -1515,7 +1409,7 @@ export default function App() {
         // changed fields, so swapping the whole row in would blank the rest.
         setCommitments_(prev => prev.map(c => c.id===id ? { ...c, ...updated } : c))
       }
-      if (description !== undefined || subtasks !== undefined || cats !== undefined || color !== undefined || icon !== undefined || location !== undefined || startedAt !== undefined || block !== undefined || routine !== undefined || autoComplete !== undefined || recordValues !== undefined) {
+      if (description !== undefined || subtasks !== undefined || cats !== undefined || color !== undefined || icon !== undefined || location !== undefined || startedAt !== undefined || block !== undefined || autoComplete !== undefined || recordValues !== undefined) {
         setCommitmentMeta_(prev => {
           const merged = { ...(prev[id] || {}) }
           if (description !== undefined) merged.description = description
@@ -1543,10 +1437,6 @@ export default function App() {
           if (block !== undefined) {
             if (block) merged.block = true
             else delete merged.block
-          }
-          if (routine !== undefined) {
-            if (routine) merged.routine = routine
-            else delete merged.routine
           }
           if (autoComplete !== undefined) {
             if (autoComplete) merged.autoComplete = true
@@ -1671,8 +1561,6 @@ export default function App() {
         else { const s = inv.snapshot || {}; addCommitment({ ...(s.core || {}), ...(s.meta || {}) }, { silent: true }) }
       } else if (inv.op === 'update') {
         if (inv.entity === 'task') updateCommitment(inv.id, inv.before || {}, { silent: true })
-      } else if (inv.op === 'restoreRoutine') {
-        restoreRoutineFn(inv.group, inv.filings)
       }
     } catch (e) { reportSaveError(e) }
     setChangeHistory_(prev => {
@@ -1680,7 +1568,7 @@ export default function App() {
       setChangeHistory(next).catch(() => {})
       return next
     })
-  }, [addCommitment, updateCommitment, deleteCommitment, addEvent, deleteEvent, restoreRoutineFn])
+  }, [addCommitment, updateCommitment, deleteCommitment, addEvent, deleteEvent])
 
   // Wipe the history list (does not touch any tasks/events — just clears the log).
   const clearChangeHistory = useCallback(() => {
@@ -1714,7 +1602,7 @@ export default function App() {
   useEffect(() => { trackerEntriesRef.current = trackerEntries }, [trackerEntries])
   useEffect(() => { commitmentsLiveRef.current = commitments }, [commitments])
 
-  // Each tracker blob is written whole, like the routine groups and time logs.
+  // Each tracker blob is written whole, like the time logs.
   // The ref is updated alongside the state so a second change in the same tick
   // (a task recording into two folders at once) builds on the first.
   const saveTrackerFolders = useCallback(next => {
@@ -1851,7 +1739,7 @@ export default function App() {
 
   // ── Task Menu templates (one synced kv blob) ─────────────────
   // Reusable, date-less task presets. Each op writes the whole next array, like
-  // the routine groups + time logs above.
+  // the time logs above.
   const addTaskTemplate = useCallback(tpl => {
     const row = { id: tpl.id || ('tpl-' + Date.now().toString(36)), createdAt: tpl.createdAt || new Date().toISOString(), ...tpl }
     setTaskTemplates_(prev => { const next = [...prev, row]; setTaskTemplates(next).catch(reportSaveError); return next })
@@ -1865,8 +1753,8 @@ export default function App() {
 
   // ── Wellness persist helpers (each one synced kv blob) ───────
   // The wellness tab composes the pure game/analysis logic in lib/wellness.js
-  // and hands us the whole next value to save — mirroring the routine-group /
-  // time-log pattern above (local state first, cloud write best-effort).
+  // and hands us the whole next value to save — mirroring the time-log
+  // pattern above (local state first, cloud write best-effort).
   const persistWlCheckins = useCallback(next => { setWlCheckins_(next); setWellnessCheckins(next).catch(reportSaveError) }, [])
   const persistWlEffects  = useCallback(next => { setWlEffects_(next);  setWellnessEffects(next).catch(reportSaveError) }, [])
   const persistWlEpisodes = useCallback(next => { setWlEpisodes_(next); setWellnessEpisodes(next).catch(reportSaveError) }, [])
@@ -1896,7 +1784,7 @@ export default function App() {
     const currentDone = isCommitment
       ? commitments.find(c => c.id===id)?.done
       : !!completions[storageKey]
-    // Callers that track an effective done-state (e.g. routine tasks that
+    // Callers that track an effective done-state (e.g. block tasks that
     // auto-complete by time) pass the exact next value so the tap always flips
     // what's shown, not just the stored record.
     const nowDone = explicitNext === undefined ? !currentDone : !!explicitNext
@@ -1954,7 +1842,7 @@ export default function App() {
   }, [completions, commitments, importedAdoptions])
 
   // Drop a task's stored completion record entirely (as opposed to syncToggle,
-  // which records an explicit true/false). With no record, a routine / block /
+  // which records an explicit true/false). With no record, a block /
   // auto-complete task falls back to being ticked purely by the clock — checked
   // once its window has passed, unchecked until then. Used when the timeline
   // re-times such a task so its checkmark follows the new time, not a stale tap.
@@ -1990,7 +1878,6 @@ export default function App() {
     location: commitmentMeta[c.id]?.location ?? null,
     startedAt: commitmentMeta[c.id]?.startedAt ?? null,
     block: commitmentMeta[c.id]?.block ?? false,
-    routine: commitmentMeta[c.id]?.routine ?? null,
     autoComplete: commitmentMeta[c.id]?.autoComplete ?? false,
     recordValues: commitmentMeta[c.id]?.recordValues ?? null,
   }))
@@ -2028,12 +1915,6 @@ export default function App() {
     deleteRecurringTask: deleteRecurringTaskFn,
     skipRecurringOccurrence,
     unskipRecurringOccurrence,
-    // Routine groups + their CRUD, shared so Today/Calendar can tint by them
-    // and the Recurring tab can manage them.
-    routines,
-    addRoutine: addRoutineFn,
-    updateRoutine: updateRoutineFn,
-    deleteRoutine: deleteRoutineFn,
     // The Task Menu — reusable date-less presets the add sheet can pull from.
     taskTemplates,
     summary,
@@ -2121,15 +2002,14 @@ export default function App() {
         {tab==='calendar'    && <Calendar    {...sharedProps} jumpTo={jumpTo}
           openInToday={(date, taskId) => { setTodayJump({ date, taskId, nonce: Date.now() }); setTab('today') }} />}
         {tab==='thoughts'    && <ThoughtsBoard addCommitment={addCommitment} addRecurringTask={addRecurringTaskFn}
-          categories={categories} routines={routines} taskTemplates={taskTemplates} labelModel={labelModel}
+          categories={categories} taskTemplates={taskTemplates} labelModel={labelModel}
           appendLog={appendLog} />}
         {tab==='events'      && <EventsManager events={events} addEvent={addEvent} deleteEvent={deleteEvent}
           vacations={vacations} addVacation={addVacation} deleteVacation={deleteVacation} />}
         {tab==='recurring'   && <RecurringTasksManager recurringTasks={{ tasks: recurringTasksEnriched }}
           addRecurringTask={addRecurringTaskFn} updateRecurringTask={updateRecurringTaskFn}
           deleteRecurringTask={deleteRecurringTaskFn} clearRecurringTasks={clearRecurringTasksFn}
-          categories={categories} taskTemplates={taskTemplates} labelModel={labelModel}
-          routines={routines} addRoutine={addRoutineFn} updateRoutine={updateRoutineFn} deleteRoutine={deleteRoutineFn} />}
+          categories={categories} taskTemplates={taskTemplates} labelModel={labelModel} />}
         {tab==='wellness'    && <BloomWellness
           checkins={wlCheckins} persistCheckins={persistWlCheckins}
           effects={wlEffects} persistEffects={persistWlEffects}

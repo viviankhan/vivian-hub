@@ -301,7 +301,7 @@ const NoteIcon2 = () => (<svg viewBox="0 0 24 24" width="18" height="18" fill="n
 const TrashIcon2 = () => (<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4.5 7h15M9 7V5.2A1.2 1.2 0 0 1 10.2 4h3.6A1.2 1.2 0 0 1 15 5.2V7M6.5 7l1 12.5h9L17.5 7"/></svg>)
 const TargetIcon = () => (<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4.5"/><circle cx="12" cy="12" r="1" fill="currentColor" stroke="none"/></svg>)
 
-export default function AddItemModal({ existing = null, existingRecurring = null, occurrenceDate = null, onSaveOccurrence = null, onSaveFuture = null, onDeleteOccurrence = null, onDeleteFuture = null, presetDate = null, presetText = '', presetTime = '', presetDur = null, presetCat = '', presetCats = null, presetDescription = '', presetSubtasks = null, presetReminders = null, lockDate = false, defaultRepeat = false, categories = [], routines = [], templates = [], labelModel = null, onSave, onSaveRecurring = null, onDelete = null, onDuplicate = null, onMoveToThoughts = null, onClose, title = 'Add to calendar' }) {
+export default function AddItemModal({ existing = null, existingRecurring = null, occurrenceDate = null, onSaveOccurrence = null, onSaveFuture = null, onDeleteOccurrence = null, onDeleteFuture = null, presetDate = null, presetText = '', presetTime = '', presetDur = null, presetCat = '', presetCats = null, presetDescription = '', presetSubtasks = null, presetReminders = null, lockDate = false, defaultRepeat = false, categories = [], templates = [], labelModel = null, onSave, onSaveRecurring = null, onDelete = null, onDuplicate = null, onMoveToThoughts = null, onClose, title = 'Add to calendar' }) {
   const cats = (categories && categories.length) ? categories : DEFAULT_CATEGORIES
   const isEdit = !!existing
   // Editing an existing recurring task: it comes in the Recurring-tab row shape
@@ -540,12 +540,8 @@ export default function AddItemModal({ existing = null, existingRecurring = null
   }
   const intervalUnit = repeatFreq === 'daily' ? 'day' : repeatFreq === 'monthly' ? 'month' : 'week'
   const bumpInterval = (d) => setRepeatInterval(n => Math.max(1, Math.min(99, n + d)))
-  // Routine group this recurring task belongs to ('' = none). Files it under a
-  // Morning/Night (or custom) group in the Recurring tab + tints its timeline
-  // block with that group's film.
-  const [routine, setRoutine] = useState(existing?.routine ?? rec?.routine ?? '')
-  // Auto-complete: when on, the recurring task ticks itself off once its
-  // window has passed — works for any task, not just those in a routine.
+  // Auto-complete: when on, the task ticks itself off once its window has
+  // passed — works for any task, not just those inside a time block.
   const [autoComplete, setAutoComplete] = useState(!!(existing?.autoComplete ?? rec?.autoComplete))
 
   // Which grouped row is expanded for editing (only one open at a time). On the
@@ -724,7 +720,6 @@ export default function AddItemModal({ existing = null, existingRecurring = null
       label: time ? `${fmt12(time)} — ${label.trim()}` : label.trim(),
       note: description.trim() || '',
       durationMins: durationMins || null,
-      routine: routine || null,
       icon: effectiveIcon || null,
       color: color || null,
       block: block || false,
@@ -834,10 +829,8 @@ export default function AddItemModal({ existing = null, existingRecurring = null
       location: buildLocation(),
       startedAt: existing?.startedAt ?? null,
       block,
-      // Routine grouping + auto-complete apply to any task now, not just
-      // recurring ones — a one-off can sit inside a routine (tinted + grouped)
-      // for its day, and tick itself off once its window passes.
-      routine: routine || null,
+      // Auto-complete applies to any task, not just recurring ones — a one-off
+      // can tick itself off once its window passes.
       autoComplete,
     }
     setItemSound(commitment.id, sound)
@@ -852,9 +845,6 @@ export default function AddItemModal({ existing = null, existingRecurring = null
   // instead of borrowing a real category's color.
   const primaryCat = cats.find(c => c.id === effectiveCats[0]) || null
   const headerColor = color || primaryCat?.color || activeAccent()
-  // The routine this task is filed under, if any — lets the Color row offer a
-  // one-tap "match the routine's color" shortcut.
-  const activeRoutine = routine ? routines.find(r => r.id === routine) : null
   // Foreground that stays readable on the header band — dark on light colors,
   // light on dark ones — with matching muted/hairline/button tints.
   const headerFg   = iconColorOn(headerColor)
@@ -1201,37 +1191,6 @@ export default function AddItemModal({ existing = null, existingRecurring = null
         </>}
       </DetailRow>
     ) : null,
-    // Routine — any task can be filed under a routine group (not just
-    // recurring ones): it groups in the Recurring tab and washes the
-    // routine's film behind the task on the timeline, one-off or not.
-    routine: routines.length > 0 ? (
-        <DetailRow icon={<span style={{ width:15, height:15, borderRadius:'50%', background: activeRoutine ? activeRoutine.tint : 'transparent', border: activeRoutine ? 'none' : '2px solid #C3C9D2' }} />}
-          text={activeRoutine ? activeRoutine.name : 'No routine'} textMuted={!activeRoutine}
-          hint={activeRoutine ? 'On' : null} open={expanded==='routine'} onClick={() => toggleRow('routine')}>
-          <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
-            <button onClick={() => setRoutine('')}
-              style={{ fontSize:12, padding:'7px 13px', borderRadius:16, cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:600,
-                border: routine ? '1px solid var(--border)' : '1.5px solid var(--forest)',
-                background: routine ? 'white' : 'var(--forest)', color: routine ? 'var(--muted)' : 'var(--green-light)' }}>None</button>
-            {routines.map(r => {
-              const on = routine === r.id
-              return (
-                <button key={r.id} onClick={() => setRoutine(r.id)}
-                  style={{ display:'inline-flex', alignItems:'center', gap:6, fontSize:12, padding:'7px 13px', borderRadius:16, cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:600,
-                    border: on ? `1.5px solid ${r.tint}` : '1px solid var(--border)',
-                    background: on ? r.tint : 'white', color: on ? '#3A3A3A' : 'var(--muted)' }}>
-                  <span style={{ width:10, height:10, borderRadius:'50%', background:r.tint, boxShadow: on ? 'inset 0 0 0 1px rgba(0,0,0,.15)' : 'none', flexShrink:0 }} />
-                  {r.name}
-                </button>
-              )
-            })}
-          </div>
-          <div style={{ fontSize:10.5, color:'var(--muted)', marginTop:9 }}>
-            Files this task under the routine and tints it with that group's film — even a single day's one-off task.
-          </div>
-        </DetailRow>
-
-    ) : null,
     // Color
     color: (
       <DetailRow icon={<span style={{ width:15, height:15, borderRadius:'50%', background:headerColor }} />} iconColor={headerColor}
@@ -1243,18 +1202,6 @@ export default function AddItemModal({ existing = null, existingRecurring = null
               border: color ? '1px solid var(--border)' : 'none', background: color ? 'white' : 'var(--forest)', color: color ? 'var(--muted)' : 'var(--green-light)' }}>
             {color ? 'Match label color' : '✓ Matching label color'}
           </button>
-          {/* When this task belongs to a routine, offer to paint it the
-              routine's film color so it reads as part of that group. */}
-          {activeRoutine && (
-            <button onClick={() => setColor(activeRoutine.tint)}
-              style={{ display:'inline-flex', alignItems:'center', gap:6, fontSize:11, padding:'5px 12px', borderRadius:16, cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:600,
-                border: color === activeRoutine.tint ? 'none' : '1px solid var(--border)',
-                background: color === activeRoutine.tint ? activeRoutine.tint : 'white',
-                color: color === activeRoutine.tint ? '#3A3A3A' : 'var(--muted)' }}>
-              <span style={{ width:11, height:11, borderRadius:'50%', background:activeRoutine.tint, boxShadow:'inset 0 0 0 1px rgba(0,0,0,.15)', flexShrink:0 }} />
-              {color === activeRoutine.tint ? 'Routine color' : 'Use routine color'}
-            </button>
-          )}
         </div>
       </DetailRow>
     ),

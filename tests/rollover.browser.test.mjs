@@ -97,7 +97,7 @@ const passMidnight = async () => {
   await page.waitForTimeout(400)
 }
 
-// An evening routine — the last thing on the day, and the thing that was
+// An evening wind-down — the last thing on the day, and the thing that was
 // getting lost.
 const evening = {
   commitments: [],
@@ -110,7 +110,7 @@ const evening = {
     'r-winddown':  { freq:'daily', durationMins:20 },
     'r-lightsout': { freq:'daily', durationMins:15 },
   },
-  recurring_exceptions: {}, completions: {}, routine_groups: [],
+  recurring_exceptions: {}, completions: {},
 }
 
 // ── The night passes with the app open ─────────────────────────

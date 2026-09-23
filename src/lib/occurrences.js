@@ -131,10 +131,9 @@ export function recurringOccurrence(task, dateStr) {
     label: rawLabel,
     note: task.note || '',
     carry: !!task.carry,
-    routine: task.routine || null,
     // When set, this instance checks itself off once its scheduled window has
-    // passed — even when it isn't filed under a routine (routine/block tasks
-    // already auto-complete implicitly; see Today's effectiveDone).
+    // passed — even outside a time block (block tasks already auto-complete
+    // implicitly; see Today's effectiveDone).
     autoComplete: !!task.autoComplete,
     // Per-task icon/color live in the recurring_meta blob (merged onto the row
     // before this runs), so a recurring task keeps the glyph + color you chose.

@@ -1,6 +1,6 @@
 // src/components/ColorSwatchRow.jsx
 // The one color picker used everywhere a color is chosen — task color, category
-// (label) color, event color, routine tint, theme accent. It's your OWN roster:
+// (label) color, event color, theme accent. It's your OWN roster:
 // there are no built-in "default" swatches. The row is just the colors you've
 // saved (tap to use, ✕ to delete any of them), a custom-color wheel to mix a
 // new one, and a "+" to add the mixed color to your roster.

@@ -1,13 +1,12 @@
 // src/components/RecurringFilter.jsx
 // A small "Repeating" filter for the Calendar and Week views: a button that
-// opens a checklist of the repeating-task groups (routine groups + Ungrouped)
-// plus an "Everyday habits" toggle, so you can add or subtract whole groups
-// from the view. Shared by both views; a change syncs to the other instantly.
+// opens an "Everyday habits" toggle, so daily repeats can be brought back onto
+// the view. Shared by both views; a change syncs to the other instantly.
 import { useState, useEffect } from 'react'
 import { useOutsideClose } from './IconPicker.jsx'
 import {
   getRecurringFilter, setRecurringFilter, RECURRING_FILTER_EVENT,
-  groupsInUse, hasDailyRepeats,
+  hasDailyRepeats,
 } from '../lib/viewFilter.js'
 
 const FunnelIcon = ({ color = 'currentColor' }) => (
@@ -36,7 +35,7 @@ function Row({ label, dot, on, onClick }) {
   )
 }
 
-export default function RecurringFilter({ routines = [], rows = [] }) {
+export default function RecurringFilter({ rows = [] }) {
   const [open, setOpen] = useState(false)
   const [filter, setFilterState] = useState(getRecurringFilter)
   const ref = useOutsideClose(open, setOpen)
@@ -47,25 +46,14 @@ export default function RecurringFilter({ routines = [], rows = [] }) {
     return () => window.removeEventListener(RECURRING_FILTER_EVENT, h)
   }, [])
 
-  const used = groupsInUse(rows)
   const hasDaily = hasDailyRepeats(rows)
-  const groups = [
-    ...routines.filter(r => used.has(r.id)).map(r => ({ id: r.id, name: r.name, tint: r.tint })),
-    ...(used.has('none') ? [{ id: 'none', name: 'Ungrouped', tint: '#C7CDD4' }] : []),
-  ]
-  const hidden = new Set(filter.hiddenGroups)
-  // How many groups/daily are currently subtracted — shown as a badge.
-  const subtracted = hidden.size + (hasDaily && !filter.showDaily ? 1 : 0)
+  // Whether everyday habits are currently subtracted — shown as a badge.
+  const subtracted = hasDaily && !filter.showDaily ? 1 : 0
 
-  const toggleGroup = (id) => {
-    const next = new Set(hidden)
-    next.has(id) ? next.delete(id) : next.add(id)
-    setFilterState(setRecurringFilter({ ...filter, hiddenGroups: [...next] }))
-  }
   const toggleDaily = () => setFilterState(setRecurringFilter({ ...filter, showDaily: !filter.showDaily }))
 
   // Nothing repeating to filter — hide the control entirely.
-  if (!groups.length && !hasDaily) return null
+  if (!hasDaily) return null
 
   return (
     <div ref={ref} style={{ position:'relative', flexShrink:0 }}>
@@ -78,14 +66,8 @@ export default function RecurringFilter({ routines = [], rows = [] }) {
       {open && (
         <div style={{ position:'absolute', top:'112%', left:0, zIndex:70, background:'white', border:'1px solid var(--border)', borderRadius:12, boxShadow:'0 12px 34px rgba(30,45,60,.2)', padding:6, width:'min(232px, calc(100vw - 24px))' }}>
           <div style={{ fontSize:9.5, letterSpacing:1, textTransform:'uppercase', color:'var(--muted)', fontWeight:700, padding:'6px 10px 4px' }}>Show on this view</div>
-          {groups.map(g => (
-            <Row key={g.id} label={g.name} dot={g.tint} on={!hidden.has(g.id)} onClick={() => toggleGroup(g.id)} />
-          ))}
-          {hasDaily && <>
-            <div style={{ height:1, background:'#F1EDF2', margin:'4px 8px' }} />
-            <Row label="Everyday habits" on={filter.showDaily} onClick={toggleDaily} />
-            <div style={{ fontSize:10, color:'var(--muted)', padding:'2px 10px 6px', lineHeight:1.4 }}>Daily repeats are hidden here by default so they don’t fill every day.</div>
-          </>}
+          <Row label="Everyday habits" on={filter.showDaily} onClick={toggleDaily} />
+          <div style={{ fontSize:10, color:'var(--muted)', padding:'2px 10px 6px', lineHeight:1.4 }}>Daily repeats are hidden here by default so they don’t fill every day.</div>
         </div>
       )}
     </div>

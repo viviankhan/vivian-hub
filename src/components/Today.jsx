@@ -16,7 +16,6 @@ import { setItemReminders } from '../lib/notifications.js'
 import CalendarLegend from './CalendarLegend.jsx'
 import ImportedCalendarCard from './ImportedCalendarCard.jsx'
 import { importedOn, buildImportedRows, importedKey } from '../lib/importedTasks.js'
-import ColorSwatchRow from './ColorSwatchRow.jsx'
 
 // Concentric-circle "focus" target, for the Focus Now button.
 function TargetIcon({ size = 13 }) {
@@ -45,7 +44,7 @@ function todayKey() {
 }
 // The written-out name of a day, for the log ("Thursday, September 10"). Takes
 // the day it is labelling rather than reading the clock: a log entry written
-// about another day — a task cleared off yesterday, a routine ended on a day
+// about another day — a task cleared off yesterday, a block ended on a day
 // you scrolled back to — has to carry that day's name, not this one's.
 // (Noon anchor so the key parses the same either side of a DST change.)
 function dayLabel(key) {
@@ -218,15 +217,12 @@ function ShiftToast({ result, onClose }) {
 }
 
 // ── "Start now" push chooser ───────────────────────────────────
-// Lets you pick which later tasks get pushed down to make room. Tasks are
-// grouped by their routine, so you can shift just "the rest of this routine"
-// with one tap, or reach across the day and pick specific ones.
-function ShiftChooser({ plan, routines = [], onApply, onCancel }) {
+// Lets you pick which later tasks get pushed down to make room.
+function ShiftChooser({ plan, onApply, onCancel }) {
   const [sel, setSel] = useState(() => new Set(plan.selected))
   const ids = plan.rest.map(t => t.id)
   const allOn = ids.length > 0 && ids.every(id => sel.has(id))
   const toggle = (id) => setSel(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n })
-  const setMany = (groupIds, on) => setSel(s => { const n = new Set(s); groupIds.forEach(id => on ? n.add(id) : n.delete(id)); return n })
   const pivotTitle = plan.pivot.title || stripTimePrefix(plan.pivot.label)
   // Two modes share this chooser: 'delta' (you changed a task's time — slide the
   // rest along by the same amount) and the default Start-now packing.
@@ -238,24 +234,11 @@ function ShiftChooser({ plan, routines = [], onApply, onCancel }) {
   const dir = (plan.delta || 0) >= 0 ? 'later' : 'earlier'
   const heading  = isDelta ? `Reschedule the rest?` : `Start “${pivotTitle}” now`
   const subhead  = isDelta
-    ? `You moved “${pivotTitle}” ${deltaLabel} ${dir}. Shift the checked tasks along by the same ${deltaLabel} — unchecked tasks stay put. A re-timed routine step re-ticks itself once its new time passes.`
-    : `Choose which later tasks to shift along. Unchecked tasks stay put. A re-timed routine step just re-ticks itself once its new time passes.`
+    ? `You moved “${pivotTitle}” ${deltaLabel} ${dir}. Shift the checked tasks along by the same ${deltaLabel} — unchecked tasks stay put. A re-timed block step re-ticks itself once its new time passes.`
+    : `Choose which later tasks to shift along. Unchecked tasks stay put. A re-timed block step just re-ticks itself once its new time passes.`
   const applyLabel = isDelta
     ? (sel.size ? `Reschedule ${sel.size}` : `Reschedule none`)
     : (sel.size ? `Start now · shift ${sel.size}` : `Start now · shift none`)
-
-  // Bucket the tasks by routine, preserving each group's earliest time so the
-  // groups read top-to-bottom in day order. Tasks with no routine fall into a
-  // trailing "Other" group.
-  const rMap = new Map(routines.map(r => [r.id, r]))
-  const groups = []
-  const byKey = new Map()
-  for (const t of plan.rest) {
-    const key = (t.routine && rMap.has(t.routine)) ? t.routine : '__none'
-    let g = byKey.get(key)
-    if (!g) { g = { key, routine: rMap.get(key) || null, tasks: [] }; byKey.set(key, g); groups.push(g) }
-    g.tasks.push(t)
-  }
 
   return (
     <div onClick={onCancel} style={{position:'fixed',inset:0,background:'rgba(0,0,0,.5)',zIndex:610,display:'flex',alignItems:'center',justifyContent:'center',padding:16}}>
@@ -266,37 +249,20 @@ function ShiftChooser({ plan, routines = [], onApply, onCancel }) {
           style={{fontSize:11,padding:'5px 12px',borderRadius:16,border:'1px solid var(--border)',background:'white',color:'var(--teal)',fontWeight:600,cursor:'pointer',fontFamily:'DM Sans,sans-serif',marginBottom:12}}>
           {allOn ? 'Deselect all' : 'Select all'}
         </button>
-        <div style={{display:'flex',flexDirection:'column',gap:14,marginBottom:16}}>
-          {groups.map(g=>{
-            const gids = g.tasks.map(t=>t.id)
-            const gAllOn = gids.every(id=>sel.has(id))
-            const tint = g.routine?.tint || 'var(--muted)'
+        <div style={{display:'flex',flexDirection:'column',marginBottom:16}}>
+          {plan.rest.map(t=>{
+            const on = sel.has(t.id)
+            const isDone = plan.doneIds?.has(t.id)
+            const title = t.title || stripTimePrefix(t.label)
             return (
-              <div key={g.key}>
-                <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:4,paddingBottom:4,borderBottom:'1px solid #F1EDF2'}}>
-                  <span style={{width:9,height:9,borderRadius:'50%',background:tint,flexShrink:0}} />
-                  <span style={{flex:1,minWidth:0,fontSize:11,fontWeight:700,letterSpacing:.6,textTransform:'uppercase',color:'var(--muted)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{g.routine ? g.routine.name : 'Other tasks'}</span>
-                  <button onClick={()=>setMany(gids, !gAllOn)}
-                    style={{fontSize:10.5,fontWeight:700,letterSpacing:.3,border:'none',background:'none',cursor:'pointer',color:'var(--teal)',padding:0,whiteSpace:'nowrap'}}>
-                    {gAllOn ? 'Clear' : 'Select all'}
-                  </button>
+              <div key={t.id} onClick={()=>toggle(t.id)}
+                style={{display:'flex',alignItems:'center',gap:11,padding:'8px 4px',cursor:'pointer'}}>
+                <div style={{width:20,height:20,borderRadius:6,flexShrink:0,border:on?'none':'2px solid #CDD3DA',background:on?'var(--teal)':'transparent',display:'flex',alignItems:'center',justifyContent:'center'}}>
+                  {on && <span style={{color:'white',fontSize:12,fontWeight:700}}>✓</span>}
                 </div>
-                {g.tasks.map(t=>{
-                  const on = sel.has(t.id)
-                  const isDone = plan.doneIds?.has(t.id)
-                  const title = t.title || stripTimePrefix(t.label)
-                  return (
-                    <div key={t.id} onClick={()=>toggle(t.id)}
-                      style={{display:'flex',alignItems:'center',gap:11,padding:'8px 4px',cursor:'pointer'}}>
-                      <div style={{width:20,height:20,borderRadius:6,flexShrink:0,border:on?'none':'2px solid #CDD3DA',background:on?'var(--teal)':'transparent',display:'flex',alignItems:'center',justifyContent:'center'}}>
-                        {on && <span style={{color:'white',fontSize:12,fontWeight:700}}>✓</span>}
-                      </div>
-                      <span style={{fontSize:12,color:'var(--muted)',minWidth:64,fontVariantNumeric:'tabular-nums'}}>{fmtTimeLabel(t._mins)}</span>
-                      <span style={{flex:1,minWidth:0,fontSize:14,color:'var(--text)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{title}</span>
-                      {isDone && <span style={{fontSize:10,color:'var(--muted)',letterSpacing:.5,textTransform:'uppercase',fontWeight:600,flexShrink:0}}>done</span>}
-                    </div>
-                  )
-                })}
+                <span style={{fontSize:12,color:'var(--muted)',minWidth:64,fontVariantNumeric:'tabular-nums'}}>{fmtTimeLabel(t._mins)}</span>
+                <span style={{flex:1,minWidth:0,fontSize:14,color:'var(--text)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{title}</span>
+                {isDone && <span style={{fontSize:10,color:'var(--muted)',letterSpacing:.5,textTransform:'uppercase',fontWeight:600,flexShrink:0}}>done</span>}
               </div>
             )
           })}
@@ -327,7 +293,7 @@ function stripTimePrefix(label) {
 // location, or a per-day custom reminder — still needs a detached copy, so this
 // stays conservative: it only returns true when every content field matches the
 // template, and treats an auto-suggested icon (derived from the title) as "no
-// change" so an icon-less routine step isn't detached for no reason.
+// change" so an icon-less step isn't detached for no reason.
 function occurrenceOnlyMovedTime(tmpl, occ, reminderMins) {
   if (reminderMins != null) return false                 // a per-day alert needs a real item id
   // Time blocks don't read the day-local time override (they're rendered from a
@@ -376,14 +342,14 @@ function spanHeight(mins) {
 }
 
 // Time-block films cover large stretches of the day, so they sit much fainter
-// than a routine's small film — a soft tint you can read tasks over, not a
-// saturated slab. (Routine films stay at 0.5.)
+// than a task's own film — a soft tint you can read tasks over, not a
+// saturated slab.
 const BLOCK_FILM_OPACITY = 0.16
 
 // A "free time" gap between two timed tasks, with a quick Add Task. Its height
 // grows with the length of the gap, so the day reads at relative scale.
 
-// The little round icon that marks a band — a time block or a routine. Tapping
+// The little round icon that marks a band — a time block. Tapping
 // it opens that container for editing.
 function BandIcon({ icon, color, onEdit, title = 'Edit time block' }) {
   return (
@@ -404,11 +370,10 @@ function BandChevron({ collapsed, onClick }) {
     </button>
   )
 }
-// The ⋯ on a band — the container's OWN actions, so a time block or a routine
-// can be edited or deleted from every band it draws, not just from the sheet
-// its icon happens to open. Items marked `confirm` ask a second time before
-// they fire, since the things they remove (a whole series, a routine group)
-// can't be taken back.
+// The ⋯ on a band — the container's OWN actions, so a time block can be
+// edited or deleted from every band it draws, not just from the sheet its icon
+// happens to open. Items marked `confirm` ask a second time before they fire,
+// since the things they remove (a whole series) can't be taken back.
 //
 // The popover goes in a PORTAL, not inline. Every band row pins its film with
 // `zIndex:0`, and that makes the row a stacking context — an inline popover is
@@ -572,7 +537,7 @@ function BlockBand({ seg, onEdit, onAdd, onCollapse, menu = [] }) {
 //  • active — now is inside it: the time counts down to what's LEFT.
 //  • past   — now is beyond it (or a past day): it becomes "Took a/an X break",
 //    muted, no Add Task (the moment has gone by with nothing scheduled).
-function GapRow({ mins, phase = 'future', remaining = mins, prevColor, nextColor, routineTint, routineOpacity = 0.5, onAdd, onStartNow = null, startLabel = '' }) {
+function GapRow({ mins, phase = 'future', remaining = mins, prevColor, nextColor, filmTint, filmOpacity = 0.5, onAdd, onStartNow = null, startLabel = '' }) {
   // Proportional to real clock time, on the same scale as tasks and bands.
   const h = Math.max(18, Math.round(spanHeight(mins)))
   const top = prevColor || '#C9C9D3'
@@ -607,10 +572,10 @@ function GapRow({ mins, phase = 'future', remaining = mins, prevColor, nextColor
   )
   return (
     <div className="today-gap" style={{ position:'relative', zIndex:0, display:'flex', gap:0, alignItems: compact?'center':'flex-start', opacity: isPast?0.6:1 }}>
-      {/* Continue a routine's film through the gap between two same-routine
-          tasks, square-edged so it butts flush against the pills above/below. */}
-      {routineTint && (
-        <div style={{ position:'absolute', top:0, bottom:0, left:44, right:0, background:routineTint, opacity:routineOpacity, zIndex:-1 }} />
+      {/* Continue a time block's film through a gap inside it, square-edged so
+          it butts flush against the pills above/below. */}
+      {filmTint && (
+        <div style={{ position:'absolute', top:0, bottom:0, left:44, right:0, background:filmTint, opacity:filmOpacity, zIndex:-1 }} />
       )}
       <div style={{ width:52, flexShrink:0 }} />
       <div style={{ width:52, flexShrink:0, display:'flex', justifyContent:'center' }}>
@@ -652,121 +617,6 @@ function GapRow({ mins, phase = 'future', remaining = mins, prevColor, nextColor
           </div>
         </div>
       )}
-    </div>
-  )
-}
-
-// A summary row that stands in for a routine's finished tasks — the morning
-// ones collapse into "First thing in the morning", the evening ones into "Last
-// of the evening". Tap to expand the individual done tasks (to uncheck one).
-function collapseLabelFor(routine) {
-  const n = (routine?.name || '').toLowerCase()
-  if (n.includes('morning')) return 'First thing in the morning'
-  if (n.includes('night') || n.includes('evening')) return 'Last of the evening'
-  return `${routine?.name || 'Routine'} — done`
-}
-// A routine's stand-in glyph — the sun for a morning one, the moon for a night
-// one. Shared by the band header and the done-routine summary row so a routine
-// looks the same wherever it shows up.
-function routineGlyph(routine) {
-  const n = (routine?.name || '').toLowerCase()
-  return (n.includes('night') || n.includes('evening')) ? 'glyph:moon' : 'glyph:sun'
-}
-function RoutineCollapseRow({ routine, count, expanded, onToggle, menu = [] }) {
-  const tint = routine?.tint || '#EDE7F0'
-  return (
-    <div style={{ position:'relative', zIndex:0, display:'flex', gap:0, minHeight:52, opacity:.85 }}>
-      <div style={{ position:'absolute', top:6, bottom:6, left:44, right:0, background:tint, opacity:.4, borderRadius:16, zIndex:-1 }} />
-      <div style={{ width:52, flexShrink:0 }} />
-      <div style={{ width:52, flexShrink:0, display:'flex', justifyContent:'center', alignItems:'center' }}>
-        <div style={{ width:34, height:34, borderRadius:'50%', background:tint, display:'flex', alignItems:'center', justifyContent:'center' }}>
-          <Icon value={routineGlyph(routine)} size={17} color="#5A5560" />
-        </div>
-      </div>
-      {/* The ⋯ sits OUTSIDE the expand button — a button can't nest inside one. */}
-      <div style={{ flex:1, minWidth:0, display:'flex', alignItems:'center', gap:8, padding:'10px 10px' }}>
-        <button onClick={onToggle}
-          style={{ flex:1, minWidth:0, textAlign:'left', border:'none', background:'transparent', cursor:'pointer', padding:0, display:'flex', alignItems:'center', gap:8, fontFamily:'DM Sans,sans-serif' }}>
-          <span style={{ fontSize:14.5, fontWeight:700, color:'var(--text)', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{collapseLabelFor(routine)}</span>
-          <span style={{ fontSize:12, color:'var(--muted)', flexShrink:0 }}>{count} done</span>
-          <span style={{ marginLeft:'auto', fontSize:11, color:'var(--muted)', transform:expanded?'rotate(180deg)':'none', transition:'transform .2s', flexShrink:0 }}>▾</span>
-        </button>
-        <BandMenu items={menu} name={routine?.name} />
-      </div>
-    </div>
-  )
-}
-
-// The header a routine's band wears on the timeline: its glyph, its name, and
-// the ⋯ that edits or deletes the routine itself. It sits directly above the
-// routine's first task and carries the same film, so the two read as one band —
-// the routine's answer to a time block's head segment. Without it a routine was
-// only ever a nameless wash of color you couldn't act on from the day view.
-function RoutineBandHead({ routine, onEdit, menu = [], film = true }) {
-  const tint = routine?.tint || '#EDE7F0'
-  const name = (routine?.name || 'Routine').toUpperCase()
-  return (
-    <div style={{ position:'relative', minHeight:34 }}>
-      {/* No film of its own when the routine sits inside a time block — that
-          block's wash is already behind this row, and a second one would read
-          as a different container. */}
-      {film && <div style={{ position:'absolute', top:6, bottom:0, left:44, right:0, background:tint, opacity:.5, zIndex:-1, borderTopLeftRadius:16, borderTopRightRadius:16 }} />}
-      <div style={{ position:'relative', display:'flex' }}>
-        <div style={{ width:52, flexShrink:0 }} />
-        <div style={{ paddingTop:9, paddingBottom:2, paddingLeft:11, paddingRight:8, flex:1, minWidth:0, display:'flex', alignItems:'center', gap:8 }}>
-          <BandIcon icon={routineGlyph(routine)} color="#5A5560" onEdit={onEdit} title="Edit routine" />
-          <button type="button" onClick={onEdit || undefined} title={onEdit ? 'Edit routine' : undefined}
-            style={{ fontSize:10, fontWeight:800, letterSpacing:.9, textTransform:'uppercase', color:'#39434F', background:'none', padding:0, border:'none',
-              fontFamily:'DM Sans,sans-serif', cursor:onEdit?'pointer':'default', pointerEvents:onEdit?'auto':'none',
-              whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis', minWidth:0 }}>{name}</button>
-          <span style={{ marginLeft:'auto', flexShrink:0 }}><BandMenu items={menu} name={routine?.name} /></span>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-// Rename a routine, change the film color it washes behind its tasks, or delete
-// the group — right from Today, without a trip to the Recurring tab. Deleting
-// only removes the grouping; the tasks filed under it stay where they are.
-function RoutineEditor({ routine, taskCount = 0, onSave, onDelete, onClose }) {
-  const [name, setName] = useState(routine?.name || '')
-  const [tint, setTint] = useState(routine?.tint || '#D9C7EE')
-  const [confirm, setConfirm] = useState(false)
-  const save = () => { onSave({ name: name.trim() || routine?.name || 'Routine', tint }); onClose() }
-  return (
-    <div onClick={onClose} style={{position:'fixed',inset:0,background:'rgba(0,0,0,.5)',zIndex:610,display:'flex',alignItems:'center',justifyContent:'center',padding:16}}>
-      <div onClick={e=>e.stopPropagation()} style={{background:'white',borderRadius:18,width:'100%',maxWidth:380,maxHeight:'86vh',overflowY:'auto',boxShadow:'0 24px 64px rgba(0,0,0,.3)',padding:20}}>
-        <div className="serif" style={{fontSize:18,fontWeight:600,color:'var(--text)',marginBottom:3}}>Edit routine</div>
-        <div style={{fontSize:12.5,color:'var(--muted)',marginBottom:14}}>Its name, and the film it washes behind its tasks — everywhere this routine appears.</div>
-        <input value={name} onChange={e=>setName(e.target.value)} placeholder="Routine name" aria-label="Routine name"
-          style={{width:'100%',fontSize:14,padding:'10px 12px',borderRadius:10,border:'1px solid var(--border)',fontFamily:'DM Sans,sans-serif',outline:'none',boxSizing:'border-box',marginBottom:8}} />
-        <ColorSwatchRow value={tint} onChange={setTint} size={26} />
-        <div style={{display:'flex',gap:8,marginTop:12}}>
-          <button onClick={save}
-            style={{flex:1,padding:'12px',borderRadius:12,border:'none',background:'var(--forest)',color:'var(--green-light)',fontWeight:700,fontSize:14,cursor:'pointer',fontFamily:'DM Sans,sans-serif'}}>Save changes</button>
-          <button onClick={onClose}
-            style={{padding:'12px 16px',borderRadius:12,border:'1px solid var(--border)',background:'white',color:'var(--muted)',cursor:'pointer',fontSize:13,fontFamily:'DM Sans,sans-serif'}}>Cancel</button>
-        </div>
-        {onDelete && (
-          <div style={{marginTop:14,paddingTop:12,borderTop:'1px solid #F1EDF2'}}>
-            {confirm ? (
-              <>
-                <div style={{fontSize:12,color:'#991B1B',marginBottom:8}}>Delete “{routine?.name}”? Its {taskCount} task{taskCount===1?'':'s'} stay — they just lose this routine.</div>
-                <div style={{display:'flex',gap:8}}>
-                  <button onClick={()=>{ onDelete(); onClose() }}
-                    style={{fontSize:12,padding:'8px 14px',borderRadius:9,border:'none',background:'#EF4444',color:'white',cursor:'pointer',fontFamily:'DM Sans,sans-serif',fontWeight:600}}>Delete routine</button>
-                  <button onClick={()=>setConfirm(false)}
-                    style={{fontSize:12,padding:'8px 14px',borderRadius:9,border:'1px solid var(--border)',background:'white',color:'var(--muted)',cursor:'pointer',fontFamily:'DM Sans,sans-serif'}}>Keep it</button>
-                </div>
-              </>
-            ) : (
-              <button onClick={()=>setConfirm(true)}
-                style={{fontSize:12.5,border:'none',background:'none',color:'#B91C1C',cursor:'pointer',fontFamily:'DM Sans,sans-serif',fontWeight:600,padding:0}}>Delete routine</button>
-            )}
-          </div>
-        )}
-      </div>
     </div>
   )
 }
@@ -817,7 +667,7 @@ function AnytimeCard({ tasks, categories, isDoneOf, onToggle, onOpen, onManage, 
   )
 }
 
-function TimelineBlock({ task, categories, status, now, prevColor, nextColor, routineTint, tintOpacity = 0.5, filmTop = true, filmBottom = true, bandLabel = null, bandIcon = null, onBandLabel = null, onBandCollapse = null, bandMenu = [], isDone, elapsed, dateKey, pauseData = null, offerStartNow = false, onToggle, onManage, onShiftToNow, onOpen, onFocus, onToggleSub }) {
+function TimelineBlock({ task, categories, status, now, prevColor, nextColor, filmTint, tintOpacity = 0.5, filmTop = true, filmBottom = true, bandLabel = null, bandIcon = null, onBandLabel = null, onBandCollapse = null, bandMenu = [], isDone, elapsed, dateKey, pauseData = null, offerStartNow = false, onToggle, onManage, onShiftToNow, onOpen, onFocus, onToggleSub }) {
   const [subOpen, setSubOpen] = useState(false)
   const catFound = (categories || []).find(x => x.id === task.tag)
   const catColor = catFound?.color || TAG_COLORS[task.tag] || '#9CA3AF'
@@ -864,22 +714,22 @@ function TimelineBlock({ task, categories, status, now, prevColor, nextColor, ro
 
   return (
     <div style={{ position:'relative', zIndex:0, display:'flex', gap:0, minHeight:blockMinH, opacity:isDone?.5:1, transition:'opacity .3s' }}>
-      {/* Routine film — a soft wash of the routine's color behind the whole row
-          (pink morning / blue night by default). zIndex:-1 keeps it under the
-          pill + text; the block's zIndex:0 pins it to this row. When the
-          neighbour shares the routine, the film runs to that edge (no inset +
-          square corner) so consecutive tasks read as one continuous band. */}
-      {routineTint && (
-        <div style={{ position:'absolute', top:filmTop?6:0, bottom:filmBottom?6:0, left:44, right:0, background:routineTint, opacity:tintOpacity,
+      {/* Band film — a soft wash of the containing time block's color behind
+          the whole row. zIndex:-1 keeps it under the pill + text; the row's
+          zIndex:0 pins it here. When the neighbour shares the band, the film
+          runs to that edge (no inset + square corner) so consecutive tasks read
+          as one continuous band. */}
+      {filmTint && (
+        <div style={{ position:'absolute', top:filmTop?6:0, bottom:filmBottom?6:0, left:44, right:0, background:filmTint, opacity:tintOpacity,
           borderTopLeftRadius:filmTop?16:0, borderTopRightRadius:filmTop?16:0, borderBottomLeftRadius:filmBottom?16:0, borderBottomRightRadius:filmBottom?16:0, zIndex:-1 }} />
       )}
       {/* Time-block (container) label, shown once at the top of its band: the
           block's icon (tap to edit) + name, the ⋯ that edits or deletes the block
           itself, and a collapse chevron. No checkbox — the tasks inside
           auto-complete on their own. */}
-      {routineTint && bandLabel && (
+      {filmTint && bandLabel && (
         <div style={{ position:'absolute', top:9, left:52, right:8, zIndex:1, display:'flex', alignItems:'center', gap:7 }}>
-          <BandIcon icon={bandIcon} color={routineTint} onEdit={onBandLabel} />
+          <BandIcon icon={bandIcon} color={filmTint} onEdit={onBandLabel} />
           <button type="button" onClick={onBandLabel || undefined} title={onBandLabel ? 'Edit time block' : undefined}
             style={{ fontSize:10, fontWeight:800, letterSpacing:.9, textTransform:'uppercase',
               color:'#39434F', background:'none', padding:0, border:'none', fontFamily:'DM Sans,sans-serif',
@@ -929,7 +779,7 @@ function TimelineBlock({ task, categories, status, now, prevColor, nextColor, ro
       {/* Card. When this row is also carrying its band's header (the block's
           name + its ⋯, laid over the top of the row), the card starts below it
           instead of underneath it. */}
-      <div style={{ flex:1, minWidth:0, paddingTop:(routineTint && bandLabel) ? 36 : 8, paddingBottom:12, paddingLeft:10 }}>
+      <div style={{ flex:1, minWidth:0, paddingTop:(filmTint && bandLabel) ? 36 : 8, paddingBottom:12, paddingLeft:10 }}>
         <div onClick={()=>onOpen&&onOpen()} style={{ cursor:onOpen?'pointer':'default' }}>
           {timeLine && (
             <div style={{ fontSize:12, color:isCurrent?'var(--teal)':'var(--muted)', fontWeight:600, marginBottom:2, display:'flex', alignItems:'center', gap:6 }}>
@@ -1185,7 +1035,7 @@ function WeekStrip({ viewDate, setViewDate, today, commitments, categories, done
 }
 
 // ── Main ───────────────────────────────────────────────────────
-export default function Today({ todos, weekState, syncToggle, clearCompletion, pushUndo, commitments, addCommitment, updateCommitment, deleteCommitment, moveCommitmentToThoughts, addEvent, appendLog, scheduled, categories, recurringTasks, recurringExceptions, occStarted = {}, skipRecurringOccurrence, deleteRecurringTask, addRecurringTask, updateRecurringTask, routines = [], updateRoutine, deleteRoutine, taskTemplates = [], summary, labelModel = null, externalEvents = [], externalCalendars = [], toggleCalendar, importedAdoptions = {}, adoptImportedEvent, markImportedAdopted,
+export default function Today({ todos, weekState, syncToggle, clearCompletion, pushUndo, commitments, addCommitment, updateCommitment, deleteCommitment, moveCommitmentToThoughts, addEvent, appendLog, scheduled, categories, recurringTasks, recurringExceptions, occStarted = {}, skipRecurringOccurrence, deleteRecurringTask, addRecurringTask, updateRecurringTask, taskTemplates = [], summary, labelModel = null, externalEvents = [], externalCalendars = [], toggleCalendar, importedAdoptions = {}, adoptImportedEvent, markImportedAdopted,
   wlCheckins = [], persistWlCheckins, wlEffects, persistWlEffects, wlEpisodes = [], persistWlEpisodes, wlGame, persistWlGame, wlLog = [], wlEmotions, persistWlEmotions, onOpenWellness,
   wlRules, wlAbsence = null, onResolveAbsence,
   jumpTo = null, onJumpConsumed }) {
@@ -1207,7 +1057,6 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
   const [editing,     setEditing]     = useState(null)  // full commitment being edited
   const [editingRec,  setEditingRec]  = useState(null)  // recurring template being edited
   const [editingRecDate, setEditingRecDate] = useState(null)  // which occurrence's date (for single-event edits)
-  const [editingRoutine, setEditingRoutine] = useState(null)  // routine group being renamed/recolored
   const [shiftPlan,   setShiftPlan]   = useState(null)  // {pivot, rest, selected} — "start now" push chooser
   const [focusTask,   setFocusTask]   = useState(null)  // task shown in full-screen Focus mode
   // Focus pauses — the wall-clock spans a task was paused in Focus mode, keyed
@@ -1233,7 +1082,6 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
   const [addPreset,   setAddPreset]   = useState(null)  // {time, cat} when adding inside a block
   const [importRow,   setImportRow]   = useState(null)  // imported event being edited into the schedule
   const [pasterOpen,  setPasterOpen]  = useState(false) // AI assistant sheet
-  const [expandedRoutines, setExpandedRoutines] = useState({})  // routineId → show its done tasks individually
   // Explicit collapse overrides for time blocks (keyed by block id). A stored
   // true/false is the user's choice; NO entry means "auto" — a block folds up on
   // its own once its window has passed (see isBlockCollapsed). Toggling always
@@ -1362,10 +1210,10 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
   const blockShiftItems = () => blocks.map(b => ({
     id: b.id, _mins: b.start, _dur: b.end - b.start, _time: minsToHHMM(b.start),
     title: b.label, label: b.label, tag: b.cat, isCommitment: b.isCommitment,
-    isBlock: true, routine: null,
+    isBlock: true,
   }))
   // A block whose window has fully passed today reads as "done" — and folds up
-  // on its own (like a finished routine) unless the user has explicitly set it
+  // on its own once it's over unless the user has explicitly set it
   // open/closed. An explicit toggle (in collapsedBlocks) always wins.
   const blockPastWindow = (b) => isToday && b.end != null && now >= b.end
   const isBlockCollapsed = (b) => (b.id in collapsedBlocks) ? !!collapsedBlocks[b.id] : blockPastWindow(b)
@@ -1394,14 +1242,13 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
     setAddPreset({ time: minsToHHMM(start), dur })
     setAddingTask(true)
   }
-  // The "band" behind a task row: a containing time block wins, else its routine
-  // group. Returns { id, tint, label } or null.
+  // The "band" behind a task row: its containing time block, if any.
+  // Returns { id, tint, label } or null.
   const bandOf = (t) => {
     if (t && t._mins != null) {
       const b = blocks.find(b => t._mins >= b.start && t._mins < b.end)
       if (b) return { id:'blk-'+b.id, tint:b.color, label:b.label }
     }
-    if (t && t.routine) { const r = (routines||[]).find(x=>x.id===t.routine); if (r) return { id:'rt-'+r.id, tint:r.tint, label:null } }
     return null
   }
 
@@ -1465,19 +1312,17 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
   }
 
   // Whether a stored check/uncheck record exists (vs. no record at all). A
-  // routine task with no record auto-completes once its time has passed; an
+  // block task with no record auto-completes once its time has passed; an
   // explicit tap (check or uncheck) always wins over that default.
-  const routineIds = new Set((routines||[]).map(r=>r.id))
   const hasCompletionRecord = (task) => task.isCommitment ? (task.id in (todos||{})) : ((dateKey+'_'+task.id) in (todos||{}))
   const inAnyBlock = (task) => task._mins != null && blocks.some(b => task._mins >= b.start && task._mins < b.end)
   const isPastDay = viewDate < today
   const effectiveDone = (task) => {
     if (hasCompletionRecord(task)) return isDoneCheck(task.id, task.isCommitment)
     // No record: a task auto-completes once its window has passed when it opts
-    // in explicitly (task.autoComplete), belongs to a routine, or lives inside
-    // a time block. The explicit flag lets tasks outside any routine do this too.
-    const autoRoutine = task.routine && routineIds.has(task.routine)
-    if ((task.autoComplete === true || autoRoutine || inAnyBlock(task)) && task._mins!==null) {
+    // in explicitly (task.autoComplete) or lives inside a time block. The
+    // explicit flag lets tasks outside any block do this too.
+    if ((task.autoComplete === true || inAnyBlock(task)) && task._mins!==null) {
       // Today: done once the task's own window has passed. A past day is wholly
       // over, so every such task auto-completes (matching how it looked at the
       // end of that day). A future day: nothing has happened yet.
@@ -1512,9 +1357,8 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
       note:[c.person&&`With: ${c.person}`,c.prepMin&&`Leave ${c.prepMin} min early`].filter(Boolean).join(' · '),
       tag:c.cat||null, isCommitment:true,
       color:c.color||null, icon:c.icon||null, _time:c.time||null, _dur:c.durationMins||null,
-      // A one-off commitment can now belong to a routine (film + grouping) and
-      // opt into auto-complete, just like a recurring task.
-      routine:c.routine||null, autoComplete:!!c.autoComplete,
+      // A one-off commitment can opt into auto-complete, just like a recurring task.
+      autoComplete:!!c.autoComplete,
       startedAt:c.startedAt||null,
       subtasks:Array.isArray(c.subtasks)?c.subtasks:[],
       subCount:Array.isArray(c.subtasks)?c.subtasks.length:0,
@@ -1689,17 +1533,14 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
     if (todos[row.key] || weekState[row.key]) clearCompletion && clearCompletion(row.key)
   }
 
-  // Reveal a spotlighted task: unfold whatever it's tucked inside (a finished
-  // routine's summary row, a collapsed time block), scroll it into view and let
+  // Reveal a spotlighted task: unfold whatever it's tucked inside (a collapsed
+  // time block), scroll it into view and let
   // its ring pulse. The row can take a beat to mount after the day changes, so
   // this retries briefly before giving up.
   useEffect(() => {
     if (!spotlight) return
     const t = tasksWithStatus.find(x => x.id === spotlight)
     if (t) {
-      if (t.routine && routineIds.has(t.routine) && !expandedRoutines[t.routine]) {
-        setExpandedRoutines(p => ({ ...p, [t.routine]: true }))
-      }
       const b = t._mins != null ? blocks.find(x => t._mins >= x.start && t._mins < x.end) : null
       if (b && isBlockCollapsed(b)) toggleBlockCollapsed(b.id, true)
     }
@@ -1845,11 +1686,10 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
         if (t._mins >= cursor) { cursor=t._mins+dur; return }                 // no overlap → leave in place
         if (cursor+dur > END_OF_DAY_MINS) { sendToTomorrow(t); return }
         setStart(t, cursor); shifted++
-        // A routine / block / auto-complete task's checkmark should follow its
-        // NEW time, not a stale tap: drop any explicit record so it re-derives
-        // from the clock — ticked once the new slot has passed, unticked until
-        // then. That's the whole point when you push a routine later.
-        if ((t.autoComplete || (t.routine && routineIds.has(t.routine)) || inAnyBlock(t)) && clearCompletion) {
+        // A block / auto-complete task's checkmark should follow its NEW time,
+        // not a stale tap: drop any explicit record so it re-derives from the
+        // clock — ticked once the new slot has passed, unticked until then.
+        if ((t.autoComplete || inAnyBlock(t)) && clearCompletion) {
           clearCompletion(t.id, t.isCommitment ? null : dateKey)
         }
         cursor += dur
@@ -1859,7 +1699,7 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
     localStorage.setItem('vivian_timeshift_'+dateKey, JSON.stringify(overrides))
     setShiftResult({ shifted, committed, fixed })
     // Undo restores the timeline to exactly where it was: the recurring/local
-    // overrides and any commitment start times we moved. Re-timed routine steps
+    // overrides and any commitment start times we moved. Re-timed block steps
     // then re-derive their checkmarks from the restored times.
     if (pushUndo && (shifted || committed)) {
       pushUndo('shifted the schedule', () => {
@@ -1877,8 +1717,8 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
     if (pivotMins===null) return
     const pivotEnd = now + (pivotTask._dur || 0)
     // Everything scheduled at/after the pivot that could move. We KEEP tasks
-    // already ticked off here: when you push a routine later (a slower morning),
-    // its steps come along too — a re-timed step's checkmark then just follows
+    // already ticked off here: when you push a block of the day later (a slower
+    // morning), its steps come along too — a re-timed step's checkmark then just follows
     // the clock again. Only genuinely fixed things (class/meeting/deadline/
     // urgent) are left out.
     const rest = tasksWithStatus
@@ -1887,12 +1727,8 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
       .sort((a,b)=>a._mins-b._mins)
     if (rest.length === 0) { applyShift(pivotTask, []); return }
     const doneIds = new Set(rest.filter(t => isDoneCheck(t.id,t.isCommitment)).map(t=>t.id))
-    // Default selection: if the pivot belongs to a routine, pre-check the rest of
-    // that routine's steps — the common case is "shift the rest of THIS routine".
-    // Otherwise fall back to the still-open tasks that overlap the new slot.
-    const selected = pivotTask.routine
-      ? new Set(rest.filter(t => t.routine === pivotTask.routine).map(t=>t.id))
-      : new Set(rest.filter(t => !doneIds.has(t.id) && t._mins < pivotEnd).map(t=>t.id))
+    // Default selection: the still-open tasks that overlap the new slot.
+    const selected = new Set(rest.filter(t => !doneIds.has(t.id) && t._mins < pivotEnd).map(t=>t.id))
     setShiftPlan({ pivot: pivotTask, rest, selected, doneIds })
   }
 
@@ -1900,7 +1736,7 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
   // Slide the chosen later tasks by the SAME amount the edited task moved
   // (keeping their spacing), instead of packing them to "now" like the Start-now
   // shift. Commitment times move for real; local/recurring todos use the day's
-  // override. Re-timed routine/block/auto-complete steps drop their explicit
+  // override. Re-timed block/auto-complete steps drop their explicit
   // check so the checkmark re-derives from the clock — ticked once the new slot
   // has passed, unticked until then.
   const applyTimeShift = (pivot, delta, selectedIds) => {
@@ -1939,7 +1775,7 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
         }
         setStart(t, target)
         shifted++
-        if (!t.isBlock && (t.autoComplete || (t.routine && routineIds.has(t.routine)) || inAnyBlock(t)) && clearCompletion) {
+        if (!t.isBlock && (t.autoComplete || inAnyBlock(t)) && clearCompletion) {
           clearCompletion(t.id, t.isCommitment ? null : dateKey)
         }
       })
@@ -1947,7 +1783,7 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
     localStorage.setItem('vivian_timeshift_'+dateKey, JSON.stringify(overrides))
     setShiftResult({ shifted, committed, fixed:0 })
     if (pushUndo && (shifted || committed)) {
-      pushUndo('rescheduled the routine', () => {
+      pushUndo('rescheduled the block', () => {
         setTimeOverrides(prevOverrides)
         localStorage.setItem('vivian_timeshift_'+dateKey, JSON.stringify(prevOverrides))
         commitReverts.forEach(r => updateCommitment && updateCommitment(r.id, { time: r.time }))
@@ -1955,41 +1791,15 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
     }
   }
 
-  // After a task's time is changed in the editor, offer to slide the rest of its
-  // routine along by the same amount. Only routine steps cascade (the common
-  // "my morning ran late, push the rest" case); the chooser still lets you reach
-  // other tasks. `newMins` is the task's new start in minutes (null = untimed).
-  //
-  // A time block (e.g. "Work") isn't in the task list at all, so when its start
-  // moves we handle it separately below: sliding a block offers to bring the
-  // tasks scheduled *inside* its window (a "clock in", say) along with it, so
-  // they don't get left behind at the block's old start.
+  // After a time is changed in the editor: a time block (e.g. "Work") isn't in
+  // the task list at all, so when its start moves, offer to bring the tasks
+  // scheduled *inside* its window (a "clock in", say) along with it, so they
+  // don't get left behind at the block's old start. An ordinary task just moves.
+  // `newMins` is the new start in minutes (null = untimed).
   const maybePromptShift = (pivotId, newMins) => {
     if (newMins === null || newMins === undefined) return
-    const pivot = tasksWithStatus.find(t => t.id === pivotId)
-    if (!pivot) { maybePromptBlockShift(pivotId, newMins); return }
-    if (pivot._mins === null) return
-    if (!pivot.routine) return                       // only routines cascade
-    const delta = newMins - pivot._mins
-    if (delta === 0) return
-    // Later movable tasks by their current position — candidates to slide.
-    // Blocks (e.g. "Work") that start after the pivot ride along too, so pushing
-    // the morning later can bring Work down with everything else.
-    const laterBlocks = blockShiftItems().filter(b => b._mins > pivot._mins && !INFLEXIBLE_TAGS.has(b.tag))
-    const rest = [
-      ...tasksWithStatus.filter(t => t.id !== pivotId && t._mins !== null && t._mins > pivot._mins && !INFLEXIBLE_TAGS.has(t.tag)),
-      ...laterBlocks,
-    ].sort((a, b) => a._mins - b._mins)
-    if (!rest.length) return
-    const doneIds = new Set(rest.filter(t => isDoneCheck(t.id, t.isCommitment)).map(t => t.id))
-    // Blend of "just this routine" + "pick your own": pre-check the rest of this
-    // task's routine plus any later blocks, but show every later task so any can
-    // be added/removed.
-    const selected = new Set([
-      ...rest.filter(t => !t.isBlock && t.routine === pivot.routine).map(t => t.id),
-      ...laterBlocks.map(b => b.id),
-    ])
-    setShiftPlan({ pivot, rest, selected, doneIds, delta, mode:'delta' })
+    if (tasksWithStatus.some(t => t.id === pivotId)) return
+    maybePromptBlockShift(pivotId, newMins)
   }
 
   // Moving a time block's start (e.g. rescheduling "Work" earlier/later): offer
@@ -2013,7 +1823,7 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
     // moved, bring what's in it" — but each row can still be unchecked.
     const selected = new Set(rest.map(t => t.id))
     // A lightweight pivot for the chooser's heading ("You moved 'Work' …").
-    const pivot = { id: block.id, title: block.label, label: block.label, _mins: block.start, routine: null }
+    const pivot = { id: block.id, title: block.label, label: block.label, _mins: block.start }
     setShiftPlan({ pivot, rest, selected, doneIds, delta, mode:'delta' })
   }
 
@@ -2169,7 +1979,7 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
       const tmpl = (recurringTasks || []).find(t => t.id === (task.recurringId || task.id))
       if (tmpl) {
         // If this day carries a local time move (from a one-day nudge or a
-        // routine shift), open the editor showing THAT moved time — not the
+        // block shift), open the editor showing THAT moved time — not the
         // series' original — so re-saving doesn't quietly revert today's move.
         const ov = timeOverrides[tmpl.id]
         const forEdit = ov !== undefined ? { ...tmpl, label: shiftLabelTime(tmpl.label, ov) } : tmpl
@@ -2236,9 +2046,7 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
     }
     return (tasks || []).length
   }
-  // Everything this routine actually puts on the day being viewed…
-  const routineTasksToday = (rid) => tasksWithStatus.filter(t => t.routine === rid)
-  // …and everything sitting inside this block's window.
+  // Everything sitting inside this block's window on the day being viewed.
   const blockTasksToday = (bid) => {
     const b = blocks.find(x => x.id === bid)
     if (!b) return []
@@ -2279,36 +2087,6 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
     }
     return items
   }
-  // …and what a routine's ⋯ offers. Same shape: clear it off this one day first,
-  // and only then the group-wide delete — which is spelled out, because deleting
-  // the GROUP is not what "I didn't do my routine today" means.
-  const routineMenu = (rid) => {
-    const r = (routines || []).find(x => x.id === rid)
-    if (!r) return []
-    const onDay = routineTasksToday(rid)
-    const items = []
-    if (onDay.length) items.push({
-      label: `Clear from today — ${plural(onDay.length, 'task')}`,
-      danger: true,
-      confirm: `Take ${r.name}'s ${plural(onDay.length, 'task')} off today? Every other day keeps them.`,
-      onClick: ()=>{
-        clearTasksFromToday(onDay)
-        if (appendLog) appendLog({ date:dateKey, dateLabel:dayLabel(dateKey),
-          label:`Cleared from today: ${r.name} — ${plural(onDay.length, 'task')}`, tag:'deleted', ts:new Date().toISOString() })
-      },
-    })
-    if (updateRoutine) items.push({ label:'Edit routine', onClick:()=>setEditingRoutine(r) })
-    if (deleteRoutine) items.push({
-      label:'Delete the routine group…', danger:true,
-      confirm:`Delete “${r.name}” from every day? Its tasks stay — they just stop being grouped.`,
-      onClick:()=>{
-        deleteRoutine(rid)
-        if (appendLog) appendLog({ date:dateKey, dateLabel:dayLabel(dateKey), label:`Deleted routine group: ${r.name}`, tag:'deleted', ts:new Date().toISOString() })
-      },
-    })
-    return items
-  }
-  const routineById = (rid) => (routines || []).find(x => x.id === rid) || null
   // Unschedule → strip the date/time so it drops off the timeline and returns
   // to Commitments as an unscheduled item (keeps everything else).
   const handleUnschedule = (task) => {
@@ -2321,9 +2099,9 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
     if (updateCommitment) updateCommitment(id, changes)
     setItemReminders(id, reminderMins)
     setEditing(null)
-    // If this moved a routine task's time, offer to slide the rest of the
-    // routine along. Read against the pre-update timeline, so `id`'s old time is
-    // still the baseline for the delta.
+    // If this moved a time block, offer to bring the tasks inside it along.
+    // Read against the pre-update timeline, so the old time is still the
+    // baseline for the delta.
     maybePromptShift(id, commitment.time ? hhmmToMins(commitment.time) : null)
   }
   const handleDelete = (task, reason) => {
@@ -2460,16 +2238,6 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
         )
       ) : (
         (() => {
-        // How many finished tasks each routine has, for the collapse summary.
-        const doneRoutineCounts = {}
-        tasksWithStatus.forEach(t => { if (t.routine && routineIds.has(t.routine) && t._status==='past') doneRoutineCounts[t.routine] = (doneRoutineCounts[t.routine]||0)+1 })
-        const emittedCollapse = {}  // one summary/header per routine, per render
-        // One handle per routine per day, wherever its first task lands. A
-        // routine whose tasks sit INSIDE a time block loses the band to that
-        // block — without this it would get no header, and no way to act on it
-        // at all, which is how a routine ended up only reachable from its
-        // done-summary row.
-        const emittedRoutineHeads = new Set()
         const emittedBlocks = new Set()   // block band segments already placed
         // The "now" line is emitted exactly once. When it falls inside a block's
         // empty band we split the band and drop it in there (so "now" sits at its
@@ -2477,19 +2245,9 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
         // between tasks (below).
         const wantNow = isToday && !hasCurrent
         const nowState = { done: false }
-        // The time span of each collapsed routine, so the summary row advances
-        // the cursor over its whole window (and a gap can open before/after it).
-        const routineSpans = {}
-        renderTasks.forEach(t => {
-          if (t.routine && routineIds.has(t.routine) && t._mins != null) {
-            const e = (t._time && t._dur) ? hhmmToMins(t._time)+t._dur : t._mins
-            const s = routineSpans[t.routine] || { start: Infinity, end: -Infinity }
-            routineSpans[t.routine] = { start: Math.min(s.start, t._mins), end: Math.max(s.end, e) }
-          }
-        })
         // A single moving "cursor" tracks where on the clock the last emitted row
         // ended, so a gap opens for ANY unscheduled stretch — between two tasks,
-        // between a routine and a block, or after a block before the next thing —
+        // between a task and a block, or after a block before the next thing —
         // not just between adjacent tasks. `tint` keeps a gap inside a block on
         // that block's film; boundary gaps between regions stay plain.
         const cur = { end: null, color: null, band: null }
@@ -2515,7 +2273,7 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
           const canStart = upcoming && upcoming._mins != null && !INFLEXIBLE_TAGS.has(upcoming.tag) && !effectiveDone(upcoming)
           return <GapRow key={'gap-'+cur.end+'-'+startMins} mins={g} phase={phase} remaining={remaining}
             prevColor={cur.color} nextColor={nextColor}
-            routineTint={tint || null} routineOpacity={tint ? BLOCK_FILM_OPACITY : 0.5} onAdd={()=>addInGap(gapStart, gapEnd)}
+            filmTint={tint || null} filmOpacity={tint ? BLOCK_FILM_OPACITY : 0.5} onAdd={()=>addInGap(gapStart, gapEnd)}
             onStartNow={canStart ? ()=>handleShiftToNow(upcoming) : null}
             startLabel={upcoming ? (upcoming.title || stripTimePrefix(upcoming.label)) : ''} />
         }
@@ -2569,82 +2327,28 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
         <div style={{paddingBottom:8}}>
           {renderTimed.map((task,i)=>{
             const before = bandsBefore(task)   // any empty time-block bands due before this row
-            // Finished routine tasks collapse into a single summary row unless
-            // their routine has been expanded. The first one emits the row (or
-            // the expanded header); the rest are hidden while collapsed.
-            const isDoneRoutine = task.routine && routineIds.has(task.routine) && task._status==='past'
-            if (isDoneRoutine) {
-              const r = routines.find(x=>x.id===task.routine)
-              const isExp = !!expandedRoutines[task.routine]
-              const firstOfRoutine = !emittedCollapse[task.routine]
-              const span = routineSpans[task.routine]
-              // A gap opens before the routine if the day was idle up to it.
-              const rtGap = firstOfRoutine && span ? maybeGap(span.start, r?.tint || null, null) : null
-              const header = firstOfRoutine
-                ? (emittedCollapse[task.routine] = true, emittedRoutineHeads.add(task.routine),
-                   <RoutineCollapseRow key={'rc-'+task.routine} routine={r} count={doneRoutineCounts[task.routine]} expanded={isExp}
-                     menu={routineMenu(task.routine)}
-                     onToggle={()=>setExpandedRoutines(p=>({...p,[task.routine]:!p[task.routine]}))} />)
-                : null
-              if (!isExp) {
-                // Collapsed: advance the cursor over the whole routine window once.
-                if (firstOfRoutine && span) advance(span.end, r?.tint || null, 'rt-'+task.routine)
-                return [...before, rtGap, header]
-              }
-              // Expanded: advance per task; only the first shows the leading gap.
-              const tEnd = (task._time && task._dur) ? hhmmToMins(task._time)+task._dur : task._mins
-              advance(tEnd, r?.tint || null, 'rt-'+task.routine)
-              return [...before, rtGap, (
-                <div key={task.id} data-task-row={task.id} className={spotlight===task.id ? 'task-spotlight' : undefined}>
-                  {header}
-                  <TimelineBlock
-                    task={task} categories={categories} status={task._status} now={now}
-                    routineTint={routines.find(x=>x.id===task.routine)?.tint || null} filmTop filmBottom
-                    isDone dateKey={dateKey}
-                    onToggle={()=>syncToggle(task.id,task.label,task.tag,task.isCommitment?null:dateKey, !effectiveDone(task))}
-                    onManage={()=>setManaging(task)} onOpen={()=>openTask(task)}
-                    onShiftToNow={()=>handleShiftToNow(task)} onFocus={()=>setFocusTask(task)}
-                    onToggleSub={(sid)=>toggleSubtask(task, sid)} />
-                </div>
-              )]
-            }
             // Free-time gap between the previous task's end and this one's start.
             const prev = renderTimed[i-1]
             const next = renderTimed[i+1]
             const colorOf = t => t && (t.color || (categories||[]).find(x=>x.id===t.tag)?.color || TAG_COLORS[t.tag] || null)
-            // A task's "band" is its containing time block (label + film), else
-            // its routine group. Consecutive tasks in the SAME band read as one
+            // A task's "band" is its containing time block (label + film).
+            // Consecutive tasks in the SAME band read as one
             // continuous wash; the band label shows once at its top.
             const myBand = bandOf(task), prevBand = bandOf(prev), nextBand = bandOf(next)
             const myTint = myBand?.tint || null
-            const prevSameRoutine = !!(myBand && prevBand && prevBand.id === myBand.id)
-            const nextSameRoutine = !!(myBand && nextBand && nextBand.id === myBand.id)
+            const prevSameBand = !!(myBand && prevBand && prevBand.id === myBand.id)
+            const nextSameBand = !!(myBand && nextBand && nextBand.id === myBand.id)
             // Join the task film to a block's head/tail segments: the first task
             // in a block that has a head segment drops its rounded top (and its
             // label, which the segment shows); the last drops its rounded bottom.
             const inBlockId = myBand?.id?.startsWith('blk-') ? myBand.id.slice(4) : null
             const inBlockBand = inBlockId ? blocks.find(b=>b.id===inBlockId) : null
-            const isFirstInBand = !!myBand && !prevSameRoutine
-            const isLastInBand  = !!myBand && !nextSameRoutine
+            const isFirstInBand = !!myBand && !prevSameBand
+            const isLastInBand  = !!myBand && !nextSameBand
             const joinHead = !!(inBlockId && isFirstInBand && blockHeadIds.has(inBlockId))
             const joinTail = !!(inBlockId && isLastInBand  && blockTailIds.has(inBlockId))
-            // A routine gets a header of its own above its first task on the
-            // day — the routine's name plus the ⋯ that clears, edits or deletes
-            // it. Emitted for the first task filed under it whether or not the
-            // band belongs to a containing time block; when the routine IS the
-            // band it also carries the film's rounded top, so the task below
-            // joins it flush.
-            const myRoutineId = (task.routine && routineIds.has(task.routine)) ? task.routine : null
-            const routineBand = (myRoutineId && !emittedRoutineHeads.has(myRoutineId)) ? routineById(myRoutineId) : null
-            if (routineBand) emittedRoutineHeads.add(myRoutineId)
-            const routineIsBand = !!(routineBand && myBand?.id === 'rt-' + myRoutineId)
-            const routineHead = routineBand ? (
-              <RoutineBandHead routine={routineBand} film={routineIsBand}
-                onEdit={updateRoutine ? ()=>setEditingRoutine(routineBand) : null}
-                menu={routineMenu(myRoutineId)} />
-            ) : null
             // Free time before this task, measured from wherever the day last
-            // ended (a task, a routine, or a block) — tinted with the block's
+            // ended (a task or a block) — tinted with the block's
             // film only when the gap sits inside that same block.
             const sameBandAsCursor = !!(myBand && cur.band === myBand.id)
             const gapEl = maybeGap(task._mins, colorOf(task), sameBandAsCursor ? myTint : null, task)
@@ -2656,13 +2360,12 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
             if (emitNow) nowState.done = true
             return [...before, (
               <div key={task.id} data-task-row={task.id} className={spotlight===task.id ? 'task-spotlight' : undefined}>
-                {emitNow&&<NowMarker now={now} bandTint={(myBand && (joinHead || prevSameRoutine)) ? myTint : null} bandOpacity={inBlockId ? BLOCK_FILM_OPACITY : 0.5}/>}
+                {emitNow&&<NowMarker now={now} bandTint={(myBand && (joinHead || prevSameBand)) ? myTint : null} bandOpacity={inBlockId ? BLOCK_FILM_OPACITY : 0.5}/>}
                 {gapEl}
-                {routineHead}
                 <TimelineBlock
                   task={task} categories={categories} status={task._status} now={now}
-                  routineTint={myTint} tintOpacity={inBlockId ? BLOCK_FILM_OPACITY : 0.5}
-                  filmTop={!prevSameRoutine && !joinHead && !routineIsBand} filmBottom={!nextSameRoutine && !joinTail}
+                  filmTint={myTint} tintOpacity={inBlockId ? BLOCK_FILM_OPACITY : 0.5}
+                  filmTop={!prevSameBand && !joinHead} filmBottom={!nextSameBand && !joinTail}
                   bandLabel={(isFirstInBand && !joinHead) ? (myBand?.label || null) : null}
                   bandIcon={inBlockBand?.icon || null}
                   onBandLabel={inBlockId ? () => openContainer(inBlockId) : null}
@@ -2728,7 +2431,7 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
         onExtend={focusTask.isCommitment ? (mins)=>handleExtend(focusTask, mins) : null}
         onEndNow={({elapsedMins})=>handleEndNow(focusTask, elapsedMins)}
         onClose={()=>setFocusTask(null)} />}
-      {shiftPlan&&<ShiftChooser plan={shiftPlan} routines={routines}
+      {shiftPlan&&<ShiftChooser plan={shiftPlan}
         onApply={(ids)=>{ shiftPlan.mode==='delta' ? applyTimeShift(shiftPlan.pivot, shiftPlan.delta, ids) : applyShift(shiftPlan.pivot, ids); setShiftPlan(null) }}
         onCancel={()=>setShiftPlan(null)}/>}
       {shiftResult&&<ShiftToast result={shiftResult} onClose={()=>setShiftResult(null)}/>}
@@ -2738,20 +2441,20 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
         presetTime={importRow.timeHHMM || ''}
         presetDur={importRow.dur || null}
         presetDescription={importRow.span?.calendarName ? `From ${importRow.span.calendarName}` : 'From a subscribed calendar'}
-        categories={categories} routines={routines} templates={taskTemplates} labelModel={labelModel}
+        categories={categories} templates={taskTemplates} labelModel={labelModel}
         onSave={handleAdoptEdited} onSaveRecurring={addRecurringTask} onClose={()=>setImportRow(null)}
         title="Add to my schedule"/>}
-      {addingTask&&<AddItemModal presetDate={dateKey} presetTime={addPreset?.time||''} presetDur={addPreset?.dur||null} presetCat={addPreset?.cat||''} categories={categories} routines={routines} templates={taskTemplates} labelModel={labelModel} onSave={handleAdd} onSaveRecurring={addRecurringTask} onClose={()=>{ setAddingTask(false); setAddPreset(null) }} title="Add to Today"/>}
+      {addingTask&&<AddItemModal presetDate={dateKey} presetTime={addPreset?.time||''} presetDur={addPreset?.dur||null} presetCat={addPreset?.cat||''} categories={categories} templates={taskTemplates} labelModel={labelModel} onSave={handleAdd} onSaveRecurring={addRecurringTask} onClose={()=>{ setAddingTask(false); setAddPreset(null) }} title="Add to Today"/>}
       {/* AI assistant: command → plan → confirm → apply. */}
       {pasterOpen&&<AiAssistant categories={categories} tasks={assistantTasks}
         onApply={applyAssistantActions} onClose={()=>setPasterOpen(false)} />}
-      {editing&&<AddItemModal existing={editing} categories={categories} routines={routines} onSave={handleSaveEdit}
+      {editing&&<AddItemModal existing={editing} categories={categories} onSave={handleSaveEdit}
         onSaveRecurring={addRecurringTask}
         onDelete={c=>deleteCommitment&&deleteCommitment(c.id)}
         onDuplicate={c=>addCommitment&&addCommitment({ ...c, id:'c-'+Date.now(), text:(c.text||'')+' (copy)', done:false, createdAt:new Date().toISOString() })}
         onMoveToThoughts={c=>moveCommitmentToThoughts&&moveCommitmentToThoughts(c)}
         onClose={()=>setEditing(null)} title="Edit task"/>}
-      {editingRec&&<AddItemModal existingRecurring={editingRec} categories={categories} routines={routines}
+      {editingRec&&<AddItemModal existingRecurring={editingRec} categories={categories}
         occurrenceDate={editingRecDate}
         onSaveOccurrence={(origDate, occ, reminderMins)=>{
           const pivotId = editingRec.id
@@ -2815,12 +2518,6 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
         }}
         onDelete={t=>{ deleteRecurringTask&&deleteRecurringTask(t.id); setEditingRec(null); setEditingRecDate(null) }}
         onClose={()=>{ setEditingRec(null); setEditingRecDate(null) }} title="Edit recurring task"/>}
-      {editingRoutine&&<RoutineEditor routine={editingRoutine}
-        taskCount={(recurringTasks||[]).filter(t=>t.routine===editingRoutine.id).length
-                 + (commitments||[]).filter(c=>c.routine===editingRoutine.id).length}
-        onSave={changes=>updateRoutine&&updateRoutine(editingRoutine.id, changes)}
-        onDelete={deleteRoutine ? ()=>deleteRoutine(editingRoutine.id) : null}
-        onClose={()=>setEditingRoutine(null)} />}
       {managing&&<ManageModal task={managing} dateKey={dateKey} onClose={()=>setManaging(null)} onDelete={handleDelete} onReschedule={handleReschedule} onUnschedule={handleUnschedule} onDeleteSeries={handleDeleteSeries} onDeleteFuture={handleDeleteFuture} scheduled={scheduled}/>}
     </div>
   )

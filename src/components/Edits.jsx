@@ -4,6 +4,16 @@
 
 const EDIT_LOG = [
   {
+    date: '2026-09-22',
+    summary: 'Routines are gone — time blocks do the job — and a condition can end on any date',
+    changes: [
+      'Removed routine groups (Morning / Night routine and any you made). Time blocks already group a stretch of the day, tint it, and tick its tasks off as their time passes, so routines were doing the same job twice',
+      'Gone with them: the Recurring → Routines tab, the Routine row in the add/edit sheet, the routine band headers and "done" summary rows on Today, and the routine groups in the Calendar\'s Repeating filter (it now just has the Everyday habits toggle)',
+      'Your tasks are untouched — anything that was filed under a routine is now an ordinary task. To keep one ticking itself off, put it inside a time block or turn on Auto-complete',
+      'Wellness: when you set when a condition ended, tap the day next to "Ended" to open a calendar and pick any date, not just the nearby day or two. Works both when logging a new one and when fixing one you logged earlier',
+    ]
+  },
+  {
     date: '2026-09-11',
     summary: 'Reminders arrive at their moment, or not at all',
     changes: [

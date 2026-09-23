@@ -2,7 +2,7 @@
 // Shared icon system used across the whole app. An "icon" value is either a
 // unicode emoji ("💧") or an image data URI / URL. Set an emoji or upload an
 // image (transparent PNGs stay transparent, Discord-style) once on a category
-// or routine item, and it renders anywhere that item appears via <Icon />.
+// item, and it renders anywhere that item appears via <Icon />.
 import { useState, useRef, useEffect } from 'react'
 import { Glyph } from '../lib/glyphs.jsx'
 import { ICONS } from '../lib/iconset.js'

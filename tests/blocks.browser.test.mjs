@@ -1,7 +1,6 @@
-// Real-browser test of the containers on the Today timeline — time blocks and
-// routines — and the ⋯ each one now wears: can the container itself be edited
-// and deleted from the band it draws, without going hunting for it in another
-// tab?
+// Real-browser test of the containers on the Today timeline — time blocks —
+// and the ⋯ each one wears: can the container itself be edited and deleted
+// from the band it draws, without going hunting for it in another tab?
 //
 // Sits alongside browser.test.mjs and labels.browser.test.mjs; run all three
 // with `npm run test:browser`.
@@ -85,7 +84,7 @@ const clickConfirm = () =>
 const sheetOpen = () => page.evaluate(() =>
   !!document.body.innerText.match(/ADD TO TODAY|Add to Today/))
 // Every uppercase band label currently on the timeline. A block's own band
-// draws it as a span, a band label riding on a task (or a routine head) as a
+// draws it as a span, a band label riding on a task as a
 // button — so look at both.
 const bandLabels = () => page.evaluate(() =>
   [...document.querySelectorAll('button, span')]
@@ -146,98 +145,11 @@ await page.waitForTimeout(300)
 eq('the second tap deletes the series', await store('recurring_tasks_v2'), [])
 eq('and the band is off the day', (await bandLabels()).includes('STUDIO'), false)
 
-// ── A routine ──────────────────────────────────────────────────
-console.log('\n— a routine —')
-const withRoutine = today => ({
-  commitments: [], commitment_meta: {},
-  routine_groups: [{ id:'rt-deep', name:'Deep work', tint:'#BBD5F0' }],
-  recurring_tasks_v2: [
-    { id:'r-t1', label:'10:00 — Write',  days:[], startDate:null },
-    { id:'r-t2', label:'11:00 — Review', days:[], startDate:null },
-  ],
-  recurring_meta: {
-    'r-t1': { routine:'rt-deep', durationMins:60, freq:'daily' },
-    'r-t2': { routine:'rt-deep', durationMins:60, freq:'daily' },
-  },
-  recurring_exceptions: {},
-  // An explicit "not done" record for each, so the routine doesn't fold itself
-  // up into its done-summary row partway through the day the test happens to run.
-  completions: { [`${today}_r-t1`]: false, [`${today}_r-t2`]: false },
-})
-await seed(withRoutine)
-eq('the routine names its own band', (await bandLabels()).includes('DEEP WORK'), true)
-eq('and the band carries a ⋯', await bandMenu('Deep work').count(), 1)
-await openMenu('Deep work')
-eq('which leads with clearing it off THIS day', await menuItems(),
-   ['Clear from today — 2 tasks', 'Edit routine', 'Delete the routine group…'])
-
-// Edit: rename it, and the band renames with it.
-await clickMenuItem('Edit routine')
-await page.waitForTimeout(200)
-await page.fill('input[aria-label="Routine name"]', 'Studio hours')
-await page.getByRole('button', { name: 'Save changes' }).click()
-await page.waitForTimeout(300)
-eq('a rename lands on the band', (await bandLabels()).includes('STUDIO HOURS'), true)
-eq('and on the stored group', ((await store('routine_groups')) || []).map(r => r.name), ['Studio hours'])
-
-// Delete: the group goes, its tasks stay.
-await openMenu('Studio hours')
-await clickMenuItem('Delete the routine group…')
-await page.waitForTimeout(150)
-await clickConfirm()
-await page.waitForTimeout(300)
-eq('deleting drops the routine', await store('routine_groups'), [])
-eq('but keeps its tasks on the day', await page.evaluate(() =>
-  ['Write', 'Review'].every(t => document.body.innerText.includes(t))), true)
-
-// ── A done routine sitting right above a block band ────────────
-// The layout that broke the menu: every band row pins its film with a z-index,
-// which makes it a stacking context — so a popover rendered inside one row was
-// painted UNDER the rows and bands that follow it, and every tap fell through
-// to whatever was on top (usually a block band's "add a task here"). The menu
-// is portalled out to the body now; these check the taps land where they're aimed.
-console.log('\n— a done routine stacked above a block band —')
-await seed(today => ({
-  commitments: [{ id:'c-blk', text:'Studio', date:today, time:'23:00', durationMins:59, cat:'', done:false }],
-  commitment_meta: { 'c-blk': { block:true, color:'#8B7BB8' } },
-  routine_groups: [{ id:'rt-am', name:'Morning routine', tint:'#FBE79E' }],
-  recurring_tasks_v2: [{ id:'r-am1', label:'00:05 — Stretch', days:[], startDate:null }],
-  recurring_meta: { 'r-am1': { routine:'rt-am', durationMins:15, freq:'daily' } },
-  recurring_exceptions: {},
-  // Done, so the routine renders as its collapsed summary row — the row the
-  // screenshot showed the menu vanishing behind.
-  completions: { [`${today}_r-am1`]: true },
-}))
-eq('the routine collapsed to its summary row', await page.evaluate(() =>
-  document.body.innerText.includes('First thing in the morning')), true)
-await openMenu('Morning routine')
-eq('its menu is reachable over the band below', await menuItems(),
-   ['Clear from today — 1 task', 'Edit routine', 'Delete the routine group…'])
-await clickMenuItem('Edit routine')
-await page.waitForTimeout(300)
-eq('and Edit opens the routine editor, not the add sheet', await page.evaluate(() =>
-  !!document.querySelector('input[aria-label="Routine name"]')), true)
-eq('no task sheet opened behind it', await sheetOpen(), false)
-await page.getByRole('button', { name: 'Cancel' }).click()
-await page.waitForTimeout(200)
-
-// …and the same for Delete, which is what actually fell through in the report.
-await openMenu('Morning routine')
-await clickMenuItem('Delete the routine group…')
-await page.waitForTimeout(200)
-eq('Delete arms in place instead of opening anything', (await menuItems())[2],
-   'Delete “Morning routine” from every day? Its tasks stay — they just stop being grouped. — tap again')
-eq('still no task sheet', await sheetOpen(), false)
-await clickConfirm()
-await page.waitForTimeout(300)
-eq('and the second tap removes the group', await store('routine_groups'), [])
-
-// ── The holiday: a routine whose tasks live inside a block ─────
-// The case that went wrong. A routine's tasks sitting inside a time block lose
-// the band to that block, so the routine used to get NO header at all — its only
-// handle was the done-summary row, whose only offer was a permanent, unrecorded
-// delete. Wanting "not today" and being given "gone forever" is the bug.
-console.log('\n— a work routine inside a work block, on a day off —')
+// ── The holiday: a block with its day's tasks inside it ────────
+// Clearing a block off one day can take what's inside it along. The seed also
+// carries leftovers from the removed routine groups (a group, and tasks filed
+// under it) — they must be ignored: no routine band, no routine ⋯.
+console.log('\n— a work block full of tasks, on a day off —')
 const holiday = today => ({
   commitments: [{ id:'c-workblk', text:'Work', date:today, time:'09:00', durationMins:480, cat:'', done:false }],
   commitment_meta: { 'c-workblk': { block:true, color:'#B9A7D9' } },
@@ -255,25 +167,12 @@ const holiday = today => ({
   recurring_exceptions: {}, completions: {},
 })
 await seed(holiday)
-eq('the block and the routine each get their own ⋯', await page.$$eval(
-  'button[aria-label$="more actions"]', bs => bs.map(b => b.getAttribute('aria-label')).sort()),
-  ['Work routine — more actions', 'Work — more actions'])
-
-// Clearing the routine off today must not touch what it is on any other day.
-await openMenu('Work routine')
-eq('the routine leads with the one-day action', (await menuItems())[0], 'Clear from today — 3 tasks')
-await clickMenuItem('Clear from today — 3 tasks')
-await page.waitForTimeout(150)
-eq('and says so before it fires', (await menuItems())[0],
-   "Take Work routine's 3 tasks off today? Every other day keeps them. — tap again")
-await clickConfirm()
-await page.waitForTimeout(500)
-eq('its tasks leave the day', await page.evaluate(() =>
-  ['Standup', 'Code review', 'Deploy'].filter(t => document.body.innerText.includes(t))), [])
-eq('the group survives', ((await store('routine_groups')) || []).map(r => r.name), ['Work routine'])
-eq('every template survives', ((await store('recurring_tasks_v2')) || []).length, 3)
-eq('and it is a skip for THIS date only', Object.keys((await store('recurring_exceptions')) || {}).sort(),
-   [`r-w1@${todayKey}`, `r-w2@${todayKey}`, `r-w3@${todayKey}`].sort())
+eq('only the block wears a ⋯ — old routine data is ignored', await page.$$eval(
+  'button[aria-label$="more actions"]', bs => bs.map(b => b.getAttribute('aria-label'))),
+  ['Work — more actions'])
+eq('no routine band is drawn', (await bandLabels()).includes('WORK ROUTINE'), false)
+eq('the tasks still show inside the block', await page.evaluate(() =>
+  ['Standup', 'Code review', 'Deploy'].filter(t => document.body.innerText.includes(t))), ['Standup', 'Code review', 'Deploy'])
 
 // The block, cleared with everything in it — "the work block + everything in it".
 await seed(holiday)
@@ -288,23 +187,6 @@ eq('the block goes', (await bandLabels()).includes('WORK'), false)
 eq('its tasks go with it', await page.evaluate(() =>
   ['Standup', 'Code review', 'Deploy'].filter(t => document.body.innerText.includes(t))), [])
 eq('and the templates are all still there', ((await store('recurring_tasks_v2')) || []).length, 3)
-
-// ── Deleting the group is undoable now ────────────────────────
-console.log('\n— deleting a routine group can be taken back —')
-await seed(holiday)
-await openMenu('Work routine')
-await clickMenuItem('Delete the routine group…')
-await page.waitForTimeout(150)
-await clickConfirm()
-await page.waitForTimeout(400)
-eq('the group goes', await store('routine_groups'), [])
-eq('its tasks are unfiled', await page.evaluate(() =>
-  Object.values(JSON.parse(localStorage.getItem('vivian_recurring_meta') || '{}')).filter(v => v.routine).length), 0)
-await page.keyboard.press('Control+z')
-await page.waitForTimeout(500)
-eq('Ctrl+Z brings the group back', ((await store('routine_groups')) || []).map(r => r.name), ['Work routine'])
-eq('with its tasks re-filed under it', await page.evaluate(() =>
-  Object.values(JSON.parse(localStorage.getItem('vivian_recurring_meta') || '{}')).filter(v => v.routine === 'rt-work').length), 3)
 
 eq('no uncaught errors', errors, [])
 
