@@ -993,10 +993,26 @@ function MomentSheet({ onClose, onLog, timed, isToday, dayName, emotions: option
 // it offers — never assumes — to let go of what those days were still holding.
 function CatchUpSheet({ gap, rule, effects, onLog, onSkip, onCreateEffect, countWaiting }) {
   const found = !!gap
-  // Hand-logged: how far back the streak goes, in days. The blob's own answer
-  // is exact, so it is kept exactly.
-  const [back, setBack] = useState(2)
-  const stretch = useMemo(() => (found ? gap : makeStretch(daysAgoStart(back), Date.now(), rule)), [found, gap, back, rule])
+  // Hand-logged: the first and last day of the streak. The presets set the
+  // start and run it up to now; either end can also be picked on a calendar.
+  // The blob's own answer is exact, so it is kept exactly.
+  const todayKey = dayKey()
+  const [fromKey, setFromKey] = useState(() => dayKey(new Date(daysAgoStart(2))))
+  const [toKey, setToKey] = useState(todayKey)
+  const [cal, setCal] = useState(null)   // 'from' | 'to' while its calendar is open
+  const endsNow = toKey >= todayKey
+  // A streak that ended on an earlier day runs to the close of that day (11:59
+  // PM); one that runs to today runs up to now.
+  const stretch = useMemo(() => {
+    if (found) return gap
+    const endMs = endsNow ? Date.now() : keyToDate(shiftKey(toKey, 1)).getTime() - 60000
+    return makeStretch(keyToDate(fromKey).getTime(), endMs, rule)
+  }, [found, gap, fromKey, toKey, endsNow, rule])
+  const pickPreset = (back) => { setFromKey(dayKey(new Date(daysAgoStart(back)))); setToKey(todayKey); setCal(null) }
+  // Never a day that hasn't happened, and never an end before the start — a
+  // pick that would cross the other end moves that end along with it.
+  const pickFrom = (k) => { const v = k > todayKey ? todayKey : k; setFromKey(v); if (v > toKey) setToKey(v); setCal(null) }
+  const pickTo = (k) => { const v = k > todayKey ? todayKey : k; setToKey(v); if (v < fromKey) setFromKey(v); setCal(null) }
   const days = stretch.days || []
   const multiDay = days.length > 1
   const r = { ...DEFAULT_ABSENCE_RULE, ...(rule || {}) }
@@ -1065,20 +1081,38 @@ function CatchUpSheet({ gap, rule, effects, onLog, onSkip, onCreateEffect, count
       {/* How far back it goes. The blob's own answer is a statement; a
           hand-logged one is a question, asked in days rather than clock time. */}
       {!found && (
-        <div className="rail-backs">
-          {STRETCH_CHOICES.map(c => (
-            <button key={c.days} className={`rail-back ${back === c.days ? 'on' : ''}`} onClick={() => setBack(c.days)}>
-              {c.label}
-            </button>
-          ))}
-        </div>
+        <>
+          <div className="rail-backs">
+            {STRETCH_CHOICES.map(c => {
+              const on = endsNow && fromKey === dayKey(new Date(daysAgoStart(c.days)))
+              return (
+                <button key={c.days} className={`rail-back ${on ? 'on' : ''}`} onClick={() => pickPreset(c.days)}>
+                  {c.label}
+                </button>
+              )
+            })}
+          </div>
+          <div className="rail-range">
+            <div className="rail-range-field">
+              <span>From</span>
+              <button type="button" className={`rail-range-pick ${cal === 'from' ? 'open' : ''}`} aria-expanded={cal === 'from'}
+                aria-label="Start date" onClick={() => setCal(c => (c === 'from' ? null : 'from'))}>{rangeDay(fromKey)}</button>
+            </div>
+            <div className="rail-range-field">
+              <span>To</span>
+              <button type="button" className={`rail-range-pick ${cal === 'to' ? 'open' : ''}`} aria-expanded={cal === 'to'}
+                aria-label="End date" onClick={() => setCal(c => (c === 'to' ? null : 'to'))}>{endsNow ? 'now' : rangeDay(toKey)}</button>
+            </div>
+          </div>
+          {cal && <EndDayCalendar value={cal === 'from' ? fromKey : toKey} onPick={cal === 'from' ? pickFrom : pickTo} />}
+        </>
       )}
       {/* The span, said plainly and up front — this writes into the past, so it
           never does so without showing exactly which hours it means. */}
       <div className="rail-gap">
         <RewindClock size={18} />
         <div>
-          <b>{found ? whenPhrase(stretch.startMs) : `Since ${whenPhrase(stretch.startMs)}`} → now</b>
+          <b>{found ? whenPhrase(stretch.startMs) : `Since ${whenPhrase(stretch.startMs)}`} → {found || endsNow ? 'now' : whenPhrase(stretch.endMs)}</b>
           <span>{found ? absenceLength(stretch, r) : fmtDuration(stretch.awayMins)}{multiDay ? ` · ${days.length} days` : ''}</span>
         </div>
       </div>
@@ -1179,6 +1213,14 @@ function CatchUpSheet({ gap, rule, effects, onLog, onSkip, onCreateEffect, count
       </button>
     </div>
   )
+}
+
+// "today" / "Mon, Sep 21" — a range end named with its date, so a picked day
+// reads back unambiguously.
+function rangeDay(key) {
+  const name = dayLabel(key)
+  if (name === 'today' || name === 'yesterday') return name
+  return keyToDate(key).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
 }
 
 // "Sat" / "today" — a day named as briefly as a chip allows.

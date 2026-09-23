@@ -1818,6 +1818,14 @@ textarea { resize: vertical; min-height: 160px; line-height: 1.6; }
 .rail-back { border: 1.5px solid var(--border); background: #fff; border-radius: 999px; padding: 6px 12px;
   font-size: 12px; font-weight: 700; color: var(--muted); cursor: pointer; font-family: inherit; }
 .rail-back.on { border-color: var(--teal); background: var(--green-light); color: var(--teal); }
+/* A hand-logged streak's own start and end, each a tap away from a calendar. */
+.rail-range { display: flex; gap: 9px; margin-bottom: 12px; }
+.rail-range-field { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.rail-range-field > span { font-size: 10.5px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+.rail-range-pick { border: 1.5px solid var(--border); border-radius: 11px; background: #fff; color: var(--text); padding: 8px 10px;
+  font-size: 13px; font-weight: 600; font-family: inherit; text-align: left; cursor: pointer; }
+.rail-range-pick.open { border-color: var(--teal); }
+.rail-range + .rail-when-cal { margin: -4px 0 12px; }
 /* The pile those days are still holding — offered, never assumed, and never
    dressed up as having got it all done. */
 .rail-letgo { display: flex; align-items: flex-start; gap: 10px; width: 100%; text-align: left; margin-top: 14px;

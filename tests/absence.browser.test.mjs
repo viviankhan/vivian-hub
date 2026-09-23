@@ -275,6 +275,47 @@ ok('and the blob names it as a streak', /a depressed streak across 3 days/i.test
 ok('…and says what it swept up', /3 things let go of/i.test(handFlash), handFlash)
 await hand.ctx.close()
 
+// ── A streak that is already over ─────────────────────────────
+// The presets all run up to now. A streak that began five days ago and lifted
+// three days ago needs both ends picked — a start date AND an end date.
+console.log('\n— a streak with its own start and end —')
+const range = await arriveAfter(1, null, [])
+await range.page.waitForTimeout(1200)
+await range.page.click('.rail-blob-btn')
+await range.page.waitForTimeout(400)
+await range.page.click('.rail-bub-streak')
+await range.page.waitForSelector('.rail-range', { timeout: 5000 })
+// Tap a day on the open calendar, stepping back a month if it's in the last one.
+const pickDay = async (p, key) => {
+  const d = new Date(key + 'T12:00:00')
+  if (d.getMonth() !== new Date().getMonth()) {
+    await p.locator('.rail-when-cal').getByRole('button', { name: 'Previous month' }).click()
+    await p.waitForTimeout(150)
+  }
+  await p.locator('.rail-when-cal').getByRole('button', { name: String(d.getDate()), exact: true }).click()
+  await p.waitForTimeout(250)
+}
+eq('the end starts at now', (await range.page.getByRole('button', { name: 'End date' }).innerText()).trim(), 'now')
+await range.page.getByRole('button', { name: 'Start date' }).click()
+await range.page.waitForTimeout(200)
+await pickDay(range.page, past(5))
+await range.page.getByRole('button', { name: 'End date' }).click()
+await range.page.waitForTimeout(200)
+await pickDay(range.page, past(3))
+const rangeSpan = (await range.page.locator('.rail-gap').innerText()).replace(/\s+/g, ' ').trim()
+ok('the span no longer runs to now', !/→ now/.test(rangeSpan) && /3 days/.test(rangeSpan), rangeSpan)
+eq('no preset claims it', await range.page.locator('.rail-back.on').count(), 0)
+await range.page.locator('.rail-cond').first().click()
+await range.page.waitForTimeout(200)
+await range.page.locator('.rail-log').click()
+await range.page.waitForTimeout(1000)
+const rangeEps = await range.page.evaluate(() => JSON.parse(localStorage.getItem('vivian_wellness_episodes') || '[]'))
+const midnight = (key) => new Date(key + 'T00:00:00').toISOString()
+const closeOf = (key) => new Date(key + 'T23:59:00').toISOString()
+eq('one span, from the start day…', rangeEps.map(e => e.start), [midnight(past(5))])
+eq('…to the close of the end day', rangeEps.map(e => e.end), [closeOf(past(3))])
+await range.ctx.close()
+
 eq('no uncaught errors', errors, [])
 
 await counted.ctx.close()

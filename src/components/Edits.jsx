@@ -4,6 +4,14 @@
 
 const EDIT_LOG = [
   {
+    date: '2026-09-23',
+    summary: 'Log a streak with its own start and end date',
+    changes: [
+      'Wellness → Log a streak now has From and To fields under the quick picks. Tap either one for a calendar and choose any day, so a streak that already ended (say Monday to Wednesday last week) can be logged as exactly that',
+      'The quick picks (today, 3 days, a week…) still work as before and run the streak up to now; a streak that ends on an earlier day runs to the end of that day',
+    ]
+  },
+  {
     date: '2026-09-22',
     summary: 'Routines are gone — time blocks do the job — and a condition can end on any date',
     changes: [
