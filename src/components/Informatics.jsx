@@ -5,11 +5,12 @@
 // and task names, and shows the total plus a breakdown. Below the question box
 // is an always-on overview of time by category and by task, which doubles as a
 // menu of things you can ask about.
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Icon } from './IconPicker.jsx'
 import { computeEntries, filterByRange, aggregate, answerQuestion, fmtHours, decimalHours } from '../lib/insights.js'
 import { computeSkills } from '../lib/skills.js'
 import WellnessInsights from './WellnessInsights.jsx'
+import { askInformatics, informaticsAiAvailable } from '../lib/askInformatics.js'
 
 const RANGES = [['week', 'Past week'], ['month', 'Past month'], ['all', 'All time']]
 const sessions = (n) => `${n} time${n === 1 ? '' : 's'}`
@@ -49,6 +50,26 @@ export default function Informatics({ commitments = [], recurringTasks = [], com
   const skills = useMemo(() => computeSkills(entries, categories), [entries, categories])
   const answer = useMemo(() => asked ? answerQuestion(entries, asked, categories) : null, [asked, entries, categories])
   const [openSkill, setOpenSkill] = useState(null)   // expanded skill row (shows its tasks)
+
+  // AI answer — asked alongside the instant keyword answer above. It reads the
+  // same entries (descriptions and subtasks included) and can name specific
+  // skills/techniques the keyword list doesn't know. Runs once per question +
+  // range; the latest data is read through a ref so new check-offs landing
+  // mid-request don't refire it.
+  const [ai, setAi] = useState({ status: 'idle' })   // idle | loading | done | error
+  const [aiNonce, setAiNonce] = useState(0)          // bump to retry
+  const aiInput = useRef({ entries, categories })
+  aiInput.current = { entries, categories }
+  useEffect(() => {
+    if (!asked || !informaticsAiAvailable) { setAi({ status: 'idle' }); return }
+    let live = true
+    setAi({ status: 'loading' })
+    const label = RANGES.find(r => r[0] === range)?.[1].toLowerCase() || 'all time'
+    askInformatics(asked, aiInput.current.entries, { categories: aiInput.current.categories, rangeLabel: label })
+      .then(data => { if (live) setAi({ status: 'done', data }) })
+      .catch(err => { if (live) setAi({ status: 'error', error: err?.message || 'Something went wrong.' }) })
+    return () => { live = false }
+  }, [asked, range, aiNonce])
 
   const hasHours = agg.totalMins > 0
   const totalSessions = entries.length
@@ -172,6 +193,49 @@ export default function Informatics({ commitments = [], recurringTasks = [], com
           </div>
         )}
       </div>
+
+      {/* AI answer */}
+      {asked && ai.status !== 'idle' && (
+        <div style={{ background:'white', border:'1px solid var(--border)', borderRadius:14, padding:'14px 16px', marginBottom:14 }}>
+          <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:6 }}>
+            <span style={{ fontSize:14 }}>✨</span>
+            <span style={{ fontSize:11, color:'var(--muted)', letterSpacing:1.5, textTransform:'uppercase', fontWeight:600, flex:1 }}>AI answer · {rangeLabel}</span>
+            {ai.status !== 'loading' && (
+              <button onClick={() => setAiNonce(n => n + 1)}
+                style={{ fontSize:11, padding:'3px 10px', borderRadius:14, border:'1px solid var(--border)', background:'white', color:'var(--muted)', cursor:'pointer', fontFamily:'DM Sans,sans-serif' }}>Ask again</button>
+            )}
+          </div>
+          {ai.status === 'loading' && (
+            <div style={{ fontSize:13, color:'var(--muted)' }}>Reading your task descriptions and subtasks…</div>
+          )}
+          {ai.status === 'error' && (
+            <div style={{ fontSize:13, color:'#9A4B3C' }}>{ai.error}</div>
+          )}
+          {ai.status === 'done' && (
+            <>
+              {ai.data.answer && <div style={{ fontSize:14, color:'var(--text)', lineHeight:1.5 }}>{ai.data.answer}</div>}
+              {ai.data.highlights.length > 0 && (
+                <div style={{ marginTop:10 }}>
+                  {ai.data.highlights.map((h, i, arr) => (
+                    <div key={h.label + i} style={{ padding:'8px 0', borderBottom: i < arr.length-1 ? '1px solid #F1EEF3' : 'none' }}>
+                      <div style={{ fontSize:13, fontWeight:700, color:'var(--text)' }}>{h.label}</div>
+                      {h.detail && <div style={{ fontSize:12.5, color:'var(--text)', opacity:.85, lineHeight:1.45, marginTop:2 }}>{h.detail}</div>}
+                      {h.tasks && h.tasks.length > 0 && (
+                        <div style={{ display:'flex', gap:5, flexWrap:'wrap', marginTop:5 }}>
+                          {h.tasks.map(t => (
+                            <span key={t} style={{ fontSize:10.5, padding:'2px 8px', borderRadius:12, background:'var(--cream)', color:'var(--muted)', maxWidth:'100%', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{t}</span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+              <div style={{ fontSize:10.5, color:'var(--muted)', marginTop:8 }}>From your finished tasks’ titles, descriptions and subtasks, read by Gemini. Double-check anything important.</div>
+            </>
+          )}
+        </div>
+      )}
 
       {/* Answer */}
       {answer && ((answer.type === 'skills' ? answer.skills.length > 0 : answer.sessions > 0) ? (

@@ -61,12 +61,28 @@ supabase functions deploy parse-receipt
 
 See `RECEIPTS.md` for the B&B tracker.
 
+### …and AI answers on Informatics
+
+Ask the **Informatics** page something — "what lab skills do I have?", "what
+did I do for my thesis this month?" — and, next to the instant keyword answer,
+an **✨ AI answer** reads your finished tasks' titles, descriptions and subtasks
+and names the specific skills or work behind them, each linked to the tasks it
+came from. Same key, one more deploy:
+
+```bash
+supabase functions deploy ask-informatics
+```
+
+Your finished tasks for the chosen range (titles, descriptions, subtasks, how
+often, tracked minutes) are sent to Gemini with the question. Nothing is saved.
+
 ## Notes
 
 - **Cost:** free within Gemini's free tier. If you ever hit the rate limit, the
   app shows a friendly "try again in a moment" message.
 - **Privacy:** the text you paste and any photo you add are sent to Google
-  Gemini to be structured. Nothing is saved to your planner until you review the
+  Gemini to be structured (and an Informatics question sends your finished
+  tasks in the chosen range). Nothing is saved to your planner until you review the
   draft and tap Save, and the photo itself is never stored.
 - **Model:** `gemini-2.0-flash`. To change it, edit `MODEL` in
   `supabase/functions/parse-event/index.ts` and redeploy. The flash models read
