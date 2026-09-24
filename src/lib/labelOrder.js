@@ -77,3 +77,10 @@ let _reorder = null
 export function registerLabelReorder(fn) { _reorder = typeof fn === 'function' ? fn : null }
 export function canReorderLabels() { return !!_reorder }
 export function reorderLabels(orderedIds) { if (_reorder) _reorder(orderedIds) }
+
+// Same idea for making a new label: the add sheet offers "＋ New label" only
+// when App has registered the function that saves one.
+let _add = null
+export function registerLabelAdd(fn) { _add = typeof fn === 'function' ? fn : null }
+export function canAddLabels() { return !!_add }
+export function addLabel(cat) { return _add ? _add(cat) : Promise.resolve() }

@@ -41,7 +41,7 @@ import {
   registerLabelMeta, registerRecordFolders, normalizeLabelMeta,
   syncTaskEntries, removeTaskEntries, mergeFolders as mergeRecordFolders, remapLabelFolders,
 } from './lib/labels.js'
-import { sortLabels, applyOrder, orderChanges, registerLabelReorder } from './lib/labelOrder.js'
+import { sortLabels, applyOrder, orderChanges, registerLabelReorder, registerLabelAdd } from './lib/labelOrder.js'
 import { ACCENT_COLORS } from './lib/trackers.js'
 import TaskMenuSettings from './components/TaskMenuSettings.jsx'
 
@@ -1250,6 +1250,7 @@ export default function App() {
   // The add-task sheet is opened from a dozen places that never see label CRUD,
   // so the chain there reaches for the commit through the register.
   useEffect(() => { registerLabelReorder(reorderCategoriesFn); return () => registerLabelReorder(null) }, [reorderCategoriesFn])
+  useEffect(() => { registerLabelAdd(addCategoryFn); return () => registerLabelAdd(null) }, [addCategoryFn])
 
   // ── Routine groups CRUD (one synced kv blob) ─────────────────
   // The whole list is one blob, so each op writes the next array. Deleting a

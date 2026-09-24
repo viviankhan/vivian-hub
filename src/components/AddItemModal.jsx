@@ -24,7 +24,7 @@ import { geolocationSupported, getCurrentLocation, searchPlaces, reverseGeocode,
 import { getSavedPlaces, getRecentPlaces, rememberPlace } from '../lib/places.js'
 import { activeAccent } from '../lib/appearance.js'
 import { fieldType, fieldsForCats, recordLinksForCats, hasValue, recordFolders, labelMetaFor } from '../lib/labels.js'
-import { reorderLabels, canReorderLabels } from '../lib/labelOrder.js'
+import { reorderLabels, canReorderLabels, addLabel, canAddLabels, nextSortOrder } from '../lib/labelOrder.js'
 import { useDragReorder } from '../lib/reorder.js'
 import { Glyph } from '../lib/glyphs.jsx'
 import { compressImage } from '../lib/trackers.js'
@@ -380,6 +380,29 @@ export default function AddItemModal({ existing = null, existingRecurring = null
     disabled: !canReorderLabels() || !(categories || []).length || cats.length < 2,
   })
   const chainCats = labelDrag.order.map(id => cats.find(c => c.id === id)).filter(Boolean)
+  // Make a new label without leaving the sheet — it's saved like one made in
+  // Settings → Labels, lands at the end of the chain, and is picked for this task.
+  const [addingLabel, setAddingLabel]     = useState(false)
+  const [newLabelText, setNewLabelText]   = useState('')
+  const [newLabelColor, setNewLabelColor] = useState('#4A9EB5')
+  const commitNewLabel = async () => {
+    const text = newLabelText.trim()
+    if (!text || !canAddLabels()) return
+    const existingCats = categories || []
+    const same = existingCats.find(c => (c.label || '').toLowerCase() === text.toLowerCase())
+    let id = same?.id
+    if (!id) {
+      id = text.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '').slice(0, 24) || 'label'
+      if (existingCats.some(c => c.id === id)) id = `${id}-${Date.now().toString().slice(-4)}`
+      await addLabel({ id, label: text, color: newLabelColor, icon: '', sortOrder: nextSortOrder(existingCats) })
+    }
+    setCatsTouched(true)
+    setSelectedCats(prev => {
+      const base = prev.length ? prev : effectiveCats
+      return base.includes(id) ? base : [...base, id]
+    })
+    setNewLabelText(''); setAddingLabel(false)
+  }
   const [description, setDescription] = useState(existing?.description ?? rec?.note ?? presetDescription ?? '')
   const [subtasks, setSubtasks]   = useState(() =>
     Array.isArray(existing?.subtasks) ? existing.subtasks
@@ -975,10 +998,36 @@ export default function AddItemModal({ existing = null, existingRecurring = null
               <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>{openGroup.labels.map(labelChip)}</div>
             </div>
           )}
-          {plainCats.length > 0 && <div style={{ ...fieldLabel, margin:'14px 0 6px' }}>Other labels</div>}
+          {(plainCats.length > 0 || canAddLabels()) && <div style={{ ...fieldLabel, margin:'14px 0 6px' }}>Other labels</div>}
         </>}
-        {plainCats.length > 0 && (
-          <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>{plainCats.map(labelChip)}</div>
+        {(plainCats.length > 0 || canAddLabels()) && (
+          <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
+            {plainCats.map(labelChip)}
+            {canAddLabels() && !addingLabel && (
+              <button type="button" onClick={() => setAddingLabel(true)}
+                style={{ fontSize:11, padding:'5px 12px', borderRadius:20, border:'1px dashed var(--teal)', background:'white', color:'var(--teal)', cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:600 }}>
+                ＋ New label
+              </button>
+            )}
+          </div>
+        )}
+        {addingLabel && (
+          <div style={{ marginTop:10, paddingTop:10, borderTop:'1px solid #F1EDF2' }}>
+            <div style={{ display:'flex', gap:6, alignItems:'center', marginBottom:9 }}>
+              <span style={{ width:24, height:24, borderRadius:7, background:newLabelColor, flexShrink:0, boxShadow:'0 0 0 1px rgba(0,0,0,.12)' }} />
+              <input value={newLabelText} onChange={e => setNewLabelText(e.target.value)} autoFocus
+                onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); commitNewLabel() } if (e.key === 'Escape') { e.stopPropagation(); setAddingLabel(false); setNewLabelText('') } }}
+                placeholder="Name the label — e.g. Rental, Study…"
+                style={{ ...inp, flex:1, fontSize:12.5 }} />
+            </div>
+            <ColorSwatchRow value={newLabelColor} onChange={setNewLabelColor} size={24} />
+            <div style={{ display:'flex', gap:8, marginTop:10 }}>
+              <button type="button" onClick={commitNewLabel} disabled={!newLabelText.trim()}
+                style={{ fontSize:12, padding:'8px 16px', borderRadius:10, border:'none', cursor: newLabelText.trim() ? 'pointer' : 'default', fontFamily:'DM Sans,sans-serif', fontWeight:700, background: newLabelText.trim() ? ROW_ACCENT : '#E1E1E6', color: newLabelText.trim() ? 'white' : '#9CA3AF' }}>Add label</button>
+              <button type="button" onClick={() => { setAddingLabel(false); setNewLabelText('') }}
+                style={{ fontSize:12, padding:'8px 14px', borderRadius:10, border:'none', background:'none', color:'var(--muted)', cursor:'pointer', fontFamily:'DM Sans,sans-serif' }}>Cancel</button>
+            </div>
+          </div>
         )}
         {usingPrediction && (
           <div style={{ fontSize:10.5, color:'var(--muted)', marginTop:7 }}>Predicted from your past tasks — tap to change, or tap it again to leave this task unlabeled.</div>
