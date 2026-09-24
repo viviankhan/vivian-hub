@@ -68,8 +68,8 @@ const TAXONOMY = [
     phrases: ['lit review', 'literature review', 'look into', 'gather sources', 'systematic review'] },
 
   { id: 'lab', label: 'Lab work', icon: 'glyph:flask', color: '#4FA96B',
-    words: ['lab', 'assay', 'pipette', 'culture', 'microscope', 'dissection', 'specimen', 'sample', 'reagent', 'titration', 'pcr', 'gel', 'centrifuge', 'buffer', 'protocol', 'staining'],
-    phrases: ['run the assay', 'lab work', 'wet lab', 'cell culture', 'bench work'] },
+    words: ['lab', 'assay', 'pipette', 'pipetting', 'culture', 'microscope', 'microscopy', 'dissection', 'specimen', 'sample', 'reagent', 'titration', 'pcr', 'qpcr', 'gel', 'centrifuge', 'buffer', 'protocol', 'staining', 'elisa', 'electrophoresis', 'transfection', 'plasmid', 'miniprep', 'ligation', 'aliquot', 'autoclave', 'incubate', 'incubation', 'spectrophotometer', 'nanodrop', 'plating', 'passaging', 'sterile', 'aseptic', 'extraction', 'purification', 'chromatography', 'hplc', 'cytometry', 'facs', 'immunostaining', 'immunofluorescence', 'sds', 'dilution', 'dna', 'rna', 'cdna', 'antibody', 'mice', 'biopsy', 'histology', 'sectioning', 'cryostat', 'bacteria', 'coli'],
+    phrases: ['run the assay', 'lab work', 'wet lab', 'cell culture', 'bench work', 'western blot', 'serial dilution', 'flow cytometry', 'gel electrophoresis', 'fume hood', 'biosafety cabinet', 'tissue culture', 'cell counting', 'split cells', 'streak plate', 'rna extraction', 'dna extraction', 'protein extraction'] },
 
   { id: 'math', label: 'Math & problem solving', icon: 'glyph:calculator', color: '#E0A24F',
     words: ['math', 'calculus', 'algebra', 'equation', 'integral', 'derivative', 'geometry', 'trig', 'trigonometry', 'proof', 'compute', 'calculate', 'formula'],
@@ -153,19 +153,36 @@ export function skillMeta(id) {
   return s ? { id: s.id, label: s.label, icon: s.icon, color: s.color } : { id, label: id, icon: 'glyph:star', color: '#9AA6B2' }
 }
 
+// Break a task's description and subtasks into short, readable pieces — one
+// per line, bullet, sentence or subtask — so a skill can point at the exact
+// thing you wrote ("Ran a western blot on the HEK lysates") rather than just
+// the task's title.
+export function detailFragments(e) {
+  const out = []
+  const push = (t) => {
+    const v = String(t || '').replace(/^\s*(?:[-*•·]|\d+[.)])\s*/, '').replace(/\s+/g, ' ').trim()
+    if (v.length >= 3) out.push(v.length > 160 ? v.slice(0, 157).trimEnd() + '…' : v)
+  }
+  for (const line of String(e?.desc || '').split(/\n+|(?<=[.!?;])\s+(?=[A-Z0-9])/)) push(line)
+  for (const sub of String(e?.subs || '').split(' · ')) push(sub)
+  return out
+}
+
 // Roll a list of time entries up by skill. Each row carries the total minutes,
-// the number of sessions, the distinct days, and the specific tasks that fed
-// it (so the UI can show "why is this here?").
+// the number of sessions, the distinct days, the specific tasks that fed it,
+// and the lines from those tasks' descriptions and subtasks that show the skill
+// (so the UI can show "why is this here?" in your own words, not just titles).
 export function computeSkills(entries = [], categories = []) {
   const map = new Map()
   for (const e of entries) {
     const ids = inferSkills(entryText(e, categories))
     if (!ids.length) continue
+    const frags = detailFragments(e)
     for (const id of ids) {
       let row = map.get(id)
       if (!row) {
         const m = skillMeta(id)
-        row = { id, label: m.label, icon: m.icon, color: m.color, mins: 0, count: 0, days: new Set(), tasks: new Map() }
+        row = { id, label: m.label, icon: m.icon, color: m.color, mins: 0, count: 0, days: new Set(), tasks: new Map(), details: new Map() }
         map.set(id, row)
       }
       row.mins += e.mins || 0
@@ -173,8 +190,15 @@ export function computeSkills(entries = [], categories = []) {
       if (e.date) row.days.add(e.date)
       const title = (e.title || 'Untitled').trim() || 'Untitled'
       const tkey = title.toLowerCase()
-      const t = row.tasks.get(tkey) || { title, mins: 0, count: 0 }
+      const t = row.tasks.get(tkey) || { title, mins: 0, count: 0, details: [] }
       t.mins += e.mins || 0; t.count += 1
+      for (const f of frags) {
+        if (!inferSkills(f).includes(id)) continue
+        const fkey = f.toLowerCase()
+        if (!t.details.some(d => d.toLowerCase() === fkey)) t.details.push(f)
+        const d = row.details.get(fkey) || { text: f, count: 0 }
+        d.count += 1; row.details.set(fkey, d)
+      }
       row.tasks.set(tkey, t)
     }
   }
@@ -183,6 +207,7 @@ export function computeSkills(entries = [], categories = []) {
       ...r,
       days: r.days.size,
       tasks: [...r.tasks.values()].sort((a, b) => b.count - a.count || b.mins - a.mins),
+      details: [...r.details.values()].sort((a, b) => b.count - a.count).map(d => d.text),
     }))
     .sort((a, b) => b.mins - a.mins || b.count - a.count)
 }

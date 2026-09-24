@@ -14,7 +14,7 @@
 // Time-block "containers" are skipped — they're windows of the day, not work.
 // ─────────────────────────────────────────────────────────────
 
-import { computeSkills, skillForTopic, entryText, inferSkills } from './skills.js'
+import { computeSkills, skillForTopic, entryText, inferSkills, detailFragments } from './skills.js'
 
 const DATE_KEY_RE = /^(\d{4}-\d{2}-\d{2})_(.+)$/
 
@@ -59,26 +59,45 @@ export function cleanTitle(label) {
 export function computeActivity({ log = [], commitments = [], recurringTasks = [] }) {
   const cById = new Map((commitments || []).map(c => [c.id, c]))
   const rById = new Map((recurringTasks || []).map(t => [t.id, t]))
+  // Title → task, for log entries whose key no longer points at anything
+  // (older entries saved without a key, a calendar event checked off in place
+  // of the task it became, a commitment ticked from a dated view). Without this
+  // those entries lose their description and subtasks and only the title is
+  // left to read — which is exactly the detail skill inference needs.
+  const byTitle = new Map()
+  const addTitle = (label, item, kind) => {
+    const k = cleanTitle(label || '').toLowerCase()
+    if (!k) return
+    const prev = byTitle.get(k)
+    // Prefer the copy that actually carries detail.
+    const rich = x => !!((x.item.description || x.item.note || '').trim() || (Array.isArray(x.item.subtasks) && x.item.subtasks.length))
+    if (!prev || (!rich(prev) && rich({ item }))) byTitle.set(k, { item, kind })
+  }
+  for (const c of commitments || []) addTitle(c.text, c, 'c')
+  for (const t of recurringTasks || []) addTitle(t.title || t.text, t, 'r')
+
   const out = []
   for (const e of (log || [])) {
     const key = e.storageKey || ''
     const date = e.date || (e.ts ? String(e.ts).slice(0, 10) : '')
     if (!date) continue
     let mins = 0, cat = e.tag || '', title = cleanTitle(e.label || ''), desc = '', subs = ''
-    const c = cById.get(key)
+    const m = key.match(DATE_KEY_RE)
+    let c = cById.get(key) || (m ? cById.get(m[2]) : null)
+    let r = !c && m ? rById.get(m[2]) : null
+    if (!c && !r && title) {
+      const hit = byTitle.get(title.toLowerCase())
+      if (hit) { if (hit.kind === 'c') c = hit.item; else r = hit.item }
+    }
     if (c) {
       if (c.block) continue
       mins = c.durationMins || 0; cat = cat || c.cat || ''; if (!title) title = (c.text || '').trim()
       desc = c.description || ''; subs = subtaskText(c.subtasks)
-    } else {
-      const m = key.match(DATE_KEY_RE)
-      if (m && rById.has(m[2])) {
-        const t = rById.get(m[2])
-        if (t.block) continue
-        mins = t.durationMins || 0; cat = cat || t.cat || t.tag || ''
-        if (!title) title = (t.title || t.text || '').trim()
-        desc = t.note || t.description || ''; subs = subtaskText(t.subtasks)
-      }
+    } else if (r) {
+      if (r.block) continue
+      mins = r.durationMins || 0; cat = cat || r.cat || r.tag || ''
+      if (!title) title = (r.title || r.text || '').trim()
+      desc = r.note || r.description || ''; subs = subtaskText(r.subtasks)
     }
     out.push({ date, mins, cat, title: title || 'Untitled', desc, subs, kind: 'log' })
   }
@@ -186,6 +205,24 @@ export function answerQuery(entries, query, categories) {
     if (!hit && skillId) hit = inferSkills(hay).includes(skillId)
     if (hit) matched.push(e)
   }
+  // The lines you actually wrote about this topic — description sentences and
+  // subtasks that mention it (or exercise the skill it names). For "what lab
+  // skills do I have?" this is where "ran a western blot", "passaged HeLa
+  // cells" live; the task titles alone rarely say that much.
+  const details = new Map()
+  const fragHit = (f) => {
+    const low = f.toLowerCase()
+    const fw = low.match(/[a-z0-9]+/g)?.map(stem) || []
+    return words.some(w => fw.some(hw => hw === w || (w.length >= 4 && hw.startsWith(w)))) || (skillId && inferSkills(low).includes(skillId))
+  }
+  for (const e of matched) {
+    for (const f of detailFragments(e)) {
+      if (!fragHit(f)) continue
+      const k = f.toLowerCase()
+      const d = details.get(k) || { text: f, task: e.title, count: 0 }
+      d.count += 1; details.set(k, d)
+    }
+  }
   const agg = aggregate(matched, categories)
   return {
     type: 'topic',
@@ -196,6 +233,7 @@ export function answerQuery(entries, query, categories) {
     byCategory: agg.byCategory,
     byTask: agg.byTask.slice(0, 8),
     skills: computeSkills(matched, categories).slice(0, 6),
+    details: [...details.values()].sort((a, b) => b.count - a.count).slice(0, 12),
   }
 }
 

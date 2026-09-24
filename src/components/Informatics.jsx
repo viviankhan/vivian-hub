@@ -184,10 +184,19 @@ export default function Informatics({ commitments = [], recurringTasks = [], com
               {answer.skills.length > 0 && (
                 <div style={{ marginTop:12, borderTop:'1px solid rgba(255,255,255,.16)', paddingTop:10 }}>
                   {answer.skills.map(s => (
-                    <div key={s.id} style={{ display:'flex', alignItems:'center', gap:8, fontSize:12.5, padding:'4px 0', opacity:.94 }}>
-                      <Icon value={s.icon} size={14} color="currentColor" />
-                      <span style={{ flex:1, minWidth:0, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{s.label}</span>
-                      <span style={{ fontWeight:600, flexShrink:0 }}>{s.mins > 0 ? fmtHours(s.mins) : sessions(s.count)}</span>
+                    <div key={s.id} style={{ padding:'4px 0', opacity:.94 }}>
+                      <div style={{ display:'flex', alignItems:'center', gap:8, fontSize:12.5 }}>
+                        <Icon value={s.icon} size={14} color="currentColor" />
+                        <span style={{ flex:1, minWidth:0, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{s.label}</span>
+                        <span style={{ fontWeight:600, flexShrink:0 }}>{s.mins > 0 ? fmtHours(s.mins) : sessions(s.count)}</span>
+                      </div>
+                      {s.details && s.details.length > 0 && (
+                        <div style={{ paddingLeft:22, marginTop:2 }}>
+                          {s.details.slice(0, 3).map(d => (
+                            <div key={d} style={{ fontSize:11.5, opacity:.75, lineHeight:1.4 }}>· {d}</div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -244,6 +253,17 @@ export default function Informatics({ commitments = [], recurringTasks = [], com
                     <span key={s.id} style={{ display:'inline-flex', alignItems:'center', gap:4, fontSize:11, fontWeight:600, padding:'3px 9px', borderRadius:16, background:'rgba(255,255,255,.1)' }}>
                       <Icon value={s.icon} size={12} color="currentColor" />{s.label}
                     </span>
+                  ))}
+                </div>
+              )}
+              {answer.details && answer.details.length > 0 && (
+                <div style={{ marginTop:12, borderTop:'1px solid rgba(255,255,255,.16)', paddingTop:10 }}>
+                  <div style={{ fontSize:11, opacity:.7, marginBottom:4 }}>From your descriptions &amp; subtasks</div>
+                  {answer.details.map(d => (
+                    <div key={d.text} style={{ fontSize:12.5, padding:'3px 0', opacity:.94, lineHeight:1.4 }}>
+                      · {d.text}{d.count>1?` ×${d.count}`:''}
+                      <span style={{ opacity:.6, fontSize:11 }}> — {d.task}</span>
+                    </div>
                   ))}
                 </div>
               )}
@@ -308,7 +328,8 @@ export default function Informatics({ commitments = [], recurringTasks = [], com
           </div>
 
           {/* Skills you've practiced — inferred from titles, descriptions and
-              subtasks. Tap a skill to see which tasks it came from. */}
+              subtasks. Tap a skill to see which tasks it came from and the lines
+              in their descriptions/subtasks that show it. */}
           {skills.length > 0 && (
             <>
               <div style={{ display:'flex', alignItems:'baseline', justifyContent:'space-between', margin:'16px 0 8px' }}>
@@ -333,9 +354,14 @@ export default function Informatics({ commitments = [], recurringTasks = [], com
                       {open && s.tasks.length > 0 && (
                         <div style={{ marginTop:8, paddingLeft:26 }}>
                           {s.tasks.slice(0, 8).map(t => (
-                            <div key={t.title} style={{ display:'flex', justifyContent:'space-between', gap:10, fontSize:12, color:'var(--muted)', padding:'2px 0' }}>
-                              <span style={{ whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{t.title}{t.count>1?` ×${t.count}`:''}</span>
-                              {t.mins > 0 && <span style={{ flexShrink:0 }}>{fmtHours(t.mins)}</span>}
+                            <div key={t.title} style={{ padding:'2px 0' }}>
+                              <div style={{ display:'flex', justifyContent:'space-between', gap:10, fontSize:12, color:'var(--muted)' }}>
+                                <span style={{ whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{t.title}{t.count>1?` ×${t.count}`:''}</span>
+                                {t.mins > 0 && <span style={{ flexShrink:0 }}>{fmtHours(t.mins)}</span>}
+                              </div>
+                              {t.details && t.details.slice(0, 4).map(d => (
+                                <div key={d} style={{ fontSize:11.5, color:'var(--text)', opacity:.8, paddingLeft:10, lineHeight:1.4 }}>· {d}</div>
+                              ))}
                             </div>
                           ))}
                         </div>
