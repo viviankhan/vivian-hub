@@ -29,6 +29,9 @@ function stampServiceWorker() {
             // Source maps are big and only ever wanted by a debugger that has a
             // network — precaching them would bloat every install for nothing.
             .filter(f => !f.endsWith('.map'))
+            // pdf.js (~1.8MB) is only used when adding a paper, which needs the
+            // network anyway. It is cached on first use like any other asset.
+            .filter(f => !f.startsWith('pdf'))
             .map(f => 'assets/' + f)
         }
       } catch { /* no assets dir — precache just the hand-written shell */ }

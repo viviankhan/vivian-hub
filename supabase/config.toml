@@ -19,3 +19,14 @@ verify_jwt = false
 # touches the database.
 [functions.parse-receipt]
 verify_jwt = false
+
+# Papers: PDF → walkthrough. Off for the CORS preflight like parse-event; the
+# function checks the caller's session itself, since a PDF is a costly call.
+# It only calls Gemini and returns JSON; it never touches the database.
+[functions.paper-walkthrough]
+verify_jwt = false
+
+# Papers: wake the narrator Action. The function checks the caller's session
+# itself (see its source), so the preflight can pass without a JWT.
+[functions.narrate-now]
+verify_jwt = false
