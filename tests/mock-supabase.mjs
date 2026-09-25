@@ -1,9 +1,9 @@
 // A small in-memory stand-in for the Supabase client: enough of the query
 // builder for everything storage.js calls, plus a switch to simulate the
 // network being gone.
-export const state = { tables: {}, files: {}, offline: false, forceError: null, calls: [] }
+export const state = { tables: {}, files: {}, offline: false, forceError: null, calls: [], delay: 0 }
 
-export function reset() { state.tables = {}; state.files = {}; state.offline = false; state.forceError = null; state.calls = [] }
+export function reset() { state.tables = {}; state.files = {}; state.offline = false; state.forceError = null; state.calls = []; state.delay = 0 }
 const table = t => (state.tables[t] ||= [])
 const netErr = () => Object.assign(new Error('TypeError: Failed to fetch'), { name: 'TypeError' })
 const match = (row, filters) => filters.every(f => {
@@ -33,6 +33,8 @@ class Query {
 
   async run() {
     state.calls.push(`${this.name}.${this.action}`)
+    // A connection that is up but painfully slow: the answer does come, late.
+    if (state.delay) await new Promise(r => setTimeout(r, state.delay))
     if (state.offline) return { data: null, error: netErr() }
     // A server that is reachable but answering with an error (down, overloaded,
     // or refusing our token) rather than refusing the connection outright.

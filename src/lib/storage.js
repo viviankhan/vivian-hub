@@ -121,6 +121,50 @@ export function setStorageUser(uid) {
 const mirrorKey = name => kvNs() + name
 const kvMirrorKey = key => kvNs() + 'kv:' + key
 
+// ── Slow reads ──────────────────────────────────────────────────
+// A request that fails fast is handled by the mirror. A request that simply
+// never finishes — a weak signal, a captive wifi, a database that is
+// struggling — used to be worse: the first load waits on every read, so the
+// app sat on "Loading…" for as long as the browser was willing to wait, which
+// can be minutes. So when this device already HAS a copy of what's being
+// asked for, the cloud gets this long to answer before the copy is shown
+// instead. The request keeps going; if it lands, the mirror is updated and the
+// app is told to re-read (READ_LANDED_EVENT), so nothing is lost but the wait.
+//
+// A key with no copy at all (first launch on this device) still waits for the
+// network: an empty answer there could be mistaken for "you have no data" and
+// seeded over.
+const READ_DEADLINE_MS = 5000
+export const READ_LANDED_EVENT = 'bloom-late-read'
+
+// Resolves with { value } / { error } like normal, or { late } — the still-
+// running promise — when it takes longer than `ms`.
+function withDeadline(promise, ms) {
+  let timer = null
+  const slow = new Promise(res => { timer = setTimeout(() => res({ late: promise }), ms) })
+  return Promise.race([
+    promise.then(value => ({ value }), error => ({ error })),
+    slow,
+  ]).finally(() => clearTimeout(timer))
+}
+
+const same = (a, b) => { try { return JSON.stringify(a) === JSON.stringify(b) } catch { return false } }
+
+// A read we stopped waiting for has come back. Keep it — unless the mirror has
+// moved on since (a local edit made while we waited is newer than this), or an
+// edit is still queued for it. Returns true when it differs from what the app
+// was shown, i.e. when the screen is now out of date.
+async function landLate(key, value, served, pending) {
+  if (pending()) return false
+  const now = await cacheRead(key)
+  if (now !== undefined && !same(now, served)) return false
+  await cacheWrite(key, value)
+  return !same(value, served)
+}
+function announceLateRead() {
+  try { window.dispatchEvent(new CustomEvent(READ_LANDED_EVENT)) } catch {}
+}
+
 // Read from the cloud, keeping the mirror fresh; fall back to the mirror when
 // the network is gone, when a request fails, or when this key still has an
 // unsent local edit (which must beat whatever the cloud is still showing).
@@ -130,7 +174,17 @@ async function cloudRead({ mirror, table, id, run, fallback, label }) {
   const local = cached === undefined ? fallback : cached
   if (!isOnline() || (table && hasPending(table, id))) return local
   try {
-    const value = await run()
+    const request = Promise.resolve().then(run)
+    const r = cached === undefined ? { value: await request } : await withDeadline(request, READ_DEADLINE_MS)
+    if (r.late) {
+      r.late.then(async value => {
+        noteSuccess()
+        if (await landLate(mirrorKey(mirror), value, cached, () => !!(table && hasPending(table, id)))) announceLateRead()
+      }).catch(() => {})
+      return local
+    }
+    if (r.error) throw r.error
+    const value = r.value
     noteSuccess()
     await cacheWrite(mirrorKey(mirror), value)
     return value
@@ -301,8 +355,25 @@ async function runKvBatch(batch) {
     for (let i = 0; i < ask.length; i += KV_BATCH_MAX) chunks.push(ask.slice(i, i + KV_BATCH_MAX))
     await Promise.all(chunks.map(async chunk => {
       try {
-        const { data, error } = await supabase.from('kv_store').select('key, value').in('key', chunk)
-        if (error) throw error
+        const request = Promise.resolve(supabase.from('kv_store').select('key, value').in('key', chunk))
+          .then(({ data, error }) => { if (error) throw error; return data })
+        // Only a chunk this device holds a copy of for EVERY key may stop
+        // waiting — see READ_DEADLINE_MS.
+        const mirrored = chunk.every(k => cached[keys.indexOf(k)] !== undefined)
+        const r = mirrored ? await withDeadline(request, READ_DEADLINE_MS) : { value: await request }
+        if (r.late) {
+          console.warn('[storage] the cloud is slow to answer — opening on this device’s copy')
+          for (const k of chunk) settle(k, local.get(k))
+          r.late.then(async data => {
+            noteSuccess()
+            const got = new Map((data || []).map(row => [row.key, row.value ?? null]))
+            const changed = await Promise.all(chunk.map(k => landLate(kvMirrorKey(k), got.has(k) ? got.get(k) : null, local.get(k), () => hasPending('kv_store', k))))
+            if (changed.some(Boolean)) announceLateRead()
+          }).catch(() => {})
+          return
+        }
+        if (r.error) throw r.error
+        const data = r.value
         noteSuccess()
         const got = new Map((data || []).map(r => [r.key, r.value ?? null]))
         // A key with no row reads as null, exactly as a single-row miss did.

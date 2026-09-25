@@ -30,6 +30,7 @@ import {
   getWellnessTreasures, setWellnessTreasures,
   getWellnessRules, setWellnessRules,
   getArtOverrides, setArtOverrides,
+  READ_LANDED_EVENT,
   addCategory as dbAddCategory, updateCategory as dbUpdateCategory, deleteCategory as dbDeleteCategory,
 } from './lib/storage.js'
 import { occKey, recurringOccurrencesForDate } from './lib/occurrences.js'
@@ -786,7 +787,7 @@ export default function App() {
       if (!alive) return
       if (prev) {
         try {
-          const _g = evaluateAbsence({ lastSeenMs: prev.seen, rule: wlRulesRef.current, handledId: prev.handled }); console.log('[dbg] prev', JSON.stringify(prev), 'rule', JSON.stringify(wlRulesRef.current), 'gap', JSON.stringify(_g && {id:_g.id, waking:_g.wakingMins, days:_g.days.length})); setWlAbsence_(_g)
+          setWlAbsence_(evaluateAbsence({ lastSeenMs: prev.seen, rule: wlRulesRef.current, handledId: prev.handled }))
         } catch (e) { console.warn('[Bloom] absence check failed:', e) }
       }
       stop = startPresence()
@@ -796,11 +797,17 @@ export default function App() {
   }, [loading])
 
   // Queued offline changes just finished uploading — re-read so the app shows
-  // the reconciled result rather than only this device's optimistic copy.
+  // the reconciled result rather than only this device's optimistic copy. The
+  // same goes for a read that was too slow to wait for at launch (the app
+  // opened on this device's copy) and has since come back with something newer.
   useEffect(() => {
     const onFlushed = () => { loadAll().catch(e => console.warn('[Bloom] post-sync refresh failed:', e)) }
     window.addEventListener('bloom-sync-flushed', onFlushed)
-    return () => window.removeEventListener('bloom-sync-flushed', onFlushed)
+    window.addEventListener(READ_LANDED_EVENT, onFlushed)
+    return () => {
+      window.removeEventListener('bloom-sync-flushed', onFlushed)
+      window.removeEventListener(READ_LANDED_EVENT, onFlushed)
+    }
   }, [loadAll])
 
   // ── Subscribed (external) calendars ──────────────────────────
