@@ -111,7 +111,7 @@ function PaperCard({ p, prog, playing, onOpen }) {
     ready: p.dur ? formatTime(p.dur) : 'Narrated',
     updating: 'Re-narrating',
     pending: 'Quick voice · Alba on its way',
-    failed: 'Narration failed',
+    failed: 'Alba retrying',
   }[state]
   return (
     <button className={`papers-card card ${playing ? 'is-open' : ''}`} onClick={onOpen}>

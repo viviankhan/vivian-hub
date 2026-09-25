@@ -68,6 +68,18 @@ export async function deletePaper(paper) {
   try { localStorage.removeItem(progressKey(paper.id)) } catch {}
 }
 
+// Where to start the narrator by hand if it hasn't come round on its own.
+export const NARRATOR_URL = 'https://github.com/viviankhan/vivian-hub/actions/workflows/narrate.yml'
+const LATE_AFTER_MS = 40 * 60 * 1000
+
+// True when Alba should have arrived by now: the schedule runs every 15
+// minutes, so 40 without audio means the narrator isn't running.
+export function narrationLate(p, now = Date.now()) {
+  if (!p || (p.audio_path && !p.needs_narration)) return false
+  const since = Math.max(Date.parse(p.created_at) || 0, Date.parse(p.updated_at) || 0)
+  return !!since && now - since > LATE_AFTER_MS
+}
+
 // Narration status for display.
 export function narrationState(p) {
   if (p.audio_path && !p.needs_narration) return 'ready'

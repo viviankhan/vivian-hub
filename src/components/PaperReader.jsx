@@ -16,7 +16,7 @@ import { useState, useEffect, useRef, useCallback, useMemo, Fragment } from 'rea
 import { createPortal } from 'react-dom'
 import {
   getPaper, loadProgress, saveProgress, signedAudioUrl, signedFigureUrl,
-  updatePaper, deletePaper, uploadFigure, removeFigure, requestNarration, narrationState,
+  updatePaper, deletePaper, uploadFigure, removeFigure, requestNarration, narrationState, narrationLate, NARRATOR_URL,
 } from '../lib/papers.js'
 import { findCue, sectionStart, sectionAt, paragraphs, bodyParagraphs, markTerms, formatTime, quickUnits, CUE_HEADING, CUE_FIGURE } from '../lib/paperText.js'
 import { quickVoiceAvailable, createSpeaker, englishVoices, pickVoice, saveVoiceName, onVoicesChanged } from '../lib/quickVoice.js'
@@ -392,10 +392,17 @@ export default function PaperReader({ paperId, showText, compact, onBack, onShow
     return next
   }
 
+  // Put the paper at the front of the queue and wake the narrator. If the
+  // wake-up function isn't set up, say where to start it by hand.
+  const [nudge, setNudge] = useState('')
   const retryNarration = async () => {
-    try { await patch({ narration_attempts: 0, narration_error: null }); requestNarration() }
-    catch (e) { alert(e.message) }
+    setNudge('Asking Alba…')
+    try {
+      await patch({ narration_attempts: 0, narration_error: null })
+      setNudge(await requestNarration() ? 'Alba is on it. The audio usually arrives in about 2 minutes.' : 'manual')
+    } catch (e) { setNudge(e.message) }
   }
+  const late = narrationLate(paper)
 
   const remove = async () => {
     if (!confirm(`Delete “${paper.title}”? Its audio and figures go too.`)) return
@@ -449,10 +456,17 @@ export default function PaperReader({ paperId, showText, compact, onBack, onShow
           {state === 'updating' && (
             <div className="papers-note">A figure caption changed, so a new narration is on its way. This one plays until it lands.</div>
           )}
-          {state === 'failed' && (
-            <div className="papers-note papers-note-error">
-              Narration failed: {paper.narration_error}
-              <button className="btn-ghost" style={{ marginLeft: 10 }} onClick={retryNarration}>Try again</button>
+          {(state === 'failed' || late || nudge) && (
+            <div className={`papers-note ${state === 'failed' ? 'papers-note-error' : ''}`}>
+              {state === 'failed'
+                ? <>Alba hit a problem narrating this ({paper.narration_error}). It tries again by itself every 6 hours.</>
+                : late ? <>Alba is running late on this one. The narrator may not be running.</> : null}
+              {' '}
+              {!nudge && <button className="btn-ghost" onClick={retryNarration}>Try now</button>}
+              {nudge && nudge !== 'manual' && <span>{nudge}</span>}
+              {nudge === 'manual' && (
+                <span>Queued. To start it right away, open <a href={NARRATOR_URL} target="_blank" rel="noreferrer">Narrate papers on GitHub</a> and tap <b>Run workflow</b>.</span>
+              )}
             </div>
           )}
 

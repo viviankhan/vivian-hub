@@ -213,9 +213,13 @@ Speed is `audio.playbackRate`, so the voice itself is unchanged.
 MP4 to `paper-audio/<user>/<paper>-<time>.mp4`, and writes `sections` (now
 with `lines`), `cues`, `dur` and `audio_path` back. It only saves if the row's
 `updated_at` hasn't changed since it started, so an edit made mid-render is
-never overwritten with audio of the old text; the paper just stays queued. A
-paper that fails 3 times stops being retried, and the reader shows the error
-with a **Try again** button.
+never overwritten with audio of the old text; the paper just stays queued. Alba never gives
+up on a paper: after 3 quick retries, a failing paper is retried every 6 hours,
+for good. Only its first failure turns a run red, so a stubborn paper doesn't
+send you a failure email every 15 minutes. If a paper has been waiting over 40
+minutes, the reader says Alba is running late and offers **Try now**. That
+wakes the narrator, or, if the wake-up function isn't set up, links to the
+**Run workflow** button on GitHub.
 
 `voice.py` is your script, with three small changes:
 

@@ -18,7 +18,8 @@ import json, os, subprocess, sys, tempfile, time, urllib.error, urllib.parse, ur
 HERE = os.path.dirname(os.path.abspath(__file__))
 URL = os.environ.get("SUPABASE_URL", "").rstrip("/")
 KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "")
-MAX_ATTEMPTS = 3
+MAX_ATTEMPTS = 3            # quick retries (one per run) before backing off
+RETRY_EVERY_HOURS = 6       # after that, keep trying on this rhythm, forever
 TIME_BUDGET = float(os.environ.get("NARRATE_TIME_BUDGET", 40 * 60))  # seconds
 
 
@@ -38,15 +39,27 @@ def call(method, path, body=None, headers=None, raw=None):
         raise RuntimeError("%s %s -> %d %s" % (method, path.split("?")[0], e.code, e.read().decode()[:400]))
 
 
+def in_retry_window(now=None):
+    """True for the first run of every RETRY_EVERY_HOURS-hour block (UTC).
+
+    Stateless backoff: a paper that has failed MAX_ATTEMPTS times is still
+    retried, just only in these windows, so Alba never gives up on a paper.
+    The schedule runs every 15 minutes, so each window catches one run.
+    """
+    t = time.gmtime(now if now is not None else time.time())
+    return t.tm_hour % RETRY_EVERY_HOURS == 0 and t.tm_min < 15
+
+
 def queue(limit=50):
-    q = urllib.parse.urlencode({
+    params = {
         "select": "id,user_id,title,authors,sections,terms,audio_path,updated_at,narration_attempts",
         "or": "(audio_path.is.null,needs_narration.is.true)",
-        "narration_attempts": "lt.%d" % MAX_ATTEMPTS,
-        "order": "created_at.asc",
+        "order": "narration_attempts.asc,created_at.asc",
         "limit": str(limit),
-    })
-    return call("GET", "/rest/v1/papers?" + q) or []
+    }
+    if not in_retry_window():
+        params["narration_attempts"] = "lt.%d" % MAX_ATTEMPTS
+    return call("GET", "/rest/v1/papers?" + urllib.parse.urlencode(params)) or []
 
 
 def patch(paper_id, fields, only_if_updated_at=None):
@@ -109,7 +122,7 @@ def main():
             open(gh, "a").write("work=%s\n" % ("true" if todo else "false"))
         return
     started = time.time()
-    failures = 0
+    new_failures = 0
     for p in todo:
         if time.time() - started > TIME_BUDGET:
             print("Time budget spent; the rest wait for the next run.")
@@ -118,7 +131,10 @@ def main():
         try:
             narrate(p)
         except Exception as e:
-            failures += 1
+            # Only a paper's first failure turns the run red (and emails you);
+            # a paper already known to be failing just keeps being retried.
+            if not p.get("narration_attempts"):
+                new_failures += 1
             msg = str(e)[:500]
             print("  failed: " + msg)
             try:
@@ -126,7 +142,7 @@ def main():
                                 "narration_attempts": (p.get("narration_attempts") or 0) + 1})
             except Exception as e2:
                 print("  (could not record the failure: %s)" % e2)
-    if failures:
+    if new_failures:
         sys.exit(1)
 
 
