@@ -145,3 +145,74 @@ export function paperFromImport(p) {
       .map(t => ({ term: String(t.term), def: String(t.def) })),
   }
 }
+
+// ── Pasted text ────────────────────────────────────────────────
+// Text you paste (or open from a .txt file) is read aloud word for word — no
+// rewriting. This only decides where the section breaks go and tidies line
+// wrapping; the narrator still does the sentence split.
+//
+// Headings are short lines standing alone as a paragraph with no closing
+// punctuation ("Methods", "2. Results"). If the text has at least two, they
+// become the sections. Otherwise paragraphs are grouped into parts of roughly
+// `target` words, never splitting a paragraph.
+const HEADING_MAX = 80
+
+function cleanParagraph(p) {
+  return p
+    .replace(/(\p{L})-\n(\p{Ll})/gu, '$1$2')   // "immuno-\nglobulin" → "immunoglobulin"
+    .replace(/\s*\n\s*/g, ' ')
+    .replace(/[ \t ]{2,}/g, ' ')
+    .trim()
+}
+
+function looksLikeHeading(p) {
+  return !p.includes('\n') && p.length <= HEADING_MAX && /\p{L}/u.test(p) && !/[.!?,;:]["'”’)]?$/.test(p)
+}
+
+const words = s => (s.match(/\S+/g) || []).length
+
+export function sectionsFromText(text, { target = 170 } = {}) {
+  const src = String(text || '').replace(/\r\n?/g, '\n').trim()
+  if (!src) return []
+  // Paragraphs are separated by blank lines. Text with none (common when
+  // copying from web pages and apps) gets one paragraph per line instead.
+  const raw = /\n\s*\n/.test(src) ? src.split(/\n\s*\n/) : src.split('\n')
+  const paras = raw.map(p => p.trim()).filter(Boolean)
+
+  // A document title ("Lab notes" directly above a "Background" heading) is
+  // the title, not a section of its own; the paste screen uses it as one.
+  if (paras.length > 2 && looksLikeHeading(paras[0]) && looksLikeHeading(paras[1])) paras.shift()
+  const isHead = paras.map((p, i) => looksLikeHeading(p) && i < paras.length - 1 && !looksLikeHeading(paras[i + 1]))
+  if (isHead.filter(Boolean).length >= 2) {
+    const out = []
+    let cur = null
+    paras.forEach((p, i) => {
+      if (isHead[i]) { cur = { heading: p.replace(/\s+/g, ' '), body: [] }; out.push(cur); return }
+      if (!cur) { cur = { heading: '', body: [] }; out.push(cur) }
+      cur.body.push(cleanParagraph(p))
+    })
+    return out.filter(s => s.body.length)
+      .map((s, i) => ({ heading: s.heading || (i === 0 ? 'Introduction' : `Part ${i + 1}`), body: s.body.join('\n\n') }))
+  }
+
+  const out = []
+  let cur = [], n = 0
+  for (const p of paras.map(cleanParagraph)) {
+    const w = words(p)
+    if (cur.length && n + w > target * 1.4) { out.push(cur); cur = []; n = 0 }
+    cur.push(p); n += w
+    if (n >= target) { out.push(cur); cur = []; n = 0 }
+  }
+  if (cur.length) {
+    // A short tail joins the part before it rather than standing alone.
+    if (out.length && n < target / 3) out[out.length - 1].push(...cur)
+    else out.push(cur)
+  }
+  return out.map((ps, i) => ({ heading: `Part ${i + 1}`, body: ps.join('\n\n') }))
+}
+
+// Rough listening time for display: Alba reads about 150 words a minute.
+export function estimateMinutes(sections) {
+  const w = sections.reduce((n, s) => n + words(s.body) + words(s.heading), 0)
+  return Math.max(1, Math.round(w / 150))
+}

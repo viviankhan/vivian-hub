@@ -118,6 +118,14 @@ screenshot, rewrite a caption, or drop a figure.
 
 The PDF limit is about 14 MB (Gemini's inline limit).
 
+**Add paper → Paste text.** For anything you want read to you word for word,
+such as notes, an article or a protocol. Paste it or open a `.txt` file. Nothing
+is rewritten and no AI is involved: blank lines separate paragraphs, short lines
+standing alone (like "Methods") become sections, and text without headings is
+split into parts of about 170 words. A first line directly above the first
+heading is used as the title. It's narrated like any paper, and you can attach
+figures afterwards.
+
 **Figures on an existing paper:** in the reader, each section has
 **+ Attach a figure** or **Edit figure**. Captions are read aloud after the
 section. Changing one queues a fresh narration, and the current audio keeps

@@ -1925,6 +1925,8 @@ textarea { resize: vertical; min-height: 160px; line-height: 1.6; }
 .papers-drop strong { display: block; font-size: 15px; margin-bottom: 4px; color: var(--forest); }
 .papers-drop span { font-size: 13px; color: var(--text-light); line-height: 1.5; }
 .papers-drop-quiet { border-style: solid; border-width: 1px; }
+button.papers-drop { width: 100%; text-align: left; font-family: inherit; color: inherit; }
+.papers-paste { min-height: 40vh; font: 16px/1.55 'Iowan Old Style', Charter, Georgia, serif !important; }
 .papers-reading { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 40px 12px; text-align: center; font-size: 14px; }
 .papers-spinner { width: 32px; height: 32px; border-radius: 50%; border: 3px solid rgba(74,158,181,.2); border-top-color: var(--teal); animation: papers-spin 1s linear infinite; }
 @keyframes papers-spin { to { transform: rotate(360deg); } }

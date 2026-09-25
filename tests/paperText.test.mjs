@@ -2,7 +2,7 @@
 // glossary marking. The cue lookup is what drives the highlight, so it is
 // checked against a brute-force scan over the real prototype cue list.
 import assert from 'node:assert/strict'
-import { findCue, sectionStart, sectionAt, paragraphs, markTerms, formatTime, paperFromImport, CUE_HEADING } from '../src/lib/paperText.js'
+import { findCue, sectionStart, sectionAt, paragraphs, markTerms, formatTime, paperFromImport, sectionsFromText, estimateMinutes, CUE_HEADING } from '../src/lib/paperText.js'
 
 let passed = 0
 const test = (name, fn) => { fn(); passed++; console.log('  ✓', name) }
@@ -82,6 +82,46 @@ test('paperFromImport drops audio and keeps text', () => {
   assert.equal(p.terms.length, 1)
   assert.ok(!('cues' in p) && !('dur' in p) && !('audio_path' in p))
   assert.equal(paperFromImport({ sections: [] }), null)
+})
+
+test('pasted text with headings splits on them', () => {
+  const t = 'Abstract\n\nWe did a thing.\nIt worked.\n\nMethods\n\nCells were grown at 37 °C.\n\nMore methods here.\n\nResults\n\nThe immuno-\nglobulin rose.'
+  const s = sectionsFromText(t)
+  assert.deepEqual(s.map(x => x.heading), ['Abstract', 'Methods', 'Results'])
+  assert.equal(s[0].body, 'We did a thing. It worked.')
+  assert.equal(s[1].body, 'Cells were grown at 37 °C.\n\nMore methods here.')
+  assert.equal(s[2].body, 'The immunoglobulin rose.')
+})
+
+test('pasted text without headings is grouped into parts, paragraphs intact', () => {
+  const para = (k) => Array.from({ length: 60 }, (_, i) => `w${k}_${i}`).join(' ') + '.'
+  const t = [1, 2, 3, 4, 5, 6, 7].map(para).join('\n\n')
+  const s = sectionsFromText(t)
+  assert.ok(s.length >= 2 && s.length <= 4, String(s.length))
+  assert.equal(s[0].heading, 'Part 1')
+  assert.equal(s.map(x => x.body).join('\n\n'), t)      // every word kept, in order
+})
+
+test('text with single newlines only: one paragraph per line', () => {
+  const s = sectionsFromText('First line here.\nSecond line here.')
+  assert.equal(s.length, 1)
+  assert.equal(s[0].body, 'First line here.\n\nSecond line here.')
+})
+
+test('a lone heading-like first line is not enough to split on', () => {
+  const s = sectionsFromText('My notes\n\nSome text follows here.')
+  assert.equal(s.length, 1)
+  assert.ok(s[0].body.startsWith('My notes'))
+})
+
+test('a title line above the first heading is not a section', () => {
+  const s = sectionsFromText('Lab notes\n\nBackground\n\nText one.\n\nMethods\n\nText two.')
+  assert.deepEqual(s.map(x => x.heading), ['Background', 'Methods'])
+})
+
+test('empty and estimate', () => {
+  assert.deepEqual(sectionsFromText('   '), [])
+  assert.equal(estimateMinutes([{ heading: 'H', body: Array(299).fill('w').join(' ') }]), 2)
 })
 
 console.log(`paperText: ${passed} passed`)

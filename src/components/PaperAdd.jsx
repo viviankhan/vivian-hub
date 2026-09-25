@@ -15,7 +15,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { walkthroughFromPdf, insertPaper, uploadFigure, requestNarration } from '../lib/papers.js'
 import { openPdf, renderPage, cropCanvas, canvasToBlob, imageFileToBlob } from '../lib/pdfFigures.js'
-import { paperFromImport } from '../lib/paperText.js'
+import { paperFromImport, sectionsFromText, estimateMinutes } from '../lib/paperText.js'
 
 function uuid() {
   if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID()
@@ -35,7 +35,7 @@ async function cutFigure(doc, page, box, pad = 12) {
 }
 
 export default function PaperAdd({ onCancel, onSaved }) {
-  const [step, setStep] = useState('pick')   // pick | reading | review | import | saving
+  const [step, setStep] = useState('pick')   // pick | reading | review | import | paste | saving
   const [err, setErr] = useState('')
   const [elapsed, setElapsed] = useState(0)
   const [draft, setDraft] = useState(null)   // walkthrough being reviewed
@@ -154,6 +154,8 @@ export default function PaperAdd({ onCancel, onSaved }) {
   }
 
   // ── Steps ────────────────────────────────────────────────────
+  if (step === 'paste') return <PasteText onBack={() => setStep('pick')} onSaved={onSaved} />
+
   if (step === 'pick' || step === 'reading') return (
     <div className="papers-add">
       <button className="papers-back" onClick={onCancel} disabled={step === 'reading'}>‹ Library</button>
@@ -171,6 +173,10 @@ export default function PaperAdd({ onCancel, onSaved }) {
             <span>It is read with its figures, and turned into a spoken walkthrough you can check before saving.</span>
             <input type="file" accept="application/pdf,.pdf" onChange={pickPdf} hidden />
           </label>
+          <button type="button" className="papers-drop" onClick={() => { setErr(''); setStep('paste') }}>
+            <strong>Paste text</strong>
+            <span>Any text you want read to you, word for word: notes, an article, a protocol. You can also open a .txt file.</span>
+          </button>
           <label className="papers-drop papers-drop-quiet">
             <strong>Import a papers file (.json)</strong>
             <span>Walkthroughs exported from the old prototype, or anything in the same shape.</span>
@@ -356,6 +362,76 @@ function FigureCropper({ doc, page: page0, box: box0, onCancel, onDone }) {
           <button className="btn-ghost" onClick={onCancel}>Cancel</button>
           <button className="btn-primary" disabled={!img} onClick={() => onDone(page, box)}>Use this crop</button>
         </div>
+      </div>
+    </div>
+  )
+}
+
+// Paste (or open) plain text and have it read word for word. No AI: the text
+// is only split into sections (see sectionsFromText) and saved for the narrator.
+const MAX_CHARS = 150_000
+function PasteText({ onBack, onSaved }) {
+  const [text, setText] = useState('')
+  const [title, setTitle] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState('')
+  const sections = sectionsFromText(text)
+  const words = (text.match(/\S+/g) || []).length
+  // A short first line makes a good default title.
+  const firstLine = text.trim().split('\n')[0].trim()
+  const autoTitle = firstLine && firstLine.length <= 90 ? firstLine : ''
+
+  const openFile = async (e) => {
+    const f = e.target.files?.[0]
+    e.target.value = ''
+    if (!f) return
+    try {
+      setText(await f.text())
+      if (!title) setTitle(f.name.replace(/\.(txt|md|text)$/i, ''))
+    } catch { setErr('Could not open that file.') }
+  }
+
+  const save = async () => {
+    setBusy(true); setErr('')
+    try {
+      const row = await insertPaper({
+        title: title.trim() || autoTitle || `Pasted text, ${new Date().toLocaleDateString()}`,
+        authors: '', journal: 'Pasted text', year: String(new Date().getFullYear()), doi: '',
+        sections: sections.map(s => ({ ...s, figure: null })), terms: [],
+      })
+      requestNarration()
+      onSaved(row)
+    } catch (x) { setErr(x.message); setBusy(false) }
+  }
+
+  return (
+    <div className="papers-add">
+      <button className="papers-back" onClick={onBack} disabled={busy}>‹ Back</button>
+      <h2 className="page-title">Paste text</h2>
+      <div className="papers-hint">Read aloud exactly as written. Blank lines separate paragraphs; short lines on their own (like “Methods”) become sections.</div>
+      <label className="papers-field">
+        <span>Title (optional)</span>
+        <input id="paste-title" value={title} placeholder={autoTitle || 'Untitled'} onChange={e => setTitle(e.target.value)} />
+      </label>
+      <label className="papers-field">
+        <span>Text</span>
+        <textarea id="paste-text" className="papers-paste" rows={12} value={text} placeholder="Paste here"
+          onChange={e => setText(e.target.value.slice(0, MAX_CHARS))} />
+      </label>
+      <div className="papers-fig-actions">
+        <label className="btn-ghost papers-file-btn">Open a text file<input type="file" accept=".txt,.md,.text,text/plain,text/markdown" hidden onChange={openFile} /></label>
+      </div>
+      {sections.length > 0 && (
+        <div className="papers-hint">
+          {words.toLocaleString()} words · {sections.length} section{sections.length === 1 ? '' : 's'} · about {estimateMinutes(sections)} min of listening
+          {sections.length > 1 && <> · {sections.map(s => s.heading).slice(0, 6).join(', ')}{sections.length > 6 ? '…' : ''}</>}
+        </div>
+      )}
+      {text.length >= MAX_CHARS && <div className="papers-note">That’s the limit for one document (about 25,000 words). Split the rest into another.</div>}
+      {err && <div className="papers-note papers-note-error">{err}</div>}
+      <div className="papers-modal-btns papers-save-row">
+        <span style={{ flex: 1 }} />
+        <button className="btn-primary" onClick={save} disabled={busy || !sections.length}>{busy ? 'Saving…' : 'Save and narrate'}</button>
       </div>
     </div>
   )
