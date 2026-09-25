@@ -205,7 +205,7 @@ export async function storageReport() {
 // Only a real HTTP answer below 500 counts as "the server is up and talking".
 // A 5xx means it's there but not serving, which for our purposes is the same
 // as unreachable: not a basis for signing anyone out.
-async function authServerReachable(ms = 6000) {
+async function authServerReachable(ms = 3000) {
   if (!supabaseUrl) return false
   let timer = null
   try {

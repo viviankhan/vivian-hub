@@ -44,6 +44,9 @@ const SHELL = [
 const FONT_CACHE = 'bloom-fonts-v1'
 const FONT_HOSTS = ['fonts.googleapis.com', 'fonts.gstatic.com']
 
+// How long opening the app waits on the network before using the cached copy.
+const NAVIGATE_WAIT_MS = 3500
+
 self.addEventListener('install', event => {
   self.skipWaiting()
   // Added one at a time: addAll() is all-or-nothing, so a single 404 (a stale
@@ -103,14 +106,25 @@ self.addEventListener('fetch', event => {
   if (req.mode === 'navigate') {
     // Network-first so a deploy is picked up, but the response is cached on the
     // way past — that cached copy is what serves the app with no network.
-    event.respondWith(
-      fetch(req)
-        .then(res => keep(CACHE, req, res))
-        .catch(() => caches.match(req)
-          .then(r => r || caches.match(BASE + 'index.html'))
-          .then(r => r || caches.match(BASE))
-          .then(r => r || Response.error()))
-    )
+    //
+    // "No network" is the easy case: fetch fails at once. A network that is
+    // there but barely (one bar, hotel wifi) is the one that hurt — fetch just
+    // hangs, and the app couldn't even start. So the network gets
+    // NAVIGATE_WAIT_MS; past that, a cached copy is served and the fetch keeps
+    // going in the background to refresh the cache for next time. With nothing
+    // cached (first visit) there's no better answer, so it waits.
+    const cached = () => caches.match(req)
+      .then(r => r || caches.match(BASE + 'index.html'))
+      .then(r => r || caches.match(BASE))
+    const network = fetch(req).then(res => keep(CACHE, req, res))
+    event.waitUntil(network.catch(() => {}))
+    event.respondWith(new Promise(resolve => {
+      let done = false
+      const finish = r => { if (!done && r) { done = true; resolve(r) } }
+      const timer = setTimeout(() => { cached().then(finish).catch(() => {}) }, NAVIGATE_WAIT_MS)
+      network.then(res => { clearTimeout(timer); finish(res) })
+        .catch(() => { clearTimeout(timer); cached().then(r => { finish(r || Response.error()) }, () => finish(Response.error())) })
+    }))
     return
   }
 
