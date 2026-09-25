@@ -101,6 +101,13 @@ larger, separate piece of work — ask Claude if you want it.
 
 ---
 
+## Papers (listen to scientific papers)
+
+The **Papers** tab needs a little extra setup (a SQL file, one Edge Function
+and one GitHub secret). See `PAPERS.md`.
+
+---
+
 ## How updates work going forward
 
 **To update your schedule or add flashcards:**

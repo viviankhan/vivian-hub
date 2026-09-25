@@ -64,6 +64,7 @@ import { authEnabled, getCurrentUser, isSessionUnverified, signOut } from './lib
 import { refreshCalendar, loadCachedCalendar, clearCachedCalendar, eventsToSpans } from './lib/calendars.js'
 import { importedKey } from './lib/importedTasks.js'
 import ThoughtsBoard from './components/ThoughtsBoard.jsx'
+import Papers from './components/Papers.jsx'
 import NotificationsSettings from './components/NotificationsSettings.jsx'
 import SearchOverlay, { SearchIcon } from './components/SearchOverlay.jsx'
 import { registerServiceWorker, syncReminders, notifyArrival, getDefaultLeads } from './lib/notifications.js'
@@ -119,6 +120,7 @@ const TABS = [
   { id:'calendar',    label:'Calendar',    glyph:'grid' },
   { id:'wellness',    label:'Wellness',    glyph:'flower' },
   { id:'thoughts',    label:'Thoughts',    glyph:'bulb' },
+  { id:'papers',      label:'Papers',      glyph:'headphones' },
   { id:'events',      label:'Events',      glyph:'ticket' },
   { id:'recurring',   label:'Recurring',   glyph:'repeat' },
   { id:'informatics', label:'Insights',    glyph:'chart' },
@@ -371,6 +373,10 @@ export default function App() {
   useEffect(() => {
     try { localStorage.setItem('vivian_last_tab', tab) } catch {}
   }, [tab])
+  // Papers stays mounted once opened (hidden, not unmounted, on other tabs) so
+  // a paper keeps playing while you use the rest of Bloom.
+  const [papersMounted, setPapersMounted] = useState(tab === 'papers')
+  useEffect(() => { if (tab === 'papers') setPapersMounted(true) }, [tab])
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [settingsTab,  setSettingsTab]  = useState('customize')
   // Owner-only art-upload gate (see lib/art.js). `?admin=1` in the URL turns it
@@ -2124,6 +2130,7 @@ export default function App() {
         {tab==='thoughts'    && <ThoughtsBoard addCommitment={addCommitment} addRecurringTask={addRecurringTaskFn}
           categories={categories} routines={routines} taskTemplates={taskTemplates} labelModel={labelModel}
           appendLog={appendLog} />}
+        {papersMounted && <Papers hidden={tab !== 'papers'} onShow={() => { setSettingsOpen(false); setTab('papers') }} />}
         {tab==='events'      && <EventsManager events={events} addEvent={addEvent} deleteEvent={deleteEvent}
           vacations={vacations} addVacation={addVacation} deleteVacation={deleteVacation} />}
         {tab==='recurring'   && <RecurringTasksManager recurringTasks={{ tasks: recurringTasksEnriched }}
