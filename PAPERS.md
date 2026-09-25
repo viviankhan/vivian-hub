@@ -11,11 +11,31 @@ run inside an iframe, and iOS suspends embedded media when the screen locks.
 Bloom is served top-level from GitHub Pages, so it doesn't have that problem.
 Nothing here may depend on an embedded context.
 
-**There is no speech synthesis in the app.** `speechSynthesis` was tried first
-and failed three ways: poor, device-dependent voices, utterances stopping when
-Chrome garbage-collected them, and silence on iOS in embedded contexts. All
-audio is rendered ahead of time. A paper without audio yet is shown as text
-with "Narration pending".
+**Alba's narration is always pre-rendered.** `speechSynthesis` was the
+prototype's first approach and failed three ways: poor, device-dependent voices,
+utterances stopping when Chrome garbage-collected them, and silence on iOS in
+embedded contexts. So the real narration is rendered ahead of time, and nothing
+about it depends on the phone's speech engine.
+
+**The quick voice** is the one exception, and only a stopgap. While a paper is
+waiting for Alba, the player offers the phone's own voice so you can start
+listening straight away (`src/lib/quickVoice.js`). It works around the known
+failures as far as they can be:
+
+- It speaks one short unit at a time (a heading, a sentence from `lines`, or a
+  paragraph when the narrator hasn't split the text yet). The utterance being
+  spoken is held in a live reference so it isn't garbage-collected, and a
+  watchdog moves on if `onend` never fires.
+- It asks for a screen wake lock, so the phone doesn't lock mid-read.
+- It uses the same pronunciation rewrite as the narrator (`speakable()`, ported
+  to `src/lib/paperText.js`; the tests check the two agree).
+- It picks the best English voice on the device (British, on-device and
+  "Enhanced/Premium" voices first), and you can choose another.
+
+It has no lock-screen controls and stops if you lock the phone or switch apps.
+When Alba's version lands (the reader checks every 30 seconds), a **Switch to
+Alba** button continues from the start of the section you're on. Quick-voice
+progress is saved by section, and Alba starts there.
 
 ---
 

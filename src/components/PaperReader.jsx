@@ -18,7 +18,8 @@ import {
   getPaper, loadProgress, saveProgress, signedAudioUrl, signedFigureUrl,
   updatePaper, deletePaper, uploadFigure, removeFigure, requestNarration, narrationState,
 } from '../lib/papers.js'
-import { findCue, sectionStart, sectionAt, paragraphs, bodyParagraphs, markTerms, formatTime, CUE_HEADING, CUE_FIGURE } from '../lib/paperText.js'
+import { findCue, sectionStart, sectionAt, paragraphs, bodyParagraphs, markTerms, formatTime, quickUnits, CUE_HEADING, CUE_FIGURE } from '../lib/paperText.js'
+import { quickVoiceAvailable, createSpeaker, englishVoices, pickVoice, saveVoiceName, onVoicesChanged } from '../lib/quickVoice.js'
 import { imageFileToBlob } from '../lib/pdfFigures.js'
 
 const RATES = [0.8, 0.9, 1, 1.1, 1.2, 1.35, 1.5, 1.75, 2]
@@ -53,6 +54,12 @@ export default function PaperReader({ paperId, showText, compact, onBack, onShow
   const [figEdit, setFigEdit] = useState(null)   // section index being edited
   const [navOffset, setNavOffset] = useState(0)
   const [barH, setBarH] = useState(0)
+  // Quick voice (the phone's own speech) for a paper Alba hasn't read yet.
+  const [quickOn, setQuickOn] = useState(false)
+  const [quickKey, setQuickKey] = useState('')
+  const [voices, setVoices] = useState([])
+  const [voiceName, setVoiceName] = useState(() => pickVoice()?.name || '')
+  const [albaReady, setAlbaReady] = useState(false)   // arrived while the quick voice was talking
 
   const audioRef = useRef(null)
   const barRef = useRef(null)
@@ -62,9 +69,33 @@ export default function PaperReader({ paperId, showText, compact, onBack, onShow
   const pendingSeek = useRef(null)
   const userScrollAt = useRef(0)
   const resigned = useRef(false)
+  const quickStart = useRef(0)
   paperRef.current = paper
 
   const cues = paper?.cues || null
+  const units = useMemo(() => quickUnits(paper), [paper])
+  const unitsRef = useRef(units)
+  unitsRef.current = units
+  const speaker = useRef(null)
+  if (!speaker.current && quickVoiceAvailable) {
+    speaker.current = createSpeaker({
+      onUnit: (i) => {
+        const u = unitsRef.current[i]
+        if (!u) return
+        setQuickKey(u.key)
+        const p = paperRef.current
+        if (p && u.s !== lastSection.current) { lastSection.current = u.s; saveProgress(p.id, 0, u.s) }
+      },
+      onEnd: () => setQuickOn(false),
+    })
+  }
+  useEffect(() => () => speaker.current?.dispose(), [])
+  useEffect(() => { speaker.current?.setUnits(units) }, [units])
+  useEffect(() => {
+    const load = () => setVoices(englishVoices())
+    load()
+    return onVoicesChanged(load)
+  }, [])
 
   // ── Load ─────────────────────────────────────────────────────
   useEffect(() => {
@@ -77,6 +108,12 @@ export default function PaperReader({ paperId, showText, compact, onBack, onShow
         setPaper(p)
         const pos = prog?.position_seconds || 0
         if (pos > 0 && !(p.dur && pos >= p.dur - 2)) pendingSeek.current = pos
+        // Stopped somewhere with the quick voice: start Alba at that section.
+        else if (!pos && prog?.section_index > 0 && p.cues) pendingSeek.current = sectionStart(p.cues, prog.section_index)
+        if (!p.audio_path && prog?.section_index > 0) {
+          const k = quickUnits(p).findIndex(u => u.s === prog.section_index)
+          if (k >= 0) { speaker.current?.setUnits(quickUnits(p)); quickStart.current = k }
+        }
         lastSection.current = prog?.section_index ?? -1
         // Put the text where you stopped. (iOS won't load the audio's metadata
         // until you press play, so the highlight can't do this on open.)
@@ -230,13 +267,90 @@ export default function PaperReader({ paperId, showText, compact, onBack, onShow
     return () => { for (const k of Object.keys(handlers)) { try { ms.setActionHandler(k, null) } catch {} } }
   }, [paper?.audio_path, paper?.id, setMetadata, skip, goSection])
 
+  // ── Quick voice controls ─────────────────────────────────────
+  const quickAvail = quickVoiceAvailable && !!paper && (!paper.audio_path || quickOn)
+  const showQuickBar = quickAvail && !compact
+  const quickPlay = (i, voice = voiceName) => {
+    const sp = speaker.current
+    if (!sp) return
+    audioRef.current?.pause()
+    sp.setUnits(unitsRef.current)
+    sp.setOptions({ rate, voiceName: voice })
+    const k = i ?? quickStart.current
+    quickStart.current = k
+    sp.play(k)
+    setQuickOn(true)
+  }
+  const quickStop = () => {
+    if (speaker.current) quickStart.current = speaker.current.index   // resume here
+    speaker.current?.stop(); setQuickOn(false)
+  }
+  const quickSection = (dir) => {
+    const sp = speaker.current, list = unitsRef.current
+    if (!sp || !list.length) return
+    const s = list[sp.index]?.s ?? 0
+    const target = Math.max(0, s + dir)
+    const k = list.findIndex(u => u.s === target)
+    if (k < 0) return
+    if (quickOn) quickPlay(k)
+    else { quickStart.current = k; setQuickKey(list[k].key) }
+  }
+  const changeVoice = (name) => {
+    setVoiceName(name); saveVoiceName(name)
+    speaker.current?.setOptions({ voiceName: name })
+    if (quickOn) quickPlay(speaker.current.index, name)   // hear the new voice straight away
+  }
+
+  // Alba's version arriving: check back while there's no audio yet.
+  useEffect(() => {
+    if (!paper || paper.audio_path) return
+    const id = setInterval(async () => {
+      if (document.visibilityState !== 'visible') return
+      try {
+        const next = await getPaper(paper.id)
+        if (!next.audio_path) return
+        const s = unitsRef.current[speaker.current?.index ?? 0]?.s ?? 0
+        pendingSeek.current = sectionStart(next.cues, s) ?? 0
+        setSrc(await signedAudioUrl(next.audio_path))
+        setPaper(next)
+        onChanged?.(next)
+        if (speaker.current?.playing) setAlbaReady(true)
+        else { speaker.current?.stop(); setQuickKey('') }
+      } catch {}
+    }, 30_000)
+    return () => clearInterval(id)
+  }, [paper?.id, paper?.audio_path, onChanged])
+
+  // Switch from the quick voice to Alba at the start of the current section.
+  const switchToAlba = () => {
+    const s = unitsRef.current[speaker.current?.index ?? 0]?.s ?? 0
+    quickStop()
+    setAlbaReady(false); setQuickKey('')
+    const a = audioRef.current
+    const t = sectionStart(paperRef.current?.cues, s) ?? 0
+    if (a) {
+      if (a.readyState >= 1) a.currentTime = t
+      else pendingSeek.current = t
+      a.play().catch(() => {})
+    }
+  }
+
   // ── Speed ────────────────────────────────────────────────────
   const changeRate = (r) => {
     setRate(r)
     try { localStorage.setItem(RATE_KEY, String(r)) } catch {}
     const a = audioRef.current
     if (a) { a.defaultPlaybackRate = r; a.playbackRate = r }
+    speaker.current?.setOptions({ rate: r })
   }
+
+  // What is being read right now, as a reader data-cue key ("2:5", "2:p1",
+  // "2:-1"): from the quick voice while it's in use, else from Alba's cues.
+  const current = cues && cueIdx >= 0 ? cues[cueIdx] : null
+  const useQuick = quickOn || (!src && !!quickKey)
+  const curKey = useQuick ? quickKey : (current ? `${current.s}:${current.i}` : '')
+  const curSection = curKey ? Number(curKey.split(':')[0]) : 0
+  const isCur = (k) => curKey === k
 
   // ── Keep the spoken sentence in view — only when it has drifted off ──
   useEffect(() => {
@@ -247,15 +361,14 @@ export default function PaperReader({ paperId, showText, compact, onBack, onShow
   }, [])
 
   useEffect(() => {
-    if (!showText || compact || !cues || cueIdx < 0 || !playing) return
+    if (!showText || compact || !curKey || !(playing || quickOn)) return
     if (Date.now() - userScrollAt.current < 5000) return   // you're reading elsewhere
-    const c = cues[cueIdx]
-    const el = document.querySelector(`[data-cue="${c.s}:${c.i}"]`)
+    const el = document.querySelector(`[data-cue="${curKey}"]`)
     if (!el) return
     const r = el.getBoundingClientRect()
     const top = 72, bottom = window.innerHeight - barH - navOffset - 16
     if (r.top < top || r.bottom > bottom) el.scrollIntoView({ block: 'center', behavior: 'smooth' })
-  }, [cueIdx, cues, showText, compact, playing, barH, navOffset])
+  }, [curKey, showText, compact, playing, quickOn, barH, navOffset])
 
   // ── Layout: sit above the mobile bottom bar; pad the text under us ──
   useEffect(() => {
@@ -269,7 +382,7 @@ export default function PaperReader({ paperId, showText, compact, onBack, onShow
     const ro = typeof ResizeObserver === 'function' && barRef.current ? new ResizeObserver(measure) : null
     if (ro) ro.observe(barRef.current)
     return () => { window.removeEventListener('resize', measure); ro?.disconnect() }
-  }, [src, compact])
+  }, [src, compact, showQuickBar])
 
   // ── Edits ────────────────────────────────────────────────────
   const patch = async (fields) => {
@@ -305,8 +418,6 @@ export default function PaperReader({ paperId, showText, compact, onBack, onShow
   }
 
   const state = paper ? narrationState(paper) : null
-  const current = cues && cueIdx >= 0 ? cues[cueIdx] : null
-  const curSection = current ? current.s : 0
   const canPlay = !!src
 
   if (err) return showText ? (
@@ -329,7 +440,11 @@ export default function PaperReader({ paperId, showText, compact, onBack, onShow
           </header>
 
           {state === 'pending' && (
-            <div className="papers-note">Narration pending. The text is all here; the audio usually arrives within about 15 minutes of adding a paper.</div>
+            <div className="papers-note">
+              {quickVoiceAvailable
+                ? <>Alba’s narration is on its way, usually within 15 minutes. Until then, press play to hear it in your phone’s own voice. Keep Bloom open while it reads: it stops if you lock the screen or switch apps.</>
+                : <>Narration pending. The text is all here; the audio usually arrives within about 15 minutes of adding a paper.</>}
+            </div>
           )}
           {state === 'updating' && (
             <div className="papers-note">A figure caption changed, so a new narration is on its way. This one plays until it lands.</div>
@@ -342,15 +457,17 @@ export default function PaperReader({ paperId, showText, compact, onBack, onShow
           )}
 
           {paper.sections.map((sec, si) => (
-            <section key={si} id={`paper-sec-${si}`} className={`papers-section ${canPlay && curSection === si ? 'is-playing' : ''}`}>
-              <button type="button" className={`papers-sec-head ${current && current.s === si && current.i === CUE_HEADING ? 'is-current' : ''}`}
+            <section key={si} id={`paper-sec-${si}`} className={`papers-section ${(canPlay || useQuick) && curSection === si ? 'is-playing' : ''}`}>
+              <button type="button" className={`papers-sec-head ${isCur(`${si}:${CUE_HEADING}`) ? 'is-current' : ''}`}
                 data-cue={`${si}:${CUE_HEADING}`}
-                disabled={!canPlay}
-                onClick={() => seekTo(sectionStart(cues, si), true)}
-                title={canPlay ? 'Play from this section' : undefined}>
+                disabled={!canPlay && !quickAvail}
+                onClick={() => (quickAvail && !albaReady && (!canPlay || quickOn)
+                  ? quickPlay(units.findIndex(u => u.s === si))
+                  : seekTo(sectionStart(cues, si), true))}
+                title={canPlay || quickAvail ? 'Play from this section' : undefined}>
                 <span className="papers-sec-num">{si + 1}</span>
                 <span className="papers-sec-heading">{sec.heading || `Section ${si + 1}`}</span>
-                {canPlay && <span className="papers-sec-play" aria-hidden="true">▶</span>}
+                {(canPlay || quickAvail) && <span className="papers-sec-play" aria-hidden="true">▶</span>}
               </button>
 
               <div className="papers-body">
@@ -359,18 +476,24 @@ export default function PaperReader({ paperId, showText, compact, onBack, onShow
                     <p key={pi}>
                       {para.map(({ i, text }) => (
                         <Fragment key={i}>
-                          <span data-cue={`${si}:${i}`} className={`papers-line ${current && current.s === si && current.i === i ? 'is-current' : ''}`}>
+                          <span data-cue={`${si}:${i}`} className={`papers-line ${isCur(`${si}:${i}`) ? 'is-current' : ''}`}>
                             <Marked text={text} terms={paper.terms} onTerm={setTerm} />
                           </span>{' '}
                         </Fragment>
                       ))}
                     </p>
                   ))
-                  : bodyParagraphs(sec).map((t, pi) => <p key={pi}><Marked text={t} terms={paper.terms} onTerm={setTerm} /></p>)}
+                  : bodyParagraphs(sec).map((t, pi) => (
+                    <p key={pi}>
+                      <span data-cue={`${si}:p${pi}`} className={`papers-line ${isCur(`${si}:p${pi}`) ? 'is-current' : ''}`}>
+                        <Marked text={t} terms={paper.terms} onTerm={setTerm} />
+                      </span>
+                    </p>
+                  ))}
               </div>
 
               {sec.figure?.path ? (
-                <Figure fig={sec.figure} current={current && current.s === si && current.i === CUE_FIGURE}
+                <Figure fig={sec.figure} current={isCur(`${si}:${CUE_FIGURE}`)}
                   cueKey={`${si}:${CUE_FIGURE}`} onEdit={() => setFigEdit(si)} />
               ) : (
                 <button className="papers-add-fig" onClick={() => setFigEdit(si)}>+ Attach a figure</button>
@@ -390,14 +513,14 @@ export default function PaperReader({ paperId, showText, compact, onBack, onShow
           <div className="papers-reader-foot">
             <button className="btn-danger" onClick={remove}>Delete paper</button>
           </div>
-          <div style={{ height: (canPlay ? barH : 0) + 24 }} />
+          <div style={{ height: (canPlay || showQuickBar ? barH : 0) + 24 }} />
         </article>
       )}
 
       {/* The one audio element. Always in the DOM while a paper is open, even
           when its bar is hidden, so playback survives tab and view changes. */}
       {canPlay && (
-        <div ref={barRef} className={`papers-player ${compact ? 'is-hidden' : ''}`} style={{ bottom: navOffset, paddingBottom: navOffset ? 8 : undefined }}>
+        <div ref={showQuickBar ? null : barRef} className={`papers-player ${compact || showQuickBar ? 'is-hidden' : ''}`} style={{ bottom: navOffset, paddingBottom: navOffset ? 8 : undefined }}>
           <div className="papers-player-top">
             <button className="papers-player-title" onClick={onShowText} title="Show the text">
               <span className="papers-player-paper">{paper.title}</span>
@@ -420,19 +543,50 @@ export default function PaperReader({ paperId, showText, compact, onBack, onShow
         </div>
       )}
 
-      {canPlay && compact && playing && createPortal(
+      {showQuickBar && (
+        <div ref={barRef} className="papers-player papers-quick" style={{ bottom: navOffset, paddingBottom: navOffset ? 8 : undefined }}>
+          {albaReady && (
+            <button className="papers-alba-ready" onClick={switchToAlba}>
+              Alba’s version is ready · <strong>Switch to Alba</strong>
+            </button>
+          )}
+          <div className="papers-player-top">
+            <button className="papers-player-title" onClick={onShowText} title="Show the text">
+              <span className="papers-player-paper">{paper.title}</span>
+              <span className="papers-player-sec">§{curSection + 1} {paper.sections[curSection]?.heading || ''} · quick voice</span>
+            </button>
+            <select className="papers-rate" value={rate} onChange={e => changeRate(Number(e.target.value))} aria-label="Speaking speed">
+              {RATES.map(r => <option key={r} value={r}>{r}×</option>)}
+            </select>
+          </div>
+          <div className="papers-player-btns papers-quick-btns">
+            <button onClick={() => quickSection(-1)} aria-label="Previous section">⏮ §</button>
+            <button className="papers-quick-play" onClick={() => (quickOn ? quickStop() : quickPlay())} aria-label={quickOn ? 'Pause' : 'Play'}>
+              {quickOn ? '❚❚ Pause' : '▶ Play'}
+            </button>
+            <button onClick={() => quickSection(1)} aria-label="Next section">§ ⏭</button>
+          </div>
+          {voices.length > 1 && (
+            <select className="papers-voice" value={voiceName} onChange={e => changeVoice(e.target.value)} aria-label="Voice">
+              {voices.map(v => <option key={v.name} value={v.name}>{v.name} ({v.lang})</option>)}
+            </select>
+          )}
+        </div>
+      )}
+
+      {compact && ((canPlay && playing) || quickOn) && createPortal(
         <div className="papers-pill" style={{ bottom: navOffset + 12 }}>
-          <button className="papers-pill-toggle" onClick={() => audioRef.current?.pause()} aria-label="Pause">❚❚</button>
+          <button className="papers-pill-toggle" onClick={() => (quickOn ? quickStop() : audioRef.current?.pause())} aria-label="Pause">❚❚</button>
           <button className="papers-pill-title" onClick={onShowText}>
             {paper.title}
-            <span>{formatTime(audioRef.current?.currentTime)} · §{curSection + 1}</span>
+            <span>{quickOn ? 'Quick voice' : formatTime(audioRef.current?.currentTime)} · §{curSection + 1}</span>
           </button>
         </div>,
         document.body)}
 
       {term && (
         <div className="papers-sheet-scrim" onClick={() => setTerm(null)}>
-          <div className="papers-sheet" style={{ bottom: navOffset + (canPlay && !compact ? barH : 0) }} onClick={e => e.stopPropagation()}>
+          <div className="papers-sheet" style={{ bottom: navOffset + ((canPlay || showQuickBar) && !compact ? barH : 0) }} onClick={e => e.stopPropagation()}>
             <div className="papers-sheet-term">{term.term}</div>
             <div className="papers-sheet-def">{term.def}</div>
             <button className="btn-ghost" onClick={() => setTerm(null)}>Close</button>

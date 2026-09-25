@@ -106,10 +106,11 @@ function PaperCard({ p, prog, playing, onOpen }) {
   let where = 'Not started'
   if (p.dur && pos >= p.dur - 5) where = 'Finished'
   else if (pos > 0) where = `Stopped at ${formatTime(pos)} · section ${(prog.section_index || 0) + 1}`
+  else if (prog?.section_index > 0) where = `Stopped in section ${prog.section_index + 1}`
   const status = {
     ready: p.dur ? formatTime(p.dur) : 'Narrated',
     updating: 'Re-narrating',
-    pending: 'Narration pending',
+    pending: 'Quick voice · Alba on its way',
     failed: 'Narration failed',
   }[state]
   return (
@@ -119,7 +120,7 @@ function PaperCard({ p, prog, playing, onOpen }) {
       <div className="papers-card-foot">
         <span>{p.section_count} sections</span>
         <span className={`papers-badge is-${state}`}>{status}</span>
-        {state !== 'pending' && <span>{where}</span>}
+        {(state !== 'pending' || where !== 'Not started') && <span>{where}</span>}
       </div>
     </button>
   )

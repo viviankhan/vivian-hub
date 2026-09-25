@@ -2,7 +2,7 @@
 // glossary marking. The cue lookup is what drives the highlight, so it is
 // checked against a brute-force scan over the real prototype cue list.
 import assert from 'node:assert/strict'
-import { findCue, sectionStart, sectionAt, paragraphs, markTerms, formatTime, paperFromImport, sectionsFromText, estimateMinutes, CUE_HEADING } from '../src/lib/paperText.js'
+import { findCue, sectionStart, sectionAt, paragraphs, markTerms, formatTime, paperFromImport, sectionsFromText, estimateMinutes, quickUnits, speakable, CUE_HEADING } from '../src/lib/paperText.js'
 
 let passed = 0
 const test = (name, fn) => { fn(); passed++; console.log('  ✓', name) }
@@ -122,6 +122,24 @@ test('a title line above the first heading is not a section', () => {
 test('empty and estimate', () => {
   assert.deepEqual(sectionsFromText('   '), [])
   assert.equal(estimateMinutes([{ heading: 'H', body: Array(299).fill('w').join(' ') }]), 2)
+})
+
+test('speakable matches voice.py on the same inputs', () => {
+  // Expected strings are voice.py's own output for these inputs.
+  assert.equal(speakable('CD34+ cells secreted IL-10 (p < 0.05) at 37 °C, vs. IFN-γ'),
+    'C D 34 positive cells secreted interleukin 10 (p less than 0.05) at 37 degrees Celsius, versus interferon gamma')
+  assert.equal(speakable('Smith et al. used ELISA and CLL cells, e.g. 5% of them.'),
+    'Smith and colleagues used ELISA and C L L cells, for example 5 percent of them.')
+})
+
+test('quickUnits: headings, lines or paragraphs, captions, keyed like the reader', () => {
+  const u = quickUnits({ sections: [
+    { heading: 'A', body: 'P one.\n\nP two.', figure: { path: 'x', caption: 'Bars.' } },
+    { heading: '', body: 'x', lines: ['S1.', 'S2.'] },
+  ] })
+  assert.deepEqual(u.map(x => x.key), ['0:-1', '0:p0', '0:p1', '0:-2', '1:-1', '1:0', '1:1'])
+  assert.equal(u[3].text, 'Figure. Bars.')
+  assert.equal(u[4].text, 'Section 2')
 })
 
 console.log(`paperText: ${passed} passed`)

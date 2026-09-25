@@ -216,3 +216,54 @@ export function estimateMinutes(sections) {
   const w = sections.reduce((n, s) => n + words(s.body) + words(s.heading), 0)
   return Math.max(1, Math.round(w / 150))
 }
+
+// ── Quick voice (the phone's own voice, until Alba's version arrives) ──
+// What the quick voice reads, in order: each heading, then each sentence from
+// `lines` when the narrator has already split the text (imported papers), or
+// else each whole paragraph. Paragraphs, not sentences, so this file still
+// never splits sentences itself; the highlight simply covers a paragraph.
+// Keys match the reader's data-cue attributes.
+export function quickUnits(paper) {
+  const out = []
+  ;(paper?.sections || []).forEach((sec, s) => {
+    out.push({ key: `${s}:${CUE_HEADING}`, s, text: sec.heading || `Section ${s + 1}`, heading: true })
+    if (Array.isArray(sec.lines) && sec.lines.length) sec.lines.forEach((t, i) => out.push({ key: `${s}:${i}`, s, text: t }))
+    else bodyParagraphs(sec).forEach((t, p) => out.push({ key: `${s}:p${p}`, s, text: t }))
+    if (sec.figure?.caption) out.push({ key: `${s}:${CUE_FIGURE}`, s, text: 'Figure. ' + sec.figure.caption })
+  })
+  return out
+}
+
+// A port of speakable() in scripts/narrate/voice.py: rewrites scientific
+// notation so a voice can say it (CD34+ → "C D 34 positive", IL-10 →
+// "interleukin 10", p < 0.05 → "p less than 0.05"). Only what is spoken is
+// rewritten; the screen always shows the original. Keep the two in step.
+const GREEK = { 'α': ' alpha ', 'β': ' beta ', 'γ': ' gamma ', 'δ': ' delta ', 'ε': ' epsilon ',
+  'ζ': ' zeta ', 'κ': ' kappa ', 'λ': ' lambda ', 'σ': ' sigma ', 'τ': ' tau ',
+  'χ': ' chi ', 'ω': ' omega ', 'μ': ' micro', 'µ': ' micro' }
+const SAYABLE = new Set(['ELISA', 'FACS', 'CRISPR', 'SNP', 'PCR', 'RNA', 'DNA', 'PBS', 'FBS', 'NIH', 'MHC'])
+export function speakable(t) {
+  let s = ' ' + String(t || '') + ' '
+  for (const [k, v] of Object.entries(GREEK)) s = s.split(k).join(v)
+  s = s.replace(/°\s*C\b/g, ' degrees Celsius')
+  s = s.replace(/°/g, ' degrees ').replace(/±/g, ' plus or minus ')
+  s = s.replace(/×/g, ' times ').replace(/→/g, ' leading to ')
+  s = s.replace(/[≈~]/g, ' roughly ')
+  s = s.replace(/≤/g, ' at most ').replace(/≥/g, ' at least ')
+  s = s.replace(/\s<\s/g, ' less than ')
+  s = s.replace(/\s>\s/g, ' greater than ')
+  s = s.replace(/\s=\s/g, ' equals ').replace(/%/g, ' percent ')
+  s = s.replace(/\bet\s+al\.?/gi, ' and colleagues')
+  s = s.replace(/\bvs\b\.?/gi, ' versus ')
+  s = s.replace(/\be\.\s?g\.?/gi, ' for example')
+  s = s.replace(/\bi\.\s?e\.?/gi, ' that is')
+  s = s.replace(/\bFigs?\.?\s*(\d+)/gi, ' figure $1')
+  s = s.replace(/\bIL[-\s]?(\d+)/gi, ' interleukin $1 ')
+  s = s.replace(/\bIFN[-\s]?/gi, ' interferon ')
+  s = s.replace(/\bTNF[-\s]?/gi, ' T N F ')
+  s = s.replace(/\b(CD)\s?(\d+[a-z]?)\s*\+/gi, ' C D $2 positive ')
+  s = s.replace(/\b(CD)\s?(\d+[a-z]?)\s*[-−–]/gi, ' C D $2 negative ')
+  s = s.replace(/\b(CD)\s?(\d+[a-z]?)/gi, ' C D $2 ')
+  s = s.replace(/\b([A-Z]{2,6})\b/g, (m, w) => (SAYABLE.has(w) ? w : w.split('').join(' ')))
+  return s.replace(/\s{2,}/g, ' ').trim()
+}

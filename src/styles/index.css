@@ -1955,3 +1955,8 @@ button.papers-drop { width: 100%; text-align: left; font-family: inherit; color:
 @media (max-width: 768px) {
   .papers-save-row { bottom: calc(64px + env(safe-area-inset-bottom)); }
 }
+
+/* Quick voice (phone's own speech) player, until Alba's version arrives. */
+.papers-quick-btns .papers-quick-play { flex: 1.6; background: var(--forest); color: #fff; border-color: var(--forest); }
+.papers-voice { display: block; width: 100%; margin-top: 6px; border: 1px solid var(--border); border-radius: 10px; padding: 5px 8px; font: 12.5px 'DM Sans', sans-serif; color: var(--text-light); background: #fff; }
+.papers-alba-ready { display: block; width: 100%; margin-bottom: 8px; padding: 10px 12px; border: none; border-radius: 10px; background: #E6F4EA; color: #1E5B34; font: 14px 'DM Sans', sans-serif; cursor: pointer; text-align: center; }
