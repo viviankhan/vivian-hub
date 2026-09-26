@@ -16,15 +16,47 @@ only, so it runs anywhere Python and voice.py's own dependencies do.
 import json, os, subprocess, sys, tempfile, time, urllib.error, urllib.parse, urllib.request
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-URL = os.environ.get("SUPABASE_URL", "").rstrip("/")
-KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "")
+# Keys pasted on a phone often pick up spaces or a line break; none belong.
+URL = "".join(os.environ.get("SUPABASE_URL", "").split()).rstrip("/")
+KEY = "".join(os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "").split())
 MAX_ATTEMPTS = 3            # quick retries (one per run) before backing off
 RETRY_EVERY_HOURS = 6       # after that, keep trying on this rhythm, forever
 TIME_BUDGET = float(os.environ.get("NARRATE_TIME_BUDGET", 40 * 60))  # seconds
 
 
+def auth_headers(key):
+    """Headers for Supabase's two kinds of secret key.
+
+    The older service_role key is a JWT ("eyJ...") and goes in both headers.
+    The newer secret key ("sb_secret_...") is not a JWT: it goes only in
+    `apikey`, and sending it as a Bearer token gets "Invalid API key".
+    """
+    if key.startswith("eyJ"):
+        return {"apikey": key, "Authorization": "Bearer " + key}
+    return {"apikey": key}
+
+
+def explain_key_problem():
+    kind = ("a publishable key: it needs the SECRET one" if KEY.startswith("sb_publishable_")
+            else "the anon key: it needs the service_role one" if '"role":"anon"' in _jwt_payload(KEY)
+            else "not recognised by this Supabase project")
+    return ("Supabase rejected SUPABASE_SERVICE_ROLE_KEY (%s, %d characters, starts %r). "
+            "It looks like %s. In Supabase: Project Settings > API Keys > secret "
+            "(or the Legacy tab > service_role). Paste it into the GitHub secret again."
+            % (URL.split("//")[-1], len(KEY), KEY[:10], kind))
+
+
+def _jwt_payload(key):
+    try:
+        import base64
+        part = key.split(".")[1]
+        return base64.urlsafe_b64decode(part + "=" * (-len(part) % 4)).decode().replace(" ", "")
+    except Exception:
+        return ""
+
+
 def call(method, path, body=None, headers=None, raw=None):
-    h = {"apikey": KEY, "Authorization": "Bearer " + KEY}
+    h = auth_headers(KEY)
     h.update(headers or {})
     data = raw
     if body is not None:
@@ -36,7 +68,10 @@ def call(method, path, body=None, headers=None, raw=None):
             text = r.read().decode() or "null"
             return json.loads(text) if "json" in r.headers.get("Content-Type", "") else text
     except urllib.error.HTTPError as e:
-        raise RuntimeError("%s %s -> %d %s" % (method, path.split("?")[0], e.code, e.read().decode()[:400]))
+        detail = e.read().decode()[:400]
+        if e.code == 401 and "Invalid API key" in detail:
+            raise SystemExit(explain_key_problem())
+        raise RuntimeError("%s %s -> %d %s" % (method, path.split("?")[0], e.code, detail))
 
 
 def in_retry_window(now=None):
