@@ -1,0 +1,631 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Orgo Escape Room</title>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;700;800&family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&family=JetBrains+Mono:wght@500;700&display=swap">
+<style>
+:root{
+  --bg:#EDF0F5; --surface:#FFFFFF; --sunk:#E2E7EF; --ink:#18202E; --ink-2:#4A5568; --line:#CBD3DF;
+  --accent:#3444C4; --accent-ink:#FFFFFF; --accent-soft:#DDE1FA;
+  --cation:#C92A62; --cation-soft:#FBE0EA;
+  --good:#16806A; --good-soft:#D6F0E8; --warn:#A86B00; --warn-soft:#FAEBCB;
+  --door:#2D3A5C; --door-ink:#F2F4FA; --knob:#E3B341;
+  --display:"Unbounded", "Arial Black", system-ui, sans-serif;
+  --body:"Atkinson Hyperlegible", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono:"JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    color-scheme:dark;
+    --bg:#10141D; --surface:#1A2030; --sunk:#141A27; --ink:#E7EAF2; --ink-2:#A3ADC2; --line:#2E3850;
+    --accent:#8D9BFF; --accent-ink:#10141D; --accent-soft:#252E55;
+    --cation:#FF6F9E; --cation-soft:#3A1A29;
+    --good:#4FD1AE; --good-soft:#123329; --warn:#F2B84B; --warn-soft:#352812;
+    --door:#2A3452; --door-ink:#E7EAF2; --knob:#F2C14E;
+  }
+}
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --bg:#10141D; --surface:#1A2030; --sunk:#141A27; --ink:#E7EAF2; --ink-2:#A3ADC2; --line:#2E3850;
+  --accent:#8D9BFF; --accent-ink:#10141D; --accent-soft:#252E55;
+  --cation:#FF6F9E; --cation-soft:#3A1A29;
+  --good:#4FD1AE; --good-soft:#123329; --warn:#F2B84B; --warn-soft:#352812;
+  --door:#2A3452; --door-ink:#E7EAF2; --knob:#F2C14E;
+}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--body);font-size:17px;line-height:1.5;padding-inline:16px;padding-block:0 48px}
+.wrap{max-width:720px;margin-inline:auto}
+h1,h2,h3{font-family:var(--display);text-wrap:balance;margin:0;line-height:1.15}
+button{font:inherit;color:inherit;cursor:pointer}
+button:focus-visible,.opt:focus-visible{outline:3px solid var(--accent);outline-offset:3px}
+sub{font-size:.7em;line-height:0}
+.mono{font-family:var(--mono)}
+.label{font-size:12px;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-2);font-weight:700}
+
+/* top bar */
+.bar{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--bg);padding-block:12px 10px;display:grid;gap:8px;border-bottom:1px solid var(--line);margin-bottom:24px}
+.bar-row{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.stats{display:flex;gap:16px;align-items:center;flex-wrap:wrap}
+.stat{display:flex;align-items:baseline;gap:6px;font-variant-numeric:tabular-nums}
+.stat b{font-family:var(--mono);font-size:18px}
+.lives{display:flex;gap:4px}
+.life{width:20px;height:20px}
+.life path{fill:var(--cation)}
+.life.gone path{fill:none;stroke:var(--line);stroke-width:2}
+.clock{font-family:var(--mono);font-weight:700;font-size:20px;font-variant-numeric:tabular-nums}
+.clock.over{color:var(--cation)}
+.ticks{display:grid;grid-template-columns:repeat(20,1fr);gap:3px}
+.tick{height:6px;border-radius:2px;background:var(--sunk);border:1px solid var(--line)}
+.tick.ok{background:var(--good);border-color:var(--good)}
+.tick.redo{background:var(--warn);border-color:var(--warn)}
+.tick.now{background:var(--accent);border-color:var(--accent)}
+
+/* element tile, used for level badges */
+.tile{display:inline-grid;grid-template-rows:auto 1fr auto;width:84px;height:92px;border:2px solid var(--ink);border-radius:6px;padding:5px 7px;background:var(--surface);flex:none}
+.tile .z{font-family:var(--mono);font-size:12px;font-weight:700}
+.tile .sym{font-family:var(--display);font-weight:800;font-size:30px;align-self:center;text-align:center}
+.tile .nm{font-size:10px;text-align:center;letter-spacing:.04em;text-transform:uppercase;color:var(--ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+.card{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:24px}
+.stack{display:grid;gap:16px}
+.row{display:flex;gap:12px;flex-wrap:wrap;align-items:center}
+.btn{border:2px solid var(--ink);background:var(--surface);border-radius:10px;padding:12px 20px;font-weight:700}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.btn.quiet{border-color:var(--line);font-weight:400}
+.btn:hover{transform:translateY(-1px)}
+.linkish{background:none;border:0;padding:0;color:var(--ink-2);text-decoration:underline;font-size:14px}
+
+/* start */
+.hero{display:grid;gap:18px;padding-block:32px 8px}
+.hero h1{font-size:clamp(34px,8vw,56px);font-weight:800;letter-spacing:-.02em}
+.hero h1 .plus{color:var(--cation)}
+.hero p{margin:0;max-width:60ch;color:var(--ink-2)}
+.levels-map{display:flex;gap:10px;overflow-x:auto;padding-block:4px 8px}
+.rules{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin:0;padding:0;list-style:none}
+.rules li{background:var(--sunk);border-radius:10px;padding:12px 14px;font-size:15px}
+.rules b{display:block;font-family:var(--mono);font-size:14px}
+.script{margin:0;padding-left:0;list-style:none;counter-reset:s;display:grid;gap:6px}
+.script li{counter-increment:s;display:grid;grid-template-columns:28px 1fr;gap:8px;font-size:15px}
+.script li::before{content:counter(s);font-family:var(--mono);font-weight:700;color:var(--accent)}
+.best{font-size:14px;color:var(--ink-2)}
+
+/* level intro */
+.intro-head{display:flex;gap:18px;align-items:center}
+.intro-head h2{font-size:clamp(22px,5vw,30px)}
+.chooser{display:grid;gap:6px;font-family:var(--mono);font-size:14px;background:var(--sunk);border-radius:10px;padding:14px 16px}
+.chooser div{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px}
+.chooser span:last-child{font-weight:700;color:var(--accent)}
+.intro-body p{margin:0}
+.intro-body{display:grid;gap:12px;max-width:62ch}
+
+/* question */
+.qhead{display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap}
+.qnum{font-family:var(--display);font-weight:700;font-size:15px;color:var(--ink-2)}
+.prompt{font-size:21px;font-weight:700;margin:0;max-width:40ch}
+.struct{font-family:var(--mono);font-size:clamp(22px,6vw,32px);font-weight:700;background:var(--sunk);border-radius:12px;padding:22px 16px;text-align:center;overflow-x:auto;white-space:nowrap}
+.struct mark{background:none;color:var(--accent);border-bottom:3px solid var(--accent)}
+.struct .lg{color:var(--cation)}
+.cplus{color:var(--cation);font-weight:700;font-family:var(--mono)}
+.opts{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+.opt{border:2px solid var(--line);background:var(--surface);border-radius:12px;padding:14px 16px;text-align:left;display:flex;gap:10px;align-items:center;font-weight:700;font-size:17px;min-height:58px}
+.opt:hover:not(:disabled){border-color:var(--accent)}
+.opt .k{font-family:var(--mono);font-size:12px;color:var(--ink-2);border:1px solid var(--line);border-radius:5px;padding:1px 6px;flex:none}
+.opt.right{border-color:var(--good);background:var(--good-soft)}
+.opt.wrong{border-color:var(--cation);background:var(--cation-soft)}
+.opt:disabled{cursor:default}
+/* level 2 doors */
+.opts.doors{grid-template-columns:repeat(auto-fit,minmax(130px,1fr))}
+.opts.doors .opt{background:var(--door);color:var(--door-ink);border:3px solid var(--door);border-radius:14px 14px 4px 4px;min-height:150px;flex-direction:column;justify-content:center;position:relative;text-align:center;font-family:var(--display);font-size:22px;box-shadow:inset 0 0 0 6px color-mix(in srgb,var(--door-ink) 10%,transparent)}
+.opts.doors .opt::after{content:"";position:absolute;right:16px;top:55%;width:10px;height:10px;border-radius:50%;background:var(--knob)}
+.opts.doors .opt .k{position:absolute;top:10px;left:10px;color:var(--door-ink);border-color:color-mix(in srgb,var(--door-ink) 40%,transparent)}
+.opts.doors .opt:hover:not(:disabled){border-color:var(--knob)}
+.opts.doors .opt.right{border-color:var(--good);background:color-mix(in srgb,var(--good) 55%,var(--door))}
+.opts.doors .opt.wrong{border-color:var(--cation);background:color-mix(in srgb,var(--cation) 45%,var(--door))}
+.opts.doors .opt small{font-family:var(--body);font-size:12px;font-weight:400;opacity:.85}
+
+.peek{display:flex;gap:12px;align-items:center;flex-wrap:wrap;font-size:14px;color:var(--ink-2)}
+.ring{width:22px;height:22px}
+.ring circle{fill:none;stroke-width:3}
+.ring .bgc{stroke:var(--line)}
+.ring .fg{stroke:var(--accent);stroke-dasharray:57;stroke-linecap:round;transform:rotate(-90deg);transform-origin:center}
+
+.panel{border-radius:12px;padding:18px 20px;display:grid;gap:12px}
+.panel.bad{background:var(--cation-soft);border:2px solid var(--cation)}
+.panel.ok{background:var(--good-soft);border:2px solid var(--good)}
+.panel.hint{background:var(--accent-soft);border:1px solid var(--accent)}
+.panel h3{font-size:17px}
+.panel p{margin:0}
+.bonus{display:grid;gap:10px;border-top:1px dashed color-mix(in srgb,var(--good) 50%,transparent);padding-top:12px}
+.chips{display:flex;gap:8px;flex-wrap:wrap}
+.chip{border:1.5px solid var(--line);background:var(--surface);border-radius:999px;padding:6px 12px;font-size:14px}
+.chip.hit{border-color:var(--good);background:var(--good);color:var(--surface)}
+.chip.miss{border-color:var(--cation);color:var(--cation);text-decoration:line-through}
+.chip.reveal{border-color:var(--warn);background:var(--warn-soft)}
+.xpflash{font-family:var(--mono);font-weight:700;color:var(--good)}
+
+/* yell */
+.yell{display:grid;gap:14px;justify-items:start}
+.yell-btn{font-family:var(--display);font-weight:800;font-size:clamp(20px,5vw,28px);letter-spacing:.02em;background:var(--cation);color:#fff;border:0;border-radius:14px;padding:18px 24px}
+@keyframes shout{0%{transform:scale(1)}30%{transform:scale(1.08) rotate(-2deg)}60%{transform:scale(.98) rotate(1deg)}100%{transform:scale(1)}}
+.shouted{animation:shout .45s ease-out}
+
+/* overlay */
+.ko{border:2px solid var(--cation);background:var(--cation-soft)}
+
+/* results */
+.verdict{display:grid;gap:10px;padding-block:24px 8px}
+.verdict .big{font-family:var(--display);font-weight:800;font-size:clamp(56px,16vw,96px);line-height:1;font-variant-numeric:tabular-nums}
+.verdict .big small{font-size:.4em;color:var(--ink-2)}
+.badge{display:inline-block;font-family:var(--display);font-weight:700;font-size:14px;padding:6px 12px;border-radius:999px;letter-spacing:.02em}
+.badge.boss{background:var(--good);color:var(--surface)}
+.badge.ready{background:var(--accent);color:var(--accent-ink)}
+.badge.not{background:var(--warn-soft);color:var(--warn);border:1px solid var(--warn)}
+table{border-collapse:collapse;width:100%;font-variant-numeric:tabular-nums}
+.tablewrap{overflow-x:auto}
+th,td{text-align:left;padding:10px 8px;border-bottom:1px solid var(--line);font-size:15px}
+th{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-2)}
+td.num{font-family:var(--mono);font-weight:700}
+.miss-list{display:grid;gap:10px;margin:0;padding:0;list-style:none}
+.miss-list li{background:var(--sunk);border-radius:10px;padding:12px 14px;font-size:15px}
+.miss-list b{font-family:var(--mono)}
+
+@media (max-width:480px){
+  body{font-size:16px}
+  .card{padding:18px}
+  .prompt{font-size:19px}
+  .opts.doors .opt{min-height:120px}
+  .tile{width:72px;height:80px}
+  .tile .sym{font-size:24px}
+}
+@media (prefers-reduced-motion: reduce){
+  *{animation:none!important;transition:none!important}
+  .btn:hover{transform:none}
+}
+</style>
+
+</head>
+<body>
+<div class="wrap" id="app"></div>
+
+<script>
+(function(){
+const TOTAL_MS = 30*60*1000;
+const PEEK_MS = 8000;
+
+const LEVELS = [
+  {n:1, sym:'C°', name:'Find the important carbon', short:'Carbon', mins:4,
+   intro:`<p>For every structure, first ask: <b>which carbon is holding Br, Cl, I, OTs, OMs, OTf, or OH?</b></p>
+   <p>Then count how many <i>other</i> carbons touch that carbon.</p>
+   <div class="chooser"><div><span>1 carbon touching it</span><span>1°</span></div><div><span>2 carbons touching it</span><span>2°</span></div><div><span>3 carbons touching it</span><span>3°</span></div></div>`},
+  {n:2, sym:'Dr', name:'Pick the door', short:'Doors', mins:6,
+   intro:`<p>There are only four doors.</p>
+   <div class="chooser"><div><span>LG leaves → C+ → attacker comes in</span><span>SN1</span></div><div><span>Attacker comes in while LG leaves</span><span>SN2</span></div><div><span>LG leaves → C+ → make C=C</span><span>E1</span></div><div><span>Base grabs H while LG leaves → C=C</span><span>E2</span></div></div>
+   <p>The stupid-simple chooser:</p>
+   <div class="chooser"><div><span>1° + strong nucleophile</span><span>SN2</span></div><div><span>3° + strong base</span><span>E2</span></div><div><span>3° + weak / protic</span><span>SN1/E1</span></div><div><span>heat</span><span>→ elimination</span></div><div><span>2°</span><span>look harder at reagent</span></div></div>`},
+  {n:3, sym:'C+', name:'Carbocation panic room', short:'C+ Panic', mins:5,
+   intro:`<p>Whenever you see <span class="cplus">C+</span>: <b>STOP.</b> Ask, “Can a neighbor make this C+ happier?”</p>
+   <div class="chooser"><div><span>stability</span><span>3° C+ &gt; 2° C+ &gt; 1° C+</span></div><div><span>neighbor C–H bond → C+</span><span>hydride shift</span></div><div><span>neighbor C–C bond → C+</span><span>alkyl shift</span></div><div><span>whole CH<sub>3</sub> moves</span><span>methyl shift</span></div></div>
+   <p>The arrow starts at the <b>bond</b> and points toward C+. Never start the arrow at C+.</p>
+   <p>House rule: in this room you must yell <b>CHECK THE NEIGHBORS</b> before you answer.</p>`},
+  {n:4, sym:'Zb', name:'Double-bond battle', short:'C=C', mins:5,
+   intro:`<p>Count only carbon groups <b>directly attached</b> to the two double-bond carbons.</p>
+   <div class="chooser"><div><span>1 carbon group</span><span>mono</span></div><div><span>2</span><span>di</span></div><div><span>3</span><span>tri</span></div><div><span>4</span><span>tetra</span></div></div>
+   <div class="chooser"><div><span>more substituted alkene</span><span>Zaitsev</span></div><div><span>less substituted alkene</span><span>Hofmann</span></div><div><span>internal vs terminal</span><span>internal usually wins</span></div></div>`},
+  {n:5, sym:'Rx', name:'Reagent translator', short:'Reagents', mins:4,
+   intro:`<p>You don’t need the full names first. Translate them into behavior.</p>
+   <div class="chooser"><div><span>EtOH / MeOH / H<sub>2</sub>O</span><span>weak Nu, weak base, protic</span></div><div><span>DMSO / DMF / acetone</span><span>aprotic → helps SN2</span></div><div><span>NaOEt / NaOMe</span><span>strong base + good Nu</span></div><div><span>t-BuOK</span><span>bulky strong base</span></div><div><span>OTs / OMs / OTf</span><span>leaving groups</span></div><div><span>H<sub>2</sub>SO<sub>4</sub> / H<sub>3</sub>PO<sub>4</sub></span><span>acids</span></div></div>`},
+];
+
+// ord: keep options in natural order (scales). doors: render as doors.
+const Q = [
+  {lv:1, prompt:'Is the carbon holding Br 1°, 2°, or 3°?', struct:'CH<sub>3</sub>–<mark>CH<sub>2</sub></mark>–<span class="lg">Br</span>',
+   opts:['1°','2°','3°','4°'], a:0, trap:1, ord:true,
+   rule:'Find the carbon holding Br, then count only the OTHER carbons touching it. CH<sub>2</sub> touches just one CH<sub>3</sub> → 1°.',
+   why:'The C–Br carbon touches exactly one other carbon, so it’s 1°.',
+   trapWhy:'2° is what you get if you count every carbon in the molecule instead of the ones touching the C–Br carbon.'},
+  {lv:1, prompt:'Is the carbon holding Br 1°, 2°, or 3°?', struct:'CH<sub>3</sub>–<mark>CH</mark>(<span class="lg">Br</span>)–CH<sub>3</sub>',
+   opts:['1°','2°','3°','4°'], a:1, trap:2, ord:true,
+   rule:'The middle carbon holds Br. It touches a CH<sub>3</sub> on each side: 2 carbons → 2°.',
+   why:'The C–Br carbon has two carbon neighbors, so it’s 2°.',
+   trapWhy:'3° is what you get if you also count the Br as a neighbor. Only carbons count.'},
+  {lv:1, prompt:'Is the carbon holding Br 1°, 2°, or 3°?', struct:'(CH<sub>3</sub>)<sub>3</sub><mark>C</mark>–<span class="lg">Br</span>',
+   opts:['1°','2°','3°','4°'], a:2, trap:3, ord:true,
+   rule:'The central C holds Br and three CH<sub>3</sub> groups. 3 carbons touching it → 3°.',
+   why:'Three CH<sub>3</sub> groups hang off the C–Br carbon, so it’s 3°.',
+   trapWhy:'4° is what you get if you count the Br as a fourth group. The leaving group never counts.'},
+  {lv:1, prompt:'A carbon holding <b class="mono">OTs</b> is attached to three carbon groups. Classify it.', struct:'R<sub>3</sub><mark>C</mark>–<span class="lg">OTs</span>',
+   opts:['1°','2°','3°','Not a halide, so skip it'], a:2, trap:3, ord:true,
+   rule:'OTs, OMs and OTf are leaving groups just like Br, Cl, I. Classify the carbon holding them the same way: 3 carbons → 3°.',
+   why:'OTs is a leaving group, and its carbon touches three carbons, so it’s 3°.',
+   trapWhy:'“Not a halide” is the trap. Tosylates are leaving groups and get classified exactly like halides.'},
+
+  {lv:2, prompt:'1° bromide + CN<sup>−</sup>. Which door?', struct:'R–CH<sub>2</sub>–<span class="lg">Br</span> + <mark>CN<sup>−</sup></mark>',
+   opts:['SN1','SN2','E1','E2'], a:1, trap:0, doors:true,
+   rule:'1° + strong nucleophile → SN2. A 1° carbon is easy to reach from the back, and a 1° C+ is too unstable to form.',
+   why:'Unhindered 1° carbon plus a strong nucleophile means backside attack: SN2.',
+   trapWhy:'SN1 needs a C+, and a 1° C+ basically never forms.'},
+  {lv:2, prompt:'3° bromide + t-BuOK. Which door?', struct:'(CH<sub>3</sub>)<sub>3</sub>C–<span class="lg">Br</span> + <mark>t-BuOK</mark>',
+   opts:['SN1','SN2','E1','E2'], a:3, trap:1, doors:true,
+   rule:'3° + strong base → E2. t-BuOK is a strong, bulky base: it grabs an H instead of attacking carbon.',
+   why:'Strong base on a 3° carbon pulls off an H in one step: E2.',
+   trapWhy:'SN2 is blocked on a 3° carbon; the back side is too crowded.'},
+  {lv:2, prompt:'3° bromide + H<sub>2</sub>O. Which door?', struct:'(CH<sub>3</sub>)<sub>3</sub>C–<span class="lg">Br</span> + <mark>H<sub>2</sub>O</mark>',
+   opts:['SN1 / E1','SN2','E2','No reaction'], a:0, trap:1, doors:true,
+   rule:'3° + weak / protic → SN1/E1. Water is a weak nucleophile and weak base, so Br leaves first and makes a 3° C+.',
+   why:'Weak, protic water can’t push; the 3° C+ forms first, so it’s SN1/E1.',
+   trapWhy:'SN2 needs a strong nucleophile and an open back side. Neither is here.'},
+  {lv:2, prompt:'2° bromide + strong base + heat. Which door?', struct:'2° R–<span class="lg">Br</span> + <mark>strong base</mark> + Δ',
+   opts:['SN1','SN2','E1','E2'], a:3, trap:2, doors:true,
+   rule:'2° means look harder at the reagent. Strong base plus heat → E2. Heat pushes toward elimination; a strong base means E2, not E1.',
+   why:'A strong base with heat on a 2° carbon eliminates in one step: E2.',
+   trapWhy:'E1 is for weak bases. A strong base doesn’t wait for a C+ to form.'},
+  {lv:2, prompt:'Alcohol + H<sub>2</sub>SO<sub>4</sub> + heat. Which door?', struct:'R–<span class="lg">OH</span> + <mark>H<sub>2</sub>SO<sub>4</sub></mark> + Δ',
+   opts:['SN1','SN2','E1 (dehydration)','E2'], a:2, trap:3, doors:true,
+   rule:'Acid + heat on an alcohol → E1 dehydration. Acid turns OH into water (a good leaving group), water leaves, C+ forms, then a C=C forms.',
+   why:'Acid makes OH leave as water, a C+ forms, heat makes it eliminate: E1.',
+   trapWhy:'E2 needs a strong base. Sulfuric acid is an acid, not a base.'},
+  {lv:2, prompt:'1° bromide + NaOEt. Which door?', struct:'R–CH<sub>2</sub>–<span class="lg">Br</span> + <mark>NaOEt</mark>',
+   opts:['SN1','SN2','E1','E2'], a:1, trap:3, doors:true,
+   rule:'1° + strong nucleophile → usually SN2. NaOEt is a strong base AND a good nucleophile; on an open 1° carbon, attack wins.',
+   why:'Small ethoxide can reach an open 1° carbon, so it usually substitutes: SN2.',
+   trapWhy:'E2 wins on 1° only with a bulky base like t-BuOK. Ethoxide is small.'},
+
+  {lv:3, yell:true, prompt:'A 2° <span class="cplus">C+</span> sits next to a carbon that has an H. Moving that H makes a 3° C+. What happens?', struct:'2° <span class="cplus">C+</span> ← neighbor C–<mark>H</mark>',
+   opts:['Hydride shift','Methyl / alkyl shift','Don’t shift','E2 happens instead'], a:0, trap:1,
+   rule:'Neighbor C–H bond → C+ = hydride shift. The H moves with its bonding electrons, and 2° becomes the happier 3°.',
+   why:'An H next door can move over and turn 2° C+ into 3° C+: hydride shift.',
+   trapWhy:'A methyl shift moves a CH<sub>3</sub>. Here the neighbor offers an H, and H moves first.'},
+  {lv:3, yell:true, prompt:'A 2° <span class="cplus">C+</span> sits next to a carbon with NO H, but moving a CH<sub>3</sub> makes a 3° C+. What happens?', struct:'2° <span class="cplus">C+</span> ← neighbor C–<mark>CH<sub>3</sub></mark>',
+   opts:['Hydride shift','Methyl / alkyl shift','Don’t shift','E2 happens instead'], a:1, trap:0,
+   rule:'Neighbor C–C bond → C+ = alkyl shift; when the whole CH<sub>3</sub> moves it’s a methyl shift. No H is available, so the CH<sub>3</sub> goes.',
+   why:'No H next door, but a CH<sub>3</sub> can move to make 3° C+: methyl shift.',
+   trapWhy:'A hydride shift needs an H on the neighbor. This neighbor has none.'},
+  {lv:3, yell:true, prompt:'A 2° <span class="cplus">C+</span> could shift, but the new C+ would still be 2°. What happens?', struct:'2° <span class="cplus">C+</span> → 2° <span class="cplus">C+</span> ?',
+   opts:['Hydride shift','Methyl / alkyl shift','Don’t shift','E2 happens instead'], a:2, trap:0,
+   rule:'Shifts only happen when they make the C+ happier (2° → 3°). 2° → 2° gains nothing, so don’t shift.',
+   why:'A shift has to make the cation more stable; 2° to 2° isn’t an upgrade.',
+   trapWhy:'Shifting just because you can is the trap. No stability gain, no shift.'},
+  {lv:3, yell:true, prompt:'It’s an E2 reaction. Should you check for rearrangement?', struct:'E2: base + H + LG → C=C, one step',
+   opts:['Yes, always','No','Only if it’s 2°','Only with heat'], a:1, trap:0,
+   rule:'Rearrangements need a C+. E2 happens in one step and never forms a C+, so there’s nothing to rearrange.',
+   why:'No carbocation in E2, so no rearrangement.',
+   trapWhy:'“Always” is the trap. Check the neighbors only when a C+ actually forms (SN1, E1).'},
+
+  {lv:4, prompt:'The C=C has 4 carbon groups attached in total. What is it?', struct:'R<sub>2</sub>C=CR<sub>2</sub>',
+   opts:['Monosubstituted','Disubstituted','Trisubstituted','Tetrasubstituted'], a:3, trap:2, ord:true,
+   rule:'Count carbon groups directly on the two double-bond carbons: 4 → tetrasubstituted.',
+   why:'Four carbon arms on the C=C makes it tetrasubstituted.',
+   trapWhy:'Tri is what you get if you miss one arm. Count both double-bond carbons.'},
+  {lv:4, prompt:'A bulky base produces the less substituted alkene. What’s that product called?', struct:'<mark>t-BuOK</mark> → less substituted C=C',
+   opts:['Zaitsev','Hofmann','Markovnikov','Anti-Markovnikov'], a:1, trap:0,
+   rule:'More substituted = Zaitsev. Less substituted = Hofmann. A bulky base can only reach the easy outside H, so it gives Hofmann.',
+   why:'Less substituted product from a bulky base is the Hofmann product.',
+   trapWhy:'Zaitsev is the more substituted alkene, which is the normal case, not the bulky-base case.'},
+  {lv:4, prompt:'Small base, normal elimination. Internal or terminal alkene?', struct:'internal C=C &nbsp;vs&nbsp; terminal C=C',
+   opts:['Internal (Zaitsev)','Terminal (Hofmann)','About 50 / 50','No alkene forms'], a:0, trap:1,
+   rule:'Internal C=C usually beats terminal C=C. A small base follows Zaitsev: the more substituted, internal alkene.',
+   why:'Small base means Zaitsev, and the more substituted internal alkene wins.',
+   trapWhy:'Terminal is Hofmann, which needs a bulky base.'},
+  {lv:4, prompt:'Same substitution on both. Which is more stable, trans or cis?', struct:'trans C=C &nbsp;vs&nbsp; cis C=C',
+   opts:['Trans','Cis','Equal','Depends on the base'], a:0, trap:2,
+   rule:'At the same substitution, trans is usually more stable: the big groups sit on opposite sides and don’t bump.',
+   why:'Trans keeps the bulky groups apart, so it’s usually more stable.',
+   trapWhy:'“Equal” ignores the crowding in cis, where both groups are on the same side.'},
+
+  {lv:5, prompt:'DMF + strong nucleophile + a suitable substrate. Think:', struct:'<mark>DMF</mark> + strong Nu<sup>−</sup>',
+   opts:['SN1','SN2','E1','E2'], a:1, trap:0, doors:true,
+   rule:'DMSO / DMF / acetone are aprotic, and aprotic solvents help SN2. They don’t cage the nucleophile, so it attacks hard.',
+   why:'Aprotic DMF leaves the nucleophile free to attack: SN2.',
+   trapWhy:'SN1 likes protic solvents (water, alcohols). DMF is aprotic.'},
+  {lv:5, prompt:'You see <b class="mono">t-BuOK</b>. Think:', struct:'(CH<sub>3</sub>)<sub>3</sub>C–O<sup>−</sup> K<sup>+</sup>',
+   opts:['Bulky base → E2 / Hofmann','Strong nucleophile → SN2','Weak base → E1','It’s a leaving group'], a:0, trap:1,
+   rule:'t-BuOK = bulky strong base. Too big to attack carbon, so it grabs an H: E2, often Hofmann.',
+   why:'Bulky strong base means E2 with the less substituted (Hofmann) alkene.',
+   trapWhy:'It’s too bulky to be a good nucleophile, so SN2 is the trap.'},
+];
+Q.forEach((q,i)=>{q.id=i});
+
+const SCRIPT = ['Where’s the leaving group?','Is that carbon 1°, 2°, or 3°?','What is the reagent: strong base, strong nucleophile, weak/protic, acid, heat?','SN1, SN2, E1, or E2?','If C+ forms: rearrange? (CHECK THE NEIGHBORS)','If SN2: flip.','If elimination: make C=C.','Multiple C=C choices: Zaitsev unless a bulky base says Hofmann.'];
+
+const store = {
+  get(k){try{return JSON.parse(localStorage.getItem(k))}catch(e){return null}},
+  set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}
+};
+
+let S = fresh();
+function fresh(){
+  return {screen:'start', mode:'run', queue:[], pos:0, lives:3, xp:0, results:{}, phase:'intro',
+    picked:null, wrongPicks:[], order:[], shownAt:0, startedAt:0, koShown:false, ko:false, 
+    bonus:{why:false, trap:null, vibes:false}, replayLevel:null, replay:{}};
+}
+const $ = s => document.querySelector(s);
+const app = $('#app');
+
+function shuffle(a){a=a.slice();for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]]}return a}
+function cur(){return Q[S.queue[S.pos]]}
+function levelOf(q){return LEVELS[q.lv-1]}
+function scoreOf(res){return Object.values(res).filter(r=>r.first).length}
+function fmt(ms){const neg=ms<0;ms=Math.abs(ms);const m=Math.floor(ms/60000),s=Math.floor(ms/1000)%60;return (neg?'+':'')+m+':'+String(s).padStart(2,'0')}
+
+function heart(on){return `<svg class="life ${on?'':'gone'}" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s-7.5-4.6-9.6-9.2C.9 8.4 3 4.5 6.7 4.5c2.1 0 3.6 1.2 4.3 2.4.7-1.2 2.2-2.4 4.3-2.4 3.7 0 5.8 3.9 4.3 7.3C19.5 16.4 12 21 12 21z"/></svg>`}
+function tile(L, big){return `<div class="tile" aria-hidden="true"><span class="z">${L.n}</span><span class="sym">${L.sym}</span><span class="nm">${L.short}</span></div>`}
+
+function bar(){
+  const res = S.mode==='run'?S.results:S.replay;
+  const ticks = S.mode==='run' ? Q.map((q,i)=>{
+      const r=res[i]; const now = S.screen==='play' && S.queue[S.pos]===i && S.phase!=='intro';
+      return `<span class="tick ${r?(r.first?'ok':'redo'):(now?'now':'')}"></span>`}).join('') : '';
+  const score = scoreOf(res);
+  return `<header class="bar"><div class="bar-row">
+    <div class="stats">
+      <span class="lives" aria-label="${S.lives} lives left">${heart(S.lives>0)}${heart(S.lives>1)}${heart(S.lives>2)}</span>
+      <span class="stat"><span class="label">Score</span><b>${score}</b></span>
+      <span class="stat"><span class="label">XP</span><b id="xp">${S.xp}</b></span>
+    </div>
+    <span class="clock" id="clock" aria-label="Time left">30:00</span>
+  </div>${ticks?`<div class="ticks" aria-hidden="true">${ticks}</div>`:''}</header>`;
+}
+
+function render(){
+  if(S.screen==='start') return renderStart();
+  if(S.screen==='results') return renderResults();
+  if(S.screen==='replayDone') return renderReplayDone();
+  renderPlay();
+}
+
+function renderStart(){
+  const best = store.get('orgo-best');
+  app.innerHTML = `
+  <section class="hero">
+    <span class="label">Chapter 7 · SN1 / SN2 / E1 / E2 · 30 minutes</span>
+    <h1>Orgo Escape Room<span class="plus">+</span></h1>
+    <p>Five rooms, twenty questions. Each room trains one reflex from your survival sheet: find the carbon, pick the door, check the neighbors, win the double-bond battle, translate the reagent.</p>
+    <div class="levels-map">${LEVELS.map(L=>tile(L)).join('')}</div>
+  </section>
+  <div class="stack">
+    <ul class="rules">
+      <li><b>3 lives</b>Wrong answer costs a life. You read the rule, then redo the question.</li>
+      <li><b>1 point</b>for each question you get right on the first try. 20 possible.</li>
+      <li><b>16/20</b>= test ready. <b style="display:inline">19–20</b> = boss defeated.</li>
+      <li><b>5–10 seconds</b>of thinking before you peek. The rule hint unlocks after 8 seconds.</li>
+      <li><b>XP</b>+1 correct · +2 if you can explain why in one sentence · +1 for spotting the trap · −1 life for answering on vibes.</li>
+      <li><b>C+ ?</b>Yell “CHECK THE NEIGHBORS” before doing anything else.</li>
+    </ul>
+    <div class="card stack">
+      <span class="label">The 5-second test script</span>
+      <ol class="script">${SCRIPT.map(s=>`<li>${s}</li>`).join('')}</ol>
+    </div>
+    <div class="row">
+      <button class="btn primary" id="go">Start the 30-minute run</button>
+      <span class="best">${best?`Best run: ${best.score}/20 · ${best.xp} XP`:'Keys 1–4 pick an answer. Enter continues.'}</span>
+    </div>
+  </div>`;
+  $('#go').onclick = startRun;
+}
+
+function startRun(){
+  S = fresh(); S.screen='play'; S.mode='run'; S.queue=Q.map(q=>q.id); S.startedAt=Date.now();
+  S.phase='intro'; render(); scrollTop();
+}
+function startReplay(lv){
+  const keep = {results:S.results, xp:S.xp, startedAt:S.startedAt};
+  S = fresh(); Object.assign(S, keep);
+  S.screen='play'; S.mode='replay'; S.replayLevel=lv; S.queue=Q.filter(q=>q.lv===lv).map(q=>q.id);
+  S.startedAt = Date.now(); S.phase='intro'; render(); scrollTop();
+}
+
+function isFirstOfLevel(){ if(S.pos===0) return true; return Q[S.queue[S.pos-1]].lv !== cur().lv; }
+
+function beginQuestion(){
+  const q = cur();
+  const idx = q.opts.map((_,i)=>i);
+  S.order = q.ord ? idx : shuffle(idx);
+  S.phase = q.yell ? 'yell' : 'ask';
+  S.picked=null; S.shownAt=Date.now(); S.bonus={why:false,trap:null,vibes:false};
+}
+
+function renderPlay(){
+  const q = cur(); const L = levelOf(q);
+  let body='';
+  if(S.phase==='intro'){
+    const qs = Q.filter(x=>x.lv===L.n).length;
+    body = `<article class="card stack">
+      <div class="intro-head">${tile(L)}<div class="stack" style="gap:6px"><span class="label">Level ${L.n} · ${qs} questions · ${L.mins} min budget</span><h2>${L.name}</h2></div></div>
+      <div class="intro-body">${L.intro}</div>
+      <div class="row"><button class="btn primary" id="enter">Enter the room</button></div>
+    </article>`;
+  } else if(S.phase==='ko'){
+    body = `<article class="card stack ko">
+      <h2>Out of lives</h2>
+      <p style="margin:0">You’re at <b>${scoreOf(S.mode==='run'?S.results:S.replay)}</b> points with ${S.queue.length-S.pos} question${S.queue.length-S.pos===1?'':'s'} left. The redo still counts as practice. Keep going to finish the run with lives off, or start over.</p>
+      <div class="row"><button class="btn primary" id="cont">Keep going</button><button class="btn" id="restart">Restart the run</button></div>
+    </article>`;
+  } else {
+    const n = S.pos+1, of = S.queue.length;
+    let opts = S.order.map((oi,k)=>{
+      const cls = S.phase==='right' && oi===q.a ? 'right' : (S.phase==='wrong' && oi===S.picked ? 'wrong' : '');
+      const dis = S.phase==='wrong'||S.phase==='right'||S.phase==='yell';
+      return `<button class="opt ${cls}" data-o="${oi}" ${dis?'disabled':''}><span class="k">${k+1}</span><span>${q.opts[oi]}</span></button>`;
+    }).join('');
+    let lower='';
+    if(S.phase==='yell'){
+      lower = `<div class="yell"><p style="margin:0">There’s a <span class="cplus">C+</span> in this room. Before anything else:</p><button class="yell-btn" id="yell">CHECK THE NEIGHBORS</button></div>`;
+    } else if(S.phase==='ask'){
+      lower = `<div class="peek" id="peekrow"><svg class="ring" viewBox="0 0 22 22"><circle class="bgc" cx="11" cy="11" r="9"/><circle class="fg" id="ringfg" cx="11" cy="11" r="9" style="stroke-dashoffset:57"/></svg><span id="peektext">Think first. The rule hint unlocks in 8 seconds.</span></div>`;
+    } else if(S.phase==='hint'){
+      lower = `<div class="panel hint"><span class="label">Rule</span><p>${q.rule}</p></div>`;
+    } else if(S.phase==='wrong'){
+      lower = `<div class="panel bad" role="alert"><h3>−1 life. Read the rule, then redo it.</h3><p>${q.rule}</p><div class="row"><button class="btn primary" id="redo">Got it, redo</button></div></div>`;
+    } else if(S.phase==='right'){
+      const r = (S.mode==='run'?S.results:S.replay)[q.id];
+      const gained = r && r.first ? '+1 point · +1 XP' : '+1 XP (redo, no point)';
+      const wrongs = S.order.filter(oi=>oi!==q.a);
+      const trapChips = wrongs.map(oi=>{
+        let c=''; if(S.bonus.trap!==null){ if(oi===q.trap) c = S.bonus.trap===q.trap?'hit':'reveal'; else if(oi===S.bonus.trap) c='miss'; }
+        return `<button class="chip ${c}" data-trap="${oi}" ${S.bonus.trap!==null?'disabled':''}>${q.opts[oi]}</button>`}).join('');
+      lower = `<div class="panel ok" role="status"><h3>Correct. <span class="xpflash">${gained}</span></h3>
+        <div class="bonus">
+          <span class="label">Bonus XP (optional)</span>
+          ${S.bonus.why ? `<p><span class="xpflash">+2 XP</span> Check yourself: ${q.why}</p>` :
+            `<div class="row"><button class="chip" id="why">I can explain why in one sentence (+2)</button></div>`}
+          <p style="font-size:15px">Which wrong answer was the trap? (+1)</p>
+          <div class="chips">${trapChips}</div>
+          ${S.bonus.trap!==null?`<p style="font-size:15px">${S.bonus.trap===q.trap?'<span class="xpflash">+1 XP</span> ':''}${q.trapWhy}</p>`:''}
+        </div>
+        <div class="row" style="justify-content:space-between">
+          <button class="btn primary" id="next">${S.pos+1<S.queue.length?'Next question':'See results'}</button>
+          ${S.bonus.vibes?'<span style="font-size:14px">Honest. −1 life.</span>':'<button class="linkish" id="vibes">That was a vibes guess (−1 life)</button>'}
+        </div></div>`;
+    }
+    body = `<article class="card stack">
+      <div class="qhead"><span class="qnum">Level ${L.n} · ${L.name}</span><span class="label">Q${S.mode==='run'?q.id+1:n} of ${S.mode==='run'?20:of}</span></div>
+      <p class="prompt">${q.prompt}</p>
+      <div class="struct">${q.struct}</div>
+      ${S.phase==='yell'?'':`<div class="opts ${q.doors?'doors':''}">${opts}</div>`}
+      ${lower}
+    </article>`;
+  }
+  app.innerHTML = bar() + body;
+  bindPlay();
+  tickClock();
+}
+
+function bindPlay(){
+  const on=(id,fn)=>{const el=$('#'+id); if(el) el.onclick=fn};
+  on('enter',()=>{beginQuestion(); render(); focusFirst()});
+  on('cont',()=>{ if(S.pendingIntro) S.phase='intro'; else beginQuestion(); render(); focusFirst() });
+  on('restart',startRun);
+  on('yell',e=>{const b=e.currentTarget; b.classList.add('shouted'); b.textContent='CHECKED ✓'; setTimeout(()=>{S.phase='ask'; S.shownAt=Date.now(); render(); focusFirst()},450)});
+  on('redo',()=>{const q=cur(); S.order = q.ord?S.order:shuffle(S.order); S.phase='ask'; S.picked=null; S.shownAt=Date.now()-PEEK_MS; render(); focusFirst()});
+  on('why',()=>{S.bonus.why=true; S.xp+=2; render()});
+  on('vibes',()=>{S.bonus.vibes=true; loseLife(); render()});
+  on('next',next);
+  app.querySelectorAll('.opt').forEach(b=>b.onclick=()=>pick(+b.dataset.o));
+  app.querySelectorAll('[data-trap]').forEach(b=>b.onclick=()=>{const q=cur(); S.bonus.trap=+b.dataset.trap; if(S.bonus.trap===q.trap) S.xp+=1; render()});
+  const peek=$('#peektext'); if(peek) peek.parentElement.addEventListener('click',()=>{if(Date.now()-S.shownAt>=PEEK_MS){S.phase='hint'; render()}});
+}
+function focusFirst(){const b=app.querySelector('.opt:not(:disabled)'); if(b) b.focus({preventScroll:true})}
+
+function loseLife(){ if(S.ko) return; S.lives=Math.max(0,S.lives-1); }
+
+function pick(oi){
+  if(!(S.phase==='ask'||S.phase==='hint')) return;
+  const q=cur(); const res = S.mode==='run'?S.results:S.replay;
+  S.picked=oi;
+  if(oi===q.a){
+    if(!(q.id in res)) res[q.id]={first:true};
+    S.xp+=1; S.phase='right';
+  } else {
+    if(!(q.id in res)) res[q.id]={first:false, picked:q.opts[oi]};
+    loseLife(); S.phase='wrong';
+  }
+  render();
+  if(S.phase==='right'){const n=$('#next'); if(n) n.focus({preventScroll:true})}
+  else {const r=$('#redo'); if(r) r.focus({preventScroll:true})}
+}
+
+function next(){
+  S.pos++;
+  if(S.pos>=S.queue.length) return finish();
+  const intro = isFirstOfLevel();
+  if(S.lives===0 && !S.ko){ S.ko=true; S.pendingIntro=intro; S.phase='ko'; render(); scrollTop(); return; }
+  if(intro) S.phase='intro'; else beginQuestion();
+  render(); scrollTop(); focusFirst();
+}
+
+function finish(){
+  if(S.mode==='replay'){ S.screen='replayDone'; render(); scrollTop(); return; }
+  S.finishedAt=Date.now(); S.screen='results';
+  const score=scoreOf(S.results); const best=store.get('orgo-best');
+  if(!best || score>best.score || (score===best.score && S.xp>best.xp)) store.set('orgo-best',{score,xp:S.xp});
+  render(); scrollTop();
+}
+
+function verdict(score){
+  if(score>=19) return {cls:'boss', badge:'Boss defeated', advice:'You know the decision system. Stop rereading and go do practice problems.'};
+  if(score>=18) return {cls:'ready', badge:'Test ready', advice:'You know the decision system. Stop rereading and go do practice problems.'};
+  if(score>=16) return {cls:'ready', badge:'Test ready', advice:'Redo only the level you missed, then move on to practice problems.'};
+  if(score>=15) return {cls:'not', badge:'Almost', advice:'Redo only the level you missed.'};
+  return {cls:'not', badge:'Not yet', advice:'Do Levels 1–3 again before touching harder product questions.'};
+}
+
+function renderResults(){
+  const score=scoreOf(S.results); const v=verdict(score);
+  const used = (S.finishedAt||Date.now())-S.startedAt;
+  const rows = LEVELS.map(L=>{
+    const qs=Q.filter(q=>q.lv===L.n); const got=qs.filter(q=>S.results[q.id]&&S.results[q.id].first).length;
+    const miss = got<qs.length;
+    return `<tr><td>${L.n}. ${L.name}</td><td class="num">${got}/${qs.length}</td><td>${miss?`<button class="btn quiet" data-replay="${L.n}" style="padding:6px 12px">Redo level</button>`:'<span class="label" style="color:var(--good)">Clear</span>'}</td></tr>`}).join('');
+  const misses = Q.filter(q=>S.results[q.id] && !S.results[q.id].first);
+  const lowLevels = score<15;
+  app.innerHTML = `
+  <section class="verdict">
+    <span class="label">Run complete · ${fmt(used)} used of 30:00 · ${S.xp} XP</span>
+    <div class="big">${score}<small>/20</small></div>
+    <div><span class="badge ${v.cls}">${v.badge}</span></div>
+    <p style="margin:0;max-width:60ch">${v.advice}</p>
+  </section>
+  <div class="stack">
+    ${lowLevels?`<div class="row"><button class="btn primary" id="l123">Replay Levels 1–3</button></div>`:''}
+    <div class="card stack"><span class="label">By level</span><div class="tablewrap"><table><thead><tr><th>Level</th><th>First try</th><th></th></tr></thead><tbody>${rows}</tbody></table></div></div>
+    ${misses.length?`<div class="card stack"><span class="label">Rules you paid a life for</span><ul class="miss-list">${misses.map(q=>`<li><b>Q${q.id+1}</b> · you picked “${S.results[q.id].picked}”, answer “${q.opts[q.a]}”.<br>${q.rule}</li>`).join('')}</ul></div>`:''}
+    <div class="card stack"><span class="label">Say this on every reaction problem</span><ol class="script">${SCRIPT.map(s=>`<li>${s}</li>`).join('')}</ol></div>
+    <div class="row"><button class="btn" id="again">New 30-minute run</button></div>
+  </div>`;
+  app.querySelectorAll('[data-replay]').forEach(b=>b.onclick=()=>startReplay(+b.dataset.replay));
+  const l=$('#l123'); if(l) l.onclick=()=>{ const keep={results:S.results,xp:S.xp}; S=fresh(); Object.assign(S,keep); S.screen='play'; S.mode='replay'; S.replayLevel=0; S.queue=Q.filter(q=>q.lv<=3).map(q=>q.id); S.startedAt=Date.now(); S.phase='intro'; render(); scrollTop(); };
+  $('#again').onclick=startRun;
+}
+
+function renderReplayDone(){
+  const qs=S.queue.map(i=>Q[i]); const got=qs.filter(q=>S.replay[q.id]&&S.replay[q.id].first).length;
+  const name = S.replayLevel ? `Level ${S.replayLevel}: ${LEVELS[S.replayLevel-1].name}` : 'Levels 1–3';
+  app.innerHTML = `<section class="verdict"><span class="label">Replay · ${name}</span>
+    <div class="big">${got}<small>/${qs.length}</small></div>
+    <p style="margin:0">${got===qs.length?'Clean. That room is solved.':'Still dropping points here. Read the rules below once, then run it again.'}</p></section>
+    <div class="stack">
+    ${got<qs.length?`<ul class="miss-list">${qs.filter(q=>!(S.replay[q.id]&&S.replay[q.id].first)).map(q=>`<li><b>Q${q.id+1}</b> · ${q.rule}</li>`).join('')}</ul>`:''}
+    <div class="row"><button class="btn primary" id="back">Back to run results</button><button class="btn" id="again">Replay again</button></div></div>`;
+  $('#back').onclick=()=>{S.screen='results'; S.mode='run'; S.lives=3; render(); scrollTop()};
+  const lv=S.replayLevel; $('#again').onclick=()=>{ if(lv) startReplay(lv); else { const keep={results:S.results,xp:S.xp}; S=fresh(); Object.assign(S,keep); S.screen='play'; S.mode='replay'; S.replayLevel=0; S.queue=Q.filter(q=>q.lv<=3).map(q=>q.id); S.startedAt=Date.now(); S.phase='intro'; render(); } };
+}
+
+function scrollTop(){try{window.scrollTo({top:0})}catch(e){}}
+
+
+function tickClock(){
+  const c=$('#clock'); if(!c || !S.startedAt) return;
+  const budget = S.mode==='run' ? TOTAL_MS : [...new Set(S.queue.map(i=>Q[i].lv))].reduce((t,lv)=>t+LEVELS[lv-1].mins*60000,0);
+  const left = budget - (Date.now()-S.startedAt);
+  c.textContent = left>=0 ? fmt(left) : 'over '+fmt(-left).replace('+','');
+  c.classList.toggle('over', left<0);
+  const fg=$('#ringfg');
+  if(fg && S.phase==='ask'){
+    const p=Math.min(1,(Date.now()-S.shownAt)/PEEK_MS);
+    fg.style.strokeDashoffset = String(57*(1-p));
+    const t=$('#peektext');
+    if(p>=1 && t && !t.dataset.ready){t.dataset.ready='1'; t.innerHTML='<button class="linkish" style="font-size:14px">Peek at the rule</button>';}
+  }
+}
+setInterval(tickClock, 250);
+
+document.addEventListener('keydown',e=>{
+  if(S.screen!=='play' || e.metaKey || e.ctrlKey || e.altKey) return;
+  if(/^[1-4]$/.test(e.key) && (S.phase==='ask'||S.phase==='hint')){
+    const oi=S.order[+e.key-1]; if(oi!==undefined){e.preventDefault(); pick(oi)}
+  } else if(e.key==='Enter' && document.activeElement===document.body){
+    const b=$('#next')||$('#redo')||$('#enter')||$('#yell')||$('#cont'); if(b){e.preventDefault(); b.click()}
+  }
+});
+
+// keep a run alive across page updates
+function start(data){ if(data && data.S) S=data.S; render(); }
+try{ window.claude?.hot?.snapshot?.(()=>({S})) }catch(e){}
+if(window.claude?.hot?.ready) window.claude.hot.ready(start); else start(window.claude?.hot?.data ?? {});
+})();
+</script>
+</body>
+</html>
