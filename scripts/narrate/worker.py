@@ -37,7 +37,10 @@ def auth_headers(key):
 
 
 def explain_key_problem():
-    kind = ("a publishable key: it needs the SECRET one" if KEY.startswith("sb_publishable_")
+    kind = ("only part of a key: the service_role key is about 200 characters with two dots, "
+            "and copying on a phone often stops at the first dot. The sb_secret_ key has no dots "
+            "and is easier to copy" if KEY.startswith("eyJ") and KEY.count(".") < 2
+            else "a publishable key: it needs the SECRET one" if KEY.startswith("sb_publishable_")
             else "the anon key: it needs the service_role one" if '"role":"anon"' in _jwt_payload(KEY)
             else "not recognised by this Supabase project")
     return ("Supabase rejected SUPABASE_SERVICE_ROLE_KEY (%s, %d characters, starts %r). "
