@@ -57,7 +57,7 @@ sub{font-size:.7em;line-height:0}
 .life.gone path{fill:none;stroke:var(--line);stroke-width:2}
 .clock{font-family:var(--mono);font-weight:700;font-size:20px;font-variant-numeric:tabular-nums}
 .clock.over{color:var(--cation)}
-.ticks{display:grid;grid-template-columns:repeat(20,1fr);gap:3px}
+.ticks{display:grid;grid-template-columns:repeat(auto-fit,minmax(0,1fr));gap:3px}
 .tick{height:6px;border-radius:2px;background:var(--sunk);border:1px solid var(--line)}
 .tick.ok{background:var(--good);border-color:var(--good)}
 .tick.redo{background:var(--warn);border-color:var(--warn)}
@@ -91,6 +91,13 @@ sub{font-size:.7em;line-height:0}
 .script li{counter-increment:s;display:grid;grid-template-columns:28px 1fr;gap:8px;font-size:15px}
 .script li::before{content:counter(s);font-family:var(--mono);font-weight:700;color:var(--accent)}
 .best{font-size:14px;color:var(--ink-2)}
+.rounds{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:10px}
+.round{display:grid;gap:4px;text-align:left;border:2px solid var(--line);background:var(--surface);border-radius:12px;padding:14px 16px}
+.round:hover{border-color:var(--accent)}
+.round.fresh{border-color:var(--accent);background:var(--accent-soft)}
+.rname{font-family:var(--display);font-weight:700;font-size:18px;display:flex;gap:8px;align-items:center}
+.rnote{font-size:15px}
+.new{font-family:var(--body);font-size:11px;letter-spacing:.08em;text-transform:uppercase;background:var(--accent);color:var(--accent-ink);border-radius:999px;padding:2px 8px}
 
 /* level intro */
 .intro-head{display:flex;gap:18px;align-items:center}
@@ -99,7 +106,26 @@ sub{font-size:.7em;line-height:0}
 .chooser div{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px}
 .chooser span:last-child{font-weight:700;color:var(--accent)}
 .intro-body p{margin:0}
-.intro-body{display:grid;gap:12px;max-width:62ch}
+.intro-body{display:grid;gap:12px;max-width:66ch}
+.roomnotes summary{cursor:pointer;font-weight:700;color:var(--cation)}
+.roomnotes[open] summary{margin-bottom:12px}
+.roomnotes .intro-body{background:var(--surface);border-radius:10px;padding:14px}
+.swipe{font-size:13px;color:var(--ink-2)}
+@media (min-width:600px){.swipe{display:none}}
+.nh{font-family:var(--body);font-size:16px;font-weight:700;margin-top:6px}
+.notes{margin:0;padding-left:20px;display:grid;gap:6px;font-size:16px}
+.doorcards{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px}
+.doorcards div{display:grid;gap:4px;background:var(--sunk);border-radius:10px;padding:12px 14px;align-content:start}
+.doorcards b{font-family:var(--display);font-size:18px;color:var(--accent)}
+.doorcards small{font-size:13px;color:var(--ink-2);line-height:1.45}
+.dtable{min-width:520px}
+.dtable th,.dtable td{font-size:14px;vertical-align:top}
+.dtable tbody th{font-family:var(--mono);font-size:15px;color:var(--ink);letter-spacing:0;text-transform:none}
+.dtable td{font-weight:700}
+.dtable small{font-weight:400;text-transform:none;letter-spacing:0}
+.intro-body h3 + *{margin-top:-4px}
+.chooser span:first-child{min-width:0}
+
 
 /* question */
 .qhead{display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap}
@@ -173,6 +199,8 @@ td.num{font-family:var(--mono);font-weight:700}
 .miss-list b{font-family:var(--mono)}
 
 @media (max-width:480px){
+  .chooser div{grid-template-columns:1fr;gap:0}
+  .chooser div + div{border-top:1px solid var(--line);padding-top:6px}
   body{font-size:16px}
   .card{padding:18px}
   .prompt{font-size:19px}
@@ -197,26 +225,94 @@ const PEEK_MS = 8000;
 
 const LEVELS = [
   {n:1, sym:'C°', name:'Find the important carbon', short:'Carbon', mins:4,
-   intro:`<p>For every structure, first ask: <b>which carbon is holding Br, Cl, I, OTs, OMs, OTf, or OH?</b></p>
-   <p>Then count how many <i>other</i> carbons touch that carbon.</p>
-   <div class="chooser"><div><span>1 carbon touching it</span><span>1°</span></div><div><span>2 carbons touching it</span><span>2°</span></div><div><span>3 carbons touching it</span><span>3°</span></div></div>`},
+   intro:`<p>For every structure, first ask: <b>which carbon is holding Br, Cl, I, OTs, OMs, OTf, or OH?</b> Then count how many <i>other</i> carbons touch that one carbon.</p>
+   <div class="chooser"><div><span>0 carbons touching it (CH<sub>3</sub>–X)</span><span>methyl</span></div><div><span>1 carbon touching it</span><span>1°</span></div><div><span>2 carbons touching it</span><span>2°</span></div><div><span>3 carbons touching it</span><span>3°</span></div></div>
+   <h3 class="nh">How to count without getting tricked</h3>
+   <ul class="notes">
+     <li><b>Count carbons only.</b> H atoms and the leaving group never count. (CH<sub>3</sub>)<sub>3</sub>C–Br is 3°, not 4°.</li>
+     <li><b>Only direct neighbors count.</b> How long the chain is doesn’t matter. CH<sub>3</sub>CH<sub>2</sub>CH<sub>2</sub>–Cl is still 1°.</li>
+     <li><b>Look at the right carbon.</b> In (CH<sub>3</sub>)<sub>3</sub>C–CH<sub>2</sub>–Br the crowded carbon is next door; the carbon holding Br is a 1° CH<sub>2</sub>.</li>
+     <li><b>Ring carbons count.</b> A ring carbon holding Br has a ring neighbor on each side, so it’s at least 2°.</li>
+     <li><b>Carbons in parentheses count.</b> CH<sub>3</sub>C(CH<sub>3</sub>)(OH)CH<sub>2</sub>CH<sub>3</sub>: the C–OH carbon touches three carbons → 3°.</li>
+   </ul>
+   <h3 class="nh">What counts as a leaving group</h3>
+   <ul class="notes">
+     <li><b>Br, Cl, I</b>: good leaving groups on their own.</li>
+     <li><b>OTs, OMs, OTf</b>: sulfonates, even better leaving groups. Classify their carbon exactly like a halide’s.</li>
+     <li><b>OH</b>: a bad leaving group by itself. Acid (H<sub>2</sub>SO<sub>4</sub>, H<sub>3</sub>PO<sub>4</sub>, HBr) turns it into –OH<sub>2</sub><sup>+</sup>, which leaves as water.</li>
+   </ul>
+   <h3 class="nh">Why this is step one</h3>
+   <p>1° carbons are open, so attackers reach them easily (SN2), but they make terrible C+. 3° carbons are blocked from behind (no SN2), but they make the most stable C+ (SN1/E1). 2° can go either way, and the reagent decides.</p>`},
   {n:2, sym:'Dr', name:'Pick the door', short:'Doors', mins:6,
-   intro:`<p>There are only four doors.</p>
-   <div class="chooser"><div><span>LG leaves → C+ → attacker comes in</span><span>SN1</span></div><div><span>Attacker comes in while LG leaves</span><span>SN2</span></div><div><span>LG leaves → C+ → make C=C</span><span>E1</span></div><div><span>Base grabs H while LG leaves → C=C</span><span>E2</span></div></div>
-   <p>The stupid-simple chooser:</p>
+   intro:`<p>There are only four doors. Two make a C+ first, two do everything in one step.</p>
+   <div class="doorcards">
+     <div><b>SN1</b><span>LG leaves → C+ → attacker comes in.</span><small>2 steps · needs a stable C+ (3°, sometimes 2°) · weak nucleophile · protic solvent · C+ can rearrange · product is a mix of both faces (racemic)</small></div>
+     <div><b>SN2</b><span>Attacker comes in from the back while LG leaves.</span><small>1 step · needs an open carbon (methyl, 1°, 2°; never 3°) · strong nucleophile · aprotic solvent helps · no C+ · the carbon flips (inversion)</small></div>
+     <div><b>E1</b><span>LG leaves → C+ → a neighbor H comes off → C=C.</span><small>2 steps · same conditions as SN1 plus heat · C+ can rearrange · usually Zaitsev</small></div>
+     <div><b>E2</b><span>Base grabs an H on the neighbor carbon while LG leaves → C=C.</span><small>1 step · strong base · works on 1° (bulky base), 2° and 3° · no C+, so no rearrangement · Zaitsev unless the base is bulky</small></div>
+   </div>
+   <h3 class="nh">Sort the reagent first</h3>
+   <ul class="notes">
+     <li><b>Nucleophile</b> = attacks a carbon. <b>Base</b> = grabs an H. Many reagents can do both; the question is which one wins.</li>
+     <li><b>Negative charge usually means strong.</b> OH<sup>−</sup>, MeO<sup>−</sup>, EtO<sup>−</sup> (NaOMe, NaOEt) are strong bases and strong nucleophiles.</li>
+     <li><b>Strong nucleophile, weak base:</b> I<sup>−</sup>, Br<sup>−</sup>, Cl<sup>−</sup>, CN<sup>−</sup>, HS<sup>−</sup>/RS<sup>−</sup>, N<sub>3</sub><sup>−</sup>. These attack carbon and rarely eliminate → substitution.</li>
+     <li><b>Bulky strong base:</b> t-BuOK. Too big to attack carbon, so it eliminates (E2), usually Hofmann.</li>
+     <li><b>Weak (neutral):</b> H<sub>2</sub>O, MeOH, EtOH. They can’t push anything off, so they wait for a C+ (SN1/E1).</li>
+     <li><b>Heat (Δ)</b> tips a close call toward elimination.</li>
+   </ul>
+   <h3 class="nh">The full decision table</h3>
+   <p class="swipe">On a phone, swipe the table sideways to see the strong-base and bulky-base columns.</p>
+   <div class="tablewrap"><table class="dtable">
+     <thead><tr><th>Carbon</th><th>Weak, protic<br><small>H<sub>2</sub>O, ROH</small></th><th>Strong Nu, weak base<br><small>I<sup>−</sup>, CN<sup>−</sup>, HS<sup>−</sup>, N<sub>3</sub><sup>−</sup></small></th><th>Strong base, small<br><small>OH<sup>−</sup>, MeO<sup>−</sup>, EtO<sup>−</sup></small></th><th>Bulky base<br><small>t-BuOK</small></th></tr></thead>
+     <tbody>
+       <tr><th>1°</th><td>no reaction</td><td>SN2</td><td>SN2 (major)</td><td>E2</td></tr>
+       <tr><th>2°</th><td>SN1/E1 (slow)</td><td>SN2</td><td>E2 (major)</td><td>E2</td></tr>
+       <tr><th>3°</th><td>SN1/E1</td><td>SN1</td><td>E2</td><td>E2</td></tr>
+     </tbody></table></div>
+   <p>Alcohol + acid (H<sub>2</sub>SO<sub>4</sub> or H<sub>3</sub>PO<sub>4</sub>) + heat is its own case: OH becomes water, water leaves, C+ forms → E1 (dehydration). Alcohol + HBr/HCl without heat → substitution (SN1 on 2°/3°, SN2 on 1°).</p>
+   <h3 class="nh">The stupid-simple chooser</h3>
    <div class="chooser"><div><span>1° + strong nucleophile</span><span>SN2</span></div><div><span>3° + strong base</span><span>E2</span></div><div><span>3° + weak / protic</span><span>SN1/E1</span></div><div><span>heat</span><span>→ elimination</span></div><div><span>2°</span><span>look harder at reagent</span></div></div>`},
   {n:3, sym:'C+', name:'Carbocation panic room', short:'C+ Panic', mins:5,
    intro:`<p>Whenever you see <span class="cplus">C+</span>: <b>STOP.</b> Ask, “Can a neighbor make this C+ happier?”</p>
-   <div class="chooser"><div><span>stability</span><span>3° C+ &gt; 2° C+ &gt; 1° C+</span></div><div><span>neighbor C–H bond → C+</span><span>hydride shift</span></div><div><span>neighbor C–C bond → C+</span><span>alkyl shift</span></div><div><span>whole CH<sub>3</sub> moves</span><span>methyl shift</span></div></div>
-   <p>The arrow starts at the <b>bond</b> and points toward C+. Never start the arrow at C+.</p>
+   <h3 class="nh">When does a C+ even exist?</h3>
+   <ul class="notes">
+     <li>Only in <b>SN1</b> and <b>E1</b>, and when acid turns an alcohol’s OH into water that leaves.</li>
+     <li><b>SN2 and E2 never make a C+</b>, so they never rearrange. Don’t check the neighbors there.</li>
+   </ul>
+   <h3 class="nh">What makes a C+ happy</h3>
+   <div class="chooser"><div><span>more carbon groups on the C+</span><span>3° C+ &gt; 2° C+ &gt; 1° C+</span></div></div>
+   <p>Carbon groups push electron density toward the empty spot, which steadies it. A C+ will shift only if the new C+ is <b>more</b> stable (2° → 3°). Same or worse means no shift.</p>
+   <h3 class="nh">The two shifts</h3>
+   <div class="chooser"><div><span>neighbor carbon has an H</span><span>hydride shift</span></div><div><span>neighbor has no H, but has CH<sub>3</sub> / C groups</span><span>methyl / alkyl shift</span></div></div>
+   <ul class="notes">
+     <li>The group moves from the carbon <b>directly next to</b> the C+ (a 1,2-shift), bringing its bond electrons with it.</li>
+     <li>After the shift, the + sits on the carbon the group left. The product (attacker added, or C=C formed) comes from the <b>new</b> C+.</li>
+     <li>The curved arrow starts at the <b>bond</b> (C–H or C–CH<sub>3</sub>) and points toward C+. Never start an arrow at C+; it has no electrons to push.</li>
+   </ul>
    <p>House rule: in this room you must yell <b>CHECK THE NEIGHBORS</b> before you answer.</p>`},
   {n:4, sym:'Zb', name:'Double-bond battle', short:'C=C', mins:5,
-   intro:`<p>Count only carbon groups <b>directly attached</b> to the two double-bond carbons.</p>
-   <div class="chooser"><div><span>1 carbon group</span><span>mono</span></div><div><span>2</span><span>di</span></div><div><span>3</span><span>tri</span></div><div><span>4</span><span>tetra</span></div></div>
-   <div class="chooser"><div><span>more substituted alkene</span><span>Zaitsev</span></div><div><span>less substituted alkene</span><span>Hofmann</span></div><div><span>internal vs terminal</span><span>internal usually wins</span></div></div>`},
+   intro:`<p>For C=C questions, count only carbon groups <b>directly attached</b> to the two double-bond carbons. H atoms and the double-bond carbons themselves don’t count.</p>
+   <div class="chooser"><div><span>1 carbon group (R–CH=CH<sub>2</sub>)</span><span>mono</span></div><div><span>2 (e.g. R<sub>2</sub>C=CH<sub>2</sub> or RCH=CHR)</span><span>di</span></div><div><span>3 (R<sub>2</sub>C=CHR)</span><span>tri</span></div><div><span>4 (R<sub>2</sub>C=CR<sub>2</sub>)</span><span>tetra</span></div></div>
+   <h3 class="nh">Which alkene wins</h3>
+   <ul class="notes">
+     <li><b>More substituted = more stable.</b> Tetra &gt; tri &gt; di &gt; mono.</li>
+     <li><b>Zaitsev</b> = the more substituted alkene. That’s the normal answer for E1 and for E2 with a small base (NaOEt, NaOMe, NaOH).</li>
+     <li><b>Hofmann</b> = the less substituted alkene. You get it with a <b>bulky base</b> (t-BuOK), which can only reach the exposed H’s on an outer CH<sub>3</sub>.</li>
+     <li>Internal C=C (in the middle of a chain) usually beats terminal C=C (at the end), because internal is more substituted.</li>
+     <li>Same substitution: <b>trans</b> is usually more stable than cis, because the big groups sit on opposite sides instead of bumping.</li>
+   </ul>
+   <h3 class="nh">How to find the choices</h3>
+   <p>Find the carbon holding the leaving group. Each neighboring carbon that has an H is a possible place for the C=C. Draw each option, count its carbon groups, then apply Zaitsev or Hofmann.</p>`},
   {n:5, sym:'Rx', name:'Reagent translator', short:'Reagents', mins:4,
-   intro:`<p>You don’t need the full names first. Translate them into behavior.</p>
-   <div class="chooser"><div><span>EtOH / MeOH / H<sub>2</sub>O</span><span>weak Nu, weak base, protic</span></div><div><span>DMSO / DMF / acetone</span><span>aprotic → helps SN2</span></div><div><span>NaOEt / NaOMe</span><span>strong base + good Nu</span></div><div><span>t-BuOK</span><span>bulky strong base</span></div><div><span>OTs / OMs / OTf</span><span>leaving groups</span></div><div><span>H<sub>2</sub>SO<sub>4</sub> / H<sub>3</sub>PO<sub>4</sub></span><span>acids</span></div></div>`},
+   intro:`<p>You don’t need the full names first. Translate each reagent into behavior, then go back to the Level 2 table.</p>
+   <div class="chooser"><div><span>EtOH / MeOH / H<sub>2</sub>O</span><span>weak Nu, weak base, protic</span></div><div><span>DMSO / DMF / acetone</span><span>aprotic → helps SN2</span></div><div><span>NaOEt / NaOMe / NaOH</span><span>strong base + good Nu</span></div><div><span>t-BuOK</span><span>bulky strong base</span></div><div><span>NaI, NaCN, NaSH, NaN<sub>3</sub></span><span>strong Nu, weak base</span></div><div><span>OTs / OMs / OTf</span><span>leaving groups</span></div><div><span>H<sub>2</sub>SO<sub>4</sub> / H<sub>3</sub>PO<sub>4</sub></span><span>acids</span></div></div>
+   <h3 class="nh">What “protic” and “aprotic” mean</h3>
+   <ul class="notes">
+     <li><b>Protic</b> solvents have an O–H or N–H (water, alcohols). They H-bond around a nucleophile and slow it down, and they steady C+ and the leaving group. Result: they favor <b>SN1/E1</b>.</li>
+     <li><b>Aprotic</b> solvents have no O–H (DMSO, DMF, acetone). The nucleophile stays “naked” and aggressive. Result: they favor <b>SN2</b>.</li>
+   </ul>
+   <h3 class="nh">Reading the Na or K</h3>
+   <p>Na<sup>+</sup> and K<sup>+</sup> are just along for the ride. Look at the negative part: NaOEt means EtO<sup>−</sup>, t-BuOK means t-BuO<sup>−</sup>, NaCN means CN<sup>−</sup>.</p>`},
 ];
 
 // ord: keep options in natural order (scales). doors: render as doors.
@@ -326,7 +422,127 @@ const Q = [
    why:'Bulky strong base means E2 with the less substituted (Hofmann) alkene.',
    trapWhy:'It’s too bulky to be a good nucleophile, so SN2 is the trap.'},
 ];
+// Round 2: same five skills, new questions.
+const Q2 = [
+  {lv:1, prompt:'Is the carbon holding Cl 1°, 2°, or 3°?', struct:'CH<sub>3</sub>–CH<sub>2</sub>–<mark>CH<sub>2</sub></mark>–<span class="lg">Cl</span>',
+   opts:['1°','2°','3°','4°'], a:0, trap:2, ord:true,
+   rule:'Only count carbons touching the C–Cl carbon. The end CH<sub>2</sub> touches one CH<sub>2</sub> → 1°. The rest of the chain doesn’t matter.',
+   why:'The C–Cl carbon is at the end of the chain and touches one carbon, so it’s 1°.',
+   trapWhy:'3° is what you get by counting all three carbons in the chain.'},
+  {lv:1, prompt:'Bromocyclohexane: is the ring carbon holding Br 1°, 2°, or 3°?', struct:'cyclohexane ring, one <mark>CH</mark>–<span class="lg">Br</span>',
+   opts:['1°','2°','3°','4°'], a:1, trap:0, ord:true,
+   rule:'Ring carbons are still carbons. The C–Br ring carbon touches the ring carbon on each side → 2°.',
+   why:'It has a ring carbon on each side, so it touches two carbons: 2°.',
+   trapWhy:'1° is what you get if you forget one side of the ring.'},
+  {lv:1, prompt:'Classify the carbon holding OH.', struct:'CH<sub>3</sub>–<mark>C</mark>(CH<sub>3</sub>)(<span class="lg">OH</span>)–CH<sub>2</sub>–CH<sub>3</sub>',
+   opts:['1°','2°','3°','4°'], a:2, trap:1, ord:true,
+   rule:'The C–OH carbon touches a CH<sub>3</sub>, another CH<sub>3</sub>, and a CH<sub>2</sub> → 3 carbons → 3°.',
+   why:'Two methyls plus the ethyl’s CH<sub>2</sub> make three carbon neighbors: 3°.',
+   trapWhy:'2° is what you get if you miss the CH<sub>3</sub> written in parentheses.'},
+  {lv:1, prompt:'Neopentyl bromide looks crowded. Classify the carbon holding Br.', struct:'(CH<sub>3</sub>)<sub>3</sub>C–<mark>CH<sub>2</sub></mark>–<span class="lg">Br</span>',
+   opts:['1°','2°','3°','4°'], a:0, trap:2, ord:true,
+   rule:'Look at the carbon holding Br, not the busy carbon next door. The CH<sub>2</sub> touches only one carbon → 1°.',
+   why:'The C–Br carbon is a CH<sub>2</sub> with one carbon neighbor, so it’s 1°, however crowded the neighbor is.',
+   trapWhy:'3° is the classification of the neighbor, not of the carbon holding Br.'},
+
+  {lv:2, prompt:'2° bromide + NaI in acetone. Which door?', struct:'2° R–<span class="lg">Br</span> + <mark>NaI</mark> / acetone',
+   opts:['SN1','SN2','E1','E2'], a:1, trap:0, doors:true,
+   rule:'I<sup>−</sup> is a strong nucleophile and a weak base. Acetone is aprotic, which helps SN2. On a 2° carbon, the reagent decides: SN2.',
+   why:'Strong nucleophile in an aprotic solvent on a reachable 2° carbon: SN2.',
+   trapWhy:'SN1 needs a weak nucleophile and a protic solvent. Acetone is aprotic.'},
+  {lv:2, prompt:'3° chloride sitting in ethanol, no heat, nothing else added. Which door?', struct:'(CH<sub>3</sub>)<sub>3</sub>C–<span class="lg">Cl</span> + <mark>EtOH</mark>',
+   opts:['SN1 / E1','SN2','E2','No reaction'], a:0, trap:2, doors:true,
+   rule:'3° + weak / protic → SN1/E1. Ethanol is a weak nucleophile and a weak base, so Cl leaves first and a 3° C+ forms.',
+   why:'Ethanol is weak and protic, so the 3° C+ forms first: SN1/E1.',
+   trapWhy:'E2 needs a strong base. Ethanol is neutral and weak; ethoxide would be the strong base.'},
+  {lv:2, prompt:'1° bromide + t-BuOK. Which door?', struct:'R–CH<sub>2</sub>–<span class="lg">Br</span> + <mark>t-BuOK</mark>',
+   opts:['SN1','SN2','E1','E2'], a:3, trap:1, doors:true,
+   rule:'A bulky strong base beats the 1° → SN2 rule. t-BuOK is too big to reach carbon, so it grabs an H: E2.',
+   why:'Even on a 1° carbon, bulky t-BuOK eliminates instead of attacking: E2.',
+   trapWhy:'SN2 is the usual 1° answer, but only with a small nucleophile. t-BuOK is bulky.'},
+  {lv:2, prompt:'3° bromide + NaOEt. Which door?', struct:'(CH<sub>3</sub>)<sub>3</sub>C–<span class="lg">Br</span> + <mark>NaOEt</mark>',
+   opts:['SN1','SN2','E1','E2'], a:3, trap:0, doors:true,
+   rule:'3° + strong base → E2. NaOEt is a strong base, and a strong base doesn’t wait for a C+ to form.',
+   why:'Strong base on a 3° carbon pulls off an H in one step: E2.',
+   trapWhy:'SN1 is for weak reagents. A strong base with a 3° substrate goes E2.'},
+  {lv:2, prompt:'3° alcohol + HBr, no heat. Which door?', struct:'R<sub>3</sub>C–<span class="lg">OH</span> + <mark>HBr</mark>',
+   opts:['SN1','SN2','E1','E2'], a:0, trap:1, doors:true,
+   rule:'Acid turns OH into water, a good leaving group. Water leaves, making a 3° C+, and Br<sup>−</sup> attacks it: SN1. No heat, so substitution wins.',
+   why:'Protonated OH leaves as water, a 3° C+ forms, and Br<sup>−</sup> adds: SN1.',
+   trapWhy:'SN2 can’t happen on a crowded 3° carbon.'},
+  {lv:2, prompt:'2° bromide in hot ethanol. No strong base. Which door?', struct:'2° R–<span class="lg">Br</span> + <mark>EtOH</mark> + Δ',
+   opts:['SN1','SN2','E1','E2'], a:2, trap:3, doors:true,
+   rule:'Weak / protic reagent → the C+ forms first (SN1/E1). Heat pushes toward elimination, so E1.',
+   why:'Weak, protic ethanol means a C+ route, and heat tips it to elimination: E1.',
+   trapWhy:'E2 needs a strong base. Hot ethanol is still a weak base.'},
+
+  {lv:3, yell:true, prompt:'Drawing a hydride shift. Where does the curved arrow start?', struct:'<mark>H</mark>–C–<span class="cplus">C+</span>',
+   opts:['At the neighbor’s C–H bond','At the C+','At the leaving group','At the H atom by itself'], a:0, trap:1,
+   rule:'The arrow starts at the BOND and points toward C+. Never start the arrow at C+. The C–H bond’s electrons are what move.',
+   why:'Arrows follow electrons, and the electrons are in the C–H bond, not at the empty C+.',
+   trapWhy:'The C+ has no electrons to push. An arrow never starts there.'},
+  {lv:3, yell:true, prompt:'A 3° <span class="cplus">C+</span> forms. A neighbor has an H, but shifting it would make a 2° C+. What happens?', struct:'3° <span class="cplus">C+</span> → 2° <span class="cplus">C+</span> ?',
+   opts:['Hydride shift','Methyl / alkyl shift','Don’t shift','E2 happens instead'], a:2, trap:0,
+   rule:'Shifts only go uphill in stability: 2° → 3°. 3° → 2° is a downgrade, so the C+ stays put.',
+   why:'The C+ is already 3°; any shift to 2° makes it less stable.',
+   trapWhy:'An available H doesn’t mean it moves. It moves only if the new C+ is happier.'},
+  {lv:3, yell:true, prompt:'In which reactions do you check the neighbors for a shift?', struct:'SN1 · SN2 · E1 · E2',
+   opts:['SN1 and E1','SN2 and E2','Only E2','All four'], a:0, trap:3,
+   rule:'Rearrangements need a C+. Only SN1 and E1 make a C+. SN2 and E2 happen in one step with no C+.',
+   why:'SN1 and E1 are the only doors that go through a C+.',
+   trapWhy:'“All four” is the trap. SN2 and E2 never form a carbocation.'},
+  {lv:3, yell:true, prompt:'3,3-dimethyl-2-butanol + H<sub>2</sub>SO<sub>4</sub>, heat. Water leaves, making a 2° <span class="cplus">C+</span> next to a carbon holding three CH<sub>3</sub> groups and no H. Next?', struct:'(CH<sub>3</sub>)<sub>3</sub>C–<span class="cplus">C+</span>H–CH<sub>3</sub>',
+   opts:['Hydride shift','Methyl shift','Don’t shift','E2 happens instead'], a:1, trap:0,
+   rule:'Neighbor has no H, but it has CH<sub>3</sub> groups. One CH<sub>3</sub> moves with its bond electrons, and 2° becomes 3°: methyl shift.',
+   why:'No H on the neighbor, so a CH<sub>3</sub> moves over and makes a 3° C+.',
+   trapWhy:'A hydride shift needs an H on the neighboring carbon. That carbon has three CH<sub>3</sub> and no H.'},
+
+  {lv:4, prompt:'How substituted is this alkene?', struct:'(CH<sub>3</sub>)<sub>2</sub>C=CH<sub>2</sub>',
+   opts:['Monosubstituted','Disubstituted','Trisubstituted','Tetrasubstituted'], a:1, trap:2, ord:true,
+   rule:'Count carbon groups on the two double-bond carbons, not the double-bond carbons themselves. Two CH<sub>3</sub> on one side, two H on the other → di.',
+   why:'Only the two CH<sub>3</sub> groups count, so it’s disubstituted.',
+   trapWhy:'Tri is what you get by counting the other double-bond carbon as a group.'},
+  {lv:4, prompt:'How substituted is this alkene?', struct:'CH<sub>3</sub>–CH=C(CH<sub>3</sub>)<sub>2</sub>',
+   opts:['Monosubstituted','Disubstituted','Trisubstituted','Tetrasubstituted'], a:2, trap:1, ord:true,
+   rule:'Left double-bond carbon: one CH<sub>3</sub>. Right one: two CH<sub>3</sub>. 1 + 2 = 3 → trisubstituted.',
+   why:'Three carbon groups sit on the C=C carbons, so it’s trisubstituted.',
+   trapWhy:'Di is what you get if you count the (CH<sub>3</sub>)<sub>2</sub> as one group.'},
+  {lv:4, prompt:'2-bromo-2-methylbutane + NaOEt. Major alkene?', struct:'(CH<sub>3</sub>)<sub>2</sub>C(<span class="lg">Br</span>)–CH<sub>2</sub>–CH<sub>3</sub> + <mark>NaOEt</mark>',
+   opts:['(CH<sub>3</sub>)<sub>2</sub>C=CH–CH<sub>3</sub>','CH<sub>2</sub>=C(CH<sub>3</sub>)–CH<sub>2</sub>CH<sub>3</sub>','CH<sub>3</sub>–CH=CH–CH<sub>3</sub>'], a:0, trap:1,
+   rule:'Small base → Zaitsev → the more substituted alkene. Taking the H from the CH<sub>2</sub> gives a trisubstituted C=C.',
+   why:'Ethoxide is small, so it forms the more substituted (tri) alkene: Zaitsev.',
+   trapWhy:'The terminal, disubstituted alkene is the Hofmann product, which needs a bulky base.'},
+  {lv:4, prompt:'Same substrate, 2-bromo-2-methylbutane, but now + t-BuOK. Major alkene?', struct:'(CH<sub>3</sub>)<sub>2</sub>C(<span class="lg">Br</span>)–CH<sub>2</sub>–CH<sub>3</sub> + <mark>t-BuOK</mark>',
+   opts:['(CH<sub>3</sub>)<sub>2</sub>C=CH–CH<sub>3</sub>','CH<sub>2</sub>=C(CH<sub>3</sub>)–CH<sub>2</sub>CH<sub>3</sub>','CH<sub>3</sub>–CH=CH–CH<sub>3</sub>'], a:1, trap:0,
+   rule:'Bulky base → Hofmann → the less substituted alkene. t-BuOK grabs the easy outside H on a CH<sub>3</sub>, giving the terminal C=C.',
+   why:'Bulky t-BuOK can only reach the outside CH<sub>3</sub> hydrogens, so it forms the terminal alkene: Hofmann.',
+   trapWhy:'The trisubstituted alkene is Zaitsev, which is the small-base answer.'},
+
+  {lv:5, prompt:'You see <b class="mono">NaOMe</b>. Translate it.', struct:'Na<sup>+</sup> <sup>−</sup>O–CH<sub>3</sub>',
+   opts:['Strong base + good nucleophile','Bulky strong base','Weak nucleophile, protic','Leaving group'], a:0, trap:1,
+   rule:'NaOEt / NaOMe = strong base + good nucleophile. Methoxide is small, so it can attack carbon or grab an H.',
+   why:'Methoxide is small and charged, so it’s both a strong base and a good nucleophile.',
+   trapWhy:'Bulky is t-BuOK. Methoxide is tiny.'},
+  {lv:5, prompt:'3° bromide, solvent is MeOH, nothing else added. Translate the reagent and pick a path.', struct:'R<sub>3</sub>C–<span class="lg">Br</span> + <mark>MeOH</mark>',
+   opts:['Weak / protic → SN1/E1','Aprotic → SN2','Strong base → E2','Acid → dehydration'], a:0, trap:1,
+   rule:'EtOH / MeOH / H<sub>2</sub>O = weak nucleophile, weak base, protic. On 3°, that means SN1/E1.',
+   why:'Methanol is weak and protic, and the substrate is 3°: SN1/E1.',
+   trapWhy:'Methanol has an O–H, so it’s protic, not aprotic. DMSO, DMF and acetone are the aprotic ones.'},
+];
+Q.forEach(q=>{q.set=1});
+Q2.forEach(q=>{q.set=2; Q.push(q)});
 Q.forEach((q,i)=>{q.id=i});
+const PER_LEVEL = {1:4,2:6,3:4,4:4,5:2};
+const SETS = {
+  1:{name:'Round 1', note:'The original 20.'},
+  2:{name:'Round 2', note:'20 new questions. Same skills, different traps.'},
+  mix:{name:'Mix', note:'20 drawn from both rounds. Different every run.'},
+};
+// Build a run: questions stay grouped by level, but order inside each level is shuffled.
+function buildQueue(set){
+  const pool = set==='mix' ? Q : Q.filter(q=>q.set===set);
+  return LEVELS.flatMap(L=>shuffle(pool.filter(q=>q.lv===L.n)).slice(0,PER_LEVEL[L.n]).map(q=>q.id));
+}
 
 const SCRIPT = ['Where’s the leaving group?','Is that carbon 1°, 2°, or 3°?','What is the reagent: strong base, strong nucleophile, weak/protic, acid, heat?','SN1, SN2, E1, or E2?','If C+ forms: rearrange? (CHECK THE NEIGHBORS)','If SN2: flip.','If elimination: make C=C.','Multiple C=C choices: Zaitsev unless a bulky base says Hofmann.'];
 
@@ -339,7 +555,7 @@ let S = fresh();
 function fresh(){
   return {screen:'start', mode:'run', queue:[], pos:0, lives:3, xp:0, results:{}, phase:'intro',
     picked:null, wrongPicks:[], order:[], shownAt:0, startedAt:0, koShown:false, ko:false, 
-    bonus:{why:false, trap:null, vibes:false}, replayLevel:null, replay:{}};
+    bonus:{why:false, trap:null, vibes:false}, replayLevel:null, replay:{}, set:2, runQueue:[]};
 }
 const $ = s => document.querySelector(s);
 const app = $('#app');
@@ -355,7 +571,7 @@ function tile(L, big){return `<div class="tile" aria-hidden="true"><span class="
 
 function bar(){
   const res = S.mode==='run'?S.results:S.replay;
-  const ticks = S.mode==='run' ? Q.map((q,i)=>{
+  const ticks = S.mode==='run' ? S.runQueue.map(i=>{
       const r=res[i]; const now = S.screen==='play' && S.queue[S.pos]===i && S.phase!=='intro';
       return `<span class="tick ${r?(r.first?'ok':'redo'):(now?'now':'')}"></span>`}).join('') : '';
   const score = scoreOf(res);
@@ -377,12 +593,12 @@ function render(){
 }
 
 function renderStart(){
-  const best = store.get('orgo-best');
+  const bests = {1:store.get('orgo-best-1')||store.get('orgo-best'), 2:store.get('orgo-best-2'), mix:store.get('orgo-best-mix')};
   app.innerHTML = `
   <section class="hero">
     <span class="label">Chapter 7 · SN1 / SN2 / E1 / E2 · 30 minutes</span>
     <h1>Orgo Escape Room<span class="plus">+</span></h1>
-    <p>Five rooms, twenty questions. Each room trains one reflex from your survival sheet: find the carbon, pick the door, check the neighbors, win the double-bond battle, translate the reagent.</p>
+    <p>Five rooms, twenty questions per run. Each room trains one reflex from your survival sheet: find the carbon, pick the door, check the neighbors, win the double-bond battle, translate the reagent.</p>
     <div class="levels-map">${LEVELS.map(L=>tile(L)).join('')}</div>
   </section>
   <div class="stack">
@@ -398,22 +614,28 @@ function renderStart(){
       <span class="label">The 5-second test script</span>
       <ol class="script">${SCRIPT.map(s=>`<li>${s}</li>`).join('')}</ol>
     </div>
-    <div class="row">
-      <button class="btn primary" id="go">Start the 30-minute run</button>
-      <span class="best">${best?`Best run: ${best.score}/20 · ${best.xp} XP`:'Keys 1–4 pick an answer. Enter continues.'}</span>
+    <div class="stack" style="gap:10px">
+      <span class="label">Pick a round</span>
+      <div class="rounds">${[2,'mix',1].map(k=>`<button class="round ${k===2?'fresh':''}" data-set="${k}">
+        <span class="rname">${SETS[k].name}${k===2?' <span class="new">New</span>':''}</span>
+        <span class="rnote">${SETS[k].note}</span>
+        <span class="best">${bests[k]?`Best: ${bests[k].score}/20 · ${bests[k].xp} XP`:'Not played yet'}</span>
+      </button>`).join('')}</div>
+      <span class="best">Keys 1–4 pick an answer. Enter continues.</span>
     </div>
   </div>`;
-  $('#go').onclick = startRun;
+  app.querySelectorAll('[data-set]').forEach(b=>b.onclick=()=>startRun(b.dataset.set==='mix'?'mix':+b.dataset.set));
 }
 
-function startRun(){
-  S = fresh(); S.screen='play'; S.mode='run'; S.queue=Q.map(q=>q.id); S.startedAt=Date.now();
+function startRun(set){
+  if(set===undefined) set=S.set;
+  S = fresh(); S.set=set; S.screen='play'; S.mode='run'; S.runQueue=buildQueue(set); S.queue=S.runQueue.slice(); S.startedAt=Date.now();
   S.phase='intro'; render(); scrollTop();
 }
 function startReplay(lv){
-  const keep = {results:S.results, xp:S.xp, startedAt:S.startedAt};
+  const keep = {results:S.results, xp:S.xp, set:S.set, runQueue:S.runQueue, finishedAt:S.finishedAt, runStartedAt:S.runStartedAt||S.startedAt};
   S = fresh(); Object.assign(S, keep);
-  S.screen='play'; S.mode='replay'; S.replayLevel=lv; S.queue=Q.filter(q=>q.lv===lv).map(q=>q.id);
+  S.screen='play'; S.mode='replay'; S.replayLevel=lv; S.queue=shuffle(S.runQueue.filter(i=>lv?Q[i].lv===lv:Q[i].lv<=3));
   S.startedAt = Date.now(); S.phase='intro'; render(); scrollTop();
 }
 
@@ -431,7 +653,7 @@ function renderPlay(){
   const q = cur(); const L = levelOf(q);
   let body='';
   if(S.phase==='intro'){
-    const qs = Q.filter(x=>x.lv===L.n).length;
+    const qs = S.queue.filter(i=>Q[i].lv===L.n).length;
     body = `<article class="card stack">
       <div class="intro-head">${tile(L)}<div class="stack" style="gap:6px"><span class="label">Level ${L.n} · ${qs} questions · ${L.mins} min budget</span><h2>${L.name}</h2></div></div>
       <div class="intro-body">${L.intro}</div>
@@ -458,7 +680,7 @@ function renderPlay(){
     } else if(S.phase==='hint'){
       lower = `<div class="panel hint"><span class="label">Rule</span><p>${q.rule}</p></div>`;
     } else if(S.phase==='wrong'){
-      lower = `<div class="panel bad" role="alert"><h3>−1 life. Read the rule, then redo it.</h3><p>${q.rule}</p><div class="row"><button class="btn primary" id="redo">Got it, redo</button></div></div>`;
+      lower = `<div class="panel bad" role="alert"><h3>−1 life. Read the rule, then redo it.</h3><p>${q.rule}</p><details class="roomnotes"><summary>Reread the full Level ${L.n} notes</summary><div class="intro-body">${L.intro}</div></details><div class="row"><button class="btn primary" id="redo">Got it, redo</button></div></div>`;
     } else if(S.phase==='right'){
       const r = (S.mode==='run'?S.results:S.replay)[q.id];
       const gained = r && r.first ? '+1 point · +1 XP' : '+1 XP (redo, no point)';
@@ -481,7 +703,7 @@ function renderPlay(){
         </div></div>`;
     }
     body = `<article class="card stack">
-      <div class="qhead"><span class="qnum">Level ${L.n} · ${L.name}</span><span class="label">Q${S.mode==='run'?q.id+1:n} of ${S.mode==='run'?20:of}</span></div>
+      <div class="qhead"><span class="qnum">Level ${L.n} · ${L.name}</span><span class="label">${SETS[S.set].name} · Q${n} of ${of}</span></div>
       <p class="prompt">${q.prompt}</p>
       <div class="struct">${q.struct}</div>
       ${S.phase==='yell'?'':`<div class="opts ${q.doors?'doors':''}">${opts}</div>`}
@@ -497,7 +719,7 @@ function bindPlay(){
   const on=(id,fn)=>{const el=$('#'+id); if(el) el.onclick=fn};
   on('enter',()=>{beginQuestion(); render(); focusFirst()});
   on('cont',()=>{ if(S.pendingIntro) S.phase='intro'; else beginQuestion(); render(); focusFirst() });
-  on('restart',startRun);
+  on('restart',()=>startRun(S.set));
   on('yell',e=>{const b=e.currentTarget; b.classList.add('shouted'); b.textContent='CHECKED ✓'; setTimeout(()=>{S.phase='ask'; S.shownAt=Date.now(); render(); focusFirst()},450)});
   on('redo',()=>{const q=cur(); S.order = q.ord?S.order:shuffle(S.order); S.phase='ask'; S.picked=null; S.shownAt=Date.now()-PEEK_MS; render(); focusFirst()});
   on('why',()=>{S.bonus.why=true; S.xp+=2; render()});
@@ -539,8 +761,8 @@ function next(){
 function finish(){
   if(S.mode==='replay'){ S.screen='replayDone'; render(); scrollTop(); return; }
   S.finishedAt=Date.now(); S.screen='results';
-  const score=scoreOf(S.results); const best=store.get('orgo-best');
-  if(!best || score>best.score || (score===best.score && S.xp>best.xp)) store.set('orgo-best',{score,xp:S.xp});
+  const score=scoreOf(S.results); const key='orgo-best-'+S.set; const best=store.get(key);
+  if(!best || score>best.score || (score===best.score && S.xp>best.xp)) store.set(key,{score,xp:S.xp});
   render(); scrollTop();
 }
 
@@ -554,16 +776,17 @@ function verdict(score){
 
 function renderResults(){
   const score=scoreOf(S.results); const v=verdict(score);
-  const used = (S.finishedAt||Date.now())-S.startedAt;
+  const used = (S.finishedAt||Date.now())-(S.runStartedAt||S.startedAt);
+  const inRun = S.runQueue.map(i=>Q[i]);
   const rows = LEVELS.map(L=>{
-    const qs=Q.filter(q=>q.lv===L.n); const got=qs.filter(q=>S.results[q.id]&&S.results[q.id].first).length;
+    const qs=inRun.filter(q=>q.lv===L.n); const got=qs.filter(q=>S.results[q.id]&&S.results[q.id].first).length;
     const miss = got<qs.length;
     return `<tr><td>${L.n}. ${L.name}</td><td class="num">${got}/${qs.length}</td><td>${miss?`<button class="btn quiet" data-replay="${L.n}" style="padding:6px 12px">Redo level</button>`:'<span class="label" style="color:var(--good)">Clear</span>'}</td></tr>`}).join('');
-  const misses = Q.filter(q=>S.results[q.id] && !S.results[q.id].first);
+  const misses = inRun.filter(q=>S.results[q.id] && !S.results[q.id].first);
   const lowLevels = score<15;
   app.innerHTML = `
   <section class="verdict">
-    <span class="label">Run complete · ${fmt(used)} used of 30:00 · ${S.xp} XP</span>
+    <span class="label">${SETS[S.set].name} complete · ${fmt(used)} used of 30:00 · ${S.xp} XP</span>
     <div class="big">${score}<small>/20</small></div>
     <div><span class="badge ${v.cls}">${v.badge}</span></div>
     <p style="margin:0;max-width:60ch">${v.advice}</p>
@@ -571,13 +794,15 @@ function renderResults(){
   <div class="stack">
     ${lowLevels?`<div class="row"><button class="btn primary" id="l123">Replay Levels 1–3</button></div>`:''}
     <div class="card stack"><span class="label">By level</span><div class="tablewrap"><table><thead><tr><th>Level</th><th>First try</th><th></th></tr></thead><tbody>${rows}</tbody></table></div></div>
-    ${misses.length?`<div class="card stack"><span class="label">Rules you paid a life for</span><ul class="miss-list">${misses.map(q=>`<li><b>Q${q.id+1}</b> · you picked “${S.results[q.id].picked}”, answer “${q.opts[q.a]}”.<br>${q.rule}</li>`).join('')}</ul></div>`:''}
+    ${misses.length?`<div class="card stack"><span class="label">Rules you paid a life for</span><ul class="miss-list">${misses.map(q=>`<li><b>Q${S.runQueue.indexOf(q.id)+1}</b> · you picked “${S.results[q.id].picked}”, answer “${q.opts[q.a]}”.<br>${q.rule}</li>`).join('')}</ul></div>`:''}
     <div class="card stack"><span class="label">Say this on every reaction problem</span><ol class="script">${SCRIPT.map(s=>`<li>${s}</li>`).join('')}</ol></div>
-    <div class="row"><button class="btn" id="again">New 30-minute run</button></div>
+    <div class="row">${S.set!=='mix'?`<button class="btn primary" id="tryother">Play ${S.set===1?'Round 2':'Mix'}</button>`:''}<button class="btn" id="again">Replay ${SETS[S.set].name} (new order)</button><button class="btn quiet" id="home">All rounds</button></div>
   </div>`;
   app.querySelectorAll('[data-replay]').forEach(b=>b.onclick=()=>startReplay(+b.dataset.replay));
-  const l=$('#l123'); if(l) l.onclick=()=>{ const keep={results:S.results,xp:S.xp}; S=fresh(); Object.assign(S,keep); S.screen='play'; S.mode='replay'; S.replayLevel=0; S.queue=Q.filter(q=>q.lv<=3).map(q=>q.id); S.startedAt=Date.now(); S.phase='intro'; render(); scrollTop(); };
-  $('#again').onclick=startRun;
+  const l=$('#l123'); if(l) l.onclick=()=>startReplay(0);
+  $('#again').onclick=()=>startRun(S.set);
+  $('#home').onclick=()=>{S.screen='start'; render(); scrollTop()};
+  const t=$('#tryother'); if(t) t.onclick=()=>startRun(S.set===1?2:'mix');
 }
 
 function renderReplayDone(){
@@ -587,10 +812,10 @@ function renderReplayDone(){
     <div class="big">${got}<small>/${qs.length}</small></div>
     <p style="margin:0">${got===qs.length?'Clean. That room is solved.':'Still dropping points here. Read the rules below once, then run it again.'}</p></section>
     <div class="stack">
-    ${got<qs.length?`<ul class="miss-list">${qs.filter(q=>!(S.replay[q.id]&&S.replay[q.id].first)).map(q=>`<li><b>Q${q.id+1}</b> · ${q.rule}</li>`).join('')}</ul>`:''}
+    ${got<qs.length?`<ul class="miss-list">${qs.filter(q=>!(S.replay[q.id]&&S.replay[q.id].first)).map(q=>`<li>${q.prompt}<br><b>Answer:</b> ${q.opts[q.a]} · ${q.rule}</li>`).join('')}</ul>`:''}
     <div class="row"><button class="btn primary" id="back">Back to run results</button><button class="btn" id="again">Replay again</button></div></div>`;
   $('#back').onclick=()=>{S.screen='results'; S.mode='run'; S.lives=3; render(); scrollTop()};
-  const lv=S.replayLevel; $('#again').onclick=()=>{ if(lv) startReplay(lv); else { const keep={results:S.results,xp:S.xp}; S=fresh(); Object.assign(S,keep); S.screen='play'; S.mode='replay'; S.replayLevel=0; S.queue=Q.filter(q=>q.lv<=3).map(q=>q.id); S.startedAt=Date.now(); S.phase='intro'; render(); } };
+  const lv=S.replayLevel; $('#again').onclick=()=>startReplay(lv);
 }
 
 function scrollTop(){try{window.scrollTo({top:0})}catch(e){}}
