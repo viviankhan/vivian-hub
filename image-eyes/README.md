@@ -12,7 +12,28 @@ connector. Because the code is in your GitHub, it can't go missing.
 | `view_image` | Looks at an image URL or a page. **Fandom and Wikipedia pages are read through the wiki's own API**, so fandom's 403 doesn't matter, and gallery subpages are searched too. `prefer: "2011 full body -1999"` picks which pictures come back. Thumbnails are swapped for the sharpest size Claude can use (1568 px). |
 | `list_wiki_images` | Lists every picture on a wiki page and its galleries as text: filename, **caption**, **section/tab** (e.g. `2011 Anime › Full body`), size and full-size URL. Claude reads this first to pick the right version, then views only what it needs. |
 
-## Setup: replacing the old Image Eyes (about 10 minutes)
+## Easiest update: paste it into Cloudflare (5 minutes)
+
+This puts the new code on your existing `image-eyes` Worker. The address
+and its secret stay the same, so the connector in Claude keeps working.
+
+1. Log in at **dash.cloudflare.com** → **Workers & Pages** → **image-eyes**.
+2. Click **Edit code** (the **</>** button, top right).
+3. Open `paste-into-cloudflare.js` from this folder, copy all of it, and in
+   the editor replace everything in the worker's file with it.
+4. Click **Deploy**.
+5. Optional, for web search: on the Worker's **Settings → Variables and
+   Secrets**, add a secret named `SERPAPI_KEY` (or `BRAVE_API_KEY`) with
+   your key (see step 2 below for where to get one).
+6. Start a new chat with Image Eyes on. Claude should list three tools,
+   including `list_wiki_images`.
+
+To go back, paste `archive/v2.1-worker.js` the same way.
+
+The rest of this section is the automatic route instead: GitHub deploys it
+for you whenever the code changes.
+
+## Automatic route: replacing the old Image Eyes (about 10 minutes)
 
 The first Image Eyes (v2.1, saved in `archive/`) runs as the Worker
 `image-eyes` at `image-eyes.lumiaxolotl.workers.dev`. This version uses

@@ -7,7 +7,8 @@
   "scripts": {
     "test": "node --test test/*.test.mjs",
     "dev": "wrangler dev",
-    "deploy": "wrangler deploy"
+    "deploy": "wrangler deploy",
+    "bundle": "esbuild src/index.js --bundle --format=esm --platform=neutral --target=es2022 --legal-comments=none --banner:js=\"// Image Eyes 3.0 \u2014 the whole connector in one file, for pasting into the Cloudflare dashboard (Workers & Pages \u2192 image-eyes \u2192 Edit code).\n// Built from image-eyes/src in github.com/viviankhan/vivian-hub; edit those files, not this one, and rebuild with: npm run bundle\" --outfile=paste-into-cloudflare.js"
   },
   "devDependencies": {
     "wrangler": "^4.0.0"
