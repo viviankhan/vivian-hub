@@ -1,0 +1,56 @@
+name: Deploy Image Eyes
+
+# Tests and publishes the Image Eyes connector (image-eyes/) to Cloudflare
+# Workers. Setup is in image-eyes/README.md. Until the Cloudflare secrets
+# exist this only runs the tests.
+
+on:
+  push:
+    branches: [main]
+    paths: ['image-eyes/**', '.github/workflows/image-eyes.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: image-eyes
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: image-eyes
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      ACCESS_KEY: ${{ secrets.IMAGE_EYES_ACCESS_KEY }}
+      SERPAPI_KEY: ${{ secrets.SERPAPI_KEY }}
+      BRAVE_API_KEY: ${{ secrets.BRAVE_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm ci
+      - run: npm test
+      - name: Deploy to Cloudflare
+        run: |
+          if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then
+            echo "::notice::Tests passed. Not deploying: add CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID secrets (see image-eyes/README.md)."
+            exit 0
+          fi
+          npx wrangler deploy
+          for name in ACCESS_KEY SERPAPI_KEY BRAVE_API_KEY; do
+            value="${!name}"
+            if [ -n "$value" ]; then
+              printf '%s' "$value" | npx wrangler secret put "$name"
+            fi
+          done
+          if [ -n "$ACCESS_KEY" ]; then
+            echo "::notice::Deployed. Your connector address is https://image-eyes.<your-subdomain>.workers.dev/mcp/<your IMAGE_EYES_ACCESS_KEY> (the workers.dev address is printed above)."
+          else
+            echo "::warning::Deployed without IMAGE_EYES_ACCESS_KEY, so anyone who finds the address can use it."
+          fi

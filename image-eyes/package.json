@@ -1,0 +1,15 @@
+{
+  "name": "image-eyes",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Remote MCP server that lets Claude see images from the web and from wikis",
+  "type": "module",
+  "scripts": {
+    "test": "node --test test/*.test.mjs",
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy"
+  },
+  "devDependencies": {
+    "wrangler": "^4.0.0"
+  }
+}

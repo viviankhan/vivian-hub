@@ -1,0 +1,14 @@
+name = "image-eyes"
+main = "src/index.js"
+compatibility_date = "2025-09-01"
+# Buffer gives native base64, which keeps big images inside the free plan's CPU limit.
+compatibility_flags = ["nodejs_compat"]
+
+[vars]
+# Largest image (in bytes) sent to Claude; bigger ones fall back to a smaller copy.
+MAX_IMAGE_BYTES = "2500000"
+
+# Secrets (set by the GitHub workflow, or `npx wrangler secret put NAME`):
+#   ACCESS_KEY     makes the address /mcp/<ACCESS_KEY> so only you can use it
+#   SERPAPI_KEY    turns on web image search through Google Images (serpapi.com)
+#   BRAVE_API_KEY  or through Brave image search (api-dashboard.search.brave.com)
