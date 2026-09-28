@@ -4,6 +4,19 @@
 
 const EDIT_LOG = [
   {
+    date: '2026-09-28',
+    summary: 'Version history — roll all of Bloom back to an earlier point, like a Google Doc',
+    changes: [
+      'New Settings → Versions: every change you make is saved as you go and grouped into versions (a burst of edits), newest first, each listing what changed — "Added task “Dentist”", "Edited Notes", "Checked off a task"',
+      'Restore any version to put the whole app back the way it was then — tasks, events, time off, labels, recurring tasks, notes, thoughts, routines, trackers, wellness and check-offs',
+      'Quick "Go back to" buttons undo everything from the last 15 minutes, hour, 3 hours or day in one tap, and show how many changes that would reverse',
+      'A restore is its own version, so if you restore the wrong point, restore the version just before it to undo',
+      'Restores sync to your other devices like any edit, and work offline (they upload when you reconnect)',
+      'History is kept on this device for 7 days; your look & theme settings are left alone',
+      'Fixed behind the scenes: an edit made right after reconnecting could be overwritten by an older change still waiting to upload — new saves now wait their turn behind it',
+    ]
+  },
+  {
     date: '2026-09-11',
     summary: 'Reminders arrive at their moment, or not at all',
     changes: [

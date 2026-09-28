@@ -108,6 +108,53 @@ export function setStorageUser(uid) {
   // signed in would file them under the wrong owner.
   setActiveUid(kvUid)
 }
+export const currentStorageUser = () => kvUid
+
+// ── Version history hook ────────────────────────────────────────
+// Every write below reports what it replaced — the value or row as it stood
+// just before, and what it became — to one observer (src/lib/versions.js),
+// which keeps the on-device journal behind Settings → Versions. storage.js
+// never imports that module (it would be a cycle, and the tests load this file
+// on its own); it only calls whoever registered.
+//
+// `before` is only reported when it is actually known. A value this device has
+// never read has no trustworthy "before", and journaling a guess would let a
+// restore write the guess over real data — so those writes go unrecorded.
+let writeObserver = null
+export function observeWrites(fn) { writeObserver = typeof fn === 'function' ? fn : null }
+const observing = () => !!writeObserver
+function noteWrite(entry) {
+  if (!writeObserver) return
+  try { writeObserver({ ...entry, uid: kvUid, ts: Date.now() }) } catch {}
+}
+// The current copy of one kv value, or undefined when this device doesn't know it.
+async function kvCurrent(key) {
+  if (!USE_SUPABASE) return lsGet(key)
+  return cacheRead(kvMirrorKey(key))
+}
+// The mirror name and localStorage key of each row table the journal covers.
+const ROW_TABLES = {
+  commitments:     { mirror: 'commitments',     ls: 'commitments' },
+  events:          { mirror: 'events',          ls: 'events' },
+  vacations:       { mirror: 'vacations',       ls: 'vacations' },
+  recurring_tasks: { mirror: 'recurring_tasks', ls: 'recurring_tasks_v2' },
+  categories:      { mirror: 'categories',      ls: 'categories' },
+  log:             { mirror: 'log',             ls: 'log' },
+}
+// All rows of a table as this device has them, or undefined when it has none.
+async function rowsCurrent(table) {
+  const t = ROW_TABLES[table]
+  if (!t) return undefined
+  const v = USE_SUPABASE ? await cacheRead(mirrorKey(t.mirror)) : await lsGet(t.ls)
+  return Array.isArray(v) ? v : (USE_SUPABASE ? undefined : [])
+}
+// One row as it stands now: the row, null when it doesn't exist, undefined when unknown.
+async function rowCurrent(table, id) {
+  const rows = await rowsCurrent(table)
+  if (!rows) return undefined
+  const r = rows.find(x => x && x.id === id)
+  return r ? { ...r } : null
+}
 
 // ── Offline mirror & write queue ────────────────────────────────
 // Bloom is local-first: reads are mirrored into IndexedDB as they come back
@@ -203,7 +250,11 @@ async function cloudRead({ mirror, table, id, run, fallback, label }) {
 // so the app can tell the user, exactly as it did before offline support.
 async function cloudWrite(op, run) {
   await offlineReady()
-  if (isOnline()) {
+  // An older write to this same row is still in the outbox: queue behind it
+  // rather than overtake it, or the replay would land the older value last.
+  // (Setting something straight back — restoring a version, say — right after
+  // an offline edit is exactly that case.)
+  if (isOnline() && !hasPending(op.table, op.id)) {
     try {
       const result = await run()
       noteSuccess()
@@ -501,11 +552,17 @@ export async function dbSet(key, value) {
     // re-asserting our identical-to-before value is exactly right — the newer
     // remote value should win, and the next foreground read reconciles it.
     const sig = stableSignature(JSON.stringify(value))
-    if (wsigGet(key) === sig) return
+    // …unless a different value for this key is still waiting in the outbox:
+    // then the cloud is about to receive that one, and setting the key back
+    // (which is exactly what restoring an earlier version does) must queue too.
+    await offlineReady()
+    if (wsigGet(key) === sig && !hasPending('kv_store', key)) return
+    const before = observing() ? await kvCurrent(key) : undefined
     // The local mirror is updated first and unconditionally. Whatever the
     // network then does, reopening Bloom offline shows the value the user just
     // set — not the one the cloud last confirmed.
     await cacheWrite(kvMirrorKey(key), value)
+    if (before !== undefined) noteWrite({ kind: 'kv', key, before, after: value })
     const prevWrite = writeQueues.get(key) || Promise.resolve()
     const thisWrite = prevWrite.then(async () => {
       pendingWrites++
@@ -527,7 +584,9 @@ export async function dbSet(key, value) {
     writeQueues.set(key, thisWrite.catch(() => {}))
     return thisWrite
   }
+  const before = observing() ? await lsGet(key) : undefined
   lsSet(key, value)
+  if (observing()) noteWrite({ kind: 'kv', key, before, after: value })
 }
 
 // ── Task completion state ───────────────────────────────────────
@@ -564,6 +623,12 @@ export async function getCompletions() {
   return (await lsGet('completions')) ?? {}
 }
 export async function setCompletion(storageKey, done) {
+  if (observing()) {
+    const cur = USE_SUPABASE ? await cacheRead(mirrorKey('completions')) : await lsGet('completions')
+    if (cur && typeof cur === 'object' && !!cur[storageKey] !== !!done) {
+      noteWrite({ kind: 'done', key: storageKey, before: !!cur[storageKey], after: !!done })
+    }
+  }
   if (USE_SUPABASE) {
     // Checking a task off is the single most common thing done without a
     // network (on a bus, in a basement), so the tick has to stick locally
@@ -617,11 +682,31 @@ export async function addLogEntry(entry) {
     // it be un-logged again before it has ever reached the cloud.
     const row = { ...entry, id: entry.id || newUuid(), ts: entry.ts || new Date().toISOString() }
     await mirrorUpsert('log', row)
+    noteWrite({ kind: 'row', table: 'log', id: row.id, before: null, after: row })
     await cloudWrite({ table: 'log_entries', op: 'insert', id: row.id, row }, () => cloudLogInsert(row))
     return
   }
   const all = (await lsGet('log')) ?? []
-  await lsSet('log', [...all, entry])
+  // Local-only entries have never carried an id; give new ones one so the
+  // version history can take a single entry back out again.
+  const row = entry.id ? entry : { ...entry, id: newUuid() }
+  await lsSet('log', [...all, row])
+  noteWrite({ kind: 'row', table: 'log', id: row.id, before: null, after: row })
+}
+
+// Take one log entry out by its id — used when restoring an earlier version.
+export async function removeLogEntryById(id) {
+  if (USE_SUPABASE) {
+    const before = await rowCurrent('log', id)
+    await mirrorRemove('log', id)
+    if (before) noteWrite({ kind: 'row', table: 'log', id, before, after: null })
+    await cloudWrite({ table: 'log_entries', op: 'delete', id }, () => cloudLogDelete(id))
+    return
+  }
+  const all = (await lsGet('log')) ?? []
+  const before = all.find(e => e && e.id === id)
+  await lsSet('log', all.filter(e => !(e && e.id === id)))
+  if (before) noteWrite({ kind: 'row', table: 'log', id, before, after: null })
 }
 
 // Apply the "which entries does un-checking this remove?" rule to the local
@@ -640,6 +725,7 @@ async function removeFromLogMirror(label, storageKey) {
   if (!doomed.length) return []
   const gone = new Set(doomed.map(r => r.id))
   await mirrorPut('log', rows.filter(r => !gone.has(r && r.id)))
+  for (const r of doomed) if (r.id != null) noteWrite({ kind: 'row', table: 'log', id: r.id, before: r, after: null })
   return [...gone].filter(id => id != null)
 }
 // Removes the most recent log entry matching label+storageKey; falls back to
@@ -688,6 +774,10 @@ export async function deleteLogEntry(label, storageKey) {
     return laterIdx !== -1
   })
   await lsSet('log', next2)
+  if (observing()) {
+    const kept = new Set(next2)
+    for (const e of all) if (!kept.has(e) && e && e.id != null) noteWrite({ kind: 'row', table: 'log', id: e.id, before: e, after: null })
+  }
 }
 
 export const getNotes          = () => dbGet('notes').then(v => v ?? '')
@@ -1249,7 +1339,7 @@ export async function getCommitments() {
   }
   return (await lsGet('commitments')) ?? []
 }
-export async function addCommitment(c) {
+async function addCommitmentUnrecorded(c) {
   if (USE_SUPABASE) {
     // `cat` is NOT NULL in the DB, but a task can legitimately have no category
     // (we don't force a label anymore). Store '' — the UI reads that as "no
@@ -1274,7 +1364,7 @@ export async function addCommitment(c) {
   await lsMutate('commitments', all => [...all, c], [])
   return c
 }
-export async function updateCommitment(id, changes) {
+async function updateCommitmentUnrecorded(id, changes) {
   if (USE_SUPABASE) {
     const { queued, result } = await cloudWrite(
       { table: 'commitments', op: 'update', id, changes },
@@ -1287,7 +1377,7 @@ export async function updateCommitment(id, changes) {
   const next = await lsMutate('commitments', all => all.map(c => c.id===id ? { ...c, ...changes } : c), [])
   return next.find(c => c.id===id)
 }
-export async function deleteCommitment(id) {
+async function deleteCommitmentUnrecorded(id) {
   if (USE_SUPABASE) {
     await cloudWrite(
       { table: 'commitments', op: 'delete', id },
@@ -1327,7 +1417,7 @@ export async function getVacations() {
   }
   return (await lsGet('vacations')) ?? []
 }
-export async function addVacation(v) {
+async function addVacationUnrecorded(v) {
   if (USE_SUPABASE) {
     const row = { ...v, id: v.id || localId('vac-') }
     const { queued, result } = await cloudWrite(
@@ -1342,7 +1432,7 @@ export async function addVacation(v) {
   await lsSet('vacations', [...all, v])
   return v
 }
-export async function deleteVacation(id) {
+async function deleteVacationUnrecorded(id) {
   if (USE_SUPABASE) {
     await cloudWrite({ table: 'vacations', op: 'delete', id }, () => cloudVacationDelete(id))
     await mirrorRemove('vacations', id)
@@ -1388,7 +1478,7 @@ export async function getEvents() {
   }
   return (await lsGet('events')) ?? []
 }
-export async function addEvent(e) {
+async function addEventUnrecorded(e) {
   if (USE_SUPABASE) {
     const row = { ...e, id: e.id || localId('ev-') }
     const { queued, result } = await cloudWrite(
@@ -1407,7 +1497,7 @@ export async function addEvent(e) {
   await lsSet('events', [...all, e])
   return e
 }
-export async function deleteEvent(id) {
+async function deleteEventUnrecorded(id) {
   if (USE_SUPABASE) {
     await cloudWrite({ table: 'events', op: 'delete', id }, () => cloudEventDelete(id))
     await mirrorRemove('events', id)
@@ -1480,7 +1570,7 @@ export async function getRecurringTasks() {
   }
   return (await lsGet('recurring_tasks_v2')) ?? []
 }
-export async function addRecurringTask(task) {
+async function addRecurringTaskUnrecorded(task) {
   if (USE_SUPABASE) {
     const row = { ...task, id: task.id || localId('r-') }
     const { queued, result } = await cloudWrite(
@@ -1495,7 +1585,7 @@ export async function addRecurringTask(task) {
   await lsSet('recurring_tasks_v2', [...all, task])
   return task
 }
-export async function updateRecurringTask(id, task) {
+async function updateRecurringTaskUnrecorded(id, task) {
   if (USE_SUPABASE) {
     // A recurring update replaces the whole template rather than patching
     // fields, so it queues as an insert-shaped op keyed on the same id — the
@@ -1514,7 +1604,7 @@ export async function updateRecurringTask(id, task) {
   await lsSet('recurring_tasks_v2', next)
   return task
 }
-export async function deleteRecurringTask(id) {
+async function deleteRecurringTaskUnrecorded(id) {
   if (USE_SUPABASE) {
     await cloudWrite({ table: 'recurring_tasks', op: 'delete', id }, () => cloudRecurringDelete(id))
     await mirrorRemove('recurring_tasks', id)
@@ -1523,7 +1613,7 @@ export async function deleteRecurringTask(id) {
   const all = (await lsGet('recurring_tasks_v2')) ?? []
   await lsSet('recurring_tasks_v2', all.filter(t => t.id !== id))
 }
-export async function clearRecurringTasks() {
+async function clearRecurringTasksUnrecorded() {
   if (USE_SUPABASE) {
     await cloudWrite({ table: 'recurring_tasks', op: 'clear', id: '*' }, () => cloudRecurringClear())
     await mirrorPut('recurring_tasks', [])
@@ -1578,7 +1668,7 @@ export async function getCategories() {
   }
   return (await lsGet('categories')) ?? []
 }
-export async function addCategory(cat) {
+async function addCategoryUnrecorded(cat) {
   if (USE_SUPABASE) {
     const row = { ...cat, id: cat.id || localId('cat-'), icon: cat.icon || '', sortOrder: cat.sortOrder ?? 0 }
     const { queued, result } = await cloudWrite(
@@ -1593,7 +1683,7 @@ export async function addCategory(cat) {
   await lsSet('categories', [...all, cat])
   return cat
 }
-export async function updateCategory(id, changes) {
+async function updateCategoryUnrecorded(id, changes) {
   if (USE_SUPABASE) {
     const { queued, result } = await cloudWrite(
       { table: 'categories', op: 'update', id, changes },
@@ -1608,7 +1698,7 @@ export async function updateCategory(id, changes) {
   await lsSet('categories', next)
   return next.find(c => c.id===id)
 }
-export async function deleteCategory(id) {
+async function deleteCategoryUnrecorded(id) {
   if (USE_SUPABASE) {
     await cloudWrite({ table: 'categories', op: 'delete', id }, () => cloudCategoryDelete(id))
     await mirrorRemove('categories', id)
@@ -1616,6 +1706,92 @@ export async function deleteCategory(id) {
   }
   const all = (await lsGet('categories')) ?? []
   await lsSet('categories', all.filter(c => c.id !== id))
+}
+
+// ── Journaled row writes ────────────────────────────────────────
+// The public add/update/delete for each row table: the write itself, plus a
+// note to the version history of the row as it was and as it became.
+function recordedAdd(table, run) {
+  return async (row, ...rest) => {
+    const created = await run(row, ...rest)
+    if (created && created.id != null) noteWrite({ kind: 'row', table, id: created.id, before: null, after: created })
+    return created
+  }
+}
+function recordedChange(table, run, removes = false) {
+  return async (id, ...rest) => {
+    const before = observing() ? await rowCurrent(table, id) : undefined
+    const out = await run(id, ...rest)
+    // Only a row this device actually had is worth a note: an update or delete
+    // of a row it has never seen has no "before" a restore could return to.
+    if (before) {
+      const after = removes ? null : ((await rowCurrent(table, id)) ?? out ?? null)
+      noteWrite({ kind: 'row', table, id, before, after })
+    }
+    return out
+  }
+}
+export const addCommitment    = recordedAdd('commitments', addCommitmentUnrecorded)
+export const updateCommitment = recordedChange('commitments', updateCommitmentUnrecorded)
+export const deleteCommitment = recordedChange('commitments', deleteCommitmentUnrecorded, true)
+export const addVacation      = recordedAdd('vacations', addVacationUnrecorded)
+export const deleteVacation   = recordedChange('vacations', deleteVacationUnrecorded, true)
+export const addEvent         = recordedAdd('events', addEventUnrecorded)
+export const deleteEvent      = recordedChange('events', deleteEventUnrecorded, true)
+export const addRecurringTask    = recordedAdd('recurring_tasks', addRecurringTaskUnrecorded)
+export const updateRecurringTask = recordedChange('recurring_tasks', updateRecurringTaskUnrecorded)
+export const deleteRecurringTask = recordedChange('recurring_tasks', deleteRecurringTaskUnrecorded, true)
+export async function clearRecurringTasks() {
+  const before = observing() ? await rowsCurrent('recurring_tasks') : undefined
+  await clearRecurringTasksUnrecorded()
+  for (const r of before || []) if (r && r.id != null) noteWrite({ kind: 'row', table: 'recurring_tasks', id: r.id, before: r, after: null })
+}
+export const addCategory    = recordedAdd('categories', addCategoryUnrecorded)
+export const updateCategory = recordedChange('categories', updateCategoryUnrecorded)
+export const deleteCategory = recordedChange('categories', deleteCategoryUnrecorded, true)
+
+// ── Restoring an earlier version ────────────────────────────────
+// Put one kv value, row or check-off back the way the version history says it
+// was. Each goes through the ordinary write above — mirror first, then the
+// cloud or the outbox — so a restore syncs to every device like any edit, and
+// is itself journaled (a restore can be restored away).
+export async function restoreKv(key, value) {
+  await dbSet(key, value)
+}
+export async function restoreCompletion(storageKey, done) {
+  await setCompletion(storageKey, !!done)
+}
+const withoutId = ({ id, ...rest }) => rest
+export async function restoreRow(table, id, row) {
+  const cur = await rowCurrent(table, id)
+  const exists = !!cur
+  if (!row && !exists) return
+  if (row && cur && JSON.stringify(cur) === JSON.stringify({ ...cur, ...row })) return
+  switch (table) {
+    case 'commitments':
+      if (!row) return deleteCommitment(id)
+      return exists ? updateCommitment(id, withoutId(row)) : addCommitment({ ...row, id })
+    case 'categories':
+      if (!row) return deleteCategory(id)
+      return exists ? updateCategory(id, withoutId(row)) : addCategory({ ...row, id })
+    case 'recurring_tasks':
+      if (!row) return deleteRecurringTask(id)
+      return exists ? updateRecurringTask(id, { ...row, id }) : addRecurringTask({ ...row, id })
+    case 'events':
+      if (exists) await deleteEvent(id)
+      if (row) await addEvent({ ...row, id })
+      return
+    case 'vacations':
+      if (exists) await deleteVacation(id)
+      if (row) await addVacation({ ...row, id })
+      return
+    case 'log':
+      if (exists) await removeLogEntryById(id)
+      if (row) await addLogEntry({ ...row, id })
+      return
+    default:
+      console.warn('[storage] restoreRow: unknown table', table)
+  }
 }
 
 // ── Outbox replay ───────────────────────────────────────────────
