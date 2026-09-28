@@ -63,6 +63,7 @@ test('without prefer the original order stays', () => {
 test('page images: og:image first, srcset largest, icons and tiny images skipped', () => {
   const html = `<html><head><title>Killua | Wiki</title>
     <meta property="og:image" content="https://cdn.example/killua-main.jpg?w=1200&amp;h=630">
+    <link rel="image_src" href="https://cdn.example/killua-main.jpg?w=1200&amp;h=630">
     </head><body>
     <img src="/logo.png" alt="Site">
     <img src="/pixel.gif" width="1" height="1">

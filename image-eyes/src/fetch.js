@@ -76,15 +76,16 @@ export function toBase64(bytes) {
 const IMAGE_ACCEPT = 'image/webp,image/png,image/jpeg,image/gif;q=0.9,*/*;q=0.5';
 
 // Turns fetched bytes into an image block, or explains why it can't.
-export function bytesToImage(bytes, maxBytes) {
+export function bytesToImage(bytes, maxBytes, minBytes = 0) {
   if (bytes.length > maxBytes) throw new FetchError(`too large (${(bytes.length / 1e6).toFixed(1)} MB)`);
+  if (bytes.length < minBytes) throw new FetchError('too small to be a real picture');
   const mimeType = sniffImageType(bytes);
   if (!mimeType) throw new FetchError('not a PNG, JPEG, GIF or WebP image');
   return { mimeType, data: toBase64(bytes), bytes: bytes.length };
 }
 
 // Tries each source in order (sharpest first) until one loads within the size cap.
-export async function loadImage(sources, { referer, maxBytes = DEFAULT_MAX_IMAGE_BYTES } = {}) {
+export async function loadImage(sources, { referer, maxBytes = DEFAULT_MAX_IMAGE_BYTES, minBytes = 0 } = {}) {
   let lastErr;
   for (const src of sources.filter(Boolean)) {
     try {
@@ -96,7 +97,7 @@ export async function loadImage(sources, { referer, maxBytes = DEFAULT_MAX_IMAGE
         continue;
       }
       const bytes = new Uint8Array(await res.arrayBuffer());
-      return { ...bytesToImage(bytes, maxBytes), url: src };
+      return { ...bytesToImage(bytes, maxBytes, minBytes), url: src };
     } catch (err) {
       lastErr = err;
     }

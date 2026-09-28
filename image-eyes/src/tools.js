@@ -67,6 +67,8 @@ export const TOOLS = [
   },
 ];
 
+const PAGE_MIN_BYTES = 4000;
+
 const text = (t) => ({ type: 'text', text: t });
 const image = (img) => ({ type: 'image', data: img.data, mimeType: img.mimeType });
 
@@ -88,7 +90,7 @@ function describe(n, it, loaded) {
 }
 
 // Loads up to `count` of `items`, skipping any that fail, a few at a time.
-async function loadMany(items, count, { maxBytes, referer }) {
+async function loadMany(items, count, { maxBytes, referer, minBytes }) {
   const shown = [];
   const failed = [];
   let i = 0;
@@ -96,7 +98,7 @@ async function loadMany(items, count, { maxBytes, referer }) {
     const batch = items.slice(i, i + (count - shown.length));
     i += batch.length;
     const results = await Promise.allSettled(
-      batch.map((it) => loadImage(it.sources?.length ? it.sources : imageSources(it.url), { maxBytes, referer: it.referer || referer })),
+      batch.map((it) => loadImage(it.sources?.length ? it.sources : imageSources(it.url), { maxBytes, minBytes, referer: it.referer || referer })),
     );
     results.forEach((r, k) => {
       if (r.status === 'fulfilled') shown.push({ item: batch[k], img: r.value });
@@ -208,7 +210,8 @@ async function viewImageTool(args, env) {
     return { content: [text(`No pictures found on ${pageTitle || url}. The page may build its images with JavaScript; try another page or search_images.`)], isError: true };
   }
   const ranked = rankPageImages(images, prefer).map((it) => ({ ...it, referer: url, sources: imageSources(it.url) }));
-  const loaded = await loadMany(ranked, count, { maxBytes: cap, referer: url });
+  // Icons, spacers and tracking pixels are tiny; real pictures aren't.
+  const loaded = await loadMany(ranked, count, { maxBytes: cap, referer: url, minBytes: PAGE_MIN_BYTES });
   const header = `Pictures from ${pageTitle || url}${prefer ? `, best matches for "${prefer}" first` : ''} (${images.length} found on the page).`;
   return render(header, loaded, wikiNotes);
 }

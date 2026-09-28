@@ -2,7 +2,7 @@
 
 import { TOOLS, callTool } from './tools.js';
 
-export const VERSION = '1.0.0';
+export const VERSION = '3.0.0';
 const PROTOCOL_VERSIONS = ['2025-06-18', '2025-03-26', '2024-11-05'];
 
 const INSTRUCTIONS =

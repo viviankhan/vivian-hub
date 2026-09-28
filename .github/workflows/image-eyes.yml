@@ -26,7 +26,7 @@ jobs:
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-      ACCESS_KEY: ${{ secrets.IMAGE_EYES_ACCESS_KEY }}
+      SECRET_PATH: ${{ secrets.IMAGE_EYES_SECRET_PATH }}
       SERPAPI_KEY: ${{ secrets.SERPAPI_KEY }}
       BRAVE_API_KEY: ${{ secrets.BRAVE_API_KEY }}
     steps:
@@ -43,14 +43,12 @@ jobs:
             exit 0
           fi
           npx wrangler deploy
-          for name in ACCESS_KEY SERPAPI_KEY BRAVE_API_KEY; do
+          # Secrets left blank here keep whatever the Worker already has, so an
+          # existing SECRET_PATH (and the connector address) survives a deploy.
+          for name in SECRET_PATH SERPAPI_KEY BRAVE_API_KEY; do
             value="${!name}"
             if [ -n "$value" ]; then
               printf '%s' "$value" | npx wrangler secret put "$name"
             fi
           done
-          if [ -n "$ACCESS_KEY" ]; then
-            echo "::notice::Deployed. Your connector address is https://image-eyes.<your-subdomain>.workers.dev/mcp/<your IMAGE_EYES_ACCESS_KEY> (the workers.dev address is printed above)."
-          else
-            echo "::warning::Deployed without IMAGE_EYES_ACCESS_KEY, so anyone who finds the address can use it."
-          fi
+          echo "::notice::Deployed. The connector address is https://image-eyes.<subdomain>.workers.dev/mcp/<SECRET_PATH> (the workers.dev address is printed above)."

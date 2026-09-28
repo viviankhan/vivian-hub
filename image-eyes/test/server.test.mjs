@@ -26,14 +26,17 @@ test('MCP handshake: initialize, initialized notification, tools/list', async ()
   assert.equal(old.body.result.protocolVersion, '2025-06-18');
 });
 
-test('ACCESS_KEY hides the server everywhere except /mcp/<key>', async () => {
-  const env = { ACCESS_KEY: 's3cret' };
+test('SECRET_PATH (the old worker\'s secret) hides the server everywhere except /mcp/<secret>', async () => {
+  const env = { SECRET_PATH: 's3cret' };
   const ping = { jsonrpc: '2.0', id: 1, method: 'ping' };
   assert.equal((await rpc(worker, ping, { env })).status, 404);
   assert.equal((await rpc(worker, ping, { env, path: '/mcp/wrong' })).status, 404);
   assert.equal((await rpc(worker, ping, { env, path: '/mcp/s3cret' })).status, 200);
   const get = await worker.fetch(new Request('https://eyes.example/mcp/s3cret'), env);
   assert.equal(get.status, 405);
+  const del = await worker.fetch(new Request('https://eyes.example/mcp/s3cret', { method: 'DELETE' }), env);
+  assert.equal(del.status, 204);
+  assert.equal((await rpc(worker, ping, { env: { ACCESS_KEY: 'k' }, path: '/mcp/k' })).status, 200);
 });
 
 test('view_image on a fandom page that 403s still works, via the wiki API', async () => {
@@ -117,16 +120,21 @@ test('an image over the size cap falls back to the smaller copy', async () => {
 });
 
 test('view_image on an ordinary page returns its main pictures with the page as referer', async () => {
+  const photo = new Uint8Array(5000);
+  photo.set(JPEG);
   const html = `<title>Kurapika | MyAnimeList</title>
+    <img src="https://cdn.mal.example/images/tracker.jpg" alt="Kurapika tracking">
     <meta property="og:image" content="https://cdn.mal.example/images/characters/kurapika.jpg">
     <img src="https://cdn.mal.example/images/characters/kurapika-2.jpg" alt="Kurapika pic 2" width="225" height="350">`;
   const net = mockFetch([
     [/myanimelist\.example\/character/, () => htmlResponse(html)],
-    [/cdn\.mal\.example/, () => imageResponse(JPEG, 'image/jpeg')],
+    [/tracker\.jpg/, () => imageResponse(JPEG, 'image/jpeg')],
+    [/cdn\.mal\.example/, () => imageResponse(photo, 'image/jpeg')],
   ]);
   try {
     const { body } = await call('view_image', { url: 'https://myanimelist.example/character/28/Kurapika', count: 2 });
     assert.equal(images(body.result).length, 2);
+    assert.doesNotMatch(texts(body.result), /image: .*tracker/);
     assert.match(texts(body.result), /Pictures from Kurapika \| MyAnimeList/);
     const imageCall = net.calls.find((c) => c.url.hostname === 'cdn.mal.example');
     assert.equal(imageCall.init.headers.Referer, 'https://myanimelist.example/character/28/Kurapika');

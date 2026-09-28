@@ -9,6 +9,6 @@ compatibility_flags = ["nodejs_compat"]
 MAX_IMAGE_BYTES = "2500000"
 
 # Secrets (set by the GitHub workflow, or `npx wrangler secret put NAME`):
-#   ACCESS_KEY     makes the address /mcp/<ACCESS_KEY> so only you can use it
+#   SECRET_PATH    makes the address /mcp/<SECRET_PATH> so only you can use it
 #   SERPAPI_KEY    turns on web image search through Google Images (serpapi.com)
 #   BRAVE_API_KEY  or through Brave image search (api-dashboard.search.brave.com)

@@ -48,7 +48,7 @@ async function searchBrave(query, n, env) {
 async function searchCommons(query, n) {
   const qs = new URLSearchParams({
     action: 'query', format: 'json', formatversion: '2', origin: '*',
-    generator: 'search', gsrsearch: `${query} filetype:bitmap`, gsrnamespace: '6', gsrlimit: String(n),
+    generator: 'search', gsrsearch: `${query} filetype:bitmap|drawing`, gsrnamespace: '6', gsrlimit: String(n),
     prop: 'imageinfo', iiprop: 'url|size|mime', iiurlwidth: String(SHARP_WIDTH),
   });
   const data = await fetchJson(`https://commons.wikimedia.org/w/api.php?${qs}`);
@@ -86,7 +86,14 @@ async function searchOpenverse(query, n) {
 // Interleaves lists so both open libraries get a turn at the top.
 function interleave(lists) {
   const out = [];
-  for (let i = 0; lists.some((l) => i < l.length); i++) for (const l of lists) if (i < l.length) out.push(l[i]);
+  const seen = new Set();
+  for (let i = 0; lists.some((l) => i < l.length); i++) {
+    for (const l of lists) {
+      if (i >= l.length || seen.has(l[i].url)) continue;
+      seen.add(l[i].url);
+      out.push(l[i]);
+    }
+  }
   return out;
 }
 

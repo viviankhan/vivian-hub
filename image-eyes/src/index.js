@@ -1,8 +1,9 @@
 // Image Eyes: a remote MCP server (Streamable HTTP, stateless JSON replies)
 // that lets Claude look at pictures from the web and from wikis.
 //
-// Claude connects to https://<worker>/mcp, or /mcp/<ACCESS_KEY> when an
-// ACCESS_KEY secret is set so strangers can't spend your search quota.
+// Claude connects to https://<worker>/mcp/<SECRET_PATH>. SECRET_PATH is the
+// same secret the first Image Eyes (v2.1) used, so deploying this over it
+// keeps the connector's address. Without it the address is plain /mcp.
 //
 // Workers only allow handler exports from this file; the rest lives in mcp.js.
 
@@ -18,7 +19,7 @@ const json = (body, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json', ...CORS } });
 
 function authorized(pathname, env) {
-  const key = env.ACCESS_KEY;
+  const key = env.SECRET_PATH || env.ACCESS_KEY;
   if (!key) return pathname === '/mcp' || pathname === '/mcp/';
   return pathname === `/mcp/${key}` || pathname === `/mcp/${key}/`;
 }
@@ -36,6 +37,7 @@ export default {
     if (!url.pathname.startsWith('/mcp') || !authorized(url.pathname, env)) {
       return new Response('Not found\n', { status: 404 });
     }
+    if (request.method === 'DELETE') return new Response(null, { status: 204, headers: CORS });
     if (request.method !== 'POST') {
       // Stateless server: no server-to-client stream to open.
       return new Response('Method not allowed\n', { status: 405, headers: { Allow: 'POST, OPTIONS', ...CORS } });

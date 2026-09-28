@@ -57,9 +57,14 @@ export function extractPageImages(html, pageUrl) {
   for (const tag of html.match(/<meta\b[^>]*>/gi) || []) {
     const a = parseAttrs(tag);
     const key = (a.property || a.name || '').toLowerCase();
-    if (key === 'og:image' || key === 'og:image:url' || key === 'twitter:image' || key === 'twitter:image:src') {
+    if (['og:image', 'og:image:url', 'og:image:secure_url', 'twitter:image', 'twitter:image:src'].includes(key)) {
       push(a.content, { alt: pageTitle, isMain: true });
     }
+  }
+
+  for (const tag of html.match(/<link\b[^>]*>/gi) || []) {
+    const a = parseAttrs(tag);
+    if ((a.rel || '').toLowerCase() === 'image_src') push(a.href, { alt: pageTitle, isMain: true });
   }
 
   for (const tag of html.match(/<img\b[^>]*>/gi) || []) {
