@@ -21,6 +21,38 @@ function todayStr() {
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
 }
 
+// Does the text the AI quoted for a date actually point at `today`?
+// ("today", "tonight", or that calendar day in numbers or with its month name.)
+const MONTH_NAMES = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec']
+export function saysToday(from, today) {
+  const f = String(from || '').toLowerCase()
+  if (!f) return false
+  if (/\b(today|tonight|this (morning|afternoon|evening))\b/.test(f)) return true
+  const [, tm, td] = String(today).split('-').map(Number)
+  const nums = (f.match(/\d+/g) || []).map(Number)
+  return nums.includes(td) && (nums.includes(tm) || f.includes(MONTH_NAMES[tm - 1]))
+}
+
+// When photos are read, an item the AI couldn't find a date for used to come
+// back dated TODAY — its silent fallback. Two related photos (a flyer with the
+// date, an agenda without one) made it worse: everything on the agenda landed
+// on the current day. So with photos, a date of today has to be backed by what
+// the photo or instruction actually said; otherwise the action is flagged
+// `needsDate` and the review screen asks for the date before anything applies.
+// The parse-event function does the same check; this repeats it so an older
+// deployment of that function (which doesn't send `dateFrom`) is covered too.
+export function flagGuessedDates(actions, { today, command = '' } = {}) {
+  const commandSaysToday = /\b(today|tonight)\b/i.test(command)
+  return (actions || []).map(a => {
+    if (!a || (a.kind !== 'create' && a.kind !== 'event')) return a
+    if (a.needsDate) return a
+    const date = a.kind === 'event' ? a.startDate : a.date
+    if (a.kind === 'create' && !date) return { ...a, needsDate: true }
+    if (date === today && !commandSaysToday && !saysToday(a.dateFrom, today)) return { ...a, needsDate: true, guessedToday: true }
+    return a
+  })
+}
+
 // How many photos one request may carry, matching the function's own cap.
 export const MAX_ASSISTANT_IMAGES = 4
 
@@ -68,5 +100,7 @@ export async function runAssistant(command, { categories = [], tasks = [], image
   if (!data) throw new Error('The AI service returned an unexpected response.')
   // A 200 with an error field + no actions = the model couldn't form a plan.
   if ((!Array.isArray(data.actions) || data.actions.length === 0) && data.error) throw new Error(data.error)
-  return { summary: data.summary || '', actions: Array.isArray(data.actions) ? data.actions : [] }
+  let actions = Array.isArray(data.actions) ? data.actions : []
+  if (photos.length) actions = flagGuessedDates(actions, { today: todayStr(), command })
+  return { summary: data.summary || '', actions }
 }

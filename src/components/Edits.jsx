@@ -5,6 +5,15 @@
 const EDIT_LOG = [
   {
     date: '2026-09-28',
+    summary: 'Photos read together — and the assistant stops guessing "today"',
+    changes: [
+      'Fixed: sending two related photos (say a flyer and its agenda) no longer drops everything onto the current day. The assistant now reads the photos as one set, so a date printed on one applies to the items on the other',
+      'When no date can be found, the assistant used to fill in today without saying so. Now it leaves the date blank, or if it still says today, has to show where the photo or your instruction said so',
+      'Any item without a real date is marked ⚠ on the review screen, and Apply waits until you set its date (tap the warning) or remove it',
+    ]
+  },
+  {
+    date: '2026-09-28',
     summary: 'Version history — roll all of Bloom back to an earlier point, like a Google Doc',
     changes: [
       'New Settings → Versions: every change you make is saved as you go and grouped into versions (a burst of edits), newest first, each listing what changed — "Added task “Dentist”", "Edited Notes", "Checked off a task"',

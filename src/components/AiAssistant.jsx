@@ -81,6 +81,13 @@ function ActionEditor({ action, categories, onSave, onCancel }) {
       const mins = parseInt(d.durationMins, 10)
       out.durationMins = mins > 0 ? mins : null
     }
+    // Saving the editor is the user choosing the date, so a flagged "needs a
+    // date" item is settled once it has one.
+    if (d.kind === 'create' && out.date) { delete out.needsDate; delete out.guessedToday }
+    if (d.kind === 'event' && d.startDate) {
+      delete out.needsDate; delete out.guessedToday
+      if (!d.endDate) out.endDate = d.startDate
+    }
     if (d.kind === 'event') {
       if (d.endDate && d.startDate && d.endDate < d.startDate) out.endDate = d.startDate
       if (d.allDay === false && d.startTime && d.endTime && d.endTime <= d.startTime && (!out.endDate || out.endDate === d.startDate)) out.endTime = null
@@ -282,7 +289,8 @@ export default function AiAssistant({ categories = [], tasks = [], onApply, onCl
     } finally { setBusy(false) }
   }
 
-  const canApply = !!plan && plan.actions.length > 0 && editingIdx === null
+  const undated = plan ? plan.actions.filter(a => a && a.needsDate).length : 0
+  const canApply = !!plan && plan.actions.length > 0 && editingIdx === null && undated === 0
   const apply = () => { if (canApply) { onApply(plan.actions); onClose() } }
 
   const updateAction = (i, next) => { setPlan(p => ({ ...p, actions: p.actions.map((a, k) => k === i ? next : a) })); setEditingIdx(null) }
@@ -388,6 +396,9 @@ export default function AiAssistant({ categories = [], tasks = [], onApply, onCl
                 if (a.durationMins) chips.push(prettyDur(a.durationMins))
               }
               labelsOf(a.categoryIds).forEach(l => chips.push(l))
+              const flag = a.needsDate
+                ? (a.guessedToday ? 'Check the date — no date found, so it defaulted to today' : 'Needs a date — none found in the photos')
+                : ''
               const reminders = Array.isArray(a.reminders) ? a.reminders : []
               if (editingIdx === i) return (
                 <div key={i} style={{ ...card, borderColor:'var(--forest)' }}>
@@ -405,6 +416,12 @@ export default function AiAssistant({ categories = [], tasks = [], onApply, onCl
                     <button type="button" onClick={() => removeAction(i)} aria-label="Remove this change" style={{ ...small, color:'var(--muted)' }}>✕</button>
                   </div>
                 </div>
+                {flag && (
+                  <button type="button" onClick={() => setEditingIdx(i)}
+                    style={{ marginTop:7, display:'block', textAlign:'left', fontSize:11.5, fontWeight:700, color:'#B4341F', background:'#FBEBE7', border:'1px solid #F3C6BC', borderRadius:8, padding:'4px 9px', cursor:'pointer', fontFamily:'DM Sans,sans-serif' }}>
+                    ⚠ {flag} · tap to set it
+                  </button>
+                )}
                 {chips.length > 0 && (
                   <div style={{ marginTop:7, display:'flex', flexWrap:'wrap', gap:6 }}>
                     {chips.map((c, j) => (
@@ -436,6 +453,11 @@ export default function AiAssistant({ categories = [], tasks = [], onApply, onCl
               </div>
             )})}
             {editingIdx !== null && <div style={{ fontSize:11.5, color:'var(--muted)', marginTop:6 }}>Tap Done on the change you’re editing to apply.</div>}
+            {editingIdx === null && undated > 0 && (
+              <div style={{ fontSize:11.5, color:'#B4341F', marginTop:6, lineHeight:1.45 }}>
+                Set a date for the {undated === 1 ? 'item' : `${undated} items`} marked ⚠ (or remove {undated === 1 ? 'it' : 'them'}) to apply — so nothing lands on the wrong day.
+              </div>
+            )}
             <div style={{ display:'flex', gap:8, marginTop:14 }}>
               <button onClick={()=>{ setPlan(null); setEditingIdx(null) }}
                 style={{ padding:'13px 16px', borderRadius:12, border:'1px solid var(--border)', background:'white', color:'var(--muted)', cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:600, fontSize:14 }}>Back</button>

@@ -39,6 +39,9 @@ const GEMINI_KEY = Deno.env.get('GEMINI_API_KEY') || ''
 // and keeps a full-res upload from stalling the request.
 const MAX_IMAGES = 4
 const MAX_IMAGE_BYTES = 8_000_000
+const MONTHS = [
+  ['jan'], ['feb'], ['mar'], ['apr'], ['may'], ['jun'], ['jul'], ['aug'], ['sep'], ['oct'], ['nov'], ['dec'],
+]
 const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif']
 
 // The last model name that actually worked, remembered across invocations on a
@@ -137,9 +140,12 @@ Deno.serve(async (req) => {
   // times printed on it to believe, and what belongs in the description. Only
   // added when a photo is actually attached, so text-only commands are unchanged.
   const photoNote = images.length ? `
-ATTACHED PHOTO${images.length > 1 ? `S (${images.length})` : ''}: the user photographed or screenshotted something they need on their planner — an email or message about a meeting, a syllabus or assignment sheet, a flyer, a poster, a whiteboard, a paper schedule, a handwritten list. Read ${images.length > 1 ? 'each one' : 'it'} and schedule what it describes:
-- Title it after the thing itself ("Immunology WIP Seminar", "BIO 210 midterm") — not after the app, the sender, or the subject line's boilerplate. If the image names a specific talk, class, or appointment, that name is the title.
-- Use the date and time printed in the image. A weekday paired with a date ("Next Wednesday (9/9)") means that calendar date — trust the number over the weekday word. Resolve a bare weekday, "tomorrow", or "next week" against today's date. When only a month/day is shown, choose the year that puts it nearest today, upcoming if the wording points forward.
+ATTACHED PHOTO${images.length > 1 ? `S (${images.length})` : ''}: the user photographed or screenshotted something they need on their planner — an email or message about a meeting, a syllabus or assignment sheet, a flyer, a poster, a whiteboard, a paper schedule, a handwritten list. Read ${images.length > 1 ? 'them' : 'it'} and schedule what ${images.length > 1 ? 'they describe' : 'it describes'}:
+${images.length > 1 ? `- The ${images.length} photos were sent TOGETHER because they belong together — read them as ONE set before planning anything (a flyer and its agenda, an invitation and a schedule, two pages of one email, a screenshot and its follow-up). A date, event name, place, or year shown on one photo applies to the items on the others. An agenda or list of times with no date of its own takes its date from the photo that has one.
+- Don't produce duplicates: when two photos show the same event, make one action that combines what each adds.
+` : ''}- Title it after the thing itself ("Immunology WIP Seminar", "BIO 210 midterm") — not after the app, the sender, or the subject line's boilerplate. If the image names a specific talk, class, or appointment, that name is the title.
+- Use the date and time printed in the image${images.length > 1 ? 's' : ''}. Look through ${images.length > 1 ? 'every photo' : 'the whole image'} for the date before deciding there isn't one. A weekday paired with a date ("Next Wednesday (9/9)") means that calendar date — trust the number over the weekday word. Resolve a bare weekday, "tomorrow", or "next week" against today's date. When only a month/day is shown, choose the year that puts it nearest today, upcoming if the wording points forward.
+- NEVER fill in today's date as a fallback. Use today's date (${today}) only when the image or instruction actually says "today"/"tonight" or shows that date. If no date appears anywhere (and the instruction doesn't give one), leave "date" as "" — the user will pick it.
 - If two time zones are given for the same moment, use the FIRST one listed unless the user says which is theirs.
 - Put everything a person needs on the day into "description": room and building, addresses, joining links, meeting IDs and passcodes, dial-ins, the presenter and their topic, what to bring, costs. Copy links, IDs, and codes EXACTLY, character for character — never shorten or tidy them.
 - A single-day meeting, class, or appointment is a create with its time and durationMins (default 60 minutes for a seminar or meeting when no end is shown). Use event only for something covering more than one day.
@@ -164,9 +170,9 @@ Respond with ONLY a JSON object (no prose, no markdown, no code fences) of this 
 
 Each action object is one of these shapes. COPY the shape and fill in EVERY field that applies — never leave out the dates on a create or event:
 - create — a new single-day TASK (something to do on one day):
-  {"kind":"create","title":"Dentist","date":"2026-08-25","time":"15:00","durationMins":60,"categoryIds":[],"description":"Bring insurance card","subtasks":[{"text":"call to confirm","done":false}],"reminders":[60]}
+  {"kind":"create","title":"Dentist","date":"2026-08-25","dateFrom":"Tues Aug 25","time":"15:00","durationMins":60,"categoryIds":[],"description":"Bring insurance card","subtasks":[{"text":"call to confirm","done":false}],"reminders":[60]}
 - event — a multi-day calendar EVENT spanning a range of days (a trip, a vacation, someone away/out, a conference — anything covering more than one day or phrased as an absence/trip/period). date is the START day, endDate the END day:
-  {"kind":"event","title":"Danya trip to Mexico","date":"2026-08-14","endDate":"2026-08-18","allDay":true}
+  {"kind":"event","title":"Danya trip to Mexico","date":"2026-08-14","dateFrom":"14–18th","endDate":"2026-08-18","allDay":true}
 - addSubtasks — add subtasks to an EXISTING task (use a taskId from the list above):
   {"kind":"addSubtasks","taskId":"<existing id>","subtasks":[{"text":"read chapter 4","done":true}]}
 - setDone — mark an existing task complete/incomplete:
@@ -178,6 +184,7 @@ Rules:
 - ALWAYS return at least one action whenever the instruction describes anything to schedule, add, or change. Never return an empty "actions" array in that case — the summary alone is not enough; the app can only act on the actions.
 - To act on an existing task, find the best match in the list by name and use its exact id. If nothing matches what the user names, prefer a create action or leave it out — do not guess a random id.
 - Choosing create vs event: if it happens on ONE day, use create (a task). If it covers MORE THAN ONE day, or reads as a trip / vacation / absence / stretch of days, use event and set date=start, endDate=end. Resolve durations like "6 weeks" into an actual endDate from today. When only a start is given for a clearly multi-day thing and no end is stated, make a sensible endDate rather than collapsing it to one day.
+- On every create and event, "dateFrom" is the exact words in the instruction or photo that gave you the date ("Sat Oct 12", "tomorrow", "9/9"). If nothing stated a date, dateFrom is "" and so is date.
 - Every date MUST be a literal YYYY-MM-DD string (e.g. "2026-08-14"), never words like "August 14th".
 - The instruction may describe SEVERAL things at once — produce one action for each. Two people/plans mentioned means (at least) two actions.
 - Only use information present or clearly implied. Never fabricate specifics.
@@ -339,7 +346,7 @@ ${command || 'Schedule what the attached photo shows.'}
       if (!title) continue
       actions.push({
         kind, title,
-        date: clampDate(a.date), time: clampTime(a.time),
+        date: clampDate(a.date), dateFrom: String(a.dateFrom || '').trim().slice(0, 120), time: clampTime(a.time),
         durationMins: Number.isFinite(a.durationMins) ? Math.max(0, Math.min(1440, Math.round(a.durationMins))) : 0,
         categoryIds: Array.isArray(a.categoryIds) ? a.categoryIds.filter((id: string) => validCats.has(id)).slice(0, 4) : [],
         description: String(a.description || '').trim().slice(0, 4000),
@@ -354,7 +361,7 @@ ${command || 'Schedule what the attached photo shows.'}
       if (end < start) end = start            // never let the range invert
       const allDay = a.allDay !== false
       actions.push({
-        kind, title, startDate: start, endDate: end, allDay,
+        kind, title, startDate: start, endDate: end, allDay, dateFrom: String(a.dateFrom || '').trim().slice(0, 120),
         startTime: allDay ? '' : clampTime(a.startTime),
         endTime:   allDay ? '' : clampTime(a.endTime),
       })
@@ -370,6 +377,32 @@ ${command || 'Schedule what the attached photo shows.'}
       const date = clampDate(a.date), time = clampTime(a.time)
       if (!date && !time) continue
       actions.push({ kind, taskId: a.taskId, date, time, durationMins: Number.isFinite(a.durationMins) ? Math.max(0, Math.min(1440, Math.round(a.durationMins))) : 0 })
+    }
+  }
+
+  // A photo with no readable date — or a date that lives on a different photo
+  // than the item — used to come back as TODAY: the model's fallback, and a
+  // silent one, so a whole event plan landed on the wrong day. With photos
+  // attached, a date of today has to be backed by words that actually said so
+  // ("today", "tonight", or that calendar date); otherwise it's cleared and the
+  // action is flagged so the app asks the user for the date instead of guessing.
+  if (images.length) {
+    const [, tm, td] = today.split('-').map(Number)
+    const saysToday = (from: string) => {
+      const f = from.toLowerCase()
+      if (!f) return false
+      if (/\b(today|tonight|this (morning|afternoon|evening))\b/.test(f)) return true
+      const nums = (f.match(/\d+/g) || []).map(Number)
+      return nums.includes(td) && (nums.includes(tm) || MONTHS[tm - 1].some(m => f.includes(m)))
+    }
+    for (const a of actions) {
+      if (a.kind === 'create' && a.date === today && !saysToday(a.dateFrom)) { a.date = ''; a.needsDate = true }
+      else if (a.kind === 'create' && !a.date) a.needsDate = true
+      else if (a.kind === 'event' && a.startDate === today && !saysToday(a.dateFrom)) {
+        a.needsDate = true
+        a.startDate = ''
+        a.endDate = a.endDate === today ? '' : a.endDate
+      }
     }
   }
 
