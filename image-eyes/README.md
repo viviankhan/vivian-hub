@@ -22,7 +22,7 @@ and its secret stay the same, so the connector in Claude keeps working.
 3. Open `paste-into-cloudflare.js` from this folder, copy all of it, and in
    the editor replace everything in the worker's file with it.
 4. Click **Deploy**.
-5. For web search: on the Worker's **Settings → Variables and Secrets**,
+5. Optional, for web search: on the Worker's **Settings → Variables and Secrets**,
    click **Add**, choose type **Secret**, name it `SERPER_API_KEY` (or
    `BRAVE_API_KEY`), paste your key, and **Deploy** (see the next section
    for where to get one).
