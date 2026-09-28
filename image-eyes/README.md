@@ -8,7 +8,7 @@ connector. Because the code is in your GitHub, it can't go missing.
 
 | Tool | What it does |
 |---|---|
-| `search_images` | Searches the **whole web** (Google Images through SerpApi, or Brave) and returns the pictures plus each one's source page. Without a search key it searches Wikimedia Commons and Openverse only. |
+| `search_images` | Searches the **whole web** (Google Images through Serper or SerpApi, or Brave) and returns the pictures plus each one's source page. Without a search key it searches Wikimedia Commons and Openverse only. |
 | `view_image` | Looks at an image URL or a page. **Fandom and Wikipedia pages are read through the wiki's own API**, so fandom's 403 doesn't matter, and gallery subpages are searched too. `prefer: "2011 full body -1999"` picks which pictures come back. Thumbnails are swapped for the sharpest size Claude can use (1568 px). |
 | `list_wiki_images` | Lists every picture on a wiki page and its galleries as text: filename, **caption**, **section/tab** (e.g. `2011 Anime › Full body`), size and full-size URL. Claude reads this first to pick the right version, then views only what it needs. |
 
@@ -22,9 +22,10 @@ and its secret stay the same, so the connector in Claude keeps working.
 3. Open `paste-into-cloudflare.js` from this folder, copy all of it, and in
    the editor replace everything in the worker's file with it.
 4. Click **Deploy**.
-5. Optional, for web search: on the Worker's **Settings → Variables and
-   Secrets**, add a secret named `SERPAPI_KEY` (or `BRAVE_API_KEY`) with
-   your key (see step 2 below for where to get one).
+5. For web search: on the Worker's **Settings → Variables and Secrets**,
+   click **Add**, choose type **Secret**, name it `SERPER_API_KEY` (or
+   `BRAVE_API_KEY`), paste your key, and **Deploy** (see the next section
+   for where to get one).
 6. Start a new chat with Image Eyes on. Claude should list three tools,
    including `list_wiki_images`.
 
@@ -58,13 +59,17 @@ Log in at **dash.cloudflare.com** with the account that has the
 This is what lets Claude find anime characters, products and so on. Pick
 one:
 
-- **SerpApi** (Google Images): sign up at **serpapi.com**. The free plan
-  includes a limited number of searches a month. Copy the API key from the
-  dashboard.
+- **Serper** (Google Images, easiest): sign up at **serper.dev** (a Google
+  account works). New accounts get free searches to start. Copy the key
+  from **API Key** in the dashboard. Secret name: `SERPER_API_KEY`.
 - **Brave Search API**: sign up at **api-dashboard.search.brave.com**, pick
-  a plan and copy the key. Check that the plan includes image search.
+  a plan that includes image search and copy the key. Secret name:
+  `BRAVE_API_KEY`.
+- **SerpApi** (Google Images): **serpapi.com**. Secret name: `SERPAPI_KEY`.
 
-Without either, everything except web search still works.
+If more than one is set, Serper is used first, then SerpApi, then Brave.
+
+Without any, everything except web search still works.
 
 ### 3. Add GitHub secrets
 
@@ -75,7 +80,7 @@ New repository secret**:
 |---|---|
 | `CLOUDFLARE_API_TOKEN` | the token from step 1 |
 | `CLOUDFLARE_ACCOUNT_ID` | the account ID from step 1 |
-| `SERPAPI_KEY` *or* `BRAVE_API_KEY` | from step 2 (optional) |
+| `SERPER_API_KEY`, `SERPAPI_KEY` *or* `BRAVE_API_KEY` | from step 2 (optional) |
 | `IMAGE_EYES_SECRET_PATH` | **leave this out** to keep the current address. Only set it to change the address (then update the connector in Claude to `…/mcp/<new value>`). |
 
 ### 4. Deploy
@@ -105,8 +110,8 @@ connector** paste `https://image-eyes.<subdomain>.workers.dev/mcp/<that string>`
   in `/mcp/<SECRET_PATH>` exactly, with no trailing spaces.
 - **Want the old version back:** paste `archive/v2.1-worker.js` into the
   Worker's **Edit code** screen in Cloudflare and deploy it there.
-- **Web search never happens:** the result will say "no SERPAPI_KEY or
-  BRAVE_API_KEY is set". Add one (step 2–3) and redeploy.
+- **Web search never happens:** the result will say "no SERPER_API_KEY,
+  SERPAPI_KEY or BRAVE_API_KEY is set". Add one (step 2–3) and redeploy.
 - **Errors mentioning CPU time on very large pictures:** Cloudflare's free
   plan has a small CPU allowance per request. Lower `MAX_IMAGE_BYTES`, or
   switch to the $5/month Workers Paid plan.

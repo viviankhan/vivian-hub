@@ -1,14 +1,41 @@
-// Image search. "web" covers the whole web through SerpApi (Google Images)
-// or Brave, whichever key is set. "open" covers Wikimedia Commons and
+// Image search. "web" covers the whole web through Serper or SerpApi (both
+// Google Images) or Brave, whichever key is set. "open" covers Wikimedia Commons and
 // Openverse and needs no key.
 
 import { fetchJson } from './fetch.js';
 import { SHARP_WIDTH, imageSources } from './urls.js';
 
+const PROVIDERS = {
+  serper: { name: 'Google Images (Serper)', search: (q, n, env) => searchSerper(q, n, env) },
+  google: { name: 'Google Images (SerpApi)', search: (q, n, env) => searchGoogle(q, n, env) },
+  brave: { name: 'Brave Images', search: (q, n, env) => searchBrave(q, n, env) },
+};
+
 export function webProvider(env) {
+  if (env.SERPER_API_KEY) return 'serper';
   if (env.SERPAPI_KEY) return 'google';
   if (env.BRAVE_API_KEY) return 'brave';
   return null;
+}
+
+async function searchSerper(query, n, env) {
+  const res = await fetch('https://google.serper.dev/images', {
+    method: 'POST',
+    headers: { 'X-API-KEY': env.SERPER_API_KEY, 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify({ q: query, num: Math.min(Math.max(n, 10), 100) }),
+    signal: AbortSignal.timeout(15000),
+  });
+  if (!res.ok) throw new Error(`Serper answered ${res.status}${res.status === 403 || res.status === 401 ? ' (check SERPER_API_KEY)' : ''}`);
+  const data = await res.json();
+  return (data.images || []).slice(0, n).map((r) => ({
+    title: r.title || '',
+    pageUrl: r.link || '',
+    site: r.source || r.domain || '',
+    width: r.imageWidth,
+    height: r.imageHeight,
+    url: r.imageUrl || r.thumbnailUrl,
+    sources: [...imageSources(r.imageUrl || ''), r.thumbnailUrl].filter(Boolean),
+  }));
 }
 
 async function searchGoogle(query, n, env) {
@@ -102,12 +129,12 @@ export async function searchImages(query, { source = 'auto', n = 12, env = {} } 
   const notes = [];
   const wantWeb = source === 'web' || (source === 'auto' && provider);
   if (source === 'web' && !provider) {
-    notes.push('Web search is off because no SERPAPI_KEY or BRAVE_API_KEY is set on the server; searched the open libraries instead.');
+    notes.push('Web search is off because no SERPER_API_KEY, SERPAPI_KEY or BRAVE_API_KEY is set on the server; searched the open libraries instead.');
   }
   if (wantWeb && provider) {
     try {
-      const results = provider === 'google' ? await searchGoogle(query, n, env) : await searchBrave(query, n, env);
-      if (results.length) return { results, searched: provider === 'google' ? 'Google Images (SerpApi)' : 'Brave Images', notes };
+      const results = await PROVIDERS[provider].search(query, n, env);
+      if (results.length) return { results, searched: PROVIDERS[provider].name, notes };
       notes.push('Web search found nothing; tried the open libraries.');
     } catch (err) {
       notes.push(`Web search failed (${err.message}); tried the open libraries.`);

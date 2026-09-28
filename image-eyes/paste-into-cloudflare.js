@@ -268,10 +268,35 @@ function looksLikeImageUrl(url) {
 }
 
 // src/search.js
+var PROVIDERS = {
+  serper: { name: "Google Images (Serper)", search: (q, n, env) => searchSerper(q, n, env) },
+  google: { name: "Google Images (SerpApi)", search: (q, n, env) => searchGoogle(q, n, env) },
+  brave: { name: "Brave Images", search: (q, n, env) => searchBrave(q, n, env) }
+};
 function webProvider(env) {
+  if (env.SERPER_API_KEY) return "serper";
   if (env.SERPAPI_KEY) return "google";
   if (env.BRAVE_API_KEY) return "brave";
   return null;
+}
+async function searchSerper(query, n, env) {
+  const res = await fetch("https://google.serper.dev/images", {
+    method: "POST",
+    headers: { "X-API-KEY": env.SERPER_API_KEY, "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify({ q: query, num: Math.min(Math.max(n, 10), 100) }),
+    signal: AbortSignal.timeout(15e3)
+  });
+  if (!res.ok) throw new Error(`Serper answered ${res.status}${res.status === 403 || res.status === 401 ? " (check SERPER_API_KEY)" : ""}`);
+  const data = await res.json();
+  return (data.images || []).slice(0, n).map((r) => ({
+    title: r.title || "",
+    pageUrl: r.link || "",
+    site: r.source || r.domain || "",
+    width: r.imageWidth,
+    height: r.imageHeight,
+    url: r.imageUrl || r.thumbnailUrl,
+    sources: [...imageSources(r.imageUrl || ""), r.thumbnailUrl].filter(Boolean)
+  }));
 }
 async function searchGoogle(query, n, env) {
   const qs = new URLSearchParams({ engine: "google_images", q: query, api_key: env.SERPAPI_KEY, ijn: "0" });
@@ -363,12 +388,12 @@ async function searchImages(query, { source = "auto", n = 12, env = {} } = {}) {
   const notes = [];
   const wantWeb = source === "web" || source === "auto" && provider;
   if (source === "web" && !provider) {
-    notes.push("Web search is off because no SERPAPI_KEY or BRAVE_API_KEY is set on the server; searched the open libraries instead.");
+    notes.push("Web search is off because no SERPER_API_KEY, SERPAPI_KEY or BRAVE_API_KEY is set on the server; searched the open libraries instead.");
   }
   if (wantWeb && provider) {
     try {
-      const results = provider === "google" ? await searchGoogle(query, n, env) : await searchBrave(query, n, env);
-      if (results.length) return { results, searched: provider === "google" ? "Google Images (SerpApi)" : "Brave Images", notes };
+      const results = await PROVIDERS[provider].search(query, n, env);
+      if (results.length) return { results, searched: PROVIDERS[provider].name, notes };
       notes.push("Web search found nothing; tried the open libraries.");
     } catch (err) {
       notes.push(`Web search failed (${err.message}); tried the open libraries.`);
@@ -689,7 +714,7 @@ var clamp = (n, lo, hi, dflt) => Math.max(lo, Math.min(hi, Number.isFinite(+n) &
 var TOOLS = [
   {
     name: "search_images",
-    description: `SEE images of anything: returns the actual pictures plus each one's source page URL. source "web" (default when the server has a search key) searches the whole web like Google Images, so it finds anime/cartoon/game characters, film stills, products and fan wikis. source "open" searches only Wikimedia Commons and Openverse (good for science, nature, places, history). Be specific in the query, e.g. "Kurapika Hunter x Hunter 2011 anime full body". To dig into one result's page, pass its page URL to view_image or list_wiki_images.`,
+    description: `SEE images of anything: returns the actual pictures plus each one's source page URL. source "web" (default when the server has a search key) searches the whole web through Google or Brave Images, so it finds anime/cartoon/game characters, film stills, products and fan wikis. source "open" searches only Wikimedia Commons and Openverse (good for science, nature, places, history). Be specific in the query, e.g. "Kurapika Hunter x Hunter 2011 anime full body". To dig into one result's page, pass its page URL to view_image or list_wiki_images.`,
     inputSchema: {
       type: "object",
       properties: {
@@ -787,7 +812,7 @@ async function searchImagesTool(args, env) {
   const loaded = await loadMany(results, count, { maxBytes: maxBytes(env) });
   const footer = [...notes];
   if (!webProvider(env) && source !== "open") {
-    footer.push("Tip: this server has no web search key, so only open libraries were searched. For characters or products, find a page with your own web search and pass it to view_image.");
+    footer.push("Tip: this server has no web search key (SERPER_API_KEY, SERPAPI_KEY or BRAVE_API_KEY), so only open libraries were searched. For characters or products, find a page with your own web search and pass it to view_image.");
   }
   return render(`Search: "${query}" in ${searched}. Showing ${loaded.shown.length} of ${results.length} results.`, loaded, footer);
 }

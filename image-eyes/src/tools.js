@@ -13,7 +13,7 @@ export const TOOLS = [
     name: 'search_images',
     description:
       'SEE images of anything: returns the actual pictures plus each one\'s source page URL. ' +
-      'source "web" (default when the server has a search key) searches the whole web like Google Images, so it finds ' +
+      'source "web" (default when the server has a search key) searches the whole web through Google or Brave Images, so it finds ' +
       'anime/cartoon/game characters, film stills, products and fan wikis. source "open" searches only Wikimedia Commons ' +
       'and Openverse (good for science, nature, places, history). Be specific in the query, e.g. ' +
       '"Kurapika Hunter x Hunter 2011 anime full body". To dig into one result\'s page, pass its page URL to view_image ' +
@@ -134,7 +134,7 @@ async function searchImagesTool(args, env) {
   const loaded = await loadMany(results, count, { maxBytes: maxBytes(env) });
   const footer = [...notes];
   if (!webProvider(env) && source !== 'open') {
-    footer.push('Tip: this server has no web search key, so only open libraries were searched. For characters or products, find a page with your own web search and pass it to view_image.');
+    footer.push('Tip: this server has no web search key (SERPER_API_KEY, SERPAPI_KEY or BRAVE_API_KEY), so only open libraries were searched. For characters or products, find a page with your own web search and pass it to view_image.');
   }
   return render(`Search: "${query}" in ${searched}. Showing ${loaded.shown.length} of ${results.length} results.`, loaded, footer);
 }

@@ -182,6 +182,32 @@ test('search_images uses Google Images through SerpApi when its key is set', asy
   }
 });
 
+test('search_images uses Google Images through Serper when its key is set', async () => {
+  const net = mockFetch([
+    [/google\.serper\.dev\/images/, (u, init) => {
+      assert.equal(init.method, 'POST');
+      assert.equal(init.headers['X-API-KEY'], 'sk');
+      assert.equal(JSON.parse(init.body).q, 'Killua 2011 full body');
+      return jsonResponse({ images: [
+        { title: 'Killua Zoldyck | Hunterpedia', imageUrl: 'https://static.wikia.nocookie.net/hunterxhunter/images/1/1a/Killua.png/revision/latest?cb=1', imageWidth: 1200, imageHeight: 2400, thumbnailUrl: 'https://encrypted-tbn0.gstatic.com/images?q=x', source: 'Hunterpedia', domain: 'hunterxhunter.fandom.com', link: 'https://hunterxhunter.fandom.com/wiki/Killua_Zoldyck' },
+      ] });
+    }],
+    [/static\.wikia\.nocookie\.net/, () => imageResponse()],
+  ]);
+  try {
+    const { body } = await call('search_images', { query: 'Killua 2011 full body', count: 1 }, { env: { SERPER_API_KEY: 'sk', BRAVE_API_KEY: 'b' } });
+    const out = texts(body.result);
+    assert.equal(images(body.result).length, 1);
+    assert.match(out, /Google Images \(Serper\)/);
+    assert.match(out, /page: https:\/\/hunterxhunter\.fandom\.com\/wiki\/Killua_Zoldyck/);
+    // Fandom results come back at the sharp size, not Google's thumbnail.
+    const imageCall = net.calls.find((c) => c.url.hostname === 'static.wikia.nocookie.net');
+    assert.match(imageCall.url.pathname, /scale-to-width-down\/1568$/);
+  } finally {
+    net.restore();
+  }
+});
+
 test('search_images uses Brave when only its key is set', async () => {
   const net = mockFetch([
     [/api\.search\.brave\.com/, (u, init) => {
@@ -213,7 +239,7 @@ test('search_images without a key searches the open libraries and says so', asyn
     const out = texts(body.result);
     assert.equal(images(body.result).length, 2);
     assert.match(out, /Wikimedia Commons \+ Openverse/);
-    assert.match(out, /no SERPAPI_KEY or BRAVE_API_KEY/);
+    assert.match(out, /no SERPER_API_KEY, SERPAPI_KEY or BRAVE_API_KEY/);
   } finally {
     net.restore();
   }

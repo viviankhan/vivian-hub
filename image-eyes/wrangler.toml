@@ -10,5 +10,6 @@ MAX_IMAGE_BYTES = "2500000"
 
 # Secrets (set by the GitHub workflow, or `npx wrangler secret put NAME`):
 #   SECRET_PATH    makes the address /mcp/<SECRET_PATH> so only you can use it
-#   SERPAPI_KEY    turns on web image search through Google Images (serpapi.com)
+#   SERPER_API_KEY turns on web image search through Google Images (serper.dev)
+#   SERPAPI_KEY    or through Google Images via serpapi.com
 #   BRAVE_API_KEY  or through Brave image search (api-dashboard.search.brave.com)
