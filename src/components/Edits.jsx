@@ -7,7 +7,7 @@ const EDIT_LOG = [
     date: '2026-09-29',
     summary: 'The AI assistant can make repeating tasks — and birthdays repeat every year',
     changes: [
-      'New Yearly repeat option, for birthdays and anniversaries, in the add sheet, the task editor and the AI assistant. Recurring → Routines gets its own Yearly section and filter. A Feb 29 birthday shows on Feb 28 in other years',
+      'New Yearly repeat option, for birthdays and anniversaries, in the add sheet, the task editor and the AI assistant. The Recurring tab gets its own Yearly section and filter. A Feb 29 birthday shows on Feb 28 in other years',
       'The AI assistant can create repeating tasks ("gym every Mon & Thu at 7", "rent on the 1st of every month"), and a birthday or anniversary is always set to repeat yearly, even if the AI didn\'t say so',
       'On the review screen, Edit on a planned task now has a Repeat choice (Once / Daily / Weekly / Monthly / Yearly), with weekdays, "every N" and an end date. Each planned task shows how it repeats',
       'You can ask the assistant to make an existing task repeat ("make Mom\'s birthday repeat every year"). It turns into a series, just like using Repeat in the task editor',
