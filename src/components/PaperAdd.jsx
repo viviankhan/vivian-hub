@@ -13,28 +13,12 @@
 // narrator (see PAPERS.md), which is pinged right away.
 // ─────────────────────────────────────────────────────────────
 import { useState, useEffect, useRef } from 'react'
-import { walkthroughFromPdf, insertPaper, uploadFigure, requestNarration, describeFigure } from '../lib/papers.js'
-import { openPdf, renderPage, cropCanvas, canvasToBlob, imageFileToBlob } from '../lib/pdfFigures.js'
+import { insertPaper, requestNarration, describeFigure } from '../lib/papers.js'
+import { readPdf, saveWalkthrough, cutFigure } from '../lib/paperImport.js'
+import { renderPage, imageFileToBlob } from '../lib/pdfFigures.js'
 import { paperFromImport, sectionsFromText, estimateMinutes } from '../lib/paperText.js'
 
-function uuid() {
-  if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID()
-  const b = crypto.getRandomValues(new Uint8Array(16))
-  b[6] = (b[6] & 0x0f) | 0x40; b[8] = (b[8] & 0x3f) | 0x80
-  const h = [...b].map(x => x.toString(16).padStart(2, '0')).join('')
-  return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`
-}
-
-// A figure in the review step: where it came from and the JPEG to upload.
-// { page, box, caption, blob, url }  (page/box only for figures cut from the PDF)
-// The model's boxes get a little padding; a crop you drew yourself gets none.
-async function cutFigure(doc, page, box, pad = 12) {
-  const canvas = await renderPage(doc, page)
-  const blob = await canvasToBlob(cropCanvas(canvas, box, pad))
-  return { blob, url: URL.createObjectURL(blob) }
-}
-
-export default function PaperAdd({ onCancel, onSaved }) {
+export default function PaperAdd({ onCancel, onSaved, onBatch }) {
   const [step, setStep] = useState('pick')   // pick | reading | review | import | paste | saving
   const [err, setErr] = useState('')
   const [elapsed, setElapsed] = useState(0)
@@ -58,23 +42,18 @@ export default function PaperAdd({ onCancel, onSaved }) {
   useEffect(() => () => figsRef.current.forEach(f => f?.url && URL.revokeObjectURL(f.url)), [])
 
   const pickPdf = async (e) => {
-    const file = e.target.files?.[0]
+    const files = [...(e.target.files || [])]
     e.target.value = ''
-    if (!file) return
+    if (!files.length) return
+    // Several at once: they're read and saved in the background, no review
+    // step, while you carry on. Figures and text can be edited afterwards.
+    if (files.length > 1 && onBatch) { onBatch(files); return }
     setErr(''); setStep('reading'); setElapsed(0)
     try {
-      const buf = await file.arrayBuffer()
-      const [w, d] = await Promise.all([walkthroughFromPdf(buf), openPdf(buf).catch(() => null)])
-      setDoc(d)
-      const cut = await Promise.all(w.sections.map(async s => {
-        if (!s.figure || !d) return null
-        try {
-          const { blob, url } = await cutFigure(d, s.figure.page, s.figure.box)
-          return { page: s.figure.page, box: s.figure.box, caption: s.figure.caption || '', blob, url }
-        } catch { return null }
-      }))
-      setDraft({ ...w, sections: w.sections.map(({ heading, body }) => ({ heading, body })) })
-      setFigs(cut)
+      const { draft: d, figs: f, doc: pdf } = await readPdf(files[0])
+      setDoc(pdf)
+      setDraft(d)
+      setFigs(f)
       setStep('review')
     } catch (x) {
       setErr(x.message || 'Could not read that PDF.')
@@ -103,24 +82,8 @@ export default function PaperAdd({ onCancel, onSaved }) {
 
   const saveDraft = async () => {
     setStep('saving'); setErr('')
-    try {
-      const id = uuid()
-      const sections = []
-      for (let i = 0; i < draft.sections.length; i++) {
-        const s = draft.sections[i], f = figs[i]
-        let figure = null
-        if (f?.blob) {
-          setSaveMsg(`Uploading figure for section ${i + 1}…`)
-          figure = { path: await uploadFigure(id, i, f.blob), caption: (f.caption || '').trim() }
-        }
-        sections.push({ heading: s.heading.trim(), body: s.body, figure })
-      }
-      setSaveMsg('Saving…')
-      const { title, authors, journal, year, doi, terms } = draft
-      const row = await insertPaper({ id, title: title.trim() || 'Untitled paper', authors, journal, year, doi, sections, terms })
-      requestNarration()
-      onSaved(row)
-    } catch (x) { setErr(x.message); setStep('review') }
+    try { onSaved(await saveWalkthrough(draft, figs, setSaveMsg)) }
+    catch (x) { setErr(x.message); setStep('review') }
   }
 
   const saveImports = async () => {
@@ -177,9 +140,9 @@ export default function PaperAdd({ onCancel, onSaved }) {
       ) : (
         <>
           <label className="papers-drop">
-            <strong>Choose a PDF</strong>
-            <span>It is read with its figures, and turned into a spoken walkthrough you can check before saving.</span>
-            <input type="file" accept="application/pdf,.pdf" onChange={pickPdf} hidden />
+            <strong>Choose PDFs</strong>
+            <span>Pick one to check its walkthrough before saving, or pick several: they’re read side by side in the background and go straight onto your shelf while you carry on.</span>
+            <input type="file" accept="application/pdf,.pdf" multiple onChange={pickPdf} hidden />
           </label>
           <button type="button" className="papers-drop" onClick={() => { setErr(''); setStep('paste') }}>
             <strong>Paste text</strong>

@@ -7,13 +7,17 @@
 // switch tabs (`hidden`), so a paper keeps playing while you use the rest of
 // Bloom. The open paper's player lives in PaperReader.
 // ─────────────────────────────────────────────────────────────
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { papersAvailable, listPapers, listProgress, narrationState } from '../lib/papers.js'
 import { formatTime } from '../lib/paperText.js'
 import PaperReader from './PaperReader.jsx'
 import PaperAdd from './PaperAdd.jsx'
+import { readPdf, saveWalkthrough } from '../lib/paperImport.js'
 
 const OPEN_KEY = 'bloom_paper_open'
+// PDFs read side by side. Two keeps the free Gemini tier from refusing.
+const PARALLEL = 2
+const BUSY_RETRIES = 3
 
 export default function Papers({ hidden, onShow }) {
   const [papers, setPapers] = useState(null)
@@ -42,6 +46,55 @@ export default function Papers({ hidden, onShow }) {
     return () => clearInterval(id)
   }, [hidden, waiting, refresh])
 
+  // ── Several PDFs at once ─────────────────────────────────────
+  // Each is read, cropped and saved with no review step, two at a time, while
+  // you use the rest of Bloom (this component stays mounted). Anything read
+  // can still be edited from the reader afterwards.
+  const [uploads, setUploads] = useState([])   // { key, file, name, status, msg, error, paperId, tries, startedAt }
+  const running = useRef(new Set())
+  const wake = useRef(null)
+  const addBatch = (files) => {
+    const now = Date.now()
+    setUploads(u => [...u, ...files.map((f, i) => ({ key: `${now}-${i}-${f.name}`, file: f, name: f.name.replace(/\.pdf$/i, ''), status: 'waiting', tries: 0 }))])
+    setView('library')
+  }
+  const patchUpload = (key, fields) => setUploads(u => u.map(x => (x.key === key ? { ...x, ...fields } : x)))
+
+  useEffect(() => {
+    const busy = uploads.filter(x => x.status === 'reading' || x.status === 'saving').length
+    const next = uploads.filter(x => x.status === 'waiting' && !running.current.has(x.key) && !(x.notBefore > Date.now()))
+    next.slice(0, Math.max(0, PARALLEL - busy)).forEach(async (item) => {
+      running.current.add(item.key)
+      patchUpload(item.key, { status: 'reading', startedAt: Date.now(), error: '' })
+      try {
+        const { draft, figs } = await readPdf(item.file)
+        patchUpload(item.key, { status: 'saving', name: draft.title || item.name })
+        const row = await saveWalkthrough(draft, figs, msg => patchUpload(item.key, { msg }))
+        figs.forEach(f => f?.url && URL.revokeObjectURL(f.url))
+        patchUpload(item.key, { status: 'done', paperId: row.id, file: null })
+        refresh()
+      } catch (e) {
+        const msg = e?.message || 'Could not read that PDF.'
+        // The free AI tier sometimes says it's busy: wait and try again.
+        if (/busy|429|rate/i.test(msg) && item.tries < BUSY_RETRIES) {
+          patchUpload(item.key, { status: 'waiting', tries: item.tries + 1, msg: 'The AI is busy; trying again shortly…', notBefore: Date.now() + 30_000 })
+          setTimeout(() => setUploads(u => [...u]), 30_500)
+        } else patchUpload(item.key, { status: 'failed', error: msg })
+      } finally { running.current.delete(item.key) }
+    })
+  }, [uploads, refresh])
+
+  // Keep the screen awake while PDFs are being read: a locked phone pauses Bloom.
+  const reading = uploads.some(x => x.status === 'waiting' || x.status === 'reading' || x.status === 'saving')
+  useEffect(() => {
+    if (!reading) { try { wake.current?.release() } catch {} wake.current = null; return }
+    const grab = async () => { try { if (navigator.wakeLock && !wake.current) wake.current = await navigator.wakeLock.request('screen') } catch {} }
+    const onVis = () => { if (document.visibilityState === 'visible') { wake.current = null; grab() } }
+    grab()
+    document.addEventListener('visibilitychange', onVis)
+    return () => document.removeEventListener('visibilitychange', onVis)
+  }, [reading])
+
   const open = (id) => {
     setOpenId(id); setView('reader')
     try { localStorage.setItem(OPEN_KEY, id) } catch {}
@@ -68,8 +121,14 @@ export default function Papers({ hidden, onShow }) {
             <button className="btn-primary" onClick={() => setView('add')}>Add paper</button>
           </div>
           {err && <div className="papers-note papers-note-error">{err}</div>}
+          {uploads.length > 0 && (
+            <UploadQueue uploads={uploads} reading={reading} onOpen={open}
+              onRetry={key => patchUpload(key, { status: 'waiting', tries: 0, error: '', notBefore: 0 })}
+              onDismiss={key => setUploads(u => u.filter(x => x.key !== key))}
+              onClear={() => setUploads(u => u.filter(x => x.status !== 'done'))} />
+          )}
           {papers === null && !err && <div className="papers-loading">Loading…</div>}
-          {papers && !papers.length && (
+          {papers && !papers.length && !uploads.length && (
             <div className="papers-empty">
               Nothing on the shelf yet. Add a PDF and it comes back as a walkthrough you can listen to.
             </div>
@@ -81,7 +140,7 @@ export default function Papers({ hidden, onShow }) {
       )}
 
       {view === 'add' && (
-        <PaperAdd onCancel={toLibrary} onSaved={(row) => { refresh(); if (row) open(row.id); else toLibrary() }} />
+        <PaperAdd onCancel={toLibrary} onBatch={addBatch} onSaved={(row) => { refresh(); if (row) open(row.id); else toLibrary() }} />
       )}
 
       {openId && (
@@ -123,5 +182,41 @@ function PaperCard({ p, prog, playing, onOpen }) {
         {(state !== 'pending' || where !== 'Not started') && <span>{where}</span>}
       </div>
     </button>
+  )
+}
+
+function UploadQueue({ uploads, reading, onOpen, onRetry, onDismiss, onClear }) {
+  const [, tick] = useState(0)
+  useEffect(() => {
+    if (!reading) return
+    const id = setInterval(() => tick(n => n + 1), 1000)
+    return () => clearInterval(id)
+  }, [reading])
+  const left = uploads.filter(x => x.status !== 'done' && x.status !== 'failed').length
+  const done = uploads.filter(x => x.status === 'done').length
+  return (
+    <div className="papers-queue card">
+      <div className="papers-queue-head">
+        <strong>{left ? `Reading ${left} paper${left === 1 ? '' : 's'}` : 'All read'}</strong>
+        {done > 0 && !left && <button className="btn-ghost" onClick={onClear}>Clear</button>}
+      </div>
+      {left > 0 && <div className="papers-hint">Keep Bloom open until they’re done. Each takes about a minute, and Alba narrates them after.</div>}
+      {uploads.map(x => (
+        <div key={x.key} className={`papers-queue-row is-${x.status}`}>
+          <span className="papers-queue-name">{x.name}</span>
+          <span className="papers-queue-status">
+            {x.status === 'waiting' && (x.msg || 'Waiting')}
+            {x.status === 'reading' && `Reading… ${formatTime((Date.now() - x.startedAt) / 1000)}`}
+            {x.status === 'saving' && (x.msg || 'Saving…')}
+            {x.status === 'done' && <button className="papers-queue-link" onClick={() => onOpen(x.paperId)}>On your shelf · Open</button>}
+            {x.status === 'failed' && <>
+              <span className="papers-queue-error">{x.error}</span>
+              <button className="papers-queue-link" onClick={() => onRetry(x.key)}>Retry</button>
+              <button className="papers-queue-link" onClick={() => onDismiss(x.key)} aria-label="Dismiss">✕</button>
+            </>}
+          </span>
+        </div>
+      ))}
+    </div>
   )
 }

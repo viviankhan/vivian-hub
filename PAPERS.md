@@ -138,6 +138,17 @@ screenshot, rewrite a caption, or drop a figure.
 
 The PDF limit is about 14 MB (Gemini's inline limit).
 
+**Several PDFs at once.** Pick more than one PDF and they skip the review
+step: they're read two at a time in the background and go straight onto your
+shelf, figures included, while you use the rest of Bloom. A queue above the
+shelf shows each one's progress. If the free AI tier says it's busy, the queue
+waits and tries again by itself (up to 3 times), and anything that still fails
+has a **Retry** button. Keep Bloom open until they're read; Bloom keeps the
+screen awake meanwhile. Pick a single PDF to get the review screen as before.
+
+The PDF reader asks Google which Gemini models your key can use, so a model
+Google retires doesn't break it.
+
 **Add paper → Paste text.** For anything you want read to you word for word,
 such as notes, an article or a protocol. Paste it or open a `.txt` file. Nothing
 is rewritten and no AI is involved: blank lines separate paragraphs, short lines

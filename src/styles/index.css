@@ -1960,3 +1960,14 @@ button.papers-drop { width: 100%; text-align: left; font-family: inherit; color:
 .papers-quick-btns .papers-quick-play { flex: 1.6; background: var(--forest); color: #fff; border-color: var(--forest); }
 .papers-voice { display: block; width: 100%; margin-top: 6px; border: 1px solid var(--border); border-radius: 10px; padding: 5px 8px; font: 12.5px 'DM Sans', sans-serif; color: var(--text-light); background: #fff; }
 .papers-alba-ready { display: block; width: 100%; margin-bottom: 8px; padding: 10px 12px; border: none; border-radius: 10px; background: #E6F4EA; color: #1E5B34; font: 14px 'DM Sans', sans-serif; cursor: pointer; text-align: center; }
+
+/* Several PDFs at once: the reading queue above the shelf. */
+.papers-queue { padding: 14px 16px; margin-bottom: 14px; }
+.papers-queue-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 14px; color: var(--forest); }
+.papers-queue-row { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 12px; padding: 8px 0; border-top: 1px solid var(--border); font-size: 13px; }
+.papers-queue-row:first-of-type { border-top: none; }
+.papers-queue-name { flex: 1 1 60%; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); font-weight: 600; }
+.papers-queue-status { color: var(--muted); display: inline-flex; flex-wrap: wrap; gap: 8px; align-items: baseline; font-variant-numeric: tabular-nums; }
+.papers-queue-row.is-done .papers-queue-status { color: #1E5B34; }
+.papers-queue-error { color: #9A2A1C; }
+.papers-queue-link { border: none; background: none; padding: 0; font: 600 13px 'DM Sans', sans-serif; color: var(--teal); cursor: pointer; }

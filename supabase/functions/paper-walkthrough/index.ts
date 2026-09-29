@@ -26,6 +26,32 @@ const json = (body: unknown, status = 200) =>
 
 // 2.5 first: it is noticeably better at long PDFs and at placing boxes.
 const MODELS = ['gemini-2.5-flash', 'gemini-flash-latest', 'gemini-2.0-flash']
+
+// Google retires model names over time, and each key sees its own set. Ask
+// the key which models it can actually use (best flash models first), and try
+// those after the list above, so a retired name never breaks PDF reading.
+let discovered: string[] | null = null
+async function modelsToTry(): Promise<string[]> {
+  if (!discovered) {
+    discovered = []
+    try {
+      const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(GEMINI_KEY)}&pageSize=200`)
+      const d: any = r.ok ? await r.json() : null
+      const usable = (Array.isArray(d?.models) ? d.models : [])
+        .filter((m: any) => Array.isArray(m?.supportedGenerationMethods) && m.supportedGenerationMethods.includes('generateContent'))
+        .map((m: any) => String(m?.name || '').replace(/^models\//, ''))
+        .filter((n: string) => /gemini/i.test(n) && /flash|pro/i.test(n) && !/embedding|aqa|tts|image|audio|live|lite/i.test(n))
+      const version = (n: string) => parseFloat((n.match(/gemini-(\d+(?:\.\d+)?)/) || [])[1] || '0')
+      const rank = (n: string) => (/flash/i.test(n) ? 0 : 1000) - version(n) * 10 + (/preview|exp/i.test(n) ? 5 : 0)
+      discovered = usable.sort((a: string, b: string) => rank(a) - rank(b)).slice(0, 6)
+    } catch { /* fall back to the fixed list */ }
+  }
+  const seen = new Set<string>()
+  return [...(lastGood ? [lastGood] : []), ...MODELS, ...discovered].filter(m => !seen.has(m) && seen.add(m))
+}
+let lastGood = ''
+// Models that turned down a thinking budget; asked without one from then on.
+const noThinking = new Set<string>()
 const GEMINI_KEY = Deno.env.get('GEMINI_API_KEY') || ''
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') || ''
 const ANON = Deno.env.get('SUPABASE_ANON_KEY') || ''
@@ -84,7 +110,7 @@ Deno.serve(async (req) => {
   if (!pdf) return json({ error: 'No PDF was sent.' }, 400)
   if (pdf.length > MAX_B64) return json({ error: 'That PDF is too large to read in one go (over about 14 MB).' }, 413)
 
-  const reqBody = (model: string) => JSON.stringify({
+  const reqBody = (model: string, thinking = true) => JSON.stringify({
     contents: [{ parts: [
       { inline_data: { mime_type: 'application/pdf', data: pdf } },
       { text: PROMPT },
@@ -93,22 +119,27 @@ Deno.serve(async (req) => {
       temperature: 0.3,
       responseMimeType: 'application/json',
       // Keep 2.5's thinking short: the function has a wall-clock limit.
-      ...(/2\.5|latest/.test(model) ? { thinkingConfig: { thinkingBudget: 2048 } } : {}),
+      ...(thinking && !noThinking.has(model) && /gemini-(2\.5|[3-9])|latest/.test(model) ? { thinkingConfig: { thinkingBudget: 2048 } } : {}),
     },
   })
 
   let data: any = null
   let lastStatus = 0
   let lastDetail = ''
-  for (const model of MODELS) {
+  for (const model of await modelsToTry()) {
     const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(GEMINI_KEY)}`
     let r: Response
     try {
       r = await fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: reqBody(model) })
+      // A newer model may not take a thinking budget; ask it again without one.
+      if (r.status === 400) {
+        const detail = await r.clone().text().catch(() => '')
+        if (/thinking/i.test(detail)) { noThinking.add(model); r = await fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: reqBody(model, false) }) }
+      }
     } catch (e) {
       return json({ error: `Couldn't reach the AI service: ${(e as Error)?.message || e}` }, 502)
     }
-    if (r.ok) { data = await r.json().catch(() => null); break }
+    if (r.ok) { data = await r.json().catch(() => null); lastGood = model; break }
     lastStatus = r.status
     lastDetail = await r.text().catch(() => '')
     if (r.status === 400 && /API key not valid/i.test(lastDetail)) return json({ error: 'The Gemini API key is invalid. Set a valid GEMINI_API_KEY secret and redeploy.' }, 502)
@@ -117,6 +148,7 @@ Deno.serve(async (req) => {
   }
   if (!data) {
     if ([429, 500, 502, 503].includes(lastStatus)) return json({ error: 'The AI models are busy right now. Try again in a minute.', detail: lastDetail.slice(0, 300) }, 503)
+    if (lastStatus === 404) return json({ error: 'None of the Gemini models this key can use were found. Check the GEMINI_API_KEY secret is a Google AI Studio key.', detail: lastDetail.slice(0, 300) }, 502)
     return json({ error: `AI service error (${lastStatus}).`, detail: lastDetail.slice(0, 300) }, 502)
   }
 
@@ -175,17 +207,23 @@ async function describeFigure(image: string, context: string) {
 ${context ? `\nFor context, the part of the walkthrough this figure belongs to says:\n"""${context.slice(0, 3000)}"""\nUse it to name things correctly, but describe what the figure itself shows.\n` : ''}
 Return ONE JSON object and nothing else: {"description": ""}`
   let lastStatus = 0, lastDetail = ''
-  for (const model of MODELS) {
+  for (const model of await modelsToTry()) {
     const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(GEMINI_KEY)}`
     let r: Response
+    const body = (thinking: boolean) => JSON.stringify({
+      contents: [{ parts: [{ inline_data: { mime_type: 'image/jpeg', data: image } }, { text: prompt }] }],
+      generationConfig: { temperature: 0.3, responseMimeType: 'application/json',
+        ...(thinking && !noThinking.has(model) && /gemini-(2\.5|[3-9])|latest/.test(model) ? { thinkingConfig: { thinkingBudget: 1024 } } : {}) },
+    })
     try {
-      r = await fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
-        contents: [{ parts: [{ inline_data: { mime_type: 'image/jpeg', data: image } }, { text: prompt }] }],
-        generationConfig: { temperature: 0.3, responseMimeType: 'application/json',
-          ...(/2\.5|latest/.test(model) ? { thinkingConfig: { thinkingBudget: 1024 } } : {}) },
-      }) })
+      r = await fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: body(true) })
+      if (r.status === 400 && /thinking/i.test(await r.clone().text().catch(() => ''))) {
+        noThinking.add(model)
+        r = await fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: body(false) })
+      }
     } catch (e) { return json({ error: `Couldn't reach the AI service: ${(e as Error)?.message || e}` }, 502) }
     if (!r.ok) { lastStatus = r.status; lastDetail = await r.text().catch(() => ''); if (r.status === 403) break; continue }
+    lastGood = model
     const data: any = await r.json().catch(() => null)
     const raw = (data?.candidates?.[0]?.content?.parts || []).filter((p: any) => typeof p?.text === 'string' && !p.thought).map((p: any) => p.text).join('')
     let out: any = null
