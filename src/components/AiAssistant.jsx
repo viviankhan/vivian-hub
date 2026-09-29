@@ -6,7 +6,7 @@
 // current tasks, shows the plan for you to confirm, then the parent applies it.
 // Nothing changes until you tap Apply.
 import { useRef, useState } from 'react'
-import { runAssistant, MAX_ASSISTANT_IMAGES } from '../lib/parseEvent.js'
+import { runAssistant, MAX_ASSISTANT_IMAGES, REPEAT_FREQS, describeRepeat, normalizeRepeat } from '../lib/parseEvent.js'
 import { compressImage, dataUrlToBase64 } from '../lib/trackers.js'
 
 function fmt12(t) {
@@ -44,7 +44,52 @@ function headline(a, titleOf) {
   }
   if (a.kind === 'setDone')    return `Mark “${t}” ${a.done ? 'complete' : 'not complete'}`
   if (a.kind === 'reschedule') return `Reschedule “${t}”`
+  if (a.kind === 'repeat')     return `Make “${t}” repeat`
   return 'Change'
+}
+
+const FREQ_LABELS = { daily: 'Daily', weekly: 'Weekly', monthly: 'Monthly', yearly: 'Yearly' }
+const DAY_PILLS = [['monday','Mo'],['tuesday','Tu'],['wednesday','We'],['thursday','Th'],['friday','Fr'],['saturday','Sa'],['sunday','Su']]
+
+// Once / Daily / Weekly / Monthly / Yearly, with weekdays for weekly and an
+// optional end date — the same choices as the add sheet's Repeat row.
+function RepeatField({ value, date, allowOnce, onChange }) {
+  const r = normalizeRepeat(value, date)
+  const pick = (freq) => onChange(freq ? normalizeRepeat({ ...(r || {}), freq, days: r && r.days }, date) : null)
+  return (
+    <div style={{ marginTop:10 }}>
+      <span style={lbl}>Repeat</span>
+      <div style={{ display:'flex', flexWrap:'wrap', gap:6 }}>
+        {allowOnce && <button type="button" style={pill(!r)} onClick={() => pick(null)}>Once</button>}
+        {REPEAT_FREQS.map(f => <button key={f} type="button" style={pill(r && r.freq === f)} onClick={() => pick(f)}>{FREQ_LABELS[f]}</button>)}
+      </div>
+      {r && r.freq === 'weekly' && (
+        <div style={{ display:'flex', flexWrap:'wrap', gap:5, marginTop:8 }}>
+          {DAY_PILLS.map(([d, l]) => {
+            const on = r.days.includes(d)
+            return <button key={d} type="button" style={pill(on)}
+              onClick={() => { const days = on ? r.days.filter(x => x !== d) : [...r.days, d]; if (days.length) onChange({ ...r, days }) }}>{l}</button>
+          })}
+        </div>
+      )}
+      {r && (
+        <div style={{ display:'flex', gap:8, marginTop:8, alignItems:'center' }}>
+          <span style={{ fontSize:12.5, color:'var(--muted)' }}>Every</span>
+          <input type="number" min="1" max="99" value={r.interval} inputMode="numeric"
+            onChange={e => onChange({ ...r, interval: Math.max(1, Math.min(99, parseInt(e.target.value, 10) || 1)) })}
+            style={{ ...field, width:60, padding:'5px 8px' }} />
+          <span style={{ fontSize:12.5, color:'var(--muted)' }}>{{ daily:'day', weekly:'week', monthly:'month', yearly:'year' }[r.freq]}{r.interval > 1 ? 's' : ''}, until</span>
+          <input type="date" value={r.endDate || ''} onChange={e => onChange({ ...r, endDate: e.target.value })}
+            style={{ ...field, width:'auto', flex:1, padding:'5px 8px' }} />
+        </div>
+      )}
+      {r && r.freq === 'yearly' && date && (
+        <div style={{ fontSize:11.5, color:'var(--muted)', marginTop:6 }}>
+          Every year on {new Date(date + 'T12:00:00').toLocaleDateString('en-US', { month:'long', day:'numeric' })}.
+        </div>
+      )}
+    </div>
+  )
 }
 
 const REMIND_PRESETS = [0, 5, 10, 15, 30, 60, 120, 1440, 2880, 10080]
@@ -80,6 +125,13 @@ function ActionEditor({ action, categories, onSave, onCancel }) {
       out.time = d.time || null
       const mins = parseInt(d.durationMins, 10)
       out.durationMins = mins > 0 ? mins : null
+    }
+    // Saving the editor is the user choosing the date, so a flagged "needs a
+    // date" item is settled once it has one.
+    if (d.kind === 'create' && out.date) { delete out.needsDate; delete out.guessedToday }
+    if (d.kind === 'event' && d.startDate) {
+      delete out.needsDate; delete out.guessedToday
+      if (!d.endDate) out.endDate = d.startDate
     }
     if (d.kind === 'event') {
       if (d.endDate && d.startDate && d.endDate < d.startDate) out.endDate = d.startDate
@@ -144,6 +196,10 @@ function ActionEditor({ action, categories, onSave, onCancel }) {
           <button type="button" onClick={() => set('done', true)} style={pill(!!d.done)}>Mark complete</button>
           <button type="button" onClick={() => set('done', false)} style={pill(!d.done)}>Mark not complete</button>
         </div>
+      )}
+
+      {(d.kind === 'create' || d.kind === 'repeat') && (
+        <RepeatField value={d.repeat} date={d.date} allowOnce={d.kind === 'create'} onChange={r => set('repeat', r)} />
       )}
 
       {d.kind === 'create' && categories.length > 0 && (
@@ -282,7 +338,8 @@ export default function AiAssistant({ categories = [], tasks = [], onApply, onCl
     } finally { setBusy(false) }
   }
 
-  const canApply = !!plan && plan.actions.length > 0 && editingIdx === null
+  const undated = plan ? plan.actions.filter(a => a && a.needsDate).length : 0
+  const canApply = !!plan && plan.actions.length > 0 && editingIdx === null && undated === 0
   const apply = () => { if (canApply) { onApply(plan.actions); onClose() } }
 
   const updateAction = (i, next) => { setPlan(p => ({ ...p, actions: p.actions.map((a, k) => k === i ? next : a) })); setEditingIdx(null) }
@@ -387,7 +444,11 @@ export default function AiAssistant({ categories = [], tasks = [], onApply, onCl
                 if (a.time) chips.push(fmt12(a.time))
                 if (a.durationMins) chips.push(prettyDur(a.durationMins))
               }
+              if (a.repeat) chips.push(describeRepeat(normalizeRepeat(a.repeat, a.date)))
               labelsOf(a.categoryIds).forEach(l => chips.push(l))
+              const flag = a.needsDate
+                ? (a.guessedToday ? 'Check the date — no date found, so it defaulted to today' : 'Needs a date — pick the day it falls on')
+                : ''
               const reminders = Array.isArray(a.reminders) ? a.reminders : []
               if (editingIdx === i) return (
                 <div key={i} style={{ ...card, borderColor:'var(--forest)' }}>
@@ -405,6 +466,12 @@ export default function AiAssistant({ categories = [], tasks = [], onApply, onCl
                     <button type="button" onClick={() => removeAction(i)} aria-label="Remove this change" style={{ ...small, color:'var(--muted)' }}>✕</button>
                   </div>
                 </div>
+                {flag && (
+                  <button type="button" onClick={() => setEditingIdx(i)}
+                    style={{ marginTop:7, display:'block', textAlign:'left', fontSize:11.5, fontWeight:700, color:'#B4341F', background:'#FBEBE7', border:'1px solid #F3C6BC', borderRadius:8, padding:'4px 9px', cursor:'pointer', fontFamily:'DM Sans,sans-serif' }}>
+                    ⚠ {flag} · tap to set it
+                  </button>
+                )}
                 {chips.length > 0 && (
                   <div style={{ marginTop:7, display:'flex', flexWrap:'wrap', gap:6 }}>
                     {chips.map((c, j) => (
@@ -436,6 +503,11 @@ export default function AiAssistant({ categories = [], tasks = [], onApply, onCl
               </div>
             )})}
             {editingIdx !== null && <div style={{ fontSize:11.5, color:'var(--muted)', marginTop:6 }}>Tap Done on the change you’re editing to apply.</div>}
+            {editingIdx === null && undated > 0 && (
+              <div style={{ fontSize:11.5, color:'#B4341F', marginTop:6, lineHeight:1.45 }}>
+                Set a date for the {undated === 1 ? 'item' : `${undated} items`} marked ⚠ (or remove {undated === 1 ? 'it' : 'them'}) to apply — so nothing lands on the wrong day.
+              </div>
+            )}
             <div style={{ display:'flex', gap:8, marginTop:14 }}>
               <button onClick={()=>{ setPlan(null); setEditingIdx(null) }}
                 style={{ padding:'13px 16px', borderRadius:12, border:'1px solid var(--border)', background:'white', color:'var(--muted)', cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:600, fontSize:14 }}>Back</button>

@@ -63,6 +63,8 @@ function daysInMonth(year, monthIdx) {
 //   • weekly  — on the chosen weekdays, every `interval` weeks (default; also
 //               the back-compat path for tasks with no freq set)
 //   • monthly — on a day-of-month, every `interval` months
+//   • yearly  — on the start date's month and day, every `interval` years
+//               (birthdays, anniversaries); Feb 29 lands on Feb 28 otherwise
 // interval defaults to 1 (every day/week/month); intervals > 1 anchor on the
 // task's start date.
 export function recurringActiveOn(task, dateStr) {
@@ -86,6 +88,18 @@ export function recurringActiveOn(task, dateStr) {
     if (date.getDate() !== eff) return false
     if (interval === 1 || !anchor) return true
     const diff = (date.getFullYear() * 12 + date.getMonth()) - (anchor.getFullYear() * 12 + anchor.getMonth())
+    return diff >= 0 && diff % interval === 0
+  }
+
+  if (freq === 'yearly') {
+    // Needs an anchor to know which day of the year; without a start date the
+    // month/day stored alongside the rule stands in.
+    const month = anchor ? anchor.getMonth() : (Number(task.month) || 1) - 1
+    const wantDay = Number(task.monthDay) || (anchor ? anchor.getDate() : 1)
+    if (date.getMonth() !== month) return false
+    if (date.getDate() !== Math.min(wantDay, daysInMonth(date.getFullYear(), month))) return false
+    if (interval === 1 || !anchor) return true
+    const diff = date.getFullYear() - anchor.getFullYear()
     return diff >= 0 && diff % interval === 0
   }
 

@@ -7,3 +7,6 @@ tests/.auth-stub.mjs
 tests/.storage-stub.mjs
 tests/.photos.shim.mjs
 tests/.photos-storage.shim.mjs
+tests/.versions-storage.shim.mjs
+tests/.versions.shim.mjs
+tests/.parseEvent.shim.mjs

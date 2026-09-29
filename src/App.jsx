@@ -51,6 +51,7 @@ import Calendar    from './components/Calendar.jsx'
 import Notes       from './components/Notes.jsx'
 import Edits       from './components/Edits.jsx'
 import History     from './components/History.jsx'
+import VersionHistory from './components/VersionHistory.jsx'
 import RecurringTasksManager from './components/RecurringTasksManager.jsx'
 import CategoriesManager from './components/CategoriesManager.jsx'
 import EventsManager from './components/EventsManager.jsx'
@@ -212,6 +213,7 @@ function SettingsDrawer({ open, onClose, settingsTab, setSettingsTab, notes, upd
     ['categories','Labels','grid'],
     ['taskmenu','Task menu','clipboard'],
     ['notes','Notes','book'],
+    ['versions','Versions','repeat'],
     ['history','History','clock'],
     ['edits','Edits','sparkle'],
     ...(authEnabled ? [['account','Account','idcard']] : []),
@@ -240,6 +242,7 @@ function SettingsDrawer({ open, onClose, settingsTab, setSettingsTab, notes, upd
             {settingsTab==='taskmenu'   && <TaskMenuSettings />}
             {settingsTab==='notes'      && <Notes notes={notes} updateNotes={updateNotes} />}
             {settingsTab==='history'    && <History history={changeHistory} onUndo={undoChange} onClear={clearChangeHistory} />}
+            {settingsTab==='versions'   && <VersionHistory />}
             {settingsTab==='edits'      && <Edits />}
             {settingsTab==='account'    && <AccountPanel />}
             {settingsTab==='artstudio' && admin && <ArtStudio persistArt={persistArt} />}
