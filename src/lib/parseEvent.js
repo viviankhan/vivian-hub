@@ -21,6 +21,112 @@ function todayStr() {
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
 }
 
+// Does the text the AI quoted for a date actually point at `today`?
+// ("today", "tonight", or that calendar day in numbers or with its month name.)
+const MONTH_NAMES = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec']
+export function saysToday(from, today) {
+  const f = String(from || '').toLowerCase()
+  if (!f) return false
+  if (/\b(today|tonight|this (morning|afternoon|evening))\b/.test(f)) return true
+  const [, tm, td] = String(today).split('-').map(Number)
+  const nums = (f.match(/\d+/g) || []).map(Number)
+  return nums.includes(td) && (nums.includes(tm) || f.includes(MONTH_NAMES[tm - 1]))
+}
+
+// When photos are read, an item the AI couldn't find a date for used to come
+// back dated TODAY — its silent fallback. Two related photos (a flyer with the
+// date, an agenda without one) made it worse: everything on the agenda landed
+// on the current day. So with photos, a date of today has to be backed by what
+// the photo or instruction actually said; otherwise the action is flagged
+// `needsDate` and the review screen asks for the date before anything applies.
+// The parse-event function does the same check; this repeats it so an older
+// deployment of that function (which doesn't send `dateFrom`) is covered too.
+export function flagGuessedDates(actions, { today, command = '' } = {}) {
+  const commandSaysToday = /\b(today|tonight)\b/i.test(command)
+  return (actions || []).map(a => {
+    if (!a || (a.kind !== 'create' && a.kind !== 'event')) return a
+    if (a.needsDate) return a
+    const date = a.kind === 'event' ? a.startDate : a.date
+    if (a.kind === 'create' && !date) return { ...a, needsDate: true }
+    if (date === today && !commandSaysToday && !saysToday(a.dateFrom, today)) return { ...a, needsDate: true, guessedToday: true }
+    return a
+  })
+}
+
+// ── Repeating tasks ──────────────────────────────────────────
+// The assistant can make a task recur ({ freq, interval, days, endDate } on a
+// create, or a `repeat` action for an existing task). Birthdays and
+// anniversaries recur every year whether or not the model remembered to say
+// so — you can still switch one back to Once on the review screen.
+export const REPEAT_FREQS = ['daily', 'weekly', 'monthly', 'yearly']
+const WEEKDAY_NAMES = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday']
+const YEARLY_WORDS = /\b(birthday|bday|b-day|anniversary)\b/i
+
+export function weekdayOf(dateStr) {
+  if (!dateStr) return null
+  return WEEKDAY_NAMES[new Date(dateStr + 'T12:00:00').getDay()]
+}
+
+export function normalizeRepeat(r, date) {
+  if (!r || typeof r !== 'object' || !REPEAT_FREQS.includes(r.freq)) return null
+  const interval = Math.max(1, Math.min(99, Math.round(Number(r.interval) || 1)))
+  let days = Array.isArray(r.days) ? r.days.filter(d => WEEKDAY_NAMES.includes(d)) : []
+  if (r.freq === 'weekly' && !days.length) days = date ? [weekdayOf(date)] : []
+  return { freq: r.freq, interval, days: r.freq === 'weekly' ? days : [], endDate: r.endDate || '' }
+}
+
+export function applyRepeatDefaults(actions) {
+  return (actions || []).map(a => {
+    if (!a || a.kind !== 'create') return a
+    const repeat = normalizeRepeat(a.repeat, a.date)
+      || (YEARLY_WORDS.test(a.title || '') ? { freq: 'yearly', interval: 1, days: [], endDate: '' } : null)
+    // A birthday with no date would otherwise repeat on today's date forever.
+    const needsDate = a.needsDate || (!a.date && !!repeat && (repeat.freq === 'yearly' || repeat.freq === 'monthly'))
+    return needsDate ? { ...a, repeat, needsDate } : { ...a, repeat }
+  })
+}
+
+// "Yearly", "Every 2 weeks · Mon, Thu", "Monthly".
+export function describeRepeat(r) {
+  if (!r) return ''
+  const n = r.interval > 1 ? r.interval : 0
+  const unit = { daily: 'day', weekly: 'week', monthly: 'month', yearly: 'year' }[r.freq]
+  const base = n ? `Every ${n} ${unit}s` : ({ daily: 'Daily', weekly: 'Weekly', monthly: 'Monthly', yearly: 'Yearly' }[r.freq])
+  const days = r.freq === 'weekly' && r.days && r.days.length
+    ? ' · ' + r.days.map(d => d.slice(0, 1).toUpperCase() + d.slice(1, 3)).join(', ') : ''
+  return `Repeats: ${base}${days}${r.endDate ? ` · until ${r.endDate}` : ''}`
+}
+
+function fmt12(t) {
+  const [h, m] = t.split(':').map(Number)
+  return `${h % 12 || 12}:${String(m).padStart(2, '0')} ${h >= 12 ? 'PM' : 'AM'}`
+}
+
+// A recurring-task template (the Recurring tab's shape — same as the add
+// sheet's Repeat option builds) from a planned task and its repeat rule.
+// Subtasks have no home on a template, so they're kept as lines in its note.
+export function recurringFromTask(t, repeat, { id, today }) {
+  const r = normalizeRepeat(repeat, t.date) || { freq: 'weekly', interval: 1, days: [], endDate: '' }
+  const startDate = t.date || today
+  const title = String(t.title || t.text || '').trim()
+  const subs = (t.subtasks || []).map(s => s && s.text).filter(Boolean)
+  const note = [String(t.description || '').trim(), ...subs.map(x => `• ${x}`)].filter(Boolean).join('\n')
+  const cat = (t.categoryIds && t.categoryIds[0]) || t.cat || null
+  return {
+    id,
+    freq: r.freq,
+    interval: r.interval,
+    days: r.freq === 'weekly' ? (r.days.length ? r.days : [weekdayOf(startDate)]) : [],
+    monthDay: (r.freq === 'monthly' || r.freq === 'yearly') ? parseInt(startDate.slice(8, 10), 10) : null,
+    cat, tag: cat,
+    label: t.time ? `${fmt12(t.time)} — ${title}` : title,
+    note,
+    durationMins: t.durationMins || null,
+    startDate,
+    endDate: r.endDate || null,
+  }
+}
+
 // How many photos one request may carry, matching the function's own cap.
 export const MAX_ASSISTANT_IMAGES = 4
 
@@ -68,5 +174,7 @@ export async function runAssistant(command, { categories = [], tasks = [], image
   if (!data) throw new Error('The AI service returned an unexpected response.')
   // A 200 with an error field + no actions = the model couldn't form a plan.
   if ((!Array.isArray(data.actions) || data.actions.length === 0) && data.error) throw new Error(data.error)
-  return { summary: data.summary || '', actions: Array.isArray(data.actions) ? data.actions : [] }
+  let actions = applyRepeatDefaults(Array.isArray(data.actions) ? data.actions : [])
+  if (photos.length) actions = flagGuessedDates(actions, { today: todayStr(), command })
+  return { summary: data.summary || '', actions }
 }

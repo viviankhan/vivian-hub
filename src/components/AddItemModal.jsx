@@ -543,7 +543,7 @@ export default function AddItemModal({ existing = null, existingRecurring = null
   // recurring template, and when editing a one-off (so you can convert an
   // existing task into a series) — anywhere the parent handed us onSaveRecurring.
   const canRepeat = !!onSaveRecurring || isRecEdit
-  const [repeatFreq, setRepeatFreq] = useState(rec ? (rec.freq || 'weekly') : (defaultRepeat ? 'weekly' : 'once'))   // once | daily | weekly | monthly
+  const [repeatFreq, setRepeatFreq] = useState(rec ? (rec.freq || 'weekly') : (defaultRepeat ? 'weekly' : 'once'))   // once | daily | weekly | monthly | yearly
   const [repeatInterval, setRepeatInterval] = useState(rec?.interval && rec.interval > 1 ? rec.interval : 1)
   const [repeatDays, setRepeatDays] = useState(() => {
     if (rec && Array.isArray(rec.days) && rec.days.length) return rec.days
@@ -561,7 +561,7 @@ export default function AddItemModal({ existing = null, existingRecurring = null
       const wd = weekdayOf(date); if (wd) setRepeatDays([wd])
     }
   }
-  const intervalUnit = repeatFreq === 'daily' ? 'day' : repeatFreq === 'monthly' ? 'month' : 'week'
+  const intervalUnit = repeatFreq === 'daily' ? 'day' : repeatFreq === 'monthly' ? 'month' : repeatFreq === 'yearly' ? 'year' : 'week'
   const bumpInterval = (d) => setRepeatInterval(n => Math.max(1, Math.min(99, n + d)))
   // Routine group this recurring task belongs to ('' = none). Files it under a
   // Morning/Night (or custom) group in the Recurring tab + tints its timeline
@@ -741,7 +741,7 @@ export default function AddItemModal({ existing = null, existingRecurring = null
       freq: repeatFreq,
       interval: Math.max(1, repeatInterval),
       days: repeatFreq === 'weekly' ? WEEKDAY_ORDER.filter(d => repeatDays.includes(d)) : [],
-      monthDay: repeatFreq === 'monthly' ? parseInt(startDate.slice(8, 10), 10) : null,
+      monthDay: (repeatFreq === 'monthly' || repeatFreq === 'yearly') ? parseInt(startDate.slice(8, 10), 10) : null,
       cat: primaryCatId,
       tag: primaryCatId,
       label: time ? `${fmt12(time)} — ${label.trim()}` : label.trim(),
@@ -905,6 +905,10 @@ export default function AddItemModal({ existing = null, existingRecurring = null
     if (repeatFreq === 'monthly') {
       const d = date ? parseInt(date.slice(8, 10), 10) : new Date().getDate()
       return `Monthly on the ${ordinal(d)}${every ? ` · every ${repeatInterval} mo` : ''}`
+    }
+    if (repeatFreq === 'yearly') {
+      const on = date ? new Date(date + 'T12:00:00').toLocaleDateString('en-US', { month: 'long', day: 'numeric' }) : 'this date'
+      return `${every ? `Every ${repeatInterval} years` : 'Yearly'} on ${on}`
     }
     const base = every ? `Every ${repeatInterval} weeks` : 'Weekly'
     return `${base} · ${daysSummary(repeatDays)}`
@@ -1177,7 +1181,7 @@ export default function AddItemModal({ existing = null, existingRecurring = null
         hint={repeatOn ? 'On' : null} open={expanded==='repeat'} onClick={() => toggleRow('repeat')}>
         {/* Once / Daily / Weekly / Monthly */}
         <div style={{ display:'flex', gap:4, padding:4, borderRadius:12, background:'#EAE7EE', marginBottom: repeatOn ? 14 : 0 }}>
-          {((defaultRepeat || isRecEdit) ? [['daily','Daily'],['weekly','Weekly'],['monthly','Monthly']] : [['once','Once'],['daily','Daily'],['weekly','Weekly'],['monthly','Monthly']]).map(([v,l]) => {
+          {((defaultRepeat || isRecEdit) ? [['daily','Daily'],['weekly','Weekly'],['monthly','Monthly'],['yearly','Yearly']] : [['once','Once'],['daily','Daily'],['weekly','Weekly'],['monthly','Monthly'],['yearly','Yearly']]).map(([v,l]) => {
             const on = repeatFreq === v
             return (
               <button key={v} onClick={() => pickFreq(v)}
@@ -1219,6 +1223,11 @@ export default function AddItemModal({ existing = null, existingRecurring = null
           {repeatFreq === 'monthly' && (
             <div style={{ fontSize:12.5, color:'var(--muted)', marginBottom:12 }}>
               Repeats on the <b style={{ color:'var(--text)' }}>{ordinal(date ? parseInt(date.slice(8,10), 10) : new Date().getDate())}</b> of each month{date ? '' : ' (from today)'}.
+            </div>
+          )}
+          {repeatFreq === 'yearly' && (
+            <div style={{ fontSize:12.5, color:'var(--muted)', marginBottom:12 }}>
+              Repeats every year on <b style={{ color:'var(--text)' }}>{new Date((date || new Date().toISOString().slice(0, 10)) + 'T12:00:00').toLocaleDateString('en-US', { month: 'long', day: 'numeric' })}</b>{date ? '' : ' (from today)'} — set the start date to the day it falls on.
             </div>
           )}
           {/* Start date — the first day it can appear. Independent of the

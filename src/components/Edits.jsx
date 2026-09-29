@@ -4,6 +4,39 @@
 
 const EDIT_LOG = [
   {
+    date: '2026-09-29',
+    summary: 'The AI assistant can make repeating tasks — and birthdays repeat every year',
+    changes: [
+      'New Yearly repeat option, for birthdays and anniversaries, in the add sheet, the task editor and the AI assistant. The Recurring tab gets its own Yearly section and filter. A Feb 29 birthday shows on Feb 28 in other years',
+      'The AI assistant can create repeating tasks ("gym every Mon & Thu at 7", "rent on the 1st of every month"), and a birthday or anniversary is always set to repeat yearly, even if the AI didn\'t say so',
+      'On the review screen, Edit on a planned task now has a Repeat choice (Once / Daily / Weekly / Monthly / Yearly), with weekdays, "every N" and an end date. Each planned task shows how it repeats',
+      'You can ask the assistant to make an existing task repeat ("make Mom\'s birthday repeat every year"). It turns into a series, just like using Repeat in the task editor',
+      'A birthday with no date is marked ⚠ until you pick the day, so it can\'t end up repeating on today\'s date',
+    ]
+  },
+  {
+    date: '2026-09-28',
+    summary: 'Photos read together — and the assistant stops guessing "today"',
+    changes: [
+      'Fixed: sending two related photos (say a flyer and its agenda) no longer drops everything onto the current day. The assistant now reads the photos as one set, so a date printed on one applies to the items on the other',
+      'When no date can be found, the assistant used to fill in today without saying so. Now it leaves the date blank, or if it still says today, has to show where the photo or your instruction said so',
+      'Any item without a real date is marked ⚠ on the review screen, and Apply waits until you set its date (tap the warning) or remove it',
+    ]
+  },
+  {
+    date: '2026-09-28',
+    summary: 'Version history — roll all of Bloom back to an earlier point, like a Google Doc',
+    changes: [
+      'New Settings → Versions: every change you make is saved as you go and grouped into versions (a burst of edits), newest first, each listing what changed — "Added task “Dentist”", "Edited Notes", "Checked off a task"',
+      'Restore any version to put the whole app back the way it was then — tasks, events, time off, labels, recurring tasks, notes, thoughts, routines, trackers, wellness and check-offs',
+      'Quick "Go back to" buttons undo everything from the last 15 minutes, hour, 3 hours or day in one tap, and show how many changes that would reverse',
+      'A restore is its own version, so if you restore the wrong point, restore the version just before it to undo',
+      'Restores sync to your other devices like any edit, and work offline (they upload when you reconnect)',
+      'History is kept on this device for 7 days; your look & theme settings are left alone',
+      'Fixed behind the scenes: an edit made right after reconnecting could be overwritten by an older change still waiting to upload — new saves now wait their turn behind it',
+    ]
+  },
+  {
     date: '2026-09-11',
     summary: 'Reminders arrive at their moment, or not at all',
     changes: [

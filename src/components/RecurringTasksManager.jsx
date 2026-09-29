@@ -108,6 +108,8 @@ function TaskListRow({ task, onEdit, today, categories, routines }) {
           <span style={{ fontSize:9, padding:'2px 7px', borderRadius:6, background:'var(--forest)', color:'var(--green-light)', fontWeight:700, letterSpacing:.5 }}>DAILY{task.interval>1?` ×${task.interval}`:''}</span>
         ) : task.freq==='monthly' ? (
           <span style={{ fontSize:9, padding:'2px 7px', borderRadius:6, background:'var(--forest)', color:'var(--green-light)', fontWeight:700, letterSpacing:.5 }}>MONTHLY</span>
+        ) : task.freq==='yearly' ? (
+          <span style={{ fontSize:9, padding:'2px 7px', borderRadius:6, background:'var(--forest)', color:'var(--green-light)', fontWeight:700, letterSpacing:.5 }}>YEARLY{task.startDate ? ` · ${new Date(task.startDate + 'T12:00:00').toLocaleDateString('en-US', { month:'short', day:'numeric' }).toUpperCase()}` : ''}</span>
         ) : (
           DAYS.filter(d=>task.days?.includes(d)).map(d=>(
             <span key={d} style={{ fontSize:9, padding:'2px 6px', borderRadius:6, background:d===today?'var(--teal)':'var(--forest)', color:d===today?'white':'var(--green-light)', fontWeight:700, letterSpacing:.5 }}>{DAY_SHORT[d]}</span>
@@ -354,6 +356,7 @@ export default function RecurringTasksManager({ recurringTasks, addRecurringTask
   const freqBucket = (t) => {
     if (recursDaily(t)) return 'daily'
     if ((t.freq || 'weekly') === 'monthly') return 'monthly'
+    if (t.freq === 'yearly') return 'yearly'
     return 'weekly'
   }
 
@@ -369,6 +372,7 @@ export default function RecurringTasksManager({ recurringTasks, addRecurringTask
     if (filterDay === 'all')     return true
     if (filterDay === 'daily')   return bucket === 'daily'
     if (filterDay === 'monthly') return bucket === 'monthly'
+    if (filterDay === 'yearly')  return bucket === 'yearly'
     return bucket === 'weekly' && (t.days||[]).includes(filterDay)   // a weekday
   })
 
@@ -387,6 +391,7 @@ export default function RecurringTasksManager({ recurringTasks, addRecurringTask
     { key:'daily',   label:'Every day', items: sorted.filter(t=>freqBucket(t)==='daily') },
     { key:'weekly',  label:'Weekly',    items: sorted.filter(t=>freqBucket(t)==='weekly') },
     { key:'monthly', label:'Monthly',   items: sorted.filter(t=>freqBucket(t)==='monthly') },
+    { key:'yearly',  label:'Yearly',    items: sorted.filter(t=>freqBucket(t)==='yearly') },
   ].filter(s => s.items.length)
 
   return (
@@ -440,6 +445,7 @@ export default function RecurringTasksManager({ recurringTasks, addRecurringTask
           )
         })}
         <button onClick={()=>setFilterDay(filterDay==='monthly'?'all':'monthly')} style={filterPill(filterDay==='monthly')}>Monthly</button>
+        <button onClick={()=>setFilterDay(filterDay==='yearly'?'all':'yearly')} style={filterPill(filterDay==='yearly')}>Yearly</button>
       </div>
 
       {/* Task list — sectioned by frequency (Every day / Weekly / Monthly) so a

@@ -8,7 +8,7 @@ import { bloomBurst } from '../lib/bloom.js'
 import AddItemModal from './AddItemModal.jsx'
 import AiAssistant from './AiAssistant.jsx'
 import DayRail from './DayRail.jsx'
-import { aiScheduleAvailable } from '../lib/parseEvent.js'
+import { aiScheduleAvailable, recurringFromTask } from '../lib/parseEvent.js'
 import FocusMode from './FocusMode.jsx'
 import DateField from './DateField.jsx'
 import TimeField from './TimeField.jsx'
@@ -2103,7 +2103,13 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
   // Apply a confirmed plan of assistant actions using the ordinary task ops.
   const applyAssistantActions = (actions) => {
     (actions || []).forEach((a, idx) => {
-      if (a.kind === 'create') {
+      if (a.kind === 'create' && a.repeat && addRecurringTask) {
+        // A repeating task (a birthday, "gym every Mon & Thu") becomes a real
+        // recurring series — the same template the add sheet's Repeat makes.
+        const id = 'r-' + (Date.now() + idx) + '-' + Math.random().toString(36).slice(2, 6)
+        addRecurringTask(recurringFromTask(a, a.repeat, { id, today: todayKey() }))
+        if (Array.isArray(a.reminders) && a.reminders.length) setItemReminders(id, a.reminders)
+      } else if (a.kind === 'create') {
         const base = Date.now() + idx
         const id = 'c-' + base + '-' + Math.random().toString(36).slice(2, 6)
         const subtasks = (a.subtasks || []).map((s, i) => ({ id: 'st-' + base + '-' + i, text: s.text, done: !!s.done }))
@@ -2128,6 +2134,14 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
           startTime: allDay ? null : (a.startTime || null),
           endTime: allDay ? null : (a.endTime || null),
         })
+      } else if (a.kind === 'repeat') {
+        // Turn an existing one-off into a series, replacing the original — the
+        // same conversion the task editor's Repeat row does.
+        const c = (commitments || []).find(x => x.id === a.taskId)
+        if (!c || !addRecurringTask) return
+        const id = 'r-' + (Date.now() + idx) + '-' + Math.random().toString(36).slice(2, 6)
+        addRecurringTask(recurringFromTask({ ...c, title: c.text, categoryIds: c.cats && c.cats.length ? c.cats : (c.cat ? [c.cat] : []) }, a.repeat, { id, today: todayKey() }))
+        if (deleteCommitment) deleteCommitment(c.id)
       } else if (a.kind === 'addSubtasks') {
         const c = (commitments || []).find(x => x.id === a.taskId)
         if (!c || !updateCommitment) return
