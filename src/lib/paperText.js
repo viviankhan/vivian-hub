@@ -10,6 +10,7 @@
 // list. A second, independent split here is exactly what made the highlight
 // drift in the prototype (abbreviations, decimals). Render from `lines`.
 // ─────────────────────────────────────────────────────────────
+import { chemistry, iupac, mathSymbols } from './notation.js'
 
 // Cue `i` values that aren't a line index.
 export const CUE_HEADING = -1
@@ -235,15 +236,27 @@ export function quickUnits(paper) {
 }
 
 // A port of speakable() in scripts/narrate/voice.py: rewrites scientific
-// notation so a voice can say it (CD34+ → "C D 34 positive", IL-10 →
-// "interleukin 10", p < 0.05 → "p less than 0.05"). Only what is spoken is
-// rewritten; the screen always shows the original. Keep the two in step.
+// notation so a voice can say what it means (CD34+ → "C D 34 positive", IL-10
+// → "interleukin 10", CO2 → "carbon bonded to two oxygen atoms"). Only what is
+// spoken is rewritten; the screen always shows the original. Keep the two in
+// step: tests/speakable_cases.json is checked against both.
 const GREEK = { 'α': ' alpha ', 'β': ' beta ', 'γ': ' gamma ', 'δ': ' delta ', 'ε': ' epsilon ',
   'ζ': ' zeta ', 'κ': ' kappa ', 'λ': ' lambda ', 'σ': ' sigma ', 'τ': ' tau ',
   'χ': ' chi ', 'ω': ' omega ', 'μ': ' micro', 'µ': ' micro' }
 const SAYABLE = new Set(['ELISA', 'FACS', 'CRISPR', 'SNP', 'PCR', 'RNA', 'DNA', 'PBS', 'FBS', 'NIH', 'MHC'])
 export function speakable(t) {
   let s = ' ' + String(t || '') + ' '
+  // Immunology names first, so the chemistry below never mistakes them.
+  s = s.replace(/\bIL[-\s]?(\d+)/gi, ' interleukin $1 ')
+  s = s.replace(/\bIFN[-\s]?/gi, ' interferon ')
+  s = s.replace(/\bTNF[-\s]?/gi, ' T N F ')
+  s = s.replace(/\b(CD)\s?(\d+[a-z]?)\s*\+/gi, ' C D $2 positive ')
+  s = s.replace(/\b(CD)\s?(\d+[a-z]?)\s*[-−–]/gi, ' C D $2 negative ')
+  s = s.replace(/\b(CD)\s?(\d+[a-z]?)/gi, ' C D $2 ')
+  // Chemistry and maths said as meaning: CO2, Ca2+, C=O, x², 10^-5, µM, IUPAC.
+  s = chemistry(s)
+  s = iupac(s)
+  s = mathSymbols(s)
   for (const [k, v] of Object.entries(GREEK)) s = s.split(k).join(v)
   s = s.replace(/°\s*C\b/g, ' degrees Celsius')
   s = s.replace(/°/g, ' degrees ').replace(/±/g, ' plus or minus ')
@@ -253,17 +266,14 @@ export function speakable(t) {
   s = s.replace(/\s<\s/g, ' less than ')
   s = s.replace(/\s>\s/g, ' greater than ')
   s = s.replace(/\s=\s/g, ' equals ').replace(/%/g, ' percent ')
+  s = s.replace(/\s\+\s/g, ' plus ')
   s = s.replace(/\bet\s+al\.?/gi, ' and colleagues')
   s = s.replace(/\bvs\b\.?/gi, ' versus ')
   s = s.replace(/\be\.\s?g\.?/gi, ' for example')
   s = s.replace(/\bi\.\s?e\.?/gi, ' that is')
   s = s.replace(/\bFigs?\.?\s*(\d+)/gi, ' figure $1')
-  s = s.replace(/\bIL[-\s]?(\d+)/gi, ' interleukin $1 ')
-  s = s.replace(/\bIFN[-\s]?/gi, ' interferon ')
-  s = s.replace(/\bTNF[-\s]?/gi, ' T N F ')
-  s = s.replace(/\b(CD)\s?(\d+[a-z]?)\s*\+/gi, ' C D $2 positive ')
-  s = s.replace(/\b(CD)\s?(\d+[a-z]?)\s*[-−–]/gi, ' C D $2 negative ')
-  s = s.replace(/\b(CD)\s?(\d+[a-z]?)/gi, ' C D $2 ')
   s = s.replace(/\b([A-Z]{2,6})\b/g, (m, w) => (SAYABLE.has(w) ? w : w.split('').join(' ')))
+  s = s.replace(/\s+([,.;:])/g, '$1')
+  s = s.replace(/,\s*,/g, ',')
   return s.replace(/\s{2,}/g, ' ').trim()
 }

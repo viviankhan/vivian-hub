@@ -212,6 +212,14 @@ function toBase64(buf) {
   return btoa(s)
 }
 
+// A figure image (JPEG blob) → a spoken walkthrough of it, for listeners who
+// can't see it. `context` is the section's text, so it names things correctly.
+export async function describeFigure(blob, context = '') {
+  const data = await callFunction('paper-walkthrough', { image: toBase64(await blob.arrayBuffer()), context })
+  if (!data?.description) throw new Error('The AI could not describe that figure.')
+  return data.description
+}
+
 // PDF bytes → { title, authors, journal, year, doi, sections:[{heading, body,
 // figure:{page, box, caption}|null}], terms }.
 export async function walkthroughFromPdf(arrayBuffer) {

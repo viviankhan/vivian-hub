@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Turn a paper walkthrough into one audio file plus sentence-level cues."""
 import json, re, sys, wave, io, subprocess, os, tempfile
+import notation
 
 MODEL = os.environ.get("VOICE_MODEL", "/tmp/voices/en_GB-alba-medium.onnx")
 GAP_SENT, GAP_PARA, GAP_HEAD = 0.28, 0.55, 0.65
@@ -39,9 +40,19 @@ def split_sentences(text):
 
 def speakable(t):
     s = " " + t + " "
+    # Immunology names first, so the chemistry below never mistakes them.
+    s = re.sub(r"\bIL[-\s]?(\d+)", r" interleukin \1 ", s, flags=re.I)
+    s = re.sub(r"\bIFN[-\s]?", " interferon ", s, flags=re.I)
+    s = re.sub(r"\bTNF[-\s]?", " T N F ", s, flags=re.I)
+    s = re.sub(r"\b(CD)\s?(\d+[a-z]?)\s*\+", r" C D \2 positive ", s, flags=re.I)
+    s = re.sub(r"\b(CD)\s?(\d+[a-z]?)\s*[-−–]", r" C D \2 negative ", s, flags=re.I)
+    s = re.sub(r"\b(CD)\s?(\d+[a-z]?)", r" C D \2 ", s, flags=re.I)
+    # Chemistry and maths said as meaning: CO2, Ca2+, C=O, x², 10^-5, µM, IUPAC.
+    s = notation.chemistry(s)
+    s = notation.iupac(s)
+    s = notation.math_symbols(s)
     for k, v in GREEK.items():
         s = s.replace(k, v)
-    s = re.sub(r"\bmicro([LlgGmM])\b", r"micro\1", s)
     s = re.sub(r"°\s*C\b", " degrees Celsius", s)
     s = s.replace("°", " degrees ").replace("±", " plus or minus ")
     s = s.replace("×", " times ").replace("→", " leading to ")
@@ -50,19 +61,16 @@ def speakable(t):
     s = re.sub(r"\s<\s", " less than ", s)
     s = re.sub(r"\s>\s", " greater than ", s)
     s = re.sub(r"\s=\s", " equals ", s).replace("%", " percent ")
+    s = re.sub(r"\s\+\s", " plus ", s)
     s = re.sub(r"\bet\s+al\.?", " and colleagues", s, flags=re.I)
     s = re.sub(r"\bvs\b\.?", " versus ", s, flags=re.I)
     s = re.sub(r"\be\.\s?g\.?", " for example", s, flags=re.I)
     s = re.sub(r"\bi\.\s?e\.?", " that is", s, flags=re.I)
     s = re.sub(r"\bFigs?\.?\s*(\d+)", r" figure \1", s, flags=re.I)
-    s = re.sub(r"\bIL[-\s]?(\d+)", r" interleukin \1 ", s, flags=re.I)
-    s = re.sub(r"\bIFN[-\s]?", " interferon ", s, flags=re.I)
-    s = re.sub(r"\bTNF[-\s]?", " T N F ", s, flags=re.I)
-    s = re.sub(r"\b(CD)\s?(\d+[a-z]?)\s*\+", r" C D \2 positive ", s, flags=re.I)
-    s = re.sub(r"\b(CD)\s?(\d+[a-z]?)\s*[-−–]", r" C D \2 negative ", s, flags=re.I)
-    s = re.sub(r"\b(CD)\s?(\d+[a-z]?)", r" C D \2 ", s, flags=re.I)
     s = re.sub(r"\b([A-Z]{2,6})\b",
                lambda m: m.group(1) if m.group(1) in SAYABLE else " ".join(m.group(1)), s)
+    s = re.sub(r"\s+([,.;:])", r"\1", s)
+    s = re.sub(r",\s*,", ",", s)
     return re.sub(r"\s{2,}", " ", s).strip()
 
 def say(text, tmpdir, n):

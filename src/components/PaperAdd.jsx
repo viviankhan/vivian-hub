@@ -13,7 +13,7 @@
 // narrator (see PAPERS.md), which is pinged right away.
 // ─────────────────────────────────────────────────────────────
 import { useState, useEffect, useRef } from 'react'
-import { walkthroughFromPdf, insertPaper, uploadFigure, requestNarration } from '../lib/papers.js'
+import { walkthroughFromPdf, insertPaper, uploadFigure, requestNarration, describeFigure } from '../lib/papers.js'
 import { openPdf, renderPage, cropCanvas, canvasToBlob, imageFileToBlob } from '../lib/pdfFigures.js'
 import { paperFromImport, sectionsFromText, estimateMinutes } from '../lib/paperText.js'
 
@@ -137,6 +137,14 @@ export default function PaperAdd({ onCancel, onSaved }) {
     } catch (x) { setErr(x.message); setStep('import') }
   }
 
+  const [describing, setDescribing] = useState(-1)
+  const describeFor = async (i) => {
+    setDescribing(i); setErr('')
+    try {
+      const d = await describeFigure(figs[i].blob, draft.sections[i]?.body || '')
+      setFigs(prev => prev.map((f, j) => (j === i && f ? { ...f, caption: d } : f)))
+    } catch (x) { setErr(x.message) } finally { setDescribing(-1) }
+  }
   const setFig = (i, f) => setFigs(prev => {
     const next = [...prev]
     if (prev[i]?.url && prev[i].url !== f?.url) URL.revokeObjectURL(prev[i].url)
@@ -246,9 +254,12 @@ export default function PaperAdd({ onCancel, onSaved }) {
           {figs[i] ? (
             <figure className="papers-figure">
               <img src={figs[i].url} alt="" />
-              <textarea className="papers-caption-input" rows={3} value={figs[i].caption} placeholder="Caption, in your own words (read aloud)"
+              <textarea className="papers-caption-input" rows={6} value={figs[i].caption} placeholder="Description, read aloud: walk through the figure for someone who can’t see it"
                 onChange={e => setFig(i, { ...figs[i], caption: e.target.value })} />
               <div className="papers-fig-actions">
+                <button className="btn-ghost" disabled={describing >= 0} onClick={() => describeFor(i)}>
+                  {describing === i ? 'Describing…' : 'Describe with AI'}
+                </button>
                 {doc && <button className="btn-ghost" onClick={() => setCrop(i)}>Adjust crop</button>}
                 <label className="btn-ghost papers-file-btn">Use my image<input type="file" accept="image/*" hidden onChange={e => uploadFor(i, e)} /></label>
                 <button className="btn-ghost" onClick={() => setFig(i, null)}>Remove</button>

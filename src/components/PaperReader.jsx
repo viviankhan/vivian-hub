@@ -16,7 +16,7 @@ import { useState, useEffect, useRef, useCallback, useMemo, Fragment } from 'rea
 import { createPortal } from 'react-dom'
 import {
   getPaper, loadProgress, saveProgress, signedAudioUrl, signedFigureUrl,
-  updatePaper, deletePaper, uploadFigure, removeFigure, requestNarration, narrationState, narrationLate, NARRATOR_URL,
+  updatePaper, deletePaper, uploadFigure, removeFigure, requestNarration, describeFigure, narrationState, narrationLate, NARRATOR_URL,
 } from '../lib/papers.js'
 import { findCue, sectionStart, sectionAt, paragraphs, bodyParagraphs, markTerms, formatTime, quickUnits, CUE_HEADING, CUE_FIGURE } from '../lib/paperText.js'
 import { quickVoiceAvailable, createSpeaker, englishVoices, pickVoice, saveVoiceName, onVoicesChanged } from '../lib/quickVoice.js'
@@ -525,6 +525,11 @@ export default function PaperReader({ paperId, showText, compact, onBack, onShow
           )}
 
           <div className="papers-reader-foot">
+            {paper.audio_path && !paper.needs_narration && (
+              <button className="btn-ghost" onClick={async () => {
+                try { await patch({ needs_narration: true }); requestNarration() } catch (e) { alert(e.message) }
+              }}>Re-narrate with Alba</button>
+            )}
             <button className="btn-danger" onClick={remove}>Delete paper</button>
           </div>
           <div style={{ height: (canPlay || showQuickBar ? barH : 0) + 24 }} />
@@ -610,6 +615,7 @@ export default function PaperReader({ paperId, showText, compact, onBack, onShow
 
       {figEdit != null && (
         <FigureEditor paperId={paper.id} si={figEdit} fig={paper.sections[figEdit]?.figure}
+          context={paper.sections[figEdit]?.body || ''}
           onClose={() => setFigEdit(null)}
           onSave={async (f) => { await saveFigure(figEdit, f); setFigEdit(null) }} />
       )}
@@ -649,7 +655,7 @@ function Figure({ fig, current, cueKey, onEdit }) {
   )
 }
 
-function FigureEditor({ paperId, si, fig, onClose, onSave }) {
+function FigureEditor({ paperId, si, fig, context, onClose, onSave }) {
   const [caption, setCaption] = useState(fig?.caption || '')
   const [blob, setBlob] = useState(null)
   const [preview, setPreview] = useState('')
@@ -675,6 +681,16 @@ function FigureEditor({ paperId, si, fig, onClose, onSave }) {
       await onSave({ path, caption: caption.trim() })
     } catch (x) { setMsg(x.message); setBusy(false) }
   }
+  // Ask the AI to talk the figure through, for listening without looking.
+  const [describing, setDescribing] = useState(false)
+  const describe = async () => {
+    setDescribing(true); setMsg('')
+    try {
+      const img = blob || (existing ? await (await fetch(existing)).blob() : null)
+      if (!img) { setMsg('Choose an image first.'); return }
+      setCaption(await describeFigure(img, context))
+    } catch (x) { setMsg(x.message) } finally { setDescribing(false) }
+  }
   const clear = async () => {
     if (!confirm('Remove this figure?')) return
     setBusy(true)
@@ -692,9 +708,12 @@ function FigureEditor({ paperId, si, fig, onClose, onSave }) {
         </label>
         <div className="papers-hint">A screenshot cropped from the PDF works best.</div>
         <label className="papers-field">
-          <span>Caption, in your own words (read aloud after the section)</span>
-          <textarea rows={3} value={caption} onChange={e => setCaption(e.target.value)} />
+          <span>Description, read aloud after the section: walk through it as if to someone who can’t see it</span>
+          <textarea rows={7} value={caption} onChange={e => setCaption(e.target.value)} />
         </label>
+        <button className="btn-ghost" disabled={busy || describing || !(blob || existing)} onClick={describe}>
+          {describing ? 'Describing…' : caption ? 'Describe again with AI' : 'Describe with AI'}
+        </button>
         {msg && <div className="papers-note papers-note-error">{msg}</div>}
         <div className="papers-modal-btns">
           {fig?.path && <button className="btn-danger" disabled={busy} onClick={clear}>Remove</button>}

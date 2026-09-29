@@ -1,0 +1,202 @@
+[
+ {
+  "in": "CD34+ cells secreted IL-10 (p < 0.05) at 37 °C, vs. IFN-γ",
+  "out": "C D 34 positive cells secreted interleukin 10 (p less than 0.05) at 37 degrees Celsius, versus interferon gamma"
+ },
+ {
+  "in": "Smith et al. used ELISA and CLL cells, e.g. 5% of them.",
+  "out": "Smith and colleagues used ELISA and C L L cells, for example 5 percent of them."
+ },
+ {
+  "in": "CO2 levels rose.",
+  "out": "carbon bonded to two oxygen atoms levels rose."
+ },
+ {
+  "in": "H2O",
+  "out": "oxygen bonded to two hydrogen atoms"
+ },
+ {
+  "in": "CH4 and NH3",
+  "out": "carbon bonded to four hydrogen atoms and nitrogen bonded to three hydrogen atoms"
+ },
+ {
+  "in": "HCl and NaCl",
+  "out": "hydrogen bonded to chlorine and sodium bonded to chlorine"
+ },
+ {
+  "in": "O2 was low.",
+  "out": "two oxygen atoms bonded together was low."
+ },
+ {
+  "in": "CH3CH2OH",
+  "out": "a molecule of two carbon atoms, six hydrogen atoms and one oxygen atom"
+ },
+ {
+  "in": "C6H12O6",
+  "out": "a molecule of six carbon atoms, twelve hydrogen atoms and six oxygen atoms"
+ },
+ {
+  "in": "H2SO4",
+  "out": "a molecule of two hydrogen atoms, one sulfur atom and four oxygen atoms"
+ },
+ {
+  "in": "Ca2+ influx",
+  "out": "calcium ion, with a positive charge of 2, influx"
+ },
+ {
+  "in": "Ca²⁺ and Mg2+",
+  "out": "calcium ion, with a positive charge of 2, and magnesium ion, with a positive charge of 2,"
+ },
+ {
+  "in": "Fe3+",
+  "out": "iron ion, with a positive charge of 3,"
+ },
+ {
+  "in": "Na+ and K+ channels",
+  "out": "sodium ion, with a positive charge of 1, and potassium ion, with a positive charge of 1, channels"
+ },
+ {
+  "in": "Cl− ions",
+  "out": "chloride ion, with a negative charge of 1, ions"
+ },
+ {
+  "in": "H+ ions",
+  "out": "hydrogen ion, with a positive charge of 1, ions"
+ },
+ {
+  "in": "SO4^2- and NH4+",
+  "out": "sulfate ion, with a negative charge of 2, and ammonium ion, with a positive charge of 1,"
+ },
+ {
+  "in": "HCO3- buffer",
+  "out": "bicarbonate ion, with a negative charge of 1, buffer"
+ },
+ {
+  "in": "C–Cl bond",
+  "out": "carbon single-bonded to chlorine bond"
+ },
+ {
+  "in": "C=O stretch",
+  "out": "carbon double-bonded to oxygen stretch"
+ },
+ {
+  "in": "O–H",
+  "out": "oxygen single-bonded to hydrogen"
+ },
+ {
+  "in": "H–C≡C–H",
+  "out": "hydrogen single-bonded to carbon, triple-bonded to carbon, single-bonded to hydrogen"
+ },
+ {
+  "in": "x² + y^2",
+  "out": "x squared plus y squared"
+ },
+ {
+  "in": "r³",
+  "out": "r cubed"
+ },
+ {
+  "in": "e^(-kt)",
+  "out": "e to the power of minus kt"
+ },
+ {
+  "in": "3.2 × 10^-5 M",
+  "out": "3.2 times ten to the power of minus 5 molar"
+ },
+ {
+  "in": "a 1e-5 cutoff",
+  "out": "a 1 times ten to the power of minus 5 cutoff"
+ },
+ {
+  "in": "5 µM CpG",
+  "out": "5 micromolar CpG"
+ },
+ {
+  "in": "2.5 µg/mL",
+  "out": "2.5 micrograms per millilitre"
+ },
+ {
+  "in": "10 mM Tris",
+  "out": "10 millimolar Tris"
+ },
+ {
+  "in": "50 kDa protein",
+  "out": "50 kilodaltons protein"
+ },
+ {
+  "in": "2-chloropropan-1-ol",
+  "out": "2 chloro propan 1 ol"
+ },
+ {
+  "in": "1,2-dichloroethane",
+  "out": "1 2 di chloro ethane"
+ },
+ {
+  "in": "(R)-2-butanol",
+  "out": "R 2 butanol"
+ },
+ {
+  "in": "N,N-dimethylformamide",
+  "out": "N N dimethylformamide"
+ },
+ {
+  "in": "√2 ≈ 1.41",
+  "out": "square root of 2 roughly 1.41"
+ },
+ {
+  "in": "A ⇌ B",
+  "out": "A in equilibrium with B"
+ },
+ {
+  "in": "SOCS3 and PI3K",
+  "out": "SOCS3 and PI3K"
+ },
+ {
+  "in": "H3K27me3",
+  "out": "H3K27me3"
+ },
+ {
+  "in": "HeLa cells",
+  "out": "HeLa cells"
+ },
+ {
+  "in": "Th17 and Th1",
+  "out": "Th17 and Th1"
+ },
+ {
+  "in": "C3 and C5a",
+  "out": "C3 and C5a"
+ },
+ {
+  "in": "vitamin B12",
+  "out": "vitamin B12"
+ },
+ {
+  "in": "H1N1",
+  "out": "H1N1"
+ },
+ {
+  "in": "O+ blood",
+  "out": "O+ blood"
+ },
+ {
+  "in": "K-S test",
+  "out": "K-S test"
+ },
+ {
+  "in": "T-cell and B-cell",
+  "out": "T-cell and B-cell"
+ },
+ {
+  "in": "PD-1 and CTLA-4",
+  "out": "P D-1 and C T L A-4"
+ },
+ {
+  "in": "BCL2 and STAT3",
+  "out": "BCL2 and STAT3"
+ },
+ {
+  "in": "methylation of DNA",
+  "out": "methylation of DNA"
+ }
+]

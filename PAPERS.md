@@ -236,6 +236,40 @@ wakes the narrator, or, if the wake-up function isn't set up, links to the
 (`-c:a aac -b:a 80k -movflags +faststart`) are unchanged. AAC in MP4, not
 Opus, because older iOS Safari handles Opus unreliably.
 
+### How notation is spoken
+
+`scripts/narrate/notation.py` makes Alba say what scientific notation *means*
+(the quick voice uses its JavaScript twin, `src/lib/notation.js`):
+
+| Written | Spoken |
+|---|---|
+| CO2, H2O, CH4 | carbon bonded to two oxygen atoms; oxygen bonded to two hydrogen atoms |
+| H2SO4, C6H12O6 | a molecule of two hydrogen atoms, one sulfur atom and four oxygen atoms |
+| Ca2+, Ca²⁺, Cl⁻ | calcium ion, with a positive charge of 2; chloride ion, with a negative charge of 1 |
+| SO4^2-, NH4+ | sulfate ion…; ammonium ion… |
+| C–Cl, C=O, C≡N | carbon single-bonded to chlorine; double-bonded; triple-bonded |
+| x², r³, e^(-kt) | x squared; r cubed; e to the power of minus kt |
+| 3.2 × 10^-5 M | 3.2 times ten to the power of minus 5 molar |
+| 5 µM, 2.5 µg/mL | 5 micromolar; 2.5 micrograms per millilitre |
+| 2-chloropropan-1-ol | 2 chloro propan 1 ol |
+
+Biology names that look like formulas are left alone: SOCS3, PI3K, H3K27me3,
+HeLa, Th17, C3/C5a, B12, H1N1, and blood types like O+. Only the audio changes;
+the text on screen is never rewritten. `tests/speakable_cases.json` holds the
+shared cases, and both versions are tested against it (`npm test`).
+
+**Re-narrate with Alba** (at the end of a narrated paper) renders a paper again,
+for example so an older paper picks up these rules.
+
+### Figures
+
+Figures are described out loud for a listener who can't see them: what kind of
+figure it is, then a walk through it top to bottom and left to right, panel by
+panel, ending with what it is there to show. PDF walkthroughs get this
+automatically. For any figure, **Describe with AI** (in the review screen and
+in **Edit figure**) writes one from the image and the section's text. The
+description is always editable.
+
 ### Narrating by hand
 
 ```bash
