@@ -6,7 +6,7 @@
 // current tasks, shows the plan for you to confirm, then the parent applies it.
 // Nothing changes until you tap Apply.
 import { useRef, useState } from 'react'
-import { runAssistant, MAX_ASSISTANT_IMAGES } from '../lib/parseEvent.js'
+import { runAssistant, MAX_ASSISTANT_IMAGES, REPEAT_FREQS, describeRepeat, normalizeRepeat } from '../lib/parseEvent.js'
 import { compressImage, dataUrlToBase64 } from '../lib/trackers.js'
 
 function fmt12(t) {
@@ -44,7 +44,52 @@ function headline(a, titleOf) {
   }
   if (a.kind === 'setDone')    return `Mark “${t}” ${a.done ? 'complete' : 'not complete'}`
   if (a.kind === 'reschedule') return `Reschedule “${t}”`
+  if (a.kind === 'repeat')     return `Make “${t}” repeat`
   return 'Change'
+}
+
+const FREQ_LABELS = { daily: 'Daily', weekly: 'Weekly', monthly: 'Monthly', yearly: 'Yearly' }
+const DAY_PILLS = [['monday','Mo'],['tuesday','Tu'],['wednesday','We'],['thursday','Th'],['friday','Fr'],['saturday','Sa'],['sunday','Su']]
+
+// Once / Daily / Weekly / Monthly / Yearly, with weekdays for weekly and an
+// optional end date — the same choices as the add sheet's Repeat row.
+function RepeatField({ value, date, allowOnce, onChange }) {
+  const r = normalizeRepeat(value, date)
+  const pick = (freq) => onChange(freq ? normalizeRepeat({ ...(r || {}), freq, days: r && r.days }, date) : null)
+  return (
+    <div style={{ marginTop:10 }}>
+      <span style={lbl}>Repeat</span>
+      <div style={{ display:'flex', flexWrap:'wrap', gap:6 }}>
+        {allowOnce && <button type="button" style={pill(!r)} onClick={() => pick(null)}>Once</button>}
+        {REPEAT_FREQS.map(f => <button key={f} type="button" style={pill(r && r.freq === f)} onClick={() => pick(f)}>{FREQ_LABELS[f]}</button>)}
+      </div>
+      {r && r.freq === 'weekly' && (
+        <div style={{ display:'flex', flexWrap:'wrap', gap:5, marginTop:8 }}>
+          {DAY_PILLS.map(([d, l]) => {
+            const on = r.days.includes(d)
+            return <button key={d} type="button" style={pill(on)}
+              onClick={() => { const days = on ? r.days.filter(x => x !== d) : [...r.days, d]; if (days.length) onChange({ ...r, days }) }}>{l}</button>
+          })}
+        </div>
+      )}
+      {r && (
+        <div style={{ display:'flex', gap:8, marginTop:8, alignItems:'center' }}>
+          <span style={{ fontSize:12.5, color:'var(--muted)' }}>Every</span>
+          <input type="number" min="1" max="99" value={r.interval} inputMode="numeric"
+            onChange={e => onChange({ ...r, interval: Math.max(1, Math.min(99, parseInt(e.target.value, 10) || 1)) })}
+            style={{ ...field, width:60, padding:'5px 8px' }} />
+          <span style={{ fontSize:12.5, color:'var(--muted)' }}>{{ daily:'day', weekly:'week', monthly:'month', yearly:'year' }[r.freq]}{r.interval > 1 ? 's' : ''}, until</span>
+          <input type="date" value={r.endDate || ''} onChange={e => onChange({ ...r, endDate: e.target.value })}
+            style={{ ...field, width:'auto', flex:1, padding:'5px 8px' }} />
+        </div>
+      )}
+      {r && r.freq === 'yearly' && date && (
+        <div style={{ fontSize:11.5, color:'var(--muted)', marginTop:6 }}>
+          Every year on {new Date(date + 'T12:00:00').toLocaleDateString('en-US', { month:'long', day:'numeric' })}.
+        </div>
+      )}
+    </div>
+  )
 }
 
 const REMIND_PRESETS = [0, 5, 10, 15, 30, 60, 120, 1440, 2880, 10080]
@@ -151,6 +196,10 @@ function ActionEditor({ action, categories, onSave, onCancel }) {
           <button type="button" onClick={() => set('done', true)} style={pill(!!d.done)}>Mark complete</button>
           <button type="button" onClick={() => set('done', false)} style={pill(!d.done)}>Mark not complete</button>
         </div>
+      )}
+
+      {(d.kind === 'create' || d.kind === 'repeat') && (
+        <RepeatField value={d.repeat} date={d.date} allowOnce={d.kind === 'create'} onChange={r => set('repeat', r)} />
       )}
 
       {d.kind === 'create' && categories.length > 0 && (
@@ -395,9 +444,10 @@ export default function AiAssistant({ categories = [], tasks = [], onApply, onCl
                 if (a.time) chips.push(fmt12(a.time))
                 if (a.durationMins) chips.push(prettyDur(a.durationMins))
               }
+              if (a.repeat) chips.push(describeRepeat(normalizeRepeat(a.repeat, a.date)))
               labelsOf(a.categoryIds).forEach(l => chips.push(l))
               const flag = a.needsDate
-                ? (a.guessedToday ? 'Check the date — no date found, so it defaulted to today' : 'Needs a date — none found in the photos')
+                ? (a.guessedToday ? 'Check the date — no date found, so it defaulted to today' : 'Needs a date — pick the day it falls on')
                 : ''
               const reminders = Array.isArray(a.reminders) ? a.reminders : []
               if (editingIdx === i) return (

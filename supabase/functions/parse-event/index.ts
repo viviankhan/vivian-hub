@@ -61,7 +61,7 @@ const RESPONSE_SCHEMA = {
       items: {
         type: 'object',
         properties: {
-          kind:         { type: 'string', enum: ['create', 'event', 'addSubtasks', 'setDone', 'reschedule'], description: 'Which action.' },
+          kind:         { type: 'string', enum: ['create', 'event', 'addSubtasks', 'setDone', 'reschedule', 'repeat'], description: 'Which action.' },
           taskId:       { type: 'string', description: 'For addSubtasks/setDone/reschedule: the id of an existing task from the provided list. Never invent one.' },
           title:        { type: 'string', description: 'For create/event: the new task or event name.' },
           date:         { type: 'string', description: 'YYYY-MM-DD (create/reschedule), or for an event the START date, or "".' },
@@ -80,6 +80,16 @@ const RESPONSE_SCHEMA = {
           },
           reminders:    { type: 'array', items: { type: 'integer' }, description: 'For create: reminder lead minutes before start.' },
           done:         { type: 'boolean', description: 'For setDone: true to complete, false to un-complete.' },
+          repeat: {
+            type: 'object',
+            description: 'For create (or kind repeat): how it recurs, or omit for a one-off.',
+            properties: {
+              freq:     { type: 'string', enum: ['daily', 'weekly', 'monthly', 'yearly'] },
+              interval: { type: 'integer' },
+              days:     { type: 'array', items: { type: 'string' } },
+              endDate:  { type: 'string' },
+            },
+          },
         },
         required: ['kind'],
       },
@@ -173,6 +183,11 @@ Each action object is one of these shapes. COPY the shape and fill in EVERY fiel
   {"kind":"create","title":"Dentist","date":"2026-08-25","dateFrom":"Tues Aug 25","time":"15:00","durationMins":60,"categoryIds":[],"description":"Bring insurance card","subtasks":[{"text":"call to confirm","done":false}],"reminders":[60]}
 - event — a multi-day calendar EVENT spanning a range of days (a trip, a vacation, someone away/out, a conference — anything covering more than one day or phrased as an absence/trip/period). date is the START day, endDate the END day:
   {"kind":"event","title":"Danya trip to Mexico","date":"2026-08-14","dateFrom":"14–18th","endDate":"2026-08-18","allDay":true}
+- create that REPEATS — add a "repeat" object. Birthdays and anniversaries are ALWAYS yearly; "every Monday and Wednesday" is weekly with those days; "every day"/"daily" is daily; "on the 1st of every month" is monthly; "every other week" is interval 2. date is the FIRST occurrence on or after today (for a birthday, its next date). endDate only when an end is stated:
+  {"kind":"create","title":"Mom's birthday","date":"2027-03-14","dateFrom":"March 14","time":"","durationMins":0,"categoryIds":[],"description":"","subtasks":[],"reminders":[1440],"repeat":{"freq":"yearly","interval":1,"days":[],"endDate":""}}
+  {"kind":"create","title":"Gym","date":"2026-08-24","dateFrom":"Mondays","time":"07:00","durationMins":60,"categoryIds":[],"description":"","subtasks":[],"reminders":[],"repeat":{"freq":"weekly","interval":1,"days":["monday","thursday"],"endDate":""}}
+- repeat — make an EXISTING one-off task recur (use a taskId from the list above):
+  {"kind":"repeat","taskId":"<existing id>","repeat":{"freq":"yearly","interval":1,"days":[],"endDate":""}}
 - addSubtasks — add subtasks to an EXISTING task (use a taskId from the list above):
   {"kind":"addSubtasks","taskId":"<existing id>","subtasks":[{"text":"read chapter 4","done":true}]}
 - setDone — mark an existing task complete/incomplete:
@@ -187,6 +202,7 @@ Rules:
 - On every create and event, "dateFrom" is the exact words in the instruction or photo that gave you the date ("Sat Oct 12", "tomorrow", "9/9"). If nothing stated a date, dateFrom is "" and so is date.
 - Every date MUST be a literal YYYY-MM-DD string (e.g. "2026-08-14"), never words like "August 14th".
 - The instruction may describe SEVERAL things at once — produce one action for each. Two people/plans mentioned means (at least) two actions.
+- Anything that recurs gets a "repeat" object — never create it as a one-off and never make separate copies for each date. Leave "repeat" out only for something that happens once.
 - Only use information present or clearly implied. Never fabricate specifics.
 - Write "summary" as one plain-language sentence a person can confirm at a glance.
 
@@ -332,6 +348,19 @@ ${command || 'Schedule what the attached photo shows.'}
     }
     return ''
   }
+  const WEEKDAYS = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday']
+  const cleanRepeat = (r: any) => {
+    if (!r || typeof r !== 'object') return null
+    const freq = String(r.freq || '').toLowerCase()
+    if (!['daily', 'weekly', 'monthly', 'yearly'].includes(freq)) return null
+    const interval = Math.max(1, Math.min(99, Math.round(Number(r.interval) || 1)))
+    const days = Array.isArray(r.days)
+      ? [...new Set(r.days.map((d: any) => String(d || '').toLowerCase().trim())
+          .map((d: string) => WEEKDAYS.find(w => w.startsWith(d.slice(0, 3)) && d.length >= 2) || '')
+          .filter(Boolean))]
+      : []
+    return { freq, interval, days: freq === 'weekly' ? days : [], endDate: clampDate(r.endDate) }
+  }
   const cleanSubs = (arr: any): { text: string; done: boolean }[] =>
     Array.isArray(arr) ? arr.map((s: any) => ({ text: String(s?.text || '').trim(), done: !!s?.done })).filter(s => s.text).slice(0, 30) : []
 
@@ -352,6 +381,7 @@ ${command || 'Schedule what the attached photo shows.'}
         description: String(a.description || '').trim().slice(0, 4000),
         subtasks: cleanSubs(a.subtasks),
         reminders: Array.isArray(a.reminders) ? a.reminders.map((n: any) => Math.round(Number(n))).filter((n: number) => Number.isFinite(n) && n >= 0 && n <= 40320).slice(0, 6) : [],
+        repeat: cleanRepeat(a.repeat),
       })
     } else if (kind === 'event') {
       const title = String(a.title || '').trim().slice(0, 200)
@@ -365,6 +395,10 @@ ${command || 'Schedule what the attached photo shows.'}
         startTime: allDay ? '' : clampTime(a.startTime),
         endTime:   allDay ? '' : clampTime(a.endTime),
       })
+    } else if (kind === 'repeat') {
+      const repeat = cleanRepeat(a.repeat)
+      if (!validTaskIds.has(a.taskId) || !repeat) continue
+      actions.push({ kind, taskId: a.taskId, repeat })
     } else if (kind === 'addSubtasks') {
       const subs = cleanSubs(a.subtasks)
       if (!validTaskIds.has(a.taskId) || !subs.length) continue
