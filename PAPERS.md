@@ -138,13 +138,26 @@ screenshot, rewrite a caption, or drop a figure.
 
 The PDF limit is about 14 MB (Gemini's inline limit).
 
-**Several PDFs at once.** Pick more than one PDF and they skip the review
-step: they're read two at a time in the background and go straight onto your
-shelf, figures included, while you use the rest of Bloom. A queue above the
-shelf shows each one's progress. If the free AI tier says it's busy, the queue
-waits and tries again by itself (up to 3 times), and anything that still fails
-has a **Retry** button. Keep Bloom open until they're read; Bloom keeps the
-screen awake meanwhile. Pick a single PDF to get the review screen as before.
+**PDFs are read on the server, so Bloom can be closed.** Pick one or several
+PDFs. Each is uploaded (a few seconds) and appears on your shelf as "Reading the
+PDF…"; after that Bloom can be closed. The `paper-walkthrough` function reads it
+in the background (`EdgeRuntime.waitUntil`) and writes the walkthrough into the
+row. Figures arrive as a page, a box and a spoken description; the narrator
+Action cuts the image out of the stored PDF with PyMuPDF just before Alba
+narrates. If the free AI tier is busy, the server waits and retries; if reading
+still fails, the reader shows the reason and a **Try again** button.
+
+The stored PDF lives at `paper-figures/<user>/<paper>/source.pdf` and is
+removed with the paper. If `GH_DISPATCH_TOKEN` is set on the function, finishing
+a PDF wakes the narrator at once; otherwise the next scheduled run picks it up.
+
+To check a single paper's walkthrough before it is saved, tick **Let me check…**
+under Choose PDFs: it is then read in Bloom (keep it open for about a minute)
+and shown for review, as before.
+
+If the database hasn't got the new columns yet (re-run `supabase_papers.sql`)
+or the function is an older version, Bloom reads the PDFs itself instead, two
+at a time, and has to stay open while it does.
 
 The PDF reader asks Google which Gemini models your key can use, so a model
 Google retires doesn't break it.

@@ -90,14 +90,26 @@ def in_retry_window(now=None):
 
 def queue(limit=50):
     params = {
-        "select": "id,user_id,title,authors,sections,terms,audio_path,updated_at,narration_attempts",
+        "select": "id,user_id,title,authors,sections,terms,audio_path,updated_at,narration_attempts,source_pdf",
         "or": "(audio_path.is.null,needs_narration.is.true)",
+        # Still being read on the server: not ready to narrate yet.
+        "processing": "is.null",
         "order": "narration_attempts.asc,created_at.asc",
         "limit": str(limit),
     }
     if not in_retry_window():
         params["narration_attempts"] = "lt.%d" % MAX_ATTEMPTS
-    return call("GET", "/rest/v1/papers?" + urllib.parse.urlencode(params)) or []
+    try:
+        rows = call("GET", "/rest/v1/papers?" + urllib.parse.urlencode(params)) or []
+    except RuntimeError as e:
+        # Database from before server-side PDF reading (supabase_papers.sql
+        # not re-run): work without those columns.
+        if "processing" not in str(e) and "source_pdf" not in str(e):
+            raise
+        params.pop("processing")
+        params["select"] = params["select"].replace(",source_pdf", "")
+        rows = call("GET", "/rest/v1/papers?" + urllib.parse.urlencode(params)) or []
+    return [r for r in rows if r.get("sections")]
 
 
 def patch(paper_id, fields, only_if_updated_at=None):
@@ -116,7 +128,53 @@ def remove_object(path):
         print("  (could not remove old audio %s: %s)" % (path, e))
 
 
+def download(bucket, path):
+    req = urllib.request.Request(URL + "/storage/v1/object/%s/%s" % (bucket, urllib.parse.quote(path)),
+                                 headers=auth_headers(KEY))
+    with urllib.request.urlopen(req, timeout=120) as r:
+        return r.read()
+
+
+def crop_figures(p):
+    """Cut out figures the server-side reader only located (page + box).
+
+    When a PDF is read on the server nothing can draw its pages, so each
+    figure arrives as a page number and a box (0-1000). Here the stored PDF is
+    rendered with PyMuPDF and each box becomes a JPEG in paper-figures, the
+    same as a crop made in Bloom.
+    """
+    todo = [(i, s["figure"]) for i, s in enumerate(p["sections"] or [])
+            if isinstance(s.get("figure"), dict) and not s["figure"].get("path")
+            and s["figure"].get("page") and s["figure"].get("box")]
+    if not todo or not p.get("source_pdf"):
+        return
+    try:
+        import pymupdf
+    except ImportError:
+        print("  (PyMuPDF missing: figures stay as descriptions only)")
+        return
+    doc = pymupdf.open(stream=download("paper-figures", p["source_pdf"]), filetype="pdf")
+    for i, fig in todo:
+        try:
+            page = doc[max(0, min(int(fig["page"]) - 1, doc.page_count - 1))]
+            y0, x0, y1, x1 = [float(v) for v in fig["box"]]
+            pad = 12
+            w, h = page.rect.width, page.rect.height
+            clip = pymupdf.Rect(max(0, x0 - pad) / 1000 * w, max(0, y0 - pad) / 1000 * h,
+                                min(1000, x1 + pad) / 1000 * w, min(1000, y1 + pad) / 1000 * h)
+            zoom = 1600.0 / w
+            jpg = page.get_pixmap(matrix=pymupdf.Matrix(zoom, zoom), clip=clip).tobytes("jpeg", jpg_quality=86)
+            path = "%s/%s/fig-%d-%d.jpg" % (p["user_id"], p["id"], i, int(time.time()))
+            call("POST", "/storage/v1/object/paper-figures/" + urllib.parse.quote(path),
+                 headers={"Content-Type": "image/jpeg", "x-upsert": "true", "Cache-Control": "31536000"}, raw=jpg)
+            p["sections"][i]["figure"] = {"path": path, "caption": fig.get("caption", "")}
+            print("  cut out figure for section %d" % (i + 1))
+        except Exception as e:
+            print("  (could not cut figure %d: %s)" % (i + 1, e))
+
+
 def narrate(p):
+    crop_figures(p)
     tmp = tempfile.mkdtemp()
     src, mp4, out = (os.path.join(tmp, n) for n in ("paper.json", "audio.mp4", "out.json"))
     json.dump({"title": p["title"], "authors": p["authors"], "sections": p["sections"] or []},

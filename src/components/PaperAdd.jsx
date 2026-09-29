@@ -20,6 +20,9 @@ import { paperFromImport, sectionsFromText, estimateMinutes } from '../lib/paper
 
 export default function PaperAdd({ onCancel, onSaved, onBatch }) {
   const [step, setStep] = useState('pick')   // pick | reading | review | import | paste | saving
+  // Off: PDFs go to the server and Bloom can be closed. On: read here and
+  // shown for checking before saving (Bloom stays open about a minute).
+  const [reviewFirst, setReviewFirst] = useState(false)
   const [err, setErr] = useState('')
   const [elapsed, setElapsed] = useState(0)
   const [draft, setDraft] = useState(null)   // walkthrough being reviewed
@@ -47,7 +50,7 @@ export default function PaperAdd({ onCancel, onSaved, onBatch }) {
     if (!files.length) return
     // Several at once: they're read and saved in the background, no review
     // step, while you carry on. Figures and text can be edited afterwards.
-    if (files.length > 1 && onBatch) { onBatch(files); return }
+    if (onBatch && (files.length > 1 || !reviewFirst)) { onBatch(files); return }
     setErr(''); setStep('reading'); setElapsed(0)
     try {
       const { draft: d, figs: f, doc: pdf } = await readPdf(files[0])
@@ -141,8 +144,12 @@ export default function PaperAdd({ onCancel, onSaved, onBatch }) {
         <>
           <label className="papers-drop">
             <strong>Choose PDFs</strong>
-            <span>Pick one to check its walkthrough before saving, or pick several: they’re read side by side in the background and go straight onto your shelf while you carry on.</span>
+            <span>Pick one or several. Once they’ve uploaded (a few seconds) you can close Bloom: they’re read on the server, figures included, and appear on your shelf.</span>
             <input type="file" accept="application/pdf,.pdf" multiple onChange={pickPdf} hidden />
+          </label>
+          <label className="papers-check">
+            <input type="checkbox" checked={reviewFirst} onChange={e => setReviewFirst(e.target.checked)} />
+            <span>Let me check a single PDF’s walkthrough before it’s saved (keep Bloom open for about a minute)</span>
           </label>
           <button type="button" className="papers-drop" onClick={() => { setErr(''); setStep('paste') }}>
             <strong>Paste text</strong>

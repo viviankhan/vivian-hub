@@ -29,10 +29,21 @@ function check({ data, error }) {
 }
 
 // ── Papers ─────────────────────────────────────────────────────
+// Columns added for reading PDFs on the server. A database set up before then
+// (supabase_papers.sql not re-run) lacks them, and the shelf must still load.
+const SERVER_COLUMNS = ',processing,processing_error'
+let serverColumns = true
 export async function listPapers() {
   need()
+  if (serverColumns) {
+    const r = await supabase.from('papers').select(LIST_COLUMNS + SERVER_COLUMNS).order('created_at', { ascending: false })
+    if (!r.error) return r.data || []
+    if (!/processing/.test(r.error.message || '')) check(r)
+    serverColumns = false
+  }
   return check(await supabase.from('papers').select(LIST_COLUMNS).order('created_at', { ascending: false })) || []
 }
+export const serverReadingReady = () => serverColumns
 
 export async function getPaper(id) {
   need()
@@ -82,6 +93,8 @@ export function narrationLate(p, now = Date.now()) {
 
 // Narration status for display.
 export function narrationState(p) {
+  if (p.processing === 'reading') return 'reading'       // PDF being read on the server
+  if (p.processing === 'failed') return 'readfailed'
   if (p.audio_path && !p.needs_narration) return 'ready'
   if (p.narration_error && (p.narration_attempts || 0) >= 3) return 'failed'
   if (p.audio_path) return 'updating'   // playable, but a newer render is queued
@@ -210,6 +223,42 @@ function toBase64(buf) {
   let s = ''
   for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000))
   return btoa(s)
+}
+
+// ── Reading PDFs on the server ─────────────────────────────────
+// Upload the PDF, create the paper as a placeholder, and ask the server to
+// read it. Bloom can be closed as soon as this returns: the walkthrough is
+// written to the row on the server, and Alba narrates it after.
+export async function sendPdfToServer(file) {
+  need()
+  const uid = getUserId()
+  const id = crypto.randomUUID ? crypto.randomUUID() : String(Date.now())
+  const path = `${uid}/${id}/source.pdf`
+  const up = await supabase.storage.from(FIGURE_BUCKET).upload(path, file, { contentType: 'application/pdf', upsert: true })
+  if (up.error) throw new Error(up.error.message)
+  const ins = await supabase.from('papers').insert({
+    id, title: file.name.replace(/\.pdf$/i, ''), sections: [], source_pdf: path, processing: 'reading',
+  }).select('id').single()
+  if (ins.error) {
+    await supabase.storage.from(FIGURE_BUCKET).remove([path]).catch(() => {})
+    const e = new Error(ins.error.message); e.setup = /processing|source_pdf/.test(ins.error.message || ''); throw e
+  }
+  try {
+    await startServerReading(id)
+  } catch (e) {
+    // An older paper-walkthrough function doesn't know this mode yet.
+    if (/No PDF was sent/i.test(e.message || '')) {
+      await deletePaper({ id }).catch(() => {})
+      const x = new Error(e.message); x.setup = true; throw x
+    }
+    throw e
+  }
+  return id
+}
+
+// (Re)start reading an uploaded PDF on the server.
+export function startServerReading(paperId) {
+  return callFunction('paper-walkthrough', { paperId })
 }
 
 // A figure image (JPEG blob) → a spoken walkthrough of it, for listeners who

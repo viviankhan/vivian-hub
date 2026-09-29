@@ -16,7 +16,7 @@ import { useState, useEffect, useRef, useCallback, useMemo, Fragment } from 'rea
 import { createPortal } from 'react-dom'
 import {
   getPaper, loadProgress, saveProgress, signedAudioUrl, signedFigureUrl,
-  updatePaper, deletePaper, uploadFigure, removeFigure, requestNarration, describeFigure, narrationState, narrationLate, NARRATOR_URL,
+  updatePaper, deletePaper, uploadFigure, removeFigure, requestNarration, describeFigure, startServerReading, narrationState, narrationLate, NARRATOR_URL,
 } from '../lib/papers.js'
 import { findCue, sectionStart, sectionAt, paragraphs, bodyParagraphs, markTerms, formatTime, quickUnits, CUE_HEADING, CUE_FIGURE } from '../lib/paperText.js'
 import { quickVoiceAvailable, createSpeaker, englishVoices, pickVoice, saveVoiceName, onVoicesChanged } from '../lib/quickVoice.js'
@@ -308,7 +308,13 @@ export default function PaperReader({ paperId, showText, compact, onBack, onShow
       if (document.visibilityState !== 'visible') return
       try {
         const next = await getPaper(paper.id)
-        if (!next.audio_path) return
+        if (!next.audio_path) {
+          // Finished reading on the server, or figures cut out: show the new
+          // text (never mid-sentence of the quick voice).
+          const cur = paperRef.current
+          if (next.updated_at !== cur?.updated_at && !speaker.current?.playing) { setPaper(next); onChanged?.(next) }
+          return
+        }
         const s = unitsRef.current[speaker.current?.index ?? 0]?.s ?? 0
         pendingSeek.current = sectionStart(next.cues, s) ?? 0
         setSrc(await signedAudioUrl(next.audio_path))
@@ -317,9 +323,9 @@ export default function PaperReader({ paperId, showText, compact, onBack, onShow
         if (speaker.current?.playing) setAlbaReady(true)
         else { speaker.current?.stop(); setQuickKey('') }
       } catch {}
-    }, 30_000)
+    }, paper.processing === 'reading' ? 10_000 : 30_000)
     return () => clearInterval(id)
-  }, [paper?.id, paper?.audio_path, onChanged])
+  }, [paper?.id, paper?.audio_path, paper?.processing, onChanged])
 
   // Switch from the quick voice to Alba at the start of the current section.
   const switchToAlba = () => {
@@ -446,6 +452,18 @@ export default function PaperReader({ paperId, showText, compact, onBack, onShow
             {paper.doi && <a className="papers-doi" href={`https://doi.org/${paper.doi}`} target="_blank" rel="noreferrer">doi:{paper.doi}</a>}
           </header>
 
+          {state === 'reading' && (
+            <div className="papers-note">Reading this PDF on the server. The walkthrough appears here in a minute or two, and you can close Bloom meanwhile. Alba narrates it after.</div>
+          )}
+          {state === 'readfailed' && (
+            <div className="papers-note papers-note-error">
+              Couldn’t read this PDF: {paper.processing_error}{' '}
+              <button className="btn-ghost" onClick={async () => {
+                try { await startServerReading(paper.id); setPaper(p => ({ ...p, processing: 'reading', processing_error: null })) }
+                catch (e) { alert(e.message) }
+              }}>Try again</button>
+            </div>
+          )}
           {state === 'pending' && (
             <div className="papers-note">
               {quickVoiceAvailable
@@ -506,7 +524,12 @@ export default function PaperReader({ paperId, showText, compact, onBack, onShow
                   ))}
               </div>
 
-              {sec.figure?.path ? (
+              {sec.figure && !sec.figure.path && sec.figure.caption ? (
+                <figure className="papers-figure">
+                  <div className="papers-figure-ph">The figure image is cut out of the PDF when Alba narrates this paper.</div>
+                  <figcaption data-cue={`${si}:${CUE_FIGURE}`} className={isCur(`${si}:${CUE_FIGURE}`) ? 'is-current' : ''}>{sec.figure.caption}</figcaption>
+                </figure>
+              ) : sec.figure?.path ? (
                 <Figure fig={sec.figure} current={isCur(`${si}:${CUE_FIGURE}`)}
                   cueKey={`${si}:${CUE_FIGURE}`} onEdit={() => setFigEdit(si)} />
               ) : (

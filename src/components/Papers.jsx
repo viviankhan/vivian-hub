@@ -8,7 +8,7 @@
 // Bloom. The open paper's player lives in PaperReader.
 // ─────────────────────────────────────────────────────────────
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { papersAvailable, listPapers, listProgress, narrationState } from '../lib/papers.js'
+import { papersAvailable, listPapers, listProgress, narrationState, sendPdfToServer } from '../lib/papers.js'
 import { formatTime } from '../lib/paperText.js'
 import PaperReader from './PaperReader.jsx'
 import PaperAdd from './PaperAdd.jsx'
@@ -39,19 +39,21 @@ export default function Papers({ hidden, onShow }) {
   useEffect(() => { if (!hidden) refresh() }, [hidden, refresh])
 
   // While something is waiting on the narrator, check back now and then.
-  const waiting = (papers || []).some(p => narrationState(p) === 'pending' || narrationState(p) === 'updating')
+  const waiting = (papers || []).some(p => ['pending', 'updating', 'reading'].includes(narrationState(p)))
   useEffect(() => {
     if (hidden || !waiting) return
     const id = setInterval(refresh, 30_000)
     return () => clearInterval(id)
   }, [hidden, waiting, refresh])
 
-  // ── Several PDFs at once ─────────────────────────────────────
-  // Each is read, cropped and saved with no review step, two at a time, while
-  // you use the rest of Bloom (this component stays mounted). Anything read
-  // can still be edited from the reader afterwards.
+  // ── Sending PDFs ─────────────────────────────────────────────
+  // Each PDF is uploaded and handed to the server, which reads it with nobody
+  // waiting: Bloom can be closed as soon as they're all sent. If the server
+  // side isn't set up yet (see PAPERS.md), Bloom reads them itself instead,
+  // which needs it kept open.
   const [uploads, setUploads] = useState([])   // { key, file, name, status, msg, error, paperId, tries, startedAt }
   const running = useRef(new Set())
+  const serverOk = useRef(true)
   const wake = useRef(null)
   const addBatch = (files) => {
     const now = Date.now()
@@ -61,12 +63,24 @@ export default function Papers({ hidden, onShow }) {
   const patchUpload = (key, fields) => setUploads(u => u.map(x => (x.key === key ? { ...x, ...fields } : x)))
 
   useEffect(() => {
-    const busy = uploads.filter(x => x.status === 'reading' || x.status === 'saving').length
+    const busy = uploads.filter(x => ['uploading', 'reading', 'saving'].includes(x.status)).length
     const next = uploads.filter(x => x.status === 'waiting' && !running.current.has(x.key) && !(x.notBefore > Date.now()))
     next.slice(0, Math.max(0, PARALLEL - busy)).forEach(async (item) => {
       running.current.add(item.key)
-      patchUpload(item.key, { status: 'reading', startedAt: Date.now(), error: '' })
       try {
+        if (serverOk.current) {
+          patchUpload(item.key, { status: 'uploading', startedAt: Date.now(), error: '' })
+          try {
+            const id = await sendPdfToServer(item.file)
+            patchUpload(item.key, { status: 'sent', paperId: id, file: null })
+            refresh()
+            return
+          } catch (e) {
+            if (!e.setup) throw e
+            serverOk.current = false          // not set up: read in the app from now on
+          }
+        }
+        patchUpload(item.key, { status: 'reading', startedAt: Date.now(), error: '' })
         const { draft, figs } = await readPdf(item.file)
         patchUpload(item.key, { status: 'saving', name: draft.title || item.name })
         const row = await saveWalkthrough(draft, figs, msg => patchUpload(item.key, { msg }))
@@ -85,7 +99,7 @@ export default function Papers({ hidden, onShow }) {
   }, [uploads, refresh])
 
   // Keep the screen awake while PDFs are being read: a locked phone pauses Bloom.
-  const reading = uploads.some(x => x.status === 'waiting' || x.status === 'reading' || x.status === 'saving')
+  const reading = uploads.some(x => ['waiting', 'uploading', 'reading', 'saving'].includes(x.status))
   useEffect(() => {
     if (!reading) { try { wake.current?.release() } catch {} wake.current = null; return }
     const grab = async () => { try { if (navigator.wakeLock && !wake.current) wake.current = await navigator.wakeLock.request('screen') } catch {} }
@@ -167,6 +181,8 @@ function PaperCard({ p, prog, playing, onOpen }) {
   else if (pos > 0) where = `Stopped at ${formatTime(pos)} · section ${(prog.section_index || 0) + 1}`
   else if (prog?.section_index > 0) where = `Stopped in section ${prog.section_index + 1}`
   const status = {
+    reading: 'Reading the PDF…',
+    readfailed: 'Couldn’t read the PDF',
     ready: p.dur ? formatTime(p.dur) : 'Narrated',
     updating: 'Re-narrating',
     pending: 'Quick voice · Alba on its way',
@@ -177,9 +193,9 @@ function PaperCard({ p, prog, playing, onOpen }) {
       <div className="papers-card-title">{p.title}</div>
       <div className="papers-meta">{[p.authors, p.journal, p.year].filter(Boolean).join(' · ')}</div>
       <div className="papers-card-foot">
-        <span>{p.section_count} sections</span>
+        {p.section_count > 0 && <span>{p.section_count} sections</span>}
         <span className={`papers-badge is-${state}`}>{status}</span>
-        {(state !== 'pending' || where !== 'Not started') && <span>{where}</span>}
+        {!['reading', 'readfailed'].includes(state) && (state !== 'pending' || where !== 'Not started') && <span>{where}</span>}
       </div>
     </button>
   )
@@ -192,20 +208,26 @@ function UploadQueue({ uploads, reading, onOpen, onRetry, onDismiss, onClear }) 
     const id = setInterval(() => tick(n => n + 1), 1000)
     return () => clearInterval(id)
   }, [reading])
-  const left = uploads.filter(x => x.status !== 'done' && x.status !== 'failed').length
-  const done = uploads.filter(x => x.status === 'done').length
+  const left = uploads.filter(x => !['done', 'sent', 'failed'].includes(x.status)).length
+  const done = uploads.filter(x => x.status === 'done' || x.status === 'sent').length
+  const sent = uploads.some(x => x.status === 'sent')
+  const local = uploads.some(x => ['reading', 'saving'].includes(x.status))
   return (
     <div className="papers-queue card">
       <div className="papers-queue-head">
-        <strong>{left ? `Reading ${left} paper${left === 1 ? '' : 's'}` : 'All read'}</strong>
+        <strong>{left ? `Sending ${left} paper${left === 1 ? '' : 's'}` : sent ? 'All sent: you can close Bloom' : 'All read'}</strong>
         {done > 0 && !left && <button className="btn-ghost" onClick={onClear}>Clear</button>}
       </div>
-      {left > 0 && <div className="papers-hint">Keep Bloom open until they’re done. Each takes about a minute, and Alba narrates them after.</div>}
+      {left > 0 && !local && <div className="papers-hint">Keep Bloom open for a few seconds while they upload. After that it can be closed: they’re read on the server and appear on your shelf, then Alba narrates them.</div>}
+      {local && <div className="papers-hint">Reading them here, because the server side isn’t set up yet (see PAPERS.md). Keep Bloom open until they’re done.</div>}
+      {!left && sent && <div className="papers-hint">Each is read on the server in a minute or two and appears on your shelf; Alba narrates it after that.</div>}
       {uploads.map(x => (
         <div key={x.key} className={`papers-queue-row is-${x.status}`}>
           <span className="papers-queue-name">{x.name}</span>
           <span className="papers-queue-status">
             {x.status === 'waiting' && (x.msg || 'Waiting')}
+            {x.status === 'uploading' && 'Uploading…'}
+            {x.status === 'sent' && <button className="papers-queue-link" onClick={() => onOpen(x.paperId)}>Sent · reading on the server</button>}
             {x.status === 'reading' && `Reading… ${formatTime((Date.now() - x.startedAt) / 1000)}`}
             {x.status === 'saving' && (x.msg || 'Saving…')}
             {x.status === 'done' && <button className="papers-queue-link" onClick={() => onOpen(x.paperId)}>On your shelf · Open</button>}

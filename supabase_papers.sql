@@ -41,6 +41,13 @@ create table if not exists papers (
   updated_at      timestamptz not null default now()
 );
 
+-- Reading a PDF on the server (Bloom can be closed meanwhile): the stored PDF,
+-- and 'reading' / 'failed' while the walkthrough is being written. Added after
+-- the first version of this file, hence ALTER rather than in the CREATE above.
+alter table papers add column if not exists source_pdf text;
+alter table papers add column if not exists processing text;
+alter table papers add column if not exists processing_error text;
+
 create index if not exists papers_user_created on papers (user_id, created_at desc);
 -- The narrator's work queue.
 create index if not exists papers_to_narrate on papers (created_at)
