@@ -12,6 +12,17 @@ const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
 const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY
 const ENDPOINT = SUPABASE_URL ? `${SUPABASE_URL}/functions/v1/parse-event` : ''
 
+// The functions only answer signed-in users, so send this user's session token
+// (the anon key alone is refused). Imported lazily so the tests' shim of this
+// file stays free of the Supabase client.
+async function authToken() {
+  try {
+    const { supabase } = await import('./storage.js')
+    const { data: { session } = {} } = await supabase.auth.getSession()
+    return session?.access_token || SUPABASE_KEY
+  } catch { return SUPABASE_KEY }
+}
+
 // The feature only makes sense once Supabase is configured (that's where the
 // function lives). The UI hides its entry point when this is false.
 export const aiScheduleAvailable = !!ENDPOINT
@@ -144,7 +155,7 @@ export async function runAssistant(command, { categories = [], tasks = [], image
     .slice(0, MAX_ASSISTANT_IMAGES)
   if (!String(command || '').trim() && !photos.length) throw new Error('Type an instruction or add a photo first.')
   const headers = { 'Content-Type': 'application/json' }
-  if (SUPABASE_KEY) { headers['apikey'] = SUPABASE_KEY; headers['Authorization'] = `Bearer ${SUPABASE_KEY}` }
+  if (SUPABASE_KEY) { headers['apikey'] = SUPABASE_KEY; headers['Authorization'] = `Bearer ${await authToken()}` }
 
   let res
   try {

@@ -12,6 +12,17 @@ const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
 const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY
 const ENDPOINT = SUPABASE_URL ? `${SUPABASE_URL}/functions/v1/parse-receipt` : ''
 
+// The functions only answer signed-in users, so send this user's session token
+// (the anon key alone is refused). Imported lazily so the tests' shim of this
+// file stays free of the Supabase client.
+async function authToken() {
+  try {
+    const { supabase } = await import('./storage.js')
+    const { data: { session } = {} } = await supabase.auth.getSession()
+    return session?.access_token || SUPABASE_KEY
+  } catch { return SUPABASE_KEY }
+}
+
 // The scan button only shows when Supabase is configured (that's where the
 // function lives). Manual entry always works regardless.
 export const receiptScanAvailable = !!ENDPOINT
@@ -23,7 +34,7 @@ export async function scanReceipt(base64, { categories = [] } = {}) {
   if (!ENDPOINT) throw new Error('Receipt scanning needs your Supabase URL configured.')
   if (!base64) throw new Error('No image to scan.')
   const headers = { 'Content-Type': 'application/json' }
-  if (SUPABASE_KEY) { headers['apikey'] = SUPABASE_KEY; headers['Authorization'] = `Bearer ${SUPABASE_KEY}` }
+  if (SUPABASE_KEY) { headers['apikey'] = SUPABASE_KEY; headers['Authorization'] = `Bearer ${await authToken()}` }
 
   let res
   try {

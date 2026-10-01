@@ -26,6 +26,8 @@ const json = (body: unknown, status = 200) =>
 // transient error, same as parse-event.
 const MODELS = ['gemini-2.0-flash', 'gemini-2.5-flash', 'gemini-flash-latest', 'gemini-1.5-flash']
 const GEMINI_KEY = Deno.env.get('GEMINI_API_KEY') || ''
+const SUPABASE_URL = Deno.env.get('SUPABASE_URL') || ''
+const ANON = Deno.env.get('SUPABASE_ANON_KEY') || ''
 let cachedModel = ''
 
 Deno.serve(async (req) => {
@@ -33,6 +35,11 @@ Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS })
   if (req.method !== 'POST') return json({ error: 'Method not allowed' }, 405)
   if (!GEMINI_KEY) return json({ error: 'The AI key is not set up. Add a GEMINI_API_KEY secret, then redeploy.' }, 503)
+
+  // verify_jwt is off (for the CORS preflight), and every call spends the
+  // Gemini key, so only a signed-in Bloom user may make one.
+  const who = await fetch(`${SUPABASE_URL}/auth/v1/user`, { headers: { apikey: ANON, Authorization: req.headers.get('authorization') || '' } })
+  if (!who.ok) return json({ error: 'Sign in first.' }, 401)
 
   let body: { image?: string; today?: string; categories?: string[] }
   try { body = await req.json() } catch { return json({ error: 'Bad JSON body' }, 400) }
