@@ -4,6 +4,18 @@
 
 const EDIT_LOG = [
   {
+    date: '2026-10-05',
+    summary: 'Routines are time blocks now',
+    changes: [
+      'Each routine you had is now a time block with the same name and color, running from its first task to the end of its last. Its tasks sit inside it on the timeline, just as before, and still check themselves off once their time passes',
+      'If a routine\'s tasks repeat on different days, it gets one block for each schedule, so a block never shows up on a day with nothing in it. One-off tasks filed under a routine get a one-off block on their day',
+      'Tasks with no set time can\'t sit inside a block, so they stay as ordinary tasks',
+      'Routine groups are gone: no Routine row in the add sheet, no Routines tab under Recurring, and no routine headers or "done" summary rows on Today. The Time block option moves up into the main list of the add sheet',
+      'Moving a task\'s time inside a block offers to move the rest of that block with it, and the Start-now chooser groups later tasks by block',
+      'The Repeating filter on the Calendar now just shows or hides everyday habits',
+    ]
+  },
+  {
     date: '2026-09-29',
     summary: 'The AI assistant can make repeating tasks — and birthdays repeat every year',
     changes: [
