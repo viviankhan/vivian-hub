@@ -138,8 +138,38 @@ export function recurringFromTask(t, repeat, { id, today }) {
   }
 }
 
+// Overlapping screenshots of one list (scrolling a patient portal and
+// screenshotting as you go) show the same card two or three times, and the
+// model sometimes plans it once per screenshot. Two timed tasks on the same
+// date at the same minute are the same appointment: keep one, filling in
+// whatever the other copy read that it didn't. Same day at different times
+// stays separate — back-to-back procedures are real.
+export function mergeDuplicateItems(actions) {
+  const out = []
+  const byKey = new Map()
+  for (const a of actions || []) {
+    if (!a || a.kind !== 'create' || !a.date || !a.time || a.repeat) { out.push(a); continue }
+    const key = `${a.date} ${a.time}`
+    const i = byKey.get(key)
+    if (i === undefined) { byKey.set(key, out.length); out.push(a); continue }
+    const kept = out[i]
+    const longer = (x, y) => (String(y || '').length > String(x || '').length ? y : x)
+    out[i] = {
+      ...a, ...kept,
+      title: longer(kept.title, a.title),
+      description: longer(kept.description, a.description),
+      durationMins: kept.durationMins || a.durationMins || 0,
+      categoryIds: [...new Set([...(kept.categoryIds || []), ...(a.categoryIds || [])])],
+      reminders: (kept.reminders && kept.reminders.length) ? kept.reminders : (a.reminders || []),
+      subtasks: (kept.subtasks && kept.subtasks.length) ? kept.subtasks : (a.subtasks || []),
+    }
+  }
+  return out
+}
+
 // How many photos one request may carry, matching the function's own cap.
-export const MAX_ASSISTANT_IMAGES = 4
+// Ten covers a long appointment list screenshotted while scrolling.
+export const MAX_ASSISTANT_IMAGES = 10
 
 // Ask the assistant to plan actions for `command`, given the user's categories
 // and a snapshot of their current tasks (so it can act on existing ones).
@@ -186,6 +216,6 @@ export async function runAssistant(command, { categories = [], tasks = [], image
   // A 200 with an error field + no actions = the model couldn't form a plan.
   if ((!Array.isArray(data.actions) || data.actions.length === 0) && data.error) throw new Error(data.error)
   let actions = applyRepeatDefaults(Array.isArray(data.actions) ? data.actions : [])
-  if (photos.length) actions = flagGuessedDates(actions, { today: todayStr(), command })
+  if (photos.length) actions = flagGuessedDates(mergeDuplicateItems(actions), { today: todayStr(), command })
   return { summary: data.summary || '', actions }
 }

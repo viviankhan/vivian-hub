@@ -36,11 +36,12 @@ const GEMINI_KEY = Deno.env.get('GEMINI_API_KEY') || ''
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') || ''
 const ANON = Deno.env.get('SUPABASE_ANON_KEY') || ''
 
-// Photo limits. The app downscales to a ~1400px JPEG (a few hundred KB of
-// base64 each), so four fit comfortably; the byte cap matches parse-receipt's
-// and keeps a full-res upload from stalling the request.
-const MAX_IMAGES = 4
-const MAX_IMAGE_BYTES = 8_000_000
+// Photo limits. The app downscales to a ~2000px JPEG (a few hundred KB of
+// base64 each). Ten covers someone scrolling a long appointment list and
+// screenshotting as they go; the byte cap keeps a full-res upload from
+// stalling the request.
+const MAX_IMAGES = 10
+const MAX_IMAGE_BYTES = 12_000_000
 const MONTHS = [
   ['jan'], ['feb'], ['mar'], ['apr'], ['may'], ['jun'], ['jul'], ['aug'], ['sep'], ['oct'], ['nov'], ['dec'],
 ]
@@ -168,6 +169,14 @@ ${images.length > 1 ? `- The ${images.length} photos were sent TOGETHER because 
 - A single-day meeting, class, or appointment is a create with its time and durationMins (default 60 minutes for a seminar or meeting when no end is shown). Use event only for something covering more than one day.
 - Several separate items in one image (a list of assignments, a week of classes, a page of due dates) means one action for each. If the user names an existing task the items belong to, use addSubtasks on that task instead.
 - Ignore phone status bars, app chrome, toolbars, buttons, and navigation — they are not the task.
+- APPOINTMENT LISTS (a patient portal like MyChart or the Mayo Clinic app, a booking app, a list of upcoming visits): every appointment card is its own create action — never merge two cards, and never stop after the first few.
+  - People scroll and screenshot as they go, so the screenshots OVERLAP: the same card appears on two or three of them, often cut off at the top or bottom, or blurred behind a floating header or tab bar. Make exactly ONE action per distinct appointment. The same date AND the same time is the same appointment, wherever it appears; combine what each copy shows.
+  - Two cards on the same day at DIFFERENT times are two different appointments — keep both, even when their titles match.
+  - A partly hidden card still counts when its date and time can be read; skip it only if its date or time can't be read on any screenshot.
+  - "Arrive by", "Check in by", or "Arrival time" is when the user must be there: that is the task's time. Ignore countdowns like "PreCheck-In available in 28 days" when choosing the date.
+  - Title it after the visit itself plus who or what it's with: "Ultrasound Pelvis Exam", "OB/GYN consult with Megan Weinhold, APRN", "Rheumatology consultation", "Video visit with Dr. Jissy Cyriac". Use the department when no provider is named.
+  - description: department, building, floor, and desk exactly as written; the provider; whether it's a video visit; the PreCheck-In status. durationMins 60 unless a length is shown; reminders [1440, 90].
+- A time-zone label printed beside a time (CST, CDT, EST, PT…) is just the clock reading — use the time exactly as printed and don't convert it.
 ${command ? "- The user's instruction below says what to do with the photo; where they disagree, the instruction wins." : '- The user sent the photo with no instruction: just schedule what it describes.'}
 ` : ''
 
