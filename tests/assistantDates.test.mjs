@@ -51,5 +51,28 @@ console.log('\n— the instruction can say today —')
 const told = P.flagGuessedDates([{ kind: 'create', title: 'Call', date: today }], { today, command: 'add this for today' })
 eq('believed', told[0].needsDate, undefined)
 
+console.log('\n— six overlapping screenshots of a patient-portal appointment list —')
+const portal = [
+  { kind: 'create', title: 'OBG Procedure', date: '2026-10-07', time: '13:45', durationMins: 60, description: 'Building A, Entrance A2' },
+  { kind: 'create', title: 'OBG Procedure', date: '2026-10-07', time: '14:15', durationMins: 60, description: '' },
+  { kind: 'create', title: 'OBG Procedure', date: '2026-10-07', time: '14:15', durationMins: 0, description: 'Mayo Family Clinic Northwest, Building A, Entrance A2, Second Floor' },
+  { kind: 'create', title: 'Video visit with Dr. Jissy Cyriac', date: '2026-10-16', time: '15:45', reminders: [1440] },
+  { kind: 'create', title: 'Ultrasound Pelvis Exam', date: '2026-11-05', time: '07:30' },
+  { kind: 'create', title: 'OB/GYN consult with Megan Weinhold, APRN', date: '2026-11-09', time: '07:45' },
+  { kind: 'create', title: 'Consultation', date: '2026-11-09', time: '07:45', description: 'Eisenberg Building, Fourth Floor, Desk 4A' },
+  { kind: 'create', title: 'Rheumatology consultation', date: '2026-11-13', time: '08:30' },
+  { kind: 'create', title: 'Undated', date: '', time: '' },
+  { kind: 'create', title: 'Undated', date: '', time: '' },
+]
+const merged = P.mergeDuplicateItems(portal)
+eq('one action per appointment (undated ones left alone)', merged.map(a => `${a.date} ${a.time}`),
+  ['2026-10-07 13:45', '2026-10-07 14:15', '2026-10-16 15:45', '2026-11-05 07:30', '2026-11-09 07:45', '2026-11-13 08:30', ' ', ' '])
+eq('back-to-back procedures the same day both stay', merged.filter(a => a.date === '2026-10-07').length, 2)
+eq('a duplicate fills in what the first copy missed', [merged[1].description, merged[1].durationMins],
+  ['Mayo Family Clinic Northwest, Building A, Entrance A2, Second Floor', 60])
+eq('the more specific title wins', merged[4].title, 'OB/GYN consult with Megan Weinhold, APRN')
+eq('and keeps the other copy’s location', merged[4].description, 'Eisenberg Building, Fourth Floor, Desk 4A')
+eq('other kinds pass through', P.mergeDuplicateItems([{ kind: 'setDone', taskId: 'x' }]), [{ kind: 'setDone', taskId: 'x' }])
+
 console.log(`\n${pass} passed, ${fail} failed`)
 process.exit(fail ? 1 : 0)

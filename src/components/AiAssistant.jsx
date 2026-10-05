@@ -300,8 +300,10 @@ export default function AiAssistant({ categories = [], tasks = [], onApply, onCl
     for (const file of take) {
       try {
         // Text on a screenshot has to stay legible, so keep more detail than a
-        // receipt scan does.
-        const url = await compressImage(file, { maxDim: 1400, quality: 0.85 })
+        // receipt scan does. maxDim caps the LONG side, and a phone screenshot
+        // is over twice as tall as it is wide — at 1400 its text shrank to
+        // ~650px across, too small to read reliably.
+        const url = await compressImage(file, { maxDim: 2000, quality: 0.85 })
         const data = dataUrlToBase64(url)
         if (!data) throw new Error('Could not read that image.')
         setPhotos(prev => prev.length >= MAX_ASSISTANT_IMAGES ? prev

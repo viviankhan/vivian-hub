@@ -12,7 +12,9 @@ straight into the box) and it reads the picture instead of you retyping it — a
 screenshot of an email about a seminar, a syllabus page, a flyer, a paper
 schedule, a handwritten list. It takes the title, the date and time, and puts
 the room, the Zoom link, the meeting ID and passcode into the task's
-description. Up to 4 photos at once, with or without a typed instruction ("only
+description. Up to 10 photos at once — enough to scroll through an appointment
+list in a patient portal and screenshot as you go; overlapping screenshots are
+merged, so each appointment is planned once — with or without a typed instruction ("only
 the Wednesday one", "add these to my Orgo task") — and you still see the plan
 before anything is saved. Photos are shrunk in the browser before they're sent
 and are never stored in your planner.
