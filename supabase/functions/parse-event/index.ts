@@ -2,7 +2,8 @@
 // ─────────────────────────────────────────────────────────────
 // The planner's AI assistant. The app posts a natural-language command and/or
 // photos (a screenshot of an email, a syllabus page, a flyer, a handwritten
-// list) plus a snapshot of the user's current tasks; this asks Google Gemini to
+// list) and/or documents (a syllabus or event agenda as a PDF or Word file)
+// plus a snapshot of the user's current tasks; this asks Google Gemini to
 // return a PLAN of actions (create a task, add/check subtasks on an existing
 // one, mark a task done, reschedule). The app shows the plan for confirmation,
 // then applies it — nothing here ever writes to the database.
@@ -10,7 +11,9 @@
 // The flash models are multimodal, so the same call reads the pictures: photos
 // ride along as inline_data parts next to the prompt. Either a command or at
 // least one photo is required; with a photo alone, the instruction is simply
-// "schedule what this describes".
+// "schedule what this describes". A PDF rides along the same way (Gemini reads
+// PDFs natively, scans and tables included); a Word file arrives as text the
+// app already pulled out of it, and goes into the prompt.
 //
 // Free to run on Gemini's free tier. Supply your own key as a secret (never in
 // the app's public code):
@@ -45,6 +48,11 @@ const MONTHS = [
   ['jan'], ['feb'], ['mar'], ['apr'], ['may'], ['jun'], ['jul'], ['aug'], ['sep'], ['oct'], ['nov'], ['dec'],
 ]
 const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif']
+// Documents: up to three, a PDF sent whole or any document as its text. PDFs
+// and photos share one base64 budget, under Gemini's 20 MB inline limit.
+const MAX_DOCS = 3
+const MAX_FILE_BYTES = 14_000_000
+const MAX_DOC_TEXT = 200_000
 
 // The last model name that actually worked, remembered across invocations on a
 // warm instance. Without it, a key that doesn't have any of the hardcoded names
@@ -117,6 +125,7 @@ Deno.serve(async (req) => {
     command?: string; text?: string; today?: string
     categories?: { id: string; label: string }[]; tasks?: Task[]
     images?: (string | { data?: string; mimeType?: string })[]
+    documents?: { name?: string; mimeType?: string; data?: string; text?: string }[]
   }
   try { body = await req.json() } catch { return json({ error: 'Bad JSON body' }, 400) }
 
@@ -137,9 +146,26 @@ Deno.serve(async (req) => {
     }))
     .filter(im => im.data)
 
-  if (!command && !images.length) return json({ error: 'Nothing to do — type an instruction, paste an event, or add a photo.' }, 400)
+  // Documents: a PDF as base64 (sent to Gemini as the file), or any document
+  // as text the app extracted (a Word file, or a PDF too big to send whole).
+  const docs = (Array.isArray(body.documents) ? body.documents : [])
+    .slice(0, MAX_DOCS)
+    .map(d => ({
+      name: String(d?.name || 'document').replace(/[\r\n"]/g, ' ').slice(0, 120),
+      data: d?.mimeType === 'application/pdf' ? String(d?.data || '').replace(/^data:[^,]*,/, '').trim() : '',
+      text: typeof d?.text === 'string' ? d.text : '',
+    }))
+    .filter(d => d.data || d.text.trim())
+  const pdfDocs = docs.filter(d => d.data)
+  const textDocs = docs.filter(d => !d.data)
+  const docText = textDocs.reduce((n, d) => n + d.text.length, 0)
+  if (docText > MAX_DOC_TEXT) return json({ error: 'Those documents are too long — try one at a time, or just the schedule pages.' }, 413)
+
+  if (!command && !images.length && !docs.length) return json({ error: 'Nothing to do — type an instruction, paste an event, or add a photo or document.' }, 400)
   const imageBytes = images.reduce((n, im) => n + im.data.length, 0)
   if (imageBytes > MAX_IMAGE_BYTES) return json({ error: 'Those photos are too large — try fewer, or smaller ones.' }, 413)
+  const fileBytes = imageBytes + pdfDocs.reduce((n, d) => n + d.data.length, 0)
+  if (fileBytes > MAX_FILE_BYTES) return json({ error: 'Those files are too large together — try one document at a time.' }, 413)
 
   const today = (body.today || new Date().toISOString().slice(0, 10)).slice(0, 10)
   const cats = Array.isArray(body.categories) ? body.categories.slice(0, 40) : []
@@ -171,11 +197,35 @@ ${images.length > 1 ? `- The ${images.length} photos were sent TOGETHER because 
 ${command ? "- The user's instruction below says what to do with the photo; where they disagree, the instruction wins." : '- The user sent the photo with no instruction: just schedule what it describes.'}
 ` : ''
 
+  // Reading a document — a syllabus or an event agenda, usually — has rules of
+  // its own: what counts as an item, how to title it, which year a bare
+  // "Sep 15" means, and how to handle a class that meets every week.
+  const docNames = docs.map(d => `"${d.name}"`).join(', ')
+  const docNote = docs.length ? `
+ATTACHED DOCUMENT${docs.length > 1 ? `S (${docs.length})` : ''}: ${docNames}. Usually a course syllabus or an event agenda/program; sometimes a schedule, itinerary, or assignment sheet. Read ${docs.length > 1 ? 'them' : 'it'} in full — tables included — and plan what belongs on the user's planner:
+- SYLLABUS: make one create for each dated deliverable or assessment — assignments, problem sets, papers, projects, presentations, quizzes, labs due, midterms, finals, and any reading the syllabus says is DUE on a date. Title each with the course code or short name first ("BIO 210 — Quiz 1", "ENG 101 — Essay 2 draft due"). Put what it covers, its weight or points, and submission details in "description". Due-by times ("11:59 PM") go in "time" with durationMins 0. Exams take their stated time and length.
+- Don't turn every lecture topic or weekly reading into a task — only things that are due or happen on a date. A regular class meeting ("Mon & Wed 10:00–11:15", a weekly lab or discussion section) is ONE create with a weekly "repeat" (those weekdays), its time and durationMins, date = the first meeting on or after the term start (or today, whichever is later), and repeat.endDate = the last day of classes when the syllabus gives it. Room and building go in its description. Office hours are not tasks unless the user asks.
+- Holidays and no-class days are not tasks; skip them. A reading week or break that spans days is not a task either.
+- A schedule given by week ("Week 3: Quiz 1") takes its date from the term's start date and the weekday the course meets, when the document gives them. When it can't be worked out, leave "date" as "" — never guess.
+- A date with no year takes the academic year the document names (a Fall term's Sep–Dec dates are that year; a Spring term's Jan–May dates are the year that spring falls in), else the year that puts it nearest today.
+- AGENDA or PROGRAM for an event: one create per session, talk, or activity the user would attend, with its own start time and durationMins (the gap to the next item when no end is given; skip breaks, coffee, and "lunch on your own" unless the user asks for them). Title it with the session's name; speaker, room, and track go in "description". Every session takes the event's date (each day's sessions take that day's date for a multi-day event). For a multi-day conference, also add one event for the whole span.
+- If the user names an existing task the items belong to, use addSubtasks on that task instead of separate creates.
+- On each create, "dateFrom" quotes the words in the document that gave the date ("Oct 20", "Week 8 Wednesday", "Day 2").
+${command ? "- The user's instruction below says what to do with the document; where they disagree, the instruction wins (e.g. \"just the exams\")." : '- The user sent the document with no instruction: schedule what it describes, following the rules above.'}
+` : ''
+  const docTextBlock = textDocs.length ? '\n' + textDocs.map(d =>
+    `DOCUMENT "${d.name}" (text extracted from the file; table rows read as cells separated by " | "):\n<<<\n${d.text}\n>>>`).join('\n\n') + '\n' : ''
+  const attached = [images.length ? 'attached photo' + (images.length > 1 ? 's' : '') : '', docs.length ? 'attached document' + (docs.length > 1 ? 's' : '') : '']
+    .filter(Boolean).join(' and ')
+  const fallbackCommand = docs.length && !images.length ? 'Schedule what the attached document describes.'
+    : docs.length ? 'Schedule what the attached document and photos describe.'
+    : 'Schedule what the attached photo shows.'
+
   const prompt =
-`You are the assistant for a personal planner. Turn the user's instruction${images.length ? ' and attached photo' + (images.length > 1 ? 's' : '') : ''} into a PLAN of concrete actions the app will carry out after they confirm.
+`You are the assistant for a personal planner. Turn the user's instruction${attached ? ' and ' + attached : ''} into a PLAN of concrete actions the app will carry out after they confirm.
 
 Today is ${today} (the user's local date). Resolve relative dates against it.
-${photoNote}
+${photoNote}${docNote}${docTextBlock}
 CATEGORIES (use ids only where a category applies):
 ${catList}
 
@@ -223,7 +273,7 @@ Correct output:
 
 INSTRUCTION:
 """
-${command || 'Schedule what the attached photo shows.'}
+${command || fallbackCommand}
 """`
 
   const reqBody = JSON.stringify({
@@ -231,6 +281,8 @@ ${command || 'Schedule what the attached photo shows.'}
       { text: prompt },
       // Photos ride alongside the prompt; the flash models read them directly.
       ...images.map(im => ({ inline_data: { mime_type: im.mimeType, data: im.data } })),
+      // A PDF goes in whole; Gemini reads its pages (and its tables) itself.
+      ...pdfDocs.map(d => ({ inline_data: { mime_type: 'application/pdf', data: d.data } })),
     ] }],
     // NB: no responseSchema. Gemini's structured-output mode reliably fills only
     // required fields and drops the rest on a schema this size — it was omitting
@@ -316,7 +368,7 @@ ${command || 'Schedule what the attached photo shows.'}
   const raw = data?.candidates?.[0]?.content?.parts?.[0]?.text
   if (!raw) {
     const blocked = data?.promptFeedback?.blockReason
-    const what = images.length ? (command ? 'this' : 'this photo') : 'this text'
+    const what = images.length ? (command ? 'this' : 'this photo') : docs.length ? (command ? 'this' : 'this document') : 'this text'
     return json({ error: blocked ? `The AI declined ${what} (${blocked}).` : 'The AI returned nothing usable.' }, 502)
   }
 
@@ -330,6 +382,11 @@ ${command || 'Schedule what the attached photo shows.'}
   } catch {
     const m = cleaned.match(/\{[\s\S]*\}/)
     try { parsed = m ? JSON.parse(m[0]) : null } catch { parsed = null }
+    // A long syllabus can hold more items than one reply has room for; the
+    // plan is then cut off mid-JSON. Say so, and how to get it in parts.
+    if (!parsed && data?.candidates?.[0]?.finishReason === 'MAX_TOKENS') {
+      return json({ error: 'That has more items than I can plan in one go. Ask for part of it — e.g. “just the exams and assignments”, or “September and October”.' }, 422)
+    }
     if (!parsed) return json({ error: 'AI returned unparseable JSON.', detail: cleaned.slice(0, 300) }, 502)
   }
 
@@ -427,7 +484,7 @@ ${command || 'Schedule what the attached photo shows.'}
   // attached, a date of today has to be backed by words that actually said so
   // ("today", "tonight", or that calendar date); otherwise it's cleared and the
   // action is flagged so the app asks the user for the date instead of guessing.
-  if (images.length) {
+  if (images.length || docs.length) {
     const [, tm, td] = today.split('-').map(Number)
     const saysToday = (from: string) => {
       const f = from.toLowerCase()

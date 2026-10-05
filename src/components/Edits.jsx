@@ -4,6 +4,17 @@
 
 const EDIT_LOG = [
   {
+    date: '2026-10-05',
+    summary: 'The AI assistant reads syllabi and agendas — PDF and Word files',
+    changes: [
+      'New 📄 Add a PDF or Word file button in the AI assistant. Attach up to 3 documents (PDF, Word .docx or plain text), with or without photos and an instruction',
+      'From a syllabus it plans each dated assignment, quiz, exam and due reading, titled with the course ("BIO 210 — Quiz 1"), and adds your class meetings as one weekly repeating task that ends on the last day of classes. Holidays and lecture topics are left out',
+      'From an event agenda it plans each session at its own time, with the speaker and room in the description, and adds the whole event when it spans several days',
+      'Narrow it down by typing, e.g. "just the exams and due dates" or "only Day 2". As with photos, anything without a date it could find is marked ⚠ so you pick the day',
+      'A PDF is read as the file itself, so tables and scanned pages work. A Word file is turned into text on your device first, keeping each table row together. Old .doc files need saving as .docx or PDF first',
+    ]
+  },
+  {
     date: '2026-09-29',
     summary: 'The AI assistant can make repeating tasks — and birthdays repeat every year',
     changes: [

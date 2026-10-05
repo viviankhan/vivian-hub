@@ -2,12 +2,14 @@
 // The AI assistant sheet: type an instruction ("add these to my orgo task and
 // check them off", "reschedule the dentist to Friday 3pm", "make a task for…")
 // AND/OR add photos of the thing — a screenshot of an email about a seminar, a
-// syllabus page, a flyer, a handwritten list. It plans the actions against your
+// syllabus page, a flyer, a handwritten list — or attach a document: a whole
+// syllabus or event agenda as a PDF or Word file. It plans the actions against your
 // current tasks, shows the plan for you to confirm, then the parent applies it.
 // Nothing changes until you tap Apply.
 import { useRef, useState } from 'react'
 import { runAssistant, MAX_ASSISTANT_IMAGES, REPEAT_FREQS, describeRepeat, normalizeRepeat } from '../lib/parseEvent.js'
 import { compressImage, dataUrlToBase64 } from '../lib/trackers.js'
+import { readDocument, docKind, DOC_ACCEPT, MAX_ASSISTANT_DOCS } from '../lib/docText.js'
 
 function fmt12(t) {
   if (!t) return ''
@@ -279,7 +281,10 @@ export default function AiAssistant({ categories = [], tasks = [], onApply, onCl
   const [editingIdx, setEditingIdx] = useState(null) // which planned action is open for editing
   const [photos, setPhotos]   = useState([])     // { id, url, data, mimeType }
   const [loadingPhotos, setLoadingPhotos] = useState(0)
+  const [docs, setDocs]       = useState([])     // { id, name, kind, data?, mimeType?, text?, truncated? }
+  const [loadingDocs, setLoadingDocs] = useState(0)
   const fileRef = useRef(null)
+  const docRef = useRef(null)
 
   // Take photos from the picker, the camera, or a paste. Each is downscaled in
   // the browser (a full-res phone photo is far more than the model needs and
@@ -311,10 +316,47 @@ export default function AiAssistant({ categories = [], tasks = [], onApply, onCl
 
   const removePhoto = (id) => setPhotos(prev => prev.filter(p => p.id !== id))
 
-  // Screenshot → ⌘V straight into the box, no file picker.
+  // A syllabus or agenda as a file. A PDF is sent whole (the model reads it,
+  // tables and scans included); a Word file is turned into text right here.
+  // The file itself never leaves the device any other way, and isn't saved.
+  const addDocs = async (fileList) => {
+    const files = Array.from(fileList || []).filter(Boolean)
+    if (!files.length) return
+    const room = MAX_ASSISTANT_DOCS - docs.length
+    if (room <= 0) { setErr(`You can add up to ${MAX_ASSISTANT_DOCS} documents at a time.`); return }
+    const take = files.slice(0, room)
+    setErr(files.length > room ? `Only the first ${room} document${room > 1 ? 's' : ''} fit — up to ${MAX_ASSISTANT_DOCS} at a time.` : '')
+    setLoadingDocs(n => n + take.length)
+    for (const file of take) {
+      try {
+        const d = await readDocument(file)
+        setDocs(prev => prev.length >= MAX_ASSISTANT_DOCS ? prev
+          : [...prev, { ...d, id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}` }])
+        if (d.truncated) setErr(`“${d.name}” is very long, so only its first part will be read.`)
+      } catch (e) {
+        setErr((e && e.message) || 'Could not read that file.')
+      } finally {
+        setLoadingDocs(n => Math.max(0, n - 1))
+      }
+    }
+  }
+  const removeDoc = (id) => setDocs(prev => prev.filter(d => d.id !== id))
+
+  // Picked or pasted files go where they belong: pictures to photos, anything
+  // else to documents (which says so if it can't read one).
+  const addFiles = (fileList) => {
+    const files = Array.from(fileList || []).filter(Boolean)
+    const imgs = files.filter(f => f.type && f.type.startsWith('image/'))
+    const rest = files.filter(f => !(f.type && f.type.startsWith('image/')))
+    if (imgs.length) addPhotos(imgs)
+    if (rest.length) addDocs(rest)
+  }
+
+  // Screenshot → ⌘V straight into the box, no file picker. A copied PDF or
+  // Word file pastes in the same way.
   const onPaste = (e) => {
     const files = Array.from(e.clipboardData?.files || [])
-    if (files.some(f => f.type && f.type.startsWith('image/'))) { e.preventDefault(); addPhotos(files) }
+    if (files.some(f => (f.type && f.type.startsWith('image/')) || docKind(f))) { e.preventDefault(); addFiles(files) }
   }
 
   const titleOf = (id) => (tasks.find(t => t.id === id) || {}).title
@@ -322,15 +364,17 @@ export default function AiAssistant({ categories = [], tasks = [], onApply, onCl
     .map(id => (categories.find(c => c.id === id) || {}).label)
     .filter(Boolean)
 
-  const canPlan = !!command.trim() || photos.length > 0
+  const canPlan = !!command.trim() || photos.length > 0 || docs.length > 0
+  const preparing = loadingPhotos + loadingDocs
 
   const plated = async () => {
-    if (!canPlan || busy || loadingPhotos) return
+    if (!canPlan || busy || preparing) return
     setBusy(true); setErr('')
     try {
       const res = await runAssistant(command.trim(), {
         categories, tasks,
         images: photos.map(p => ({ data: p.data, mimeType: p.mimeType })),
+        documents: docs.map(d => d.data ? { name: d.name, mimeType: d.mimeType, data: d.data } : { name: d.name, text: d.text }),
       })
       setPlan(res); setEditingIdx(null)
     } catch (e) {
@@ -361,7 +405,7 @@ export default function AiAssistant({ categories = [], tasks = [], onApply, onCl
           </div>
           <div style={{ fontSize:20, fontWeight:800, color:'#17313f', marginTop:8, fontFamily:'DM Sans,sans-serif' }}>✨ Tell me what to do</div>
           <div style={{ fontSize:12.5, color:'rgba(0,0,0,.62)', marginTop:4, lineHeight:1.5 }}>
-            Add a task, paste an event, add a photo of one, or give an instruction about your existing tasks — I’ll show you the plan before anything changes.
+            Add a task, paste an event, add a photo of one, attach a syllabus or agenda (PDF or Word), or give an instruction about your existing tasks — I’ll show you the plan before anything changes.
           </div>
         </div>
 
@@ -369,7 +413,7 @@ export default function AiAssistant({ categories = [], tasks = [], onApply, onCl
           {!plan ? (<>
             <div style={{ position:'relative' }}>
               <textarea value={command} onChange={e => setCommand(e.target.value)} onPaste={onPaste} autoFocus
-                placeholder={"e.g. Add the Aug 17 assignments to my Orgo task’s subtasks and check them off. Or: Dentist next Tue 3pm, bring insurance card. Or add a photo below and leave this empty."}
+                placeholder={"e.g. Add the Aug 17 assignments to my Orgo task’s subtasks and check them off. Or: Dentist next Tue 3pm, bring insurance card. Or attach a syllabus below and say “just the exams and due dates”."}
                 style={{ width:'100%', fontSize:14, padding:'12px 14px', borderRadius:12, border:'1px solid var(--border)', fontFamily:'DM Sans,sans-serif', outline:'none', lineHeight:1.55, resize:'vertical', minHeight:140, background:'white', color:'var(--text)', boxSizing:'border-box' }} />
               {command && (
                 <button type="button" onClick={() => { setCommand(''); setErr('') }} aria-label="Clear"
@@ -381,6 +425,8 @@ export default function AiAssistant({ categories = [], tasks = [], onApply, onCl
                 flyer, a syllabus page. Read alongside whatever you type. */}
             <input ref={fileRef} type="file" accept="image/*" multiple hidden
               onChange={e => { addPhotos(e.target.files); e.target.value = '' }} />
+            <input ref={docRef} type="file" accept={DOC_ACCEPT} multiple hidden data-testid="assistant-doc-input"
+              onChange={e => { addDocs(e.target.files); e.target.value = '' }} />
             <div style={{ display:'flex', alignItems:'center', gap:8, marginTop:10, flexWrap:'wrap' }}>
               <button type="button" onClick={() => fileRef.current?.click()}
                 disabled={busy || photos.length >= MAX_ASSISTANT_IMAGES}
@@ -390,12 +436,22 @@ export default function AiAssistant({ categories = [], tasks = [], onApply, onCl
                   cursor: (busy || photos.length >= MAX_ASSISTANT_IMAGES) ? 'default' : 'pointer' }}>
                 📷 {photos.length ? 'Add another photo' : 'Add a photo'}
               </button>
+              <button type="button" onClick={() => docRef.current?.click()}
+                disabled={busy || docs.length >= MAX_ASSISTANT_DOCS}
+                style={{ padding:'9px 14px', borderRadius:12, border:'1px solid var(--border)', fontFamily:'DM Sans,sans-serif', fontWeight:600, fontSize:13,
+                  background: (busy || docs.length >= MAX_ASSISTANT_DOCS) ? '#EDEDF1' : 'white',
+                  color: (busy || docs.length >= MAX_ASSISTANT_DOCS) ? '#9CA3AF' : 'var(--forest)',
+                  cursor: (busy || docs.length >= MAX_ASSISTANT_DOCS) ? 'default' : 'pointer' }}>
+                📄 {docs.length ? 'Add another file' : 'Add a PDF or Word file'}
+              </button>
               <span style={{ fontSize:11.5, color:'var(--muted)' }}>
-                {loadingPhotos > 0
+                {loadingDocs > 0
+                  ? 'Reading the file…'
+                  : loadingPhotos > 0
                   ? 'Preparing photo…'
-                  : photos.length
-                    ? `${photos.length} of ${MAX_ASSISTANT_IMAGES} added`
-                    : 'Screenshot an email, snap a flyer — or paste one in.'}
+                  : (photos.length || docs.length)
+                    ? [photos.length ? `${photos.length} photo${photos.length > 1 ? 's' : ''}` : '', docs.length ? `${docs.length} file${docs.length > 1 ? 's' : ''}` : ''].filter(Boolean).join(' · ') + ' added'
+                    : 'Screenshot an email, snap a flyer, or attach a syllabus or agenda.'}
               </span>
             </div>
 
@@ -411,15 +467,31 @@ export default function AiAssistant({ categories = [], tasks = [], onApply, onCl
               </div>
             )}
 
+            {docs.length > 0 && (
+              <div style={{ display:'flex', flexDirection:'column', gap:6, marginTop:10 }}>
+                {docs.map(d => (
+                  <div key={d.id} style={{ display:'flex', alignItems:'center', gap:10, background:'white', border:'1px solid var(--border)', borderRadius:10, padding:'8px 10px' }}>
+                    <span aria-hidden="true" style={{ width:30, height:30, borderRadius:8, flexShrink:0, display:'flex', alignItems:'center', justifyContent:'center', fontSize:9.5, fontWeight:800, letterSpacing:.4, color:'white',
+                      background: d.kind === 'pdf' ? '#C2410C' : d.kind === 'docx' ? '#2B579A' : '#64748B' }}>
+                      {d.kind === 'pdf' ? 'PDF' : d.kind === 'docx' ? 'DOC' : 'TXT'}
+                    </span>
+                    <span style={{ flex:1, minWidth:0, fontSize:13, color:'var(--text)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{d.name}</span>
+                    <button type="button" onClick={() => removeDoc(d.id)} disabled={busy} aria-label={`Remove ${d.name}`}
+                      style={{ width:24, height:24, flexShrink:0, borderRadius:'50%', border:'1px solid var(--border)', background:'white', color:'var(--muted)', fontSize:11, lineHeight:1, cursor: busy ? 'default' : 'pointer' }}>✕</button>
+                  </div>
+                ))}
+              </div>
+            )}
+
             {err && <div style={{ fontSize:12, color:'#B42318', background:'#FEF3F2', border:'1px solid #FECDCA', borderRadius:10, padding:'9px 12px', marginTop:10, lineHeight:1.45 }}>{err}</div>}
-            <button onClick={plated} disabled={!canPlan || busy || loadingPhotos > 0}
+            <button onClick={plated} disabled={!canPlan || busy || preparing > 0}
               style={{ width:'100%', marginTop:12, padding:'14px', borderRadius:14, border:'none',
-                background:(!canPlan||busy||loadingPhotos>0)?'#E1E1E6':'var(--forest)', color:(!canPlan||busy||loadingPhotos>0)?'#9CA3AF':'var(--green-light)',
-                cursor:(!canPlan||busy||loadingPhotos>0)?'default':'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:700, fontSize:15 }}>
-              {busy ? (photos.length ? 'Reading the photo…' : 'Thinking…') : 'Plan it'}
+                background:(!canPlan||busy||preparing>0)?'#E1E1E6':'var(--forest)', color:(!canPlan||busy||preparing>0)?'#9CA3AF':'var(--green-light)',
+                cursor:(!canPlan||busy||preparing>0)?'default':'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:700, fontSize:15 }}>
+              {busy ? (docs.length ? 'Reading the document…' : photos.length ? 'Reading the photo…' : 'Thinking…') : 'Plan it'}
             </button>
             <div style={{ fontSize:10.5, color:'var(--muted)', marginTop:10, textAlign:'center', lineHeight:1.5 }}>
-              Uses a free AI model — your text, any photos you add, and a list of your task titles are sent to Google Gemini. Photos are shrunk on your phone first and are never saved to your planner. Nothing changes until you review and tap Apply.
+              Uses a free AI model — your text, any photos or files you add, and a list of your task titles are sent to Google Gemini. Photos are shrunk on your phone first; a Word file is turned into text first. Neither is saved to your planner. Nothing changes until you review and tap Apply.
             </div>
           </>) : (<>
             {/* Plan review */}
