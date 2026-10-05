@@ -168,6 +168,38 @@ export function mergeDuplicateItems(actions) {
   return out
 }
 
+// With an appointment list, the function also returns `seen`: every card the
+// model read off the screenshots ({ date, time, title }). The model has been
+// known to read a card and still leave it out of the plan — two "OBG
+// Procedure" visits on one day came back as one. So any seen date + time with
+// no task at that minute gets one: a copy of the same-titled visit that day
+// when there is one (it carries the location and notes), else a bare task.
+const normTitle = s => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
+export function fillMissedCards(actions, seen) {
+  const out = [...(actions || [])]
+  let added = 0
+  const have = new Set(out.filter(a => a && a.kind === 'create' && a.date && a.time).map(a => `${a.date} ${a.time}`))
+  for (const c of Array.isArray(seen) ? seen : []) {
+    if (!c || !c.date || !c.time || !c.title) continue
+    const key = `${c.date} ${c.time}`
+    if (have.has(key)) continue
+    have.add(key)
+    const t = normTitle(c.title)
+    const sibling = out.find(a => a && a.kind === 'create' && a.date === c.date && t
+      && (normTitle(a.title).includes(t) || t.includes(normTitle(a.title))))
+    const task = sibling
+      ? { ...sibling, time: c.time }
+      : { kind: 'create', title: c.title, date: c.date, dateFrom: '', time: c.time, durationMins: 60,
+          categoryIds: [], description: '', subtasks: [], reminders: [1440, 90], repeat: null }
+    // Sit it next to that day's other items rather than at the end.
+    let at = out.length
+    for (let i = out.length - 1; i >= 0; i--) if (out[i] && out[i].kind === 'create' && out[i].date === c.date) { at = i + 1; break }
+    out.splice(at, 0, task)
+    added++
+  }
+  return { actions: out, added }
+}
+
 // How many photos one request may carry, matching the function's own cap.
 // Ten covers a long appointment list screenshotted while scrolling.
 export const MAX_ASSISTANT_IMAGES = 10
@@ -223,8 +255,11 @@ export async function runAssistant(command, { categories = [], tasks = [], image
   }
   if (!data) throw new Error('The AI service returned an unexpected response.')
   // A 200 with an error field + no actions = the model couldn't form a plan.
-  if ((!Array.isArray(data.actions) || data.actions.length === 0) && data.error) throw new Error(data.error)
-  let actions = applyRepeatDefaults(Array.isArray(data.actions) ? data.actions : [])
+  const filled = fillMissedCards(Array.isArray(data.actions) ? data.actions : [], photos.length ? data.seen : [])
+  if (!filled.actions.length && data.error) throw new Error(data.error)
+  let actions = applyRepeatDefaults(filled.actions)
+  let summary = data.summary || ''
+  if (filled.added) summary += ` (+${filled.added} more appointment${filled.added > 1 ? 's' : ''} found on the screenshots.)`
   if (photos.length || docs.length) actions = flagGuessedDates(mergeDuplicateItems(actions), { today: todayStr(), command })
-  return { summary: data.summary || '', actions }
+  return { summary, actions }
 }

@@ -74,5 +74,32 @@ eq('the more specific title wins', merged[4].title, 'OB/GYN consult with Megan W
 eq('and keeps the other copy’s location', merged[4].description, 'Eisenberg Building, Fourth Floor, Desk 4A')
 eq('other kinds pass through', P.mergeDuplicateItems([{ kind: 'setDone', taskId: 'x' }]), [{ kind: 'setDone', taskId: 'x' }])
 
+console.log('\n— the AI read both Oct 7 cards but planned only the 1:45 one —')
+const fivePlan = [
+  { kind: 'create', title: 'OBG Procedure', date: '2026-10-07', time: '13:45', durationMins: 60, description: 'Mayo Family Clinic Northwest, Building A', reminders: [1440, 90] },
+  { kind: 'create', title: 'Video visit with Dr. Jissy Cyriac', date: '2026-10-16', time: '15:45' },
+  { kind: 'create', title: 'Ultrasound Pelvis Exam', date: '2026-11-05', time: '07:30' },
+  { kind: 'create', title: 'OB/GYN consult with Megan Weinhold, APRN', date: '2026-11-09', time: '07:45' },
+  { kind: 'create', title: 'Rheumatology consultation', date: '2026-11-13', time: '08:30' },
+]
+const seen = [
+  { date: '2026-10-07', time: '13:45', title: 'OBG Procedure' },
+  { date: '2026-10-07', time: '14:15', title: 'OBG Procedure' },
+  { date: '2026-10-07', time: '14:15', title: 'OBG Procedure' },   // same card on the next screenshot
+  { date: '2026-10-16', time: '15:45', title: 'Appointment (Video Visit)' },
+  { date: '2026-11-05', time: '07:30', title: 'Ultrasound Pelvis Exam' },
+  { date: '2026-11-09', time: '07:45', title: 'Consultation' },
+  { date: '2026-11-13', time: '08:30', title: 'Consultation' },
+  { date: '2026-11-20', time: '09:00', title: 'Lab draw' },          // read but never planned, nothing to copy
+]
+const filled = P.fillMissedCards(fivePlan, seen)
+eq('the 2:15 visit and the lab draw are added, once each', filled.added, 2)
+eq('in date order next to their day', filled.actions.map(a => `${a.date} ${a.time}`),
+  ['2026-10-07 13:45', '2026-10-07 14:15', '2026-10-16 15:45', '2026-11-05 07:30', '2026-11-09 07:45', '2026-11-13 08:30', '2026-11-20 09:00'])
+eq('the added 2:15 visit carries the 1:45 one’s place and reminders',
+  [filled.actions[1].title, filled.actions[1].description, filled.actions[1].reminders], ['OBG Procedure', 'Mayo Family Clinic Northwest, Building A', [1440, 90]])
+eq('an unmatched card becomes a plain task', [filled.actions[6].title, filled.actions[6].durationMins], ['Lab draw', 60])
+eq('nothing seen, nothing changed', P.fillMissedCards(fivePlan, undefined), { actions: fivePlan, added: 0 })
+
 console.log(`\n${pass} passed, ${fail} failed`)
 process.exit(fail ? 1 : 0)

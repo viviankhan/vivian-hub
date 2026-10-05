@@ -197,7 +197,8 @@ ${images.length > 1 ? `- The ${images.length} photos were sent TOGETHER because 
 - Ignore phone status bars, app chrome, toolbars, buttons, and navigation — they are not the task.
 - APPOINTMENT LISTS (a patient portal like MyChart or the Mayo Clinic app, a booking app, a list of upcoming visits): every appointment card is its own create action — never merge two cards, and never stop after the first few.
   - People scroll and screenshot as they go, so the screenshots OVERLAP: the same card appears on two or three of them, often cut off at the top or bottom, or blurred behind a floating header or tab bar. Make exactly ONE action per distinct appointment. The same date AND the same time is the same appointment, wherever it appears; combine what each copy shows.
-  - Two cards on the same day at DIFFERENT times are two different appointments — keep both, even when their titles match.
+  - Two cards on the same day at DIFFERENT times are two different appointments — keep both, even when their titles match. Example: "Wed, Oct 7 · Arrive by 1:45 PM · OBG Procedure" and "Wed, Oct 7 · Arrive by 2:15 PM · OBG Procedure" are TWO actions.
+  - Before planning, fill "seen": go through every photo, top to bottom, and list every appointment card whose date and time you can read — {"date":"YYYY-MM-DD","time":"HH:MM","title":"what the card calls it"}. Repeats across overlapping photos are fine there. Then make one action for each distinct date + time in "seen".
   - A partly hidden card still counts when its date and time can be read; skip it only if its date or time can't be read on any screenshot.
   - "Arrive by", "Check in by", or "Arrival time" is when the user must be there: that is the task's time. Ignore countdowns like "PreCheck-In available in 28 days" when choosing the date.
   - Title it after the visit itself plus who or what it's with: "Ultrasound Pelvis Exam", "OB/GYN consult with Megan Weinhold, APRN", "Rheumatology consultation", "Video visit with Dr. Jissy Cyriac". Use the department when no provider is named.
@@ -242,7 +243,7 @@ THE USER'S CURRENT TASKS (only reference these ids; NEVER invent an id):
 ${taskList}
 
 Respond with ONLY a JSON object (no prose, no markdown, no code fences) of this exact shape:
-{"summary": "one sentence", "actions": [ ...action objects... ]}
+{"summary": "one sentence", ${images.length ? '"seen": [ ...every appointment card read off the photos, if they show a list of appointments, else [] ... ], ' : ''}"actions": [ ...action objects... ]}
 
 Each action object is one of these shapes. COPY the shape and fill in EVERY field that applies — never leave out the dates on a create or event:
 - create — a new single-day TASK (something to do on one day):
@@ -353,8 +354,12 @@ ${command || fallbackCommand}
 
   // Fast path: on a warm instance we already know a model that works for this
   // key — go straight to it and skip the failed-probe tax.
-  if (cachedModel) await tryModels([cachedModel])
-  if (!resp && !hardStop) await tryModels(MODELS.filter(m => m !== cachedModel))
+  // Photos go to 2.5-flash first: 2.0-flash skipped cards on a crowded
+  // screenshot (two same-titled visits on one day came back as one).
+  const order = images.length ? ['gemini-2.5-flash', ...MODELS.filter(m => m !== 'gemini-2.5-flash')] : MODELS
+  const triedCached = !!cachedModel && (!images.length || cachedModel === order[0])
+  if (triedCached) await tryModels([cachedModel])
+  if (!resp && !hardStop) await tryModels(order.filter(m => !(triedCached && m === cachedModel)))
   // If the whole hardcoded list came back 404 (names the key doesn't recognize),
   // discover the key's real model set and try those before giving up.
   if (!resp && !hardStop && lastStatus === 404) {
@@ -513,14 +518,21 @@ ${command || fallbackCommand}
     }
   }
 
+  // The cards the model read off an appointment list, passed through so the
+  // app can add any it read but then left out of the plan.
+  const seen = (images.length && Array.isArray(parsed.seen) ? parsed.seen : [])
+    .map((c: any) => ({ date: clampDate(c?.date), time: clampTime(String(c?.time || '')), title: String(c?.title || '').trim().slice(0, 200) }))
+    .filter((c: { date: string; time: string; title: string }) => c.date && c.time && c.title)
+    .slice(0, 60)
+
   const summary = String(parsed.summary || '').trim().slice(0, 300)
-  if (!actions.length) {
+  if (!actions.length && !seen.length) {
     // The model gave a summary but no action we could use. Echo what it actually
     // returned so the failure is diagnosable instead of a mystery empty plan.
     const rawActions = JSON.stringify(parsed.actions ?? parsed).slice(0, 600)
     return json({ summary, actions: [], error: `I understood it but couldn't turn it into an action. The AI returned: ${rawActions}` })
   }
-  return json({ summary, actions })
+  return json({ summary, actions, ...(seen.length ? { seen } : {}) })
  } catch (e) {
   // Anything we didn't foresee returns a readable message instead of an opaque
   // 500, so a failure is never invisible again.
