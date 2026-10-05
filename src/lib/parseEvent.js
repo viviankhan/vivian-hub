@@ -190,7 +190,7 @@ export function fillMissedCards(actions, seen) {
     const task = sibling
       ? { ...sibling, time: c.time }
       : { kind: 'create', title: c.title, date: c.date, dateFrom: '', time: c.time, durationMins: 60,
-          categoryIds: [], description: '', subtasks: [], reminders: [1440, 90], repeat: null }
+          categoryIds: [], description: '', subtasks: [], reminders: [], repeat: null }
     // Sit it next to that day's other items rather than at the end.
     let at = out.length
     for (let i = out.length - 1; i >= 0; i--) if (out[i] && out[i].kind === 'create' && out[i].date === c.date) { at = i + 1; break }
@@ -198,6 +198,16 @@ export function fillMissedCards(actions, seen) {
     added++
   }
   return { actions: out, added }
+}
+
+// A task saved with no reminders of its own follows Settings → Reminders. The
+// model kept picking reminders nobody asked for ("1 day & 90 min before"),
+// which overrode those defaults, so its reminders are kept only when the
+// instruction actually asked for some.
+const ASKED_FOR_REMINDERS = /\b(remind|reminders?|alerts?|alarms?|notif(y|ication)s?|ping me|heads.?up)\b/i
+export function keepAskedReminders(actions, command = '') {
+  if (ASKED_FOR_REMINDERS.test(String(command || ''))) return actions
+  return (actions || []).map(a => (a && Array.isArray(a.reminders) && a.reminders.length ? { ...a, reminders: [] } : a))
 }
 
 // How many photos one request may carry, matching the function's own cap.
@@ -257,7 +267,7 @@ export async function runAssistant(command, { categories = [], tasks = [], image
   // A 200 with an error field + no actions = the model couldn't form a plan.
   const filled = fillMissedCards(Array.isArray(data.actions) ? data.actions : [], photos.length ? data.seen : [])
   if (!filled.actions.length && data.error) throw new Error(data.error)
-  let actions = applyRepeatDefaults(filled.actions)
+  let actions = applyRepeatDefaults(keepAskedReminders(filled.actions, command))
   let summary = data.summary || ''
   if (filled.added) summary += ` (+${filled.added} more appointment${filled.added > 1 ? 's' : ''} found on the screenshots.)`
   if (photos.length || docs.length) actions = flagGuessedDates(mergeDuplicateItems(actions), { today: todayStr(), command })

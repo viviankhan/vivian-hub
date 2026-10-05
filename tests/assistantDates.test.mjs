@@ -101,5 +101,12 @@ eq('the added 2:15 visit carries the 1:45 one’s place and reminders',
 eq('an unmatched card becomes a plain task', [filled.actions[6].title, filled.actions[6].durationMins], ['Lab draw', 60])
 eq('nothing seen, nothing changed', P.fillMissedCards(fivePlan, undefined), { actions: fivePlan, added: 0 })
 
+console.log('\n— reminders follow Settings unless the instruction asks for some —')
+const withLeads = [{ kind: 'create', title: 'OBG Procedure', reminders: [1440, 90] }, { kind: 'create', title: 'Lab', reminders: [] }, { kind: 'setDone', taskId: 'x' }]
+eq('invented reminders are dropped (photo only, no instruction)', P.keepAskedReminders(withLeads, '').map(a => a.reminders), [[], [], undefined])
+eq('dropped for an instruction that never mentions them', P.keepAskedReminders(withLeads, 'add these appointments')[0].reminders, [])
+eq('kept when asked', P.keepAskedReminders(withLeads, 'add these and remind me 2 hours before')[0].reminders, [1440, 90])
+eq('"alarm" counts as asking', P.keepAskedReminders(withLeads, 'set an alarm the day before')[0].reminders, [1440, 90])
+
 console.log(`\n${pass} passed, ${fail} failed`)
 process.exit(fail ? 1 : 0)

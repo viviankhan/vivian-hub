@@ -89,7 +89,7 @@ const RESPONSE_SCHEMA = {
             description: 'For create/addSubtasks: the subtask items.',
             items: { type: 'object', properties: { text: { type: 'string' }, done: { type: 'boolean' } }, required: ['text'] },
           },
-          reminders:    { type: 'array', items: { type: 'integer' }, description: 'For create: reminder lead minutes before start.' },
+          reminders:    { type: 'array', items: { type: 'integer' }, description: 'For create: reminder lead minutes before start, ONLY when the user asked for specific reminders; else [] (their own defaults apply).' },
           done:         { type: 'boolean', description: 'For setDone: true to complete, false to un-complete.' },
           repeat: {
             type: 'object',
@@ -202,7 +202,7 @@ ${images.length > 1 ? `- The ${images.length} photos were sent TOGETHER because 
   - A partly hidden card still counts when its date and time can be read; skip it only if its date or time can't be read on any screenshot.
   - "Arrive by", "Check in by", or "Arrival time" is when the user must be there: that is the task's time. Ignore countdowns like "PreCheck-In available in 28 days" when choosing the date.
   - Title it after the visit itself plus who or what it's with: "Ultrasound Pelvis Exam", "OB/GYN consult with Megan Weinhold, APRN", "Rheumatology consultation", "Video visit with Dr. Jissy Cyriac". Use the department when no provider is named.
-  - description: department, building, floor, and desk exactly as written; the provider; whether it's a video visit; the PreCheck-In status. durationMins 60 unless a length is shown; reminders [1440, 90].
+  - description: department, building, floor, and desk exactly as written; the provider; whether it's a video visit; the PreCheck-In status. durationMins 60 unless a length is shown.
 - A time-zone label printed beside a time (CST, CDT, EST, PT…) is just the clock reading — use the time exactly as printed and don't convert it.
 ${command ? "- The user's instruction below says what to do with the photo; where they disagree, the instruction wins." : '- The user sent the photo with no instruction: just schedule what it describes.'}
 ` : ''
@@ -247,11 +247,11 @@ Respond with ONLY a JSON object (no prose, no markdown, no code fences) of this 
 
 Each action object is one of these shapes. COPY the shape and fill in EVERY field that applies — never leave out the dates on a create or event:
 - create — a new single-day TASK (something to do on one day):
-  {"kind":"create","title":"Dentist","date":"2026-08-25","dateFrom":"Tues Aug 25","time":"15:00","durationMins":60,"categoryIds":[],"description":"Bring insurance card","subtasks":[{"text":"call to confirm","done":false}],"reminders":[60]}
+  {"kind":"create","title":"Dentist","date":"2026-08-25","dateFrom":"Tues Aug 25","time":"15:00","durationMins":60,"categoryIds":[],"description":"Bring insurance card","subtasks":[{"text":"call to confirm","done":false}],"reminders":[]}
 - event — a multi-day calendar EVENT spanning a range of days (a trip, a vacation, someone away/out, a conference — anything covering more than one day or phrased as an absence/trip/period). date is the START day, endDate the END day:
   {"kind":"event","title":"Danya trip to Mexico","date":"2026-08-14","dateFrom":"14–18th","endDate":"2026-08-18","allDay":true}
 - create that REPEATS — add a "repeat" object. Birthdays and anniversaries are ALWAYS yearly; "every Monday and Wednesday" is weekly with those days; "every day"/"daily" is daily; "on the 1st of every month" is monthly; "every other week" is interval 2. date is the FIRST occurrence on or after today (for a birthday, its next date). endDate only when an end is stated:
-  {"kind":"create","title":"Mom's birthday","date":"2027-03-14","dateFrom":"March 14","time":"","durationMins":0,"categoryIds":[],"description":"","subtasks":[],"reminders":[1440],"repeat":{"freq":"yearly","interval":1,"days":[],"endDate":""}}
+  {"kind":"create","title":"Mom's birthday","date":"2027-03-14","dateFrom":"March 14","time":"","durationMins":0,"categoryIds":[],"description":"","subtasks":[],"reminders":[],"repeat":{"freq":"yearly","interval":1,"days":[],"endDate":""}}
   {"kind":"create","title":"Gym","date":"2026-08-24","dateFrom":"Mondays","time":"07:00","durationMins":60,"categoryIds":[],"description":"","subtasks":[],"reminders":[],"repeat":{"freq":"weekly","interval":1,"days":["monday","thursday"],"endDate":""}}
 - repeat — make an EXISTING one-off task recur (use a taskId from the list above):
   {"kind":"repeat","taskId":"<existing id>","repeat":{"freq":"yearly","interval":1,"days":[],"endDate":""}}
@@ -271,6 +271,7 @@ Rules:
 - The instruction may describe SEVERAL things at once — produce one action for each. Two people/plans mentioned means (at least) two actions.
 - Anything that recurs gets a "repeat" object — never create it as a one-off and never make separate copies for each date. Leave "repeat" out only for something that happens once.
 - Only use information present or clearly implied. Never fabricate specifics.
+- "reminders" is ALWAYS [] unless the user's instruction asks for specific reminders ("remind me 2 hours before"). An empty list means the user's own default reminders from their settings apply — never choose reminders for them.
 - Write "summary" as one plain-language sentence a person can confirm at a glance.
 
 EXAMPLE (for a day where today is 2026-08-19):

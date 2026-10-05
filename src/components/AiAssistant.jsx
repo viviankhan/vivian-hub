@@ -10,6 +10,7 @@ import { useRef, useState } from 'react'
 import { runAssistant, MAX_ASSISTANT_IMAGES, REPEAT_FREQS, describeRepeat, normalizeRepeat } from '../lib/parseEvent.js'
 import { compressImage, dataUrlToBase64 } from '../lib/trackers.js'
 import { readDocument, docKind, DOC_ACCEPT, MAX_ASSISTANT_DOCS } from '../lib/docText.js'
+import { defaultLeadsLabel } from '../lib/notifications.js'
 
 function fmt12(t) {
   if (!t) return ''
@@ -564,6 +565,12 @@ export default function AiAssistant({ categories = [], tasks = [], onApply, onCl
                         <span style={{ minWidth:0, overflowWrap:'anywhere' }}>{s.text}</span>
                       </div>
                     ))}
+                  </div>
+                )}
+                {reminders.length === 0 && a.kind === 'create' && (
+                  <div style={{ marginTop:8, fontSize:11.5, color:'var(--muted)', display:'flex', gap:6, alignItems:'center' }}>
+                    <span style={{ opacity:.8 }}>🔔</span>
+                    <span>Your default reminders: {defaultLeadsLabel()}</span>
                   </div>
                 )}
                 {reminders.length > 0 && (
