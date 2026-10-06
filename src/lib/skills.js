@@ -165,12 +165,12 @@ export function computeSkills(entries = [], categories = []) {
       let row = map.get(id)
       if (!row) {
         const m = skillMeta(id)
-        row = { id, label: m.label, icon: m.icon, color: m.color, mins: 0, count: 0, days: new Set(), tasks: new Map() }
+        row = { id, label: m.label, icon: m.icon, color: m.color, mins: 0, count: 0, days: new Set(), tasks: new Map(), lastDate: '' }
         map.set(id, row)
       }
       row.mins += e.mins || 0
       row.count += 1
-      if (e.date) row.days.add(e.date)
+      if (e.date) { row.days.add(e.date); if (e.date > row.lastDate) row.lastDate = e.date }
       const title = (e.title || 'Untitled').trim() || 'Untitled'
       const tkey = title.toLowerCase()
       const t = row.tasks.get(tkey) || { title, mins: 0, count: 0 }
@@ -185,6 +185,40 @@ export function computeSkills(entries = [], categories = []) {
       tasks: [...r.tasks.values()].sort((a, b) => b.count - a.count || b.mins - a.mins),
     }))
     .sort((a, b) => b.mins - a.mins || b.count - a.count)
+}
+
+// How much of the tracked time/sessions maps to at least one skill. Skills
+// overlap, so summing the rows overstates it — this counts each entry once.
+export function skillCoverage(entries = [], categories = []) {
+  let mins = 0, count = 0
+  for (const e of entries) {
+    if (inferSkills(entryText(e, categories)).length) { mins += e.mins || 0; count += 1 }
+  }
+  return { mins, count }
+}
+
+function ymd(d) {
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
+}
+
+// Per-skill momentum: the last `days` days vs the `days` before that.
+// Returns Map(id → { recentMins, priorMins, recentCount, priorCount }).
+export function skillTrend(entries = [], categories = [], days = 30, now = new Date()) {
+  const d = new Date(now); d.setHours(0, 0, 0, 0)
+  d.setDate(d.getDate() - (days - 1)); const recentCut = ymd(d)
+  d.setDate(d.getDate() - days); const priorCut = ymd(d)
+  const out = new Map()
+  for (const e of entries) {
+    if (!e.date || e.date < priorCut) continue
+    const recent = e.date >= recentCut
+    for (const id of inferSkills(entryText(e, categories))) {
+      const r = out.get(id) || { recentMins: 0, priorMins: 0, recentCount: 0, priorCount: 0 }
+      if (recent) { r.recentMins += e.mins || 0; r.recentCount += 1 }
+      else { r.priorMins += e.mins || 0; r.priorCount += 1 }
+      out.set(id, r)
+    }
+  }
+  return out
 }
 
 // Does a free-typed topic name one of the skills directly? Used so "how many
