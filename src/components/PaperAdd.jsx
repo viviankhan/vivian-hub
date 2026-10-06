@@ -223,13 +223,13 @@ export default function PaperAdd({ onCancel, onSaved, onBatch }) {
 
           {figs[i] ? (
             <figure className="papers-figure">
-              <img src={figs[i].url} alt="" />
+              {figs[i].url ? <img src={figs[i].url} alt="" /> : <div className="papers-figure-ph">Couldn’t cut this figure out of the PDF; its description is still read aloud. Use “Adjust crop” to pick it by hand.</div>}
               <textarea className="papers-caption-input" rows={6} value={figs[i].caption} placeholder="Description, read aloud: walk through the figure for someone who can’t see it"
                 onChange={e => setFig(i, { ...figs[i], caption: e.target.value })} />
               <div className="papers-fig-actions">
-                <button className="btn-ghost" disabled={describing >= 0} onClick={() => describeFor(i)}>
+                {figs[i].blob && <button className="btn-ghost" disabled={describing >= 0} onClick={() => describeFor(i)}>
                   {describing === i ? 'Describing…' : 'Describe with AI'}
-                </button>
+                </button>}
                 {doc && <button className="btn-ghost" onClick={() => setCrop(i)}>Adjust crop</button>}
                 <label className="btn-ghost papers-file-btn">Use my image<input type="file" accept="image/*" hidden onChange={e => uploadFor(i, e)} /></label>
                 <button className="btn-ghost" onClick={() => setFig(i, null)}>Remove</button>

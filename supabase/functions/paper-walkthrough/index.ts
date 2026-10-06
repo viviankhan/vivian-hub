@@ -86,9 +86,9 @@ Sections:
 - "heading" is a short plain phrase (no numbering).
 
 Figures:
-- For a section whose point is best seen in one of the paper's figures, set "figure" to
+- The listener cannot see the paper, so the figures must be talked through. Every main figure in the paper (and any key table) goes with the one section that discusses it: set that section's "figure" to
   {"page": <1-based PDF page number>, "box_2d": [ymin, xmin, ymax, xmax], "caption": ""}
-  otherwise leave it null.
+  A paper with figures should have a figure on most sections. Leave "figure" null only where no figure fits, or the paper has none.
 - "box_2d" is the region of that page holding the figure itself (all of its panels and axis labels), normalized to 0-1000, with [0,0] the top-left of the page. Exclude the printed figure legend text and the running page header or footer.
 - Use each figure at most once. Only point at real figures or tables that appear in the PDF; never invent one.
 - "caption" is a spoken walkthrough of the figure for a listener who cannot see it, ${FIGURE_STYLE}
@@ -137,14 +137,18 @@ function normalize(o: any) {
     sections: o.sections.slice(0, 12).map((s: any) => {
       let figure = null
       const f = s?.figure
-      if (f && Number.isFinite(Number(f.page)) && Array.isArray(f.box_2d) && f.box_2d.length === 4) {
-        const [y0, x0, y1, x1] = f.box_2d.map(clamp)
+      const box = Array.isArray(f?.box_2d) ? f.box_2d : f?.box
+      if (f && Number.isFinite(Number(f.page)) && Array.isArray(box) && box.length === 4) {
+        const [y0, x0, y1, x1] = box.map(clamp)
         const key = `${f.page}:${Math.round(y0 / 50)}:${Math.round(x0 / 50)}`
         if (y1 - y0 > 40 && x1 - x0 > 40 && !seenFig.has(key)) {
           seenFig.add(key)
           figure = { page: Math.max(1, Math.round(Number(f.page))), box: [y0, x0, y1, x1], caption: str(f.caption) }
         }
       }
+      // No usable box: the image can't be cut out, but the description is
+      // still read aloud, so keep it.
+      if (!figure && str(f?.caption)) figure = { caption: str(f.caption) }
       return { heading: str(s?.heading), body: str(s?.body).replace(/\r\n/g, '\n'), figure }
     }).filter((s: any) => s.body),
     terms: (Array.isArray(o.terms) ? o.terms : [])

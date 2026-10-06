@@ -32,11 +32,14 @@ export async function readPdf(file) {
   const buf = await file.arrayBuffer()
   const [w, doc] = await Promise.all([walkthroughFromPdf(buf), openPdf(buf).catch(() => null)])
   const figs = await Promise.all(w.sections.map(async s => {
-    if (!s.figure || !doc) return null
+    if (!s.figure) return null
+    const { page, box, caption = '' } = s.figure
+    // The description is read aloud, so it stays even when no image can be cut.
+    if (!doc || !page || !box) return caption ? { page, box, caption } : null
     try {
-      const { blob, url } = await cutFigure(doc, s.figure.page, s.figure.box)
-      return { page: s.figure.page, box: s.figure.box, caption: s.figure.caption || '', blob, url }
-    } catch { return null }
+      const { blob, url } = await cutFigure(doc, page, box)
+      return { page, box, caption, blob, url }
+    } catch { return caption ? { page, box, caption } : null }
   }))
   const draft = { ...w, sections: w.sections.map(({ heading, body }) => ({ heading, body })) }
   if (!draft.title) draft.title = file.name.replace(/\.pdf$/i, '')
@@ -52,7 +55,7 @@ export async function saveWalkthrough(draft, figs, onProgress = () => {}) {
     if (f?.blob) {
       onProgress(`Uploading figure for section ${i + 1}…`)
       figure = { path: await uploadFigure(id, i, f.blob), caption: (f.caption || '').trim() }
-    }
+    } else if (f?.caption?.trim()) figure = { caption: f.caption.trim() }
     sections.push({ heading: (s.heading || '').trim(), body: s.body, figure })
   }
   onProgress('Saving…')
