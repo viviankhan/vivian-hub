@@ -55,8 +55,9 @@ const seed = async (build) => {
     // eslint-disable-next-line no-new-func
     const data = new Function('today', `return (${src})(today)`)(today)
     for (const [k, v] of Object.entries(data)) localStorage.setItem('vivian_' + k, JSON.stringify(v))
-    // Per-day UI state that would otherwise carry over between cases.
-    localStorage.removeItem('vivian_collapsed_blocks')
+    // Per-day UI state that would otherwise carry over between cases — unless
+    // the case pins it itself.
+    if (!('collapsed_blocks' in data)) localStorage.removeItem('vivian_collapsed_blocks')
   }, build.toString())
   await page.reload({ waitUntil: 'networkidle' })
   await page.waitForSelector('#root > *')
@@ -253,6 +254,9 @@ const holiday = today => ({
     'r-w3': { routine:'rt-work', durationMins:60, freq:'daily' },
   },
   recurring_exceptions: {}, completions: {},
+  // A block folds itself up once its window has passed; hold Work open so the
+  // case doesn't depend on the hour the test runs at.
+  collapsed_blocks: { 'c-workblk': false },
 })
 await seed(holiday)
 eq('the block and the routine each get their own ⋯', await page.$$eval(
