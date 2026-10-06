@@ -384,6 +384,22 @@ eq('its menu edits the event', (await menuItems())[0], 'Edit event')
 await page.keyboard.press('Escape')
 eq('nothing was rewritten as a block', await store('commitment_meta'), {})
 
+// They're still events you do, so each keeps its own checkbox.
+const tally = () => page.evaluate(() => (document.body.innerText.match(/(\d+) of (\d+) done/) || []).slice(1).map(Number))
+const studyCheck = () => page.locator('button[aria-label="Mark done"], button[aria-label="Mark not done"]').first()
+eq('study and lunch each have a checkbox on their band',
+  await page.locator('button[aria-label="Mark done"], button[aria-label="Mark not done"]').count(), 2)
+eq('and count toward the day', (await tally())[1], 4)
+const before = (await tally())[0]
+await studyCheck().click()
+await page.waitForTimeout(300)
+eq('ticking study marks it done', await studyCheck().getAttribute('aria-pressed'), 'true')
+eq('the tally goes up by one', (await tally())[0], before + 1)
+eq('no add sheet opened behind the tap', await sheetOpen(), false)
+await studyCheck().click()
+await page.waitForTimeout(300)
+eq('and it unticks again', await studyCheck().getAttribute('aria-pressed'), 'false')
+
 eq('no uncaught errors', errors, [])
 
 await browser.close()
