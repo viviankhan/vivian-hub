@@ -306,6 +306,100 @@ eq('Ctrl+Z brings the group back', ((await store('routine_groups')) || []).map(r
 eq('with its tasks re-filed under it', await page.evaluate(() =>
   Object.values(JSON.parse(localStorage.getItem('vivian_recurring_meta') || '{}')).filter(v => v.routine === 'rt-work').length), 3)
 
+// ── A block inside a block ─────────────────────────────────────
+// Lunch dropped into a study hour: both bands stay on the day, the lunch band
+// sits inside the study one (study's film runs on behind it, study keeps its
+// own label and ⋯), and the study block closes after lunch, not before it.
+console.log('\n— a block nested inside another —')
+const nested = today => ({
+  commitments: [
+    { id:'c-study', text:'Study', date:today, time:'12:00', durationMins:120, cat:'', done:false },
+    { id:'c-lunch', text:'Lunch', date:today, time:'12:30', durationMins:45,  cat:'', done:false },
+    { id:'c-read',  text:'Read chapter 4', date:today, time:'12:35', durationMins:30, cat:'', done:false },
+  ],
+  commitment_meta: { 'c-study': { block:true, color:'#4A9EB5' }, 'c-lunch': { block:true, color:'#E2A04A' } },
+  recurring_tasks_v2: [], recurring_meta: {}, recurring_exceptions: {}, completions: {},
+})
+await seed(nested)
+// A block folds itself up once its window has passed, so hold both open
+// explicitly — the test shouldn't depend on the hour it runs at.
+await page.evaluate(() => localStorage.setItem('vivian_collapsed_blocks', JSON.stringify({ 'c-study': false, 'c-lunch': false })))
+await page.reload({ waitUntil: 'networkidle' })
+await page.waitForTimeout(250)
+const labels = await bandLabels()
+eq('both blocks are on the timeline', ['STUDY', 'LUNCH'].every(l => labels.includes(l)), true)
+eq('the outer block is labelled before the inner one', labels.indexOf('STUDY') < labels.indexOf('LUNCH'), true)
+eq('each keeps its own ⋯', await page.$$eval('button[aria-label$="more actions"]',
+  bs => [...new Set(bs.map(b => b.getAttribute('aria-label')))].sort()), ['Lunch — more actions', 'Study — more actions'])
+eq('the task inside lunch is on the day', await page.evaluate(() => document.body.innerText.includes('Read chapter 4')), true)
+// The task inside lunch sits on BOTH films: study's full-bleed, lunch's inset.
+eq('the lunch task carries the study film behind its own', await page.evaluate(() => {
+  const row = document.querySelector('[data-task-row="c-read"]')
+  const films = [...row.querySelectorAll('div')].filter(d => d.style.position === 'absolute' && d.style.zIndex === '-1' && d.style.opacity === '0.16')
+  return films.map(d => d.style.left)
+}), ['44px', '52px'])
+// The study band shows up again after lunch (its tail), so it doesn't end at
+// 12:30: its tail is the last band row, on study's own film, not inset.
+eq('study continues after lunch', await page.evaluate(() => {
+  const bands = [...document.querySelectorAll('[title="Add a task in this block"]')]
+  const last = bands[bands.length - 1]
+  const film = [...last.children].find(d => d.style.position === 'absolute' && d.style.opacity === '0.16')
+  return [bands.length, film && film.style.left, film && film.style.background]
+}), [4, '44px', 'rgb(74, 158, 181)'])
+
+// Collapsing the outer block folds the inner one away with it.
+await page.locator('button[aria-label="Collapse time block"]').first().click()
+await page.waitForTimeout(250)
+const folded = await bandLabels()
+eq('collapsing study hides lunch inside it', [folded.includes('STUDY'), folded.includes('LUNCH')], [true, false])
+eq('and the task inside lunch', await page.evaluate(() => document.body.innerText.includes('Read chapter 4')), false)
+
+// ── Events that hold events become blocks on their own ─────────
+// Nobody marked anything a block here: study is just an event, lunch is an
+// event inside it, and a reading task sits inside lunch. The longer ones turn
+// into blocks so each nests in the next — Russian dolls.
+console.log('\n— plain events that hold other events —')
+await seed(today => ({
+  commitments: [
+    { id:'e-study', text:'Study', date:today, time:'12:00', durationMins:120, cat:'', done:false },
+    { id:'e-lunch', text:'Lunch', date:today, time:'12:30', durationMins:45,  cat:'', done:false },
+    { id:'e-read',  text:'Read chapter 4', date:today, time:'12:35', durationMins:30, cat:'', done:false },
+    { id:'e-gym',   text:'Gym', date:today, time:'17:00', durationMins:60, cat:'', done:false },
+  ],
+  commitment_meta: {},
+  recurring_tasks_v2: [], recurring_meta: {}, recurring_exceptions: {}, completions: {},
+}))
+await page.evaluate(() => localStorage.setItem('vivian_collapsed_blocks', JSON.stringify({ 'e-study': false, 'e-lunch': false })))
+await page.reload({ waitUntil: 'networkidle' })
+await page.waitForTimeout(250)
+const dolls = await bandLabels()
+eq('study and lunch both become blocks, outer first', [dolls.indexOf('STUDY') >= 0, dolls.indexOf('LUNCH') > dolls.indexOf('STUDY')], [true, true])
+eq('the innermost stays a task, sitting on both films', await page.evaluate(() => {
+  const row = document.querySelector('[data-task-row="e-read"]')
+  return row ? [...row.querySelectorAll('div')].filter(d => d.style.position === 'absolute' && d.style.zIndex === '-1' && d.style.opacity === '0.16').map(d => d.style.left) : null
+}), ['44px', '52px'])
+eq('an event holding nothing stays an ordinary task', [dolls.includes('GYM'), await page.evaluate(() => !!document.querySelector('[data-task-row="e-gym"]'))], [false, true])
+await openMenu('Study')
+eq('its menu edits the event', (await menuItems())[0], 'Edit event')
+await page.keyboard.press('Escape')
+eq('nothing was rewritten as a block', await store('commitment_meta'), {})
+
+// They're still events you do, so each keeps its own checkbox.
+const tally = () => page.evaluate(() => (document.body.innerText.match(/(\d+) of (\d+) done/) || []).slice(1).map(Number))
+const studyCheck = () => page.locator('button[aria-label="Mark done"], button[aria-label="Mark not done"]').first()
+eq('study and lunch each have a checkbox on their band',
+  await page.locator('button[aria-label="Mark done"], button[aria-label="Mark not done"]').count(), 2)
+eq('and count toward the day', (await tally())[1], 4)
+const before = (await tally())[0]
+await studyCheck().click()
+await page.waitForTimeout(300)
+eq('ticking study marks it done', await studyCheck().getAttribute('aria-pressed'), 'true')
+eq('the tally goes up by one', (await tally())[0], before + 1)
+eq('no add sheet opened behind the tap', await sheetOpen(), false)
+await studyCheck().click()
+await page.waitForTimeout(300)
+eq('and it unticks again', await studyCheck().getAttribute('aria-pressed'), 'false')
+
 eq('no uncaught errors', errors, [])
 
 await browser.close()

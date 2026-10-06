@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { Icon } from './IconPicker.jsx'
 import AddItemModal from './AddItemModal.jsx'
 import { setItemReminders } from '../lib/notifications.js'
+import { autoBlockIds } from '../lib/autoBlocks.js'
 import { recurringOccurrencesForDate, recurringActiveOn, occKey } from '../lib/occurrences.js'
 import { iconColorOn } from '../lib/glyphs.jsx'
 import RecurringFilter from './RecurringFilter.jsx'
@@ -240,14 +241,24 @@ export default function Calendar({ commitments, vacations, events, log, categori
 
   // Time blocks on a date (block commitments + repeating block occurrences), so
   // a task sitting inside one auto-completes here just as it does on Today/Week.
-  const blocksOn = (dateStr) => [
-    ...recurringOccurrencesForDate(calendarRecurring, dateStr, recurringExceptions)
-      .filter(o => o.block && o._time && o._dur)
-      .map(o => ({ start: hhmm(o._time), end: hhmm(o._time) + o._dur })),
-    ...(commitments || [])
-      .filter(c => c.date === dateStr && c.block && c.time && c.durationMins)
-      .map(c => ({ start: hhmm(c.time), end: hhmm(c.time) + c.durationMins })),
-  ]
+  // An event that holds another counts as a block too (lib/autoBlocks.js), the
+  // same as on Today — worked out from every repeating task, not just the ones
+  // the filter shows, so hiding a group here doesn't change what's done.
+  const blocksOn = (dateStr) => {
+    const occs = recurringOccurrencesForDate(recurringTasks, dateStr, recurringExceptions).filter(o => o._time)
+    const dayCs = (commitments || []).filter(c => c.date === dateStr && c.time)
+    const auto = autoBlockIds([
+      ...dayCs.map(c => ({ id: c.id, start: hhmm(c.time), dur: c.durationMins || 0, block: !!c.block })),
+      ...occs.map(o => ({ id: o.id, start: hhmm(o._time), dur: o._dur || 0, block: !!o.block })),
+    ])
+    const shownRec = new Set(recurringOccurrencesForDate(calendarRecurring, dateStr, recurringExceptions).map(o => o.id))
+    return [
+      ...occs.filter(o => (o.block ? shownRec.has(o.id) : auto.has(o.id)) && o._dur)
+        .map(o => ({ start: hhmm(o._time), end: hhmm(o._time) + o._dur })),
+      ...dayCs.filter(c => (c.block || auto.has(c.id)) && c.durationMins)
+        .map(c => ({ start: hhmm(c.time), end: hhmm(c.time) + c.durationMins })),
+    ]
+  }
   // The done-state actually shown: an explicit record (or a commitment's own
   // stored done) wins; otherwise a block/routine/autoComplete task ticks once
   // its window has passed (today) or the whole day is over (a past day).

@@ -16,6 +16,7 @@ import { setItemReminders } from '../lib/notifications.js'
 import CalendarLegend from './CalendarLegend.jsx'
 import ImportedCalendarCard from './ImportedCalendarCard.jsx'
 import { importedOn, buildImportedRows, importedKey } from '../lib/importedTasks.js'
+import { autoBlockIds } from '../lib/autoBlocks.js'
 import ColorSwatchRow from './ColorSwatchRow.jsx'
 
 // Concentric-circle "focus" target, for the Focus Now button.
@@ -380,6 +381,20 @@ function spanHeight(mins) {
 // saturated slab. (Routine films stay at 0.5.)
 const BLOCK_FILM_OPACITY = 0.16
 
+// A time block can sit inside another (lunch inside a study block, a meeting
+// inside Work). The outer block's film keeps running full-bleed behind every
+// row of the inner one, and the inner block's own film steps in by NEST_INSET
+// per level — so the nesting reads as a folder inside a folder.
+const NEST_INSET = 8
+function OuterFilms({ tints }) {
+  if (!tints || !tints.length) return null
+  return tints.map((c, i) => (
+    <div key={i} style={{ position:'absolute', top:0, bottom:0, left:44 + i*NEST_INSET, right:i*NEST_INSET, background:c, opacity:BLOCK_FILM_OPACITY, zIndex:-1 }} />
+  ))
+}
+const nestLeft  = (outer) => 44 + (outer?.length || 0) * NEST_INSET
+const nestRight = (outer) => (outer?.length || 0) * NEST_INSET
+
 // A "free time" gap between two timed tasks, with a quick Add Task. Its height
 // grows with the length of the gap, so the day reads at relative scale.
 
@@ -495,15 +510,29 @@ function BandMenu({ items = [], name = '' }) {
 // A time block reads as a light "folder" for a slice of the day. Tapping the
 // body opens the add sheet (a task scheduled inside the block); the icon edits
 // the block; the ⋯ edits or deletes the block itself; the chevron on the right
-// collapses/expands it. No checkbox — the tasks inside auto-complete on their own.
-function BlockBand({ seg, onEdit, onAdd, onCollapse, menu = [] }) {
+// collapses/expands it. No checkbox — the tasks inside auto-complete on their
+// own — EXCEPT for an event that only became a block because something is
+// scheduled inside it: that's still an event you do, so it keeps its own
+// checkbox (`onToggle` / `checked`).
+function BandCheck({ checked, color, onToggle }) {
+  const title = checked ? 'Mark not done' : 'Mark done'
+  return (
+    <button type="button" title={title} aria-label={title} aria-pressed={checked}
+      onClick={e=>{ e.stopPropagation(); if (!checked) bloomBurst(e.currentTarget); onToggle() }}
+      style={{ width:24, height:24, borderRadius:'50%', flexShrink:0, padding:0, cursor:'pointer', border:`2px solid ${color}`, background:checked?color:'rgba(255,255,255,.72)', display:'flex', alignItems:'center', justifyContent:'center' }}>
+      {checked && <span style={{ color:iconColorOn(color), fontSize:13, fontWeight:700 }}>✓</span>}
+    </button>
+  )
+}
+function BlockBand({ seg, onEdit, onAdd, onCollapse, onToggle = null, checked = false, menu = [] }) {
   const label = (seg.label || 'Block').toUpperCase()
   // Collapsed: one compact row standing in for the whole block + its tasks.
   if (seg.collapsed) {
-    const done = !!seg.done
+    const done = onToggle ? checked : !!seg.done
     return (
-      <div style={{ position:'relative', minHeight:54, margin:'4px 0', opacity: done?.7:1 }}>
-        <div style={{ position:'absolute', top:0, bottom:0, left:44, right:0, background:seg.color, opacity: done?BLOCK_FILM_OPACITY*0.6:BLOCK_FILM_OPACITY, zIndex:-1, borderRadius:16 }} />
+      <div style={{ position:'relative', minHeight:54, margin: seg.outer?.length ? 0 : '4px 0', padding: seg.outer?.length ? '4px 0' : 0, opacity: done?.7:1 }}>
+        <OuterFilms tints={seg.outer} />
+        <div style={{ position:'absolute', top: seg.outer?.length ? 4 : 0, bottom: seg.outer?.length ? 4 : 0, left:nestLeft(seg.outer), right:nestRight(seg.outer), background:seg.color, opacity: done?BLOCK_FILM_OPACITY*0.6:BLOCK_FILM_OPACITY, zIndex:-1, borderRadius:16 }} />
         <div style={{ position:'absolute', top:0, bottom:0, left:76.5, width:3, borderRadius:3, background:seg.color, opacity:.5, zIndex:-1 }} />
         <div style={{ position:'relative', display:'flex', alignItems:'center', minHeight:54 }}>
           {/* Spine spacer — the block's start time isn't repeated here; its full
@@ -516,6 +545,7 @@ function BlockBand({ seg, onEdit, onAdd, onCollapse, menu = [] }) {
             {done && <span style={{ flexShrink:0, display:'inline-flex', color:'#5C8A5C' }}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5"/></svg></span>}
             <span style={{ fontSize:11, color:'var(--muted)', flexShrink:1, minWidth:0, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{done?'done · ':''}{rangeLabel(seg.start, seg.end)}{seg.count>0?` · ${seg.count} inside`:''}</span>
             <span style={{ marginLeft:'auto', flexShrink:0, display:'flex', alignItems:'center', gap:6 }}>
+              {onToggle && <BandCheck checked={checked} color={seg.color} onToggle={onToggle} />}
               <BandMenu items={menu} name={seg.label} />
               <BandChevron collapsed onClick={onCollapse} />
             </span>
@@ -530,7 +560,8 @@ function BlockBand({ seg, onEdit, onAdd, onCollapse, menu = [] }) {
   return (
     <div onClick={onAdd} title="Add a task in this block"
       style={{ position:'relative', minHeight:h, cursor:'pointer' }}>
-      <div style={{ position:'absolute', top: seg.roundTop?6:0, bottom: seg.roundBottom?6:0, left:44, right:0, background:seg.color, opacity:BLOCK_FILM_OPACITY, zIndex:-1,
+      <OuterFilms tints={seg.outer} />
+      <div style={{ position:'absolute', top: seg.roundTop?6:0, bottom: seg.roundBottom?6:0, left:nestLeft(seg.outer), right:nestRight(seg.outer), background:seg.color, opacity:BLOCK_FILM_OPACITY, zIndex:-1,
         borderTopLeftRadius:seg.roundTop?16:0, borderTopRightRadius:seg.roundTop?16:0, borderBottomLeftRadius:seg.roundBottom?16:0, borderBottomRightRadius:seg.roundBottom?16:0 }} />
       {/* The timeline spine continues straight through the block as one solid
           line (the icon sits on it like a node), so the day reads unbroken —
@@ -543,13 +574,14 @@ function BlockBand({ seg, onEdit, onAdd, onCollapse, menu = [] }) {
         {(seg.label || seg.showMenu) && (
           <div style={{ paddingTop:9, paddingLeft:11, paddingRight:8, flex:1, minWidth:0, display:'flex', alignItems:'center', gap:8 }}>
             {seg.label && <BandIcon icon={seg.icon} color={seg.color} onEdit={onEdit} />}
-            {seg.label && <span style={{ fontSize:10, fontWeight:800, letterSpacing:.9, textTransform:'uppercase', color:'#39434F', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis', flexShrink:0 }}>{label}</span>}
+            {seg.label && <span style={{ fontSize:10, fontWeight:800, letterSpacing:.9, textTransform:'uppercase', color:'#39434F', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis', flexShrink:0, textDecoration:(onToggle && checked)?'line-through':'none' }}>{label}</span>}
             {/* The block's full window, so you can read its end time without
                 collapsing it. */}
             {seg.label && seg.blockStart!=null && seg.blockEnd!=null && (
               <span style={{ fontSize:11, color:'var(--muted)', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis', minWidth:0 }}>{rangeLabel(seg.blockStart, seg.blockEnd)}</span>
             )}
-            <span style={{ marginLeft:'auto', flexShrink:0, display:'flex', alignItems:'center', gap:6 }}>
+            <span style={{ marginLeft:'auto', marginRight:nestRight(seg.outer), flexShrink:0, display:'flex', alignItems:'center', gap:6 }}>
+              {onToggle && seg.label && <BandCheck checked={checked} color={seg.color} onToggle={onToggle} />}
               <BandMenu items={menu} name={seg.label} />
               {onCollapse && <BandChevron collapsed={false} onClick={onCollapse} />}
             </span>
@@ -572,7 +604,7 @@ function BlockBand({ seg, onEdit, onAdd, onCollapse, menu = [] }) {
 //  • active — now is inside it: the time counts down to what's LEFT.
 //  • past   — now is beyond it (or a past day): it becomes "Took a/an X break",
 //    muted, no Add Task (the moment has gone by with nothing scheduled).
-function GapRow({ mins, phase = 'future', remaining = mins, prevColor, nextColor, routineTint, routineOpacity = 0.5, onAdd, onStartNow = null, startLabel = '' }) {
+function GapRow({ mins, phase = 'future', remaining = mins, prevColor, nextColor, routineTint, routineOpacity = 0.5, outerTints = null, onAdd, onStartNow = null, startLabel = '' }) {
   // Proportional to real clock time, on the same scale as tasks and bands.
   const h = Math.max(18, Math.round(spanHeight(mins)))
   const top = prevColor || '#C9C9D3'
@@ -609,8 +641,9 @@ function GapRow({ mins, phase = 'future', remaining = mins, prevColor, nextColor
     <div className="today-gap" style={{ position:'relative', zIndex:0, display:'flex', gap:0, alignItems: compact?'center':'flex-start', opacity: isPast?0.6:1 }}>
       {/* Continue a routine's film through the gap between two same-routine
           tasks, square-edged so it butts flush against the pills above/below. */}
+      <OuterFilms tints={outerTints} />
       {routineTint && (
-        <div style={{ position:'absolute', top:0, bottom:0, left:44, right:0, background:routineTint, opacity:routineOpacity, zIndex:-1 }} />
+        <div style={{ position:'absolute', top:0, bottom:0, left:nestLeft(outerTints), right:nestRight(outerTints), background:routineTint, opacity:routineOpacity, zIndex:-1 }} />
       )}
       <div style={{ width:52, flexShrink:0 }} />
       <div style={{ width:52, flexShrink:0, display:'flex', justifyContent:'center' }}>
@@ -817,7 +850,7 @@ function AnytimeCard({ tasks, categories, isDoneOf, onToggle, onOpen, onManage, 
   )
 }
 
-function TimelineBlock({ task, categories, status, now, prevColor, nextColor, routineTint, tintOpacity = 0.5, filmTop = true, filmBottom = true, bandLabel = null, bandIcon = null, onBandLabel = null, onBandCollapse = null, bandMenu = [], isDone, elapsed, dateKey, pauseData = null, offerStartNow = false, onToggle, onManage, onShiftToNow, onOpen, onFocus, onToggleSub }) {
+function TimelineBlock({ task, categories, status, now, prevColor, nextColor, routineTint, tintOpacity = 0.5, outerTints = null, filmTop = true, filmBottom = true, bandLabel = null, bandIcon = null, onBandLabel = null, onBandCollapse = null, bandMenu = [], isDone, elapsed, dateKey, pauseData = null, offerStartNow = false, onToggle, onManage, onShiftToNow, onOpen, onFocus, onToggleSub }) {
   const [subOpen, setSubOpen] = useState(false)
   const catFound = (categories || []).find(x => x.id === task.tag)
   const catColor = catFound?.color || TAG_COLORS[task.tag] || '#9CA3AF'
@@ -869,8 +902,9 @@ function TimelineBlock({ task, categories, status, now, prevColor, nextColor, ro
           pill + text; the block's zIndex:0 pins it to this row. When the
           neighbour shares the routine, the film runs to that edge (no inset +
           square corner) so consecutive tasks read as one continuous band. */}
+      <OuterFilms tints={outerTints} />
       {routineTint && (
-        <div style={{ position:'absolute', top:filmTop?6:0, bottom:filmBottom?6:0, left:44, right:0, background:routineTint, opacity:tintOpacity,
+        <div style={{ position:'absolute', top:filmTop?6:0, bottom:filmBottom?6:0, left:nestLeft(outerTints), right:nestRight(outerTints), background:routineTint, opacity:tintOpacity,
           borderTopLeftRadius:filmTop?16:0, borderTopRightRadius:filmTop?16:0, borderBottomLeftRadius:filmBottom?16:0, borderBottomRightRadius:filmBottom?16:0, zIndex:-1 }} />
       )}
       {/* Time-block (container) label, shown once at the top of its band: the
@@ -1009,14 +1043,15 @@ function TimelineBlock({ task, categories, status, now, prevColor, nextColor, ro
 // sits on the spine with the time to its right — no full-width line — matching
 // the in-task now-line. Uses the SAME column widths as TimelineBlock and GapRow
 // (52 gutter + 52 spine) so the dot lands exactly on the spine.
-function NowMarker({ now, bandTint = null, bandOpacity = 0.5 }) {
+function NowMarker({ now, bandTint = null, bandOpacity = 0.5, outerTints = null }) {
   // Inside a time block the marker must not break the band: it drops its
   // vertical margin and carries the block's film full-bleed behind it, so the
   // blue reads as one continuous wash with just a thin "now" line over it.
   return (
     <div style={{ position:'relative', zIndex:0, display:'flex', gap:0, alignItems:'center', margin: bandTint?0:'4px 0' }}>
+      {bandTint && <OuterFilms tints={outerTints} />}
       {bandTint && (
-        <div style={{ position:'absolute', top:0, bottom:0, left:44, right:0, background:bandTint, opacity:bandOpacity, zIndex:-1 }} />
+        <div style={{ position:'absolute', top:0, bottom:0, left:nestLeft(outerTints), right:nestRight(outerTints), background:bandTint, opacity:bandOpacity, zIndex:-1 }} />
       )}
       <div style={{ width:52, flexShrink:0 }} />
       <div style={{ width:52, flexShrink:0, display:'flex', justifyContent:'center' }}>
@@ -1349,14 +1384,62 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
   // time; a recurring block moves via the override, since its template time is
   // shared across every day.
   const blockStart = (id, baseMins) => (timeOverrides[id] != null ? timeOverrides[id] : baseMins)
+  // An event with something scheduled inside it becomes a block for the day,
+  // so what's inside nests in it (see lib/autoBlocks.js). Read off the day as
+  // it stands — including any times moved for just today.
+  const autoBlocks = autoBlockIds([
+    ...todayCommitments.filter(c => c.time).map(c => ({ id:c.id, start:blockStart(c.id, hhmmToMins(c.time)), dur:c.durationMins || 0, block:!!c.block })),
+    ...templateTodos.filter(o => o._time).map(o => ({ id:o.id, start:blockStart(o.id, hhmmToMins(o._time)), dur:o._dur || 0, block:!!o.block })),
+  ])
+  const isBlockLike = (x) => !!x.block || autoBlocks.has(x.id)
   const blocks = [
-    ...todayCommitments.filter(c => c.block && c.time && c.durationMins)
-      .map(c => { const s = blockStart(c.id, hhmmToMins(c.time)); return { id:c.id, label:(c.text||'').trim(), color: c.color || catColorOf(c.cat) || '#8AA0B8', icon: c.icon || null, cat: c.cat || null, isCommitment:true,
+    ...todayCommitments.filter(c => isBlockLike(c) && c.time && c.durationMins)
+      .map(c => { const s = blockStart(c.id, hhmmToMins(c.time)); return { id:c.id, label:(c.text||'').trim(), color: c.color || catColorOf(c.cat) || '#8AA0B8', icon: c.icon || null, cat: c.cat || null, isCommitment:true, auto: autoBlocks.has(c.id), autoComplete: !!c.autoComplete, routine: c.routine || null,
         start: s, end: s + c.durationMins } }),
-    ...templateTodos.filter(o => o.block && o._time && o._dur)
-      .map(o => { const s = blockStart(o.id, hhmmToMins(o._time)); return { id:o.id, label:(o.title||o.text||'').trim(), color: o.color || catColorOf(o.cat || o.tag) || '#8AA0B8', icon: o.icon || null, cat: o.cat || o.tag || null, isCommitment:false,
+    ...templateTodos.filter(o => isBlockLike(o) && o._time && o._dur)
+      .map(o => { const s = blockStart(o.id, hhmmToMins(o._time)); return { id:o.id, label:(o.title||o.text||'').trim(), color: o.color || catColorOf(o.cat || o.tag) || '#8AA0B8', icon: o.icon || null, cat: o.cat || o.tag || null, isCommitment:false, auto: autoBlocks.has(o.id), autoComplete: !!o.autoComplete, routine: o.routine || null,
         start: s, end: s + o._dur } }),
   ]
+  // Nesting: a block that sits wholly inside another's window (lunch inside a
+  // study block) is filed under it, the way a task in its window is. Its parent
+  // is the tightest block around it; two blocks with the exact same window nest
+  // in the order they're listed, so it never loops.
+  const blockRank = (b) => [b.end - b.start, -blocks.indexOf(b)]
+  const encloses = (p, b) => {
+    if (p === b || p.start > b.start || b.end > p.end) return false
+    const [ps, pi] = blockRank(p), [bs, bi] = blockRank(b)
+    return ps > bs || (ps === bs && pi > bi)
+  }
+  for (const b of blocks) {
+    const around = blocks.filter(p => encloses(p, b))
+    around.sort((x, y) => (x.end - x.start) - (y.end - y.start) || blocks.indexOf(y) - blocks.indexOf(x))
+    b.parentId = around[0]?.id ?? null
+  }
+  const blockById = (id) => blocks.find(b => b.id === id) || null
+  // The block's ancestors, outermost first.
+  const ancestorsOf = (b) => {
+    const out = []
+    for (let p = blockById(b?.parentId); p && out.length < blocks.length; p = blockById(p.parentId)) out.unshift(p)
+    return out
+  }
+  const depthOf = (b) => ancestorsOf(b).length
+  // The innermost block whose window holds a moment — what a task starting then
+  // is filed under.
+  const blockAt = (mins) => {
+    if (mins == null) return null
+    let best = null
+    for (const b of blocks) if (mins >= b.start && mins < b.end && (!best || depthOf(b) > depthOf(best))) best = b
+    return best
+  }
+  // The innermost block wholly holding a stretch of time (for tinting a gap).
+  const blockAround = (start, end) => {
+    let best = null
+    for (const b of blocks) if (start >= b.start && end <= b.end && (!best || depthOf(b) > depthOf(best))) best = b
+    return best
+  }
+  // A block and everything it's nested in — whether `ancestorId` is `b` or holds it.
+  const withinBlock = (b, ancestorId) => !!b && (b.id === ancestorId || ancestorsOf(b).some(a => a.id === ancestorId))
+  const outerTintsOf = (b) => b ? ancestorsOf(b).map(a => a.color) : null
   // Blocks recast as shiftable candidates, shaped like timeline tasks so the
   // shift chooser can list them and applyTimeShift can move them alongside tasks.
   const blockShiftItems = () => blocks.map(b => ({
@@ -1398,8 +1481,8 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
   // group. Returns { id, tint, label } or null.
   const bandOf = (t) => {
     if (t && t._mins != null) {
-      const b = blocks.find(b => t._mins >= b.start && t._mins < b.end)
-      if (b) return { id:'blk-'+b.id, tint:b.color, label:b.label }
+      const b = blockAt(t._mins)
+      if (b) return { id:'blk-'+b.id, tint:b.color, label:b.label, block:b }
     }
     if (t && t.routine) { const r = (routines||[]).find(x=>x.id===t.routine); if (r) return { id:'rt-'+r.id, tint:r.tint, label:null } }
     return null
@@ -1424,13 +1507,18 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
     for (const key of keys || []) {
       if (!key || key >= today) continue
       const gone = dayDeletions(key)
+      const dayOccs = recurringOccurrencesForDate(recurringTasks, key, recurringExceptions)
+      const autoOn = autoBlockIds([
+        ...(commitments || []).filter(c => c.date === key && c.time).map(c => ({ id:c.id, start:hhmmToMins(c.time), dur:c.durationMins || 0, block:!!c.block })),
+        ...dayOccs.filter(o => o._time).map(o => ({ id:o.id, start:hhmmToMins(o._time), dur:o._dur || 0, block:!!o.block })),
+      ])
       for (const c of commitments || []) {
-        if (c.date !== key || c.block || gone.includes(c.id)) continue
+        if (c.date !== key || c.block || autoOn.has(c.id) || gone.includes(c.id)) continue
         if (todos[c.id] || weekState[c.id] || c.done) continue
         out.push({ key, id: c.id, isCommitment: true, text: c.text || 'task' })
       }
-      for (const o of recurringOccurrencesForDate(recurringTasks, key, recurringExceptions)) {
-        if (o.block || gone.includes(o.id)) continue
+      for (const o of dayOccs) {
+        if (o.block || autoOn.has(o.id) || gone.includes(o.id)) continue
         if (todos[key + '_' + o.id] || weekState[key + '_' + o.id]) continue
         out.push({ key, id: o.recurringId || o.id, localId: o.id, isRecurring: true, text: o.title || o.text || 'task' })
       }
@@ -1469,7 +1557,7 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
   // explicit tap (check or uncheck) always wins over that default.
   const routineIds = new Set((routines||[]).map(r=>r.id))
   const hasCompletionRecord = (task) => task.isCommitment ? (task.id in (todos||{})) : ((dateKey+'_'+task.id) in (todos||{}))
-  const inAnyBlock = (task) => task._mins != null && blocks.some(b => task._mins >= b.start && task._mins < b.end)
+  const inAnyBlock = (task) => task._mins != null && blocks.some(b => b.id !== task.id && task._mins >= b.start && task._mins < b.end)
   const isPastDay = viewDate < today
   const effectiveDone = (task) => {
     if (hasCompletionRecord(task)) return isDoneCheck(task.id, task.isCommitment)
@@ -1486,6 +1574,13 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
     }
     return false
   }
+
+  // An event that became a block keeps its checkbox, read exactly as it would
+  // be as a task: an explicit tick wins; otherwise only its own auto-complete,
+  // its routine, or a block it sits inside ticks it by the clock.
+  const blockAsTask = (b) => ({ id:b.id, isCommitment:b.isCommitment, _mins:b.start, _dur:b.end - b.start, autoComplete:b.autoComplete, routine:b.routine })
+  const autoBlockDone = (b) => effectiveDone(blockAsTask(b))
+  const toggleAutoBlock = (b) => syncToggle(b.id, b.label, b.cat, b.isCommitment ? null : dateKey, !autoBlockDone(b))
 
   // Apply time overrides to task labels. Commitments carry their real start
   // time (_time) and are updated directly, so overrides only apply to the
@@ -1506,7 +1601,7 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
   const taskMins = (t) => (t._time != null ? hhmmToMins(t._time) : parseTimeMins(t.label))
 
   const rawTasks = [
-    ...todayCommitments.filter(c=>!c.block).map(c=>({
+    ...todayCommitments.filter(c=>!isBlockLike(c)).map(c=>({
       id:c.id, label:c.time?`${fmt12(c.time)} — ${c.text}`:c.text,
       title:c.text,
       note:[c.person&&`With: ${c.person}`,c.prepMin&&`Leave ${c.prepMin} min early`].filter(Boolean).join(' · '),
@@ -1520,7 +1615,7 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
       subCount:Array.isArray(c.subtasks)?c.subtasks.length:0,
       subDone:Array.isArray(c.subtasks)?c.subtasks.filter(s=>s.done).length:0,
     })),
-    ...templateTodos.filter(t=>!t.block),
+    ...templateTodos.filter(t=>!isBlockLike(t)),
     ...customTasks,
   ]
   const allTasks = applyOverrides(rawTasks)
@@ -1564,40 +1659,60 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
   const blockHeadIds = new Set()
   const blockTailIds = new Set()
   const collapsedBlockIds = new Set()   // blocks shown as one compact row
+  // A block folded up inside a collapsed parent isn't drawn at all — the
+  // parent's summary row stands in for it.
+  const hiddenByCollapse = (b) => ancestorsOf(b).some(a => isBlockCollapsed(a))
   for (const b of blocks) {
+    if (hiddenByCollapse(b)) continue
+    const outer = outerTintsOf(b)
+    const depth = outer.length
     const inside = tasksWithStatus
       .filter(t => t._mins != null && t._mins >= b.start && t._mins < b.end)
       .sort((x,y) => x._mins - y._mins)
+    // Blocks nested directly in this one count as its contents too, so its
+    // film runs around them rather than stopping where they start.
+    const kids = blocks.filter(k => k.parentId === b.id)
     // Collapsed → one compact summary row in place of the whole band + its
     // inner tasks (which get filtered out of the render list below).
     if (isBlockCollapsed(b)) {
       collapsedBlockIds.add(b.id)
-      blockSegments.push({ id:b.id+':collapsed', bid:b.id, collapsed:true, start:b.start, end:b.end, color:b.color, label:b.label, icon:b.icon, count:inside.length, done:blockPastWindow(b), roundTop:true, roundBottom:true })
+      blockSegments.push({ id:b.id+':collapsed', bid:b.id, depth, outer, collapsed:true, start:b.start, end:b.end, color:b.color, label:b.label, icon:b.icon, count:inside.length + kids.length, done:blockPastWindow(b), roundTop:true, roundBottom:true })
       continue
     }
-    if (!inside.length) {
-      blockSegments.push({ id:b.id+':full', bid:b.id, start:b.start, end:b.end, color:b.color, label:b.label, icon:b.icon, blockStart:b.start, blockEnd:b.end, roundTop:true, roundBottom:true })
+    if (!inside.length && !kids.length) {
+      blockSegments.push({ id:b.id+':full', bid:b.id, depth, outer, start:b.start, end:b.end, color:b.color, label:b.label, icon:b.icon, blockStart:b.start, blockEnd:b.end, roundTop:true, roundBottom:true })
       blockHeadIds.add(b.id)
       continue
     }
-    const firstMins = inside[0]._mins
-    const lastEnd = Math.max(...inside.map(t => t._mins + (t._dur || 0)))
-    if (b.start < firstMins) {
-      blockSegments.push({ id:b.id+':head', bid:b.id, start:b.start, end:firstMins, color:b.color, label:b.label, icon:b.icon, blockStart:b.start, blockEnd:b.end, roundTop:true, roundBottom:false })
+    const firstMins = Math.min(...inside.map(t => t._mins), ...kids.map(k => k.start))
+    const lastEnd = Math.max(...inside.map(t => t._mins + (t._dur || 0)), ...kids.map(k => k.end))
+    // When a nested block opens (or closes) this one, the outer block still
+    // gets a slim head (or tail) of its own — otherwise its name and ⋯ would be
+    // swallowed by the inner block's band.
+    const kidFirst = kids.some(k => k.start === firstMins)
+    const kidLast  = kids.some(k => k.end === lastEnd)
+    if (b.start < firstMins || kidFirst || b.auto) {
+      blockSegments.push({ id:b.id+':head', bid:b.id, depth, outer, lead: b.start >= firstMins, start:b.start, end:Math.max(b.start, firstMins), color:b.color, label:b.label, icon:b.icon, blockStart:b.start, blockEnd:b.end, roundTop:true, roundBottom:false })
       blockHeadIds.add(b.id)
     }
-    if (lastEnd < b.end) {
-      blockSegments.push({ id:b.id+':tail', bid:b.id, start:lastEnd, end:b.end, color:b.color, label:null, showMenu:true, roundTop:false, roundBottom:true })
+    if (lastEnd < b.end || kidLast) {
+      blockSegments.push({ id:b.id+':tail', bid:b.id, depth, outer, start:Math.min(lastEnd, b.end), end:b.end, color:b.color, label:null, showMenu:true, roundTop:false, roundBottom:true })
       blockTailIds.add(b.id)
     }
   }
-  blockSegments.sort((a,b) => a.start - b.start)
+  // By start; a zero-length head opens before the block nested at its start,
+  // and a nested block's closing tail before its parent's.
+  blockSegments.sort((a,b) => a.start - b.start || a.end - b.end || a.depth - b.depth)
 
   // The tasks actually rendered on the timeline — everything except those tucked
   // inside a collapsed block (they're represented by the block's summary row).
-  const blockIdOf = (t) => (t && t._mins != null) ? (blocks.find(b => t._mins >= b.start && t._mins < b.end)?.id ?? null) : null
+  // A task is tucked away when its block, or any block that one sits in, is collapsed.
+  const inCollapsedBlock = (t) => {
+    const b = t && blockAt(t._mins)
+    return !!b && [b, ...ancestorsOf(b)].some(x => collapsedBlockIds.has(x.id))
+  }
   const renderTasks = collapsedBlockIds.size
-    ? tasksWithStatus.filter(t => !collapsedBlockIds.has(blockIdOf(t)))
+    ? tasksWithStatus.filter(t => !inCollapsedBlock(t))
     : tasksWithStatus
   // Unscheduled ("anytime") tasks — those with a day but no set time — are
   // lifted out of the inline timeline into their own list: the top of the day
@@ -1700,8 +1815,8 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
       if (t.routine && routineIds.has(t.routine) && !expandedRoutines[t.routine]) {
         setExpandedRoutines(p => ({ ...p, [t.routine]: true }))
       }
-      const b = t._mins != null ? blocks.find(x => t._mins >= x.start && t._mins < x.end) : null
-      if (b && isBlockCollapsed(b)) toggleBlockCollapsed(b.id, true)
+      const b = blockAt(t._mins)
+      if (b) for (const x of [...ancestorsOf(b), b]) if (isBlockCollapsed(x)) toggleBlockCollapsed(x.id, true)
     }
     let timer = null
     let tries = 0
@@ -1716,7 +1831,9 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [spotNonce])
 
-  const doneCount = tasksWithStatus.filter(t=>t._status==='past').length
+  // Events that became blocks still count toward the day's tally.
+  const autoBlockList = blocks.filter(b => b.auto)
+  const doneCount = tasksWithStatus.filter(t=>t._status==='past').length + autoBlockList.filter(autoBlockDone).length
   // When a task is in progress, the "now" indicator is drawn inside that task's
   // pill (see TimelineBlock), so we don't also drop a separate marker in the gap
   // after it. Only when nothing is current does the between-tasks marker show,
@@ -2003,10 +2120,12 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
     if (!block || block.start == null) return
     const delta = newMins - block.start
     if (delta === 0) return
-    // Movable tasks whose start currently lands inside the block's window.
-    const rest = tasksWithStatus
-      .filter(t => t._mins !== null && t._mins >= block.start && t._mins < block.end && !INFLEXIBLE_TAGS.has(t.tag))
-      .sort((a, b) => a._mins - b._mins)
+    // Movable tasks whose start currently lands inside the block's window, plus
+    // any blocks nested in it (lunch inside a study block moves with it).
+    const rest = [
+      ...tasksWithStatus.filter(t => t._mins !== null && t._mins >= block.start && t._mins < block.end && !INFLEXIBLE_TAGS.has(t.tag)),
+      ...blockShiftItems().filter(x => withinBlock(blockById(x.id), block.id) && x.id !== block.id && !INFLEXIBLE_TAGS.has(x.tag)),
+    ].sort((a, b) => a._mins - b._mins)
     if (!rest.length) return
     const doneIds = new Set(rest.filter(t => isDoneCheck(t.id, t.isCommitment)).map(t => t.id))
     // Everything inside the block is pre-checked — the common case is "the block
@@ -2277,7 +2396,7 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
     const tmpl = c ? null : (recurringTasks || []).find(t => t.id === id)
     if (!c && !tmpl) return []
     const n = blockTasksToday(id).length
-    const items = [{ label:'Edit block', onClick:()=>openContainer(id) }]
+    const items = [{ label: autoBlocks.has(id) ? 'Edit event' : 'Edit block', onClick:()=>openContainer(id) }]
     items.push({
       label: n ? `Clear from today — block + ${plural(n, 'task')}` : 'Remove from today',
       danger: true,
@@ -2437,7 +2556,7 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
       <WeekStrip
         viewDate={viewDate} setViewDate={setViewDate} today={today}
         commitments={commitments} categories={categories}
-        doneCount={doneCount} total={tasksWithStatus.length}
+        doneCount={doneCount} total={tasksWithStatus.length + autoBlockList.length}
         dayProgress={dayProgress} isToday={isToday} centerNonce={spotNonce}
         summary={summary} todos={todos}
         recurringTasks={recurringTasks} recurringExceptions={recurringExceptions} />
@@ -2504,16 +2623,19 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
         // A single moving "cursor" tracks where on the clock the last emitted row
         // ended, so a gap opens for ANY unscheduled stretch — between two tasks,
         // between a routine and a block, or after a block before the next thing —
-        // not just between adjacent tasks. `tint` keeps a gap inside a block on
-        // that block's film; boundary gaps between regions stay plain.
+        // not just between adjacent tasks. A gap that sits wholly inside a block
+        // carries that block's film (and its parents', when nested); boundary
+        // gaps between regions stay plain.
         const cur = { end: null, color: null, band: null }
-        const maybeGap = (startMins, nextColor, tint, upcoming = null) => {
+        const maybeGap = (startMins, nextColor, upcoming = null) => {
           if (cur.end == null || startMins == null) return null
           const g = startMins - cur.end
           if (g < 5) return null
           // Capture this gap's real clock window so its "Add Task" can pre-fill a
           // task that fills the break (minus a transition on each side).
           const gapStart = cur.end, gapEnd = startMins
+          const holder = blockAround(gapStart, gapEnd)
+          const tint = holder ? holder.color : null
           // Where "now" sits in the break: it counts down while you're in it and
           // becomes "took a break" once it's gone by. A wholly-past day reads as
           // past; other days stay future (no live clock to count against).
@@ -2529,7 +2651,7 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
           const canStart = upcoming && upcoming._mins != null && !INFLEXIBLE_TAGS.has(upcoming.tag) && !effectiveDone(upcoming)
           return <GapRow key={'gap-'+cur.end+'-'+startMins} mins={g} phase={phase} remaining={remaining}
             prevColor={cur.color} nextColor={nextColor}
-            routineTint={tint || null} routineOpacity={tint ? BLOCK_FILM_OPACITY : 0.5} onAdd={()=>addInGap(gapStart, gapEnd)}
+            routineTint={tint || null} routineOpacity={tint ? BLOCK_FILM_OPACITY : 0.5} outerTints={outerTintsOf(holder)} onAdd={()=>addInGap(gapStart, gapEnd)}
             onStartNow={canStart ? ()=>handleShiftToNow(upcoming) : null}
             startLabel={upcoming ? (upcoming.title || stripTimePrefix(upcoming.label)) : ''} />
         }
@@ -2547,16 +2669,17 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
             onEdit={()=>openContainer(s.bid)}
             menu={containerMenu(s.bid)}
             onAdd={b ? ()=>addInBlock(b, seg.start) : undefined}
-            onCollapse={controls ? ()=>toggleBlockCollapsed(s.bid, !!seg.collapsed) : undefined} />
+            onCollapse={controls ? ()=>toggleBlockCollapsed(s.bid, !!seg.collapsed) : undefined}
+            onToggle={b?.auto ? ()=>toggleAutoBlock(b) : null} checked={b?.auto ? autoBlockDone(b) : false} />
           // Gap before this segment — only for a block's true top (roundTop),
           // since head→task→tail within one block are contiguous by construction.
-          const gapEl = s.roundTop ? maybeGap(s.start, s.color, null) : null
+          const gapEl = s.roundTop ? maybeGap(s.start, s.color) : null
           const out = gapEl ? [gapEl] : []
           if (wantNow && !nowState.done && !s.collapsed && now > s.start && now < s.end) {
             nowState.done = true
             out.push(
               bb({ ...s, id:s.id+':nt', end:now, roundBottom:false }, true),
-              <NowMarker key={'now-'+s.id} now={now} bandTint={s.color} bandOpacity={BLOCK_FILM_OPACITY} />,
+              <NowMarker key={'now-'+s.id} now={now} bandTint={s.color} bandOpacity={BLOCK_FILM_OPACITY} outerTints={s.outer} />,
               bb({ ...s, id:s.id+':nb', start:now, roundTop:false, label:null }, false),
             )
           } else {
@@ -2569,11 +2692,15 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
         // rendered just before it (they sit in the block's empty gaps). Strict
         // `<` so a tail segment starting exactly at a task's time (a task with no
         // duration) renders AFTER that task, not before it.
+        // A segment AT the task's time still goes first when it's a zero-length
+        // head opening an outer block, or belongs to a block the task isn't in
+        // (an inner block's closing tail right where the next thing starts).
         const bandsBefore = (task) => {
           const tm = task._mins ?? Infinity
           const out = []
           for (const s of blockSegments) {
-            if (emittedBlocks.has(s.id) || s.start >= tm) continue
+            if (emittedBlocks.has(s.id) || s.start > tm) continue
+            if (s.start === tm && !s.lead && withinBlock(blockAt(tm), s.bid)) continue
             emittedBlocks.add(s.id)
             out.push(...renderSeg(s))
           }
@@ -2593,7 +2720,7 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
               const firstOfRoutine = !emittedCollapse[task.routine]
               const span = routineSpans[task.routine]
               // A gap opens before the routine if the day was idle up to it.
-              const rtGap = firstOfRoutine && span ? maybeGap(span.start, r?.tint || null, null) : null
+              const rtGap = firstOfRoutine && span ? maybeGap(span.start, r?.tint || null) : null
               const header = firstOfRoutine
                 ? (emittedCollapse[task.routine] = true, emittedRoutineHeads.add(task.routine),
                    <RoutineCollapseRow key={'rc-'+task.routine} routine={r} count={doneRoutineCounts[task.routine]} expanded={isExp}
@@ -2631,8 +2758,13 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
             // continuous wash; the band label shows once at its top.
             const myBand = bandOf(task), prevBand = bandOf(prev), nextBand = bandOf(next)
             const myTint = myBand?.tint || null
-            const prevSameRoutine = !!(myBand && prevBand && prevBand.id === myBand.id)
-            const nextSameRoutine = !!(myBand && nextBand && nextBand.id === myBand.id)
+            // A neighbour inside a block nested in mine still sits on my film,
+            // so the wash runs on past it instead of closing and reopening.
+            const sameBand = (other) => !!(myBand && other && (other.id === myBand.id ||
+              (myBand.block && other.block && withinBlock(other.block, myBand.block.id))))
+            const prevSameRoutine = sameBand(prevBand)
+            const nextSameRoutine = sameBand(nextBand)
+            const myOuter = outerTintsOf(myBand?.block)
             // Join the task film to a block's head/tail segments: the first task
             // in a block that has a head segment drops its rounded top (and its
             // label, which the segment shows); the last drops its rounded bottom.
@@ -2660,8 +2792,7 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
             // Free time before this task, measured from wherever the day last
             // ended (a task, a routine, or a block) — tinted with the block's
             // film only when the gap sits inside that same block.
-            const sameBandAsCursor = !!(myBand && cur.band === myBand.id)
-            const gapEl = maybeGap(task._mins, colorOf(task), sameBandAsCursor ? myTint : null, task)
+            const gapEl = maybeGap(task._mins, colorOf(task), task)
             const tEnd = (task._time && task._dur) ? (hhmmToMins(task._time)+task._dur) : task._mins
             advance(tEnd, colorOf(task), myBand?.id || null)
             // Only drop the between-tasks now-line if a band split didn't already
@@ -2670,12 +2801,12 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
             if (emitNow) nowState.done = true
             return [...before, (
               <div key={task.id} data-task-row={task.id} className={spotlight===task.id ? 'task-spotlight' : undefined}>
-                {emitNow&&<NowMarker now={now} bandTint={(myBand && (joinHead || prevSameRoutine)) ? myTint : null} bandOpacity={inBlockId ? BLOCK_FILM_OPACITY : 0.5}/>}
+                {emitNow&&<NowMarker now={now} bandTint={(myBand && (joinHead || prevSameRoutine)) ? myTint : null} bandOpacity={inBlockId ? BLOCK_FILM_OPACITY : 0.5} outerTints={myOuter}/>}
                 {gapEl}
                 {routineHead}
                 <TimelineBlock
                   task={task} categories={categories} status={task._status} now={now}
-                  routineTint={myTint} tintOpacity={inBlockId ? BLOCK_FILM_OPACITY : 0.5}
+                  routineTint={myTint} tintOpacity={inBlockId ? BLOCK_FILM_OPACITY : 0.5} outerTints={myOuter}
                   filmTop={!prevSameRoutine && !joinHead && !routineIsBand} filmBottom={!nextSameRoutine && !joinTail}
                   bandLabel={(isFirstInBand && !joinHead) ? (myBand?.label || null) : null}
                   bandIcon={inBlockBand?.icon || null}
