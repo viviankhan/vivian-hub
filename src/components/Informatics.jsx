@@ -39,6 +39,44 @@ function delta(t) {
   return { up: d > 0, size: useMins ? d : d * 30, text: `${d > 0 ? '↑' : '↓'} ${label}` }
 }
 
+// The actual entries behind an answer — date, title, hours, and the description
+// and subtasks you wrote for each — newest first. `dark` for the answer card.
+function EntryLog({ entries = [], dark = false, initial = 10 }) {
+  const [all, setAll] = useState(false)
+  const shown = all ? entries : entries.slice(0, initial)
+  const line = dark ? 'rgba(255,255,255,.14)' : '#F1EEF3'
+  const sub = dark ? { opacity:.72 } : { color:'var(--muted)' }
+  if (!entries.length) return null
+  return (
+    <div>
+      {shown.map((e, i) => (
+        <div key={(e.date || '') + (e.title || '') + i} style={{ padding:'9px 0', borderTop: i ? `1px solid ${line}` : 'none' }}>
+          <div style={{ display:'flex', alignItems:'baseline', gap:8, fontSize:12.5 }}>
+            <span style={{ fontSize:11, flexShrink:0, minWidth:44, ...sub }}>{e.date ? new Date(e.date + 'T12:00:00').toLocaleDateString('en-US', { month:'short', day:'numeric' }) : ''}</span>
+            <span style={{ flex:1, minWidth:0, fontWeight:600 }}>{e.title}</span>
+            {e.mins > 0 && <span style={{ flexShrink:0, fontSize:11.5, ...sub }}>{fmtHours(e.mins)}</span>}
+          </div>
+          {e.desc && e.desc.trim() && (
+            <div style={{ fontSize:12.5, lineHeight:1.5, whiteSpace:'pre-wrap', margin:'4px 0 0 52px', ...(dark ? { opacity:.9 } : { color:'var(--text)' }) }}>{e.desc.trim()}</div>
+          )}
+          {e.subList && e.subList.length > 0 && (
+            <ul style={{ margin:'4px 0 0 52px', paddingLeft:16, fontSize:12, lineHeight:1.5, ...sub }}>
+              {e.subList.map((t, j) => <li key={j}>{t}</li>)}
+            </ul>
+          )}
+        </div>
+      ))}
+      {entries.length > initial && (
+        <button onClick={() => setAll(a => !a)}
+          style={{ marginTop:6, fontSize:11.5, fontWeight:600, padding:'4px 10px', borderRadius:14, cursor:'pointer', fontFamily:'DM Sans,sans-serif',
+            border: dark ? '1px solid rgba(255,255,255,.25)' : '1px solid var(--border)', background:'transparent', color: dark ? 'inherit' : 'var(--text)' }}>
+          {all ? 'Show fewer' : `Show all ${entries.length}`}
+        </button>
+      )}
+    </div>
+  )
+}
+
 function todayStr() {
   const d = new Date()
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
@@ -264,20 +302,15 @@ export default function Informatics({ commitments = [], recurringTasks = [], com
                         <div style={{ width:`${Math.max(2, (totalMins > 0 ? s.mins : s.count) / maxV * 100)}%`, height:'100%', borderRadius:3, background:'rgba(255,255,255,.55)' }} />
                       </div>
                       {open && (
-                        <div style={{ marginTop:6, paddingLeft:22 }}>
-                          {s.tasks.slice(0, 8).map(t => (
-                            <div key={t.title} style={{ display:'flex', justifyContent:'space-between', gap:10, fontSize:11.5, opacity:.8, padding:'2px 0' }}>
-                              <span style={{ whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{t.title}{t.count>1?` ×${t.count}`:''}</span>
-                              {t.mins > 0 && <span style={{ flexShrink:0 }}>{fmtHours(t.mins)}</span>}
-                            </div>
-                          ))}
+                        <div style={{ marginTop:8, paddingLeft:22 }}>
+                          <EntryLog entries={s.entries} dark />
                         </div>
                       )}
                     </div>
                   )
                 })}
               </div>
-              <div style={{ fontSize:11, opacity:.55, marginTop:8 }}>Tap a skill to see the tasks behind it. One task can count toward several skills, so the rows overlap.</div>
+              <div style={{ fontSize:11, opacity:.55, marginTop:8 }}>Tap a skill to see everything you logged for it, with your notes. One task can count toward several skills, so the rows overlap.</div>
             </>
             )
           })() : answer.type === 'overview' ? (
@@ -334,14 +367,9 @@ export default function Informatics({ commitments = [], recurringTasks = [], com
                   ))}
                 </div>
               )}
-              {answer.byTask.length > 0 && (
-                <div style={{ marginTop:12, borderTop:'1px solid rgba(255,255,255,.16)', paddingTop:10 }}>
-                  {answer.byTask.map(t => (
-                    <div key={t.title} style={{ display:'flex', justifyContent:'space-between', gap:10, fontSize:12.5, padding:'3px 0', opacity:.92 }}>
-                      <span style={{ whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{t.title}{t.count>1?` ×${t.count}`:''}</span>
-                      <span style={{ fontWeight:600, flexShrink:0 }}>{t.mins > 0 ? fmtHours(t.mins) : sessions(t.count)}</span>
-                    </div>
-                  ))}
+              {answer.entries && answer.entries.length > 0 && (
+                <div style={{ marginTop:12, borderTop:'1px solid rgba(255,255,255,.16)', paddingTop:4 }}>
+                  <EntryLog entries={answer.entries} dark />
                 </div>
               )}
             </>
@@ -417,14 +445,9 @@ export default function Informatics({ commitments = [], recurringTasks = [], com
                         <span style={{ fontSize:10, color:'var(--muted)', flexShrink:0, transform: open ? 'rotate(90deg)' : 'none', transition:'transform .15s' }}>▶</span>
                       </div>
                       <Bar frac={hasHours ? s.mins / maxSkillMins : s.count / maxSkillCount} color={s.color} />
-                      {open && s.tasks.length > 0 && (
+                      {open && s.entries.length > 0 && (
                         <div style={{ marginTop:8, paddingLeft:26 }}>
-                          {s.tasks.slice(0, 8).map(t => (
-                            <div key={t.title} style={{ display:'flex', justifyContent:'space-between', gap:10, fontSize:12, color:'var(--muted)', padding:'2px 0' }}>
-                              <span style={{ whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{t.title}{t.count>1?` ×${t.count}`:''}</span>
-                              {t.mins > 0 && <span style={{ flexShrink:0 }}>{fmtHours(t.mins)}</span>}
-                            </div>
-                          ))}
+                          <EntryLog entries={s.entries} />
                         </div>
                       )}
                     </div>

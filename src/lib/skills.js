@@ -68,8 +68,11 @@ const TAXONOMY = [
     phrases: ['lit review', 'literature review', 'look into', 'gather sources', 'systematic review'] },
 
   { id: 'lab', label: 'Lab work', icon: 'glyph:flask', color: '#4FA96B',
-    words: ['lab', 'assay', 'pipette', 'culture', 'microscope', 'dissection', 'specimen', 'sample', 'reagent', 'titration', 'pcr', 'gel', 'centrifuge', 'buffer', 'protocol', 'staining'],
-    phrases: ['run the assay', 'lab work', 'wet lab', 'cell culture', 'bench work'] },
+    words: ['lab', 'assay', 'pipette', 'culture', 'microscope', 'microscopy', 'dissection', 'dissect', 'specimen', 'sample', 'reagent', 'titration', 'pcr', 'qpcr', 'rtpcr', 'gel', 'agarose', 'centrifuge', 'buffer', 'protocol', 'staining', 'stain',
+      'blot', 'western', 'elisa', 'transfect', 'transfection', 'plasmid', 'miniprep', 'midiprep', 'ligation', 'primer', 'cdna', 'rna', 'dna', 'mrna', 'sirna', 'crispr', 'cloning',
+      'electrophoresis', 'sds', 'lysate', 'lyse', 'lysis', 'antibody', 'immunostain', 'immunofluorescence', 'ihc', 'confocal', 'cytometry', 'facs', 'trypsin', 'trypsinize', 'confluence', 'confluent', 'passage', 'hek293', 'hela',
+      'incubate', 'incubation', 'incubator', 'aliquot', 'autoclave', 'biosafety', 'mice', 'mouse', 'rat', 'colony', 'genotype', 'genotyping', 'spectrophotometer', 'nanodrop', 'chromatography', 'hplc', 'purify', 'purification', 'extraction', 'pellet', 'resuspend', 'dilution', 'ponceau', 'dmem', 'fbs'],
+    phrases: ['run the assay', 'lab work', 'wet lab', 'cell culture', 'bench work', 'master mix', 'flow cytometry', 'gel run', 'run gel', 'tissue culture', 'lab meeting', 'lab notebook'] },
 
   { id: 'math', label: 'Math & problem solving', icon: 'glyph:calculator', color: '#E0A24F',
     words: ['math', 'calculus', 'algebra', 'equation', 'integral', 'derivative', 'geometry', 'trig', 'trigonometry', 'proof', 'compute', 'calculate', 'formula'],
@@ -89,7 +92,7 @@ const TAXONOMY = [
 
   { id: 'planning', label: 'Planning & organizing', icon: 'glyph:clipboard', color: '#8B9AA9',
     words: ['plan', 'planning', 'organize', 'schedule', 'roadmap', 'milestone', 'agenda', 'prioritize', 'coordinate', 'delegate', 'outline', 'strategy'],
-    phrases: ['plan out', 'set up', 'game plan', 'to-do', 'project plan', 'map out', 'block out'] },
+    phrases: ['plan out', 'game plan', 'to-do', 'project plan', 'map out', 'block out'] },
 
   { id: 'teaching', label: 'Teaching & mentoring', icon: 'glyph:gradcap', color: '#C99A4F',
     words: ['teach', 'tutor', 'mentor', 'explain', 'grade', 'grading', 'coach', 'onboard'],
@@ -165,11 +168,12 @@ export function computeSkills(entries = [], categories = []) {
       let row = map.get(id)
       if (!row) {
         const m = skillMeta(id)
-        row = { id, label: m.label, icon: m.icon, color: m.color, mins: 0, count: 0, days: new Set(), tasks: new Map(), lastDate: '' }
+        row = { id, label: m.label, icon: m.icon, color: m.color, mins: 0, count: 0, days: new Set(), tasks: new Map(), lastDate: '', entries: [] }
         map.set(id, row)
       }
       row.mins += e.mins || 0
       row.count += 1
+      row.entries.push(e)
       if (e.date) { row.days.add(e.date); if (e.date > row.lastDate) row.lastDate = e.date }
       const title = (e.title || 'Untitled').trim() || 'Untitled'
       const tkey = title.toLowerCase()
@@ -183,6 +187,7 @@ export function computeSkills(entries = [], categories = []) {
       ...r,
       days: r.days.size,
       tasks: [...r.tasks.values()].sort((a, b) => b.count - a.count || b.mins - a.mins),
+      entries: r.entries.slice().sort((a, b) => (b.date || '').localeCompare(a.date || '')),
     }))
     .sort((a, b) => b.mins - a.mins || b.count - a.count)
 }
