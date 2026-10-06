@@ -16,6 +16,7 @@ import { setItemReminders } from '../lib/notifications.js'
 import CalendarLegend from './CalendarLegend.jsx'
 import ImportedCalendarCard from './ImportedCalendarCard.jsx'
 import { importedOn, buildImportedRows, importedKey } from '../lib/importedTasks.js'
+import { autoBlockIds } from '../lib/autoBlocks.js'
 import ColorSwatchRow from './ColorSwatchRow.jsx'
 
 // Concentric-circle "focus" target, for the Focus Now button.
@@ -1368,11 +1369,19 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
   // time; a recurring block moves via the override, since its template time is
   // shared across every day.
   const blockStart = (id, baseMins) => (timeOverrides[id] != null ? timeOverrides[id] : baseMins)
+  // An event with something scheduled inside it becomes a block for the day,
+  // so what's inside nests in it (see lib/autoBlocks.js). Read off the day as
+  // it stands — including any times moved for just today.
+  const autoBlocks = autoBlockIds([
+    ...todayCommitments.filter(c => c.time).map(c => ({ id:c.id, start:blockStart(c.id, hhmmToMins(c.time)), dur:c.durationMins || 0, block:!!c.block })),
+    ...templateTodos.filter(o => o._time).map(o => ({ id:o.id, start:blockStart(o.id, hhmmToMins(o._time)), dur:o._dur || 0, block:!!o.block })),
+  ])
+  const isBlockLike = (x) => !!x.block || autoBlocks.has(x.id)
   const blocks = [
-    ...todayCommitments.filter(c => c.block && c.time && c.durationMins)
+    ...todayCommitments.filter(c => isBlockLike(c) && c.time && c.durationMins)
       .map(c => { const s = blockStart(c.id, hhmmToMins(c.time)); return { id:c.id, label:(c.text||'').trim(), color: c.color || catColorOf(c.cat) || '#8AA0B8', icon: c.icon || null, cat: c.cat || null, isCommitment:true,
         start: s, end: s + c.durationMins } }),
-    ...templateTodos.filter(o => o.block && o._time && o._dur)
+    ...templateTodos.filter(o => isBlockLike(o) && o._time && o._dur)
       .map(o => { const s = blockStart(o.id, hhmmToMins(o._time)); return { id:o.id, label:(o.title||o.text||'').trim(), color: o.color || catColorOf(o.cat || o.tag) || '#8AA0B8', icon: o.icon || null, cat: o.cat || o.tag || null, isCommitment:false,
         start: s, end: s + o._dur } }),
   ]
@@ -1483,13 +1492,18 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
     for (const key of keys || []) {
       if (!key || key >= today) continue
       const gone = dayDeletions(key)
+      const dayOccs = recurringOccurrencesForDate(recurringTasks, key, recurringExceptions)
+      const autoOn = autoBlockIds([
+        ...(commitments || []).filter(c => c.date === key && c.time).map(c => ({ id:c.id, start:hhmmToMins(c.time), dur:c.durationMins || 0, block:!!c.block })),
+        ...dayOccs.filter(o => o._time).map(o => ({ id:o.id, start:hhmmToMins(o._time), dur:o._dur || 0, block:!!o.block })),
+      ])
       for (const c of commitments || []) {
-        if (c.date !== key || c.block || gone.includes(c.id)) continue
+        if (c.date !== key || c.block || autoOn.has(c.id) || gone.includes(c.id)) continue
         if (todos[c.id] || weekState[c.id] || c.done) continue
         out.push({ key, id: c.id, isCommitment: true, text: c.text || 'task' })
       }
-      for (const o of recurringOccurrencesForDate(recurringTasks, key, recurringExceptions)) {
-        if (o.block || gone.includes(o.id)) continue
+      for (const o of dayOccs) {
+        if (o.block || autoOn.has(o.id) || gone.includes(o.id)) continue
         if (todos[key + '_' + o.id] || weekState[key + '_' + o.id]) continue
         out.push({ key, id: o.recurringId || o.id, localId: o.id, isRecurring: true, text: o.title || o.text || 'task' })
       }
@@ -1565,7 +1579,7 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
   const taskMins = (t) => (t._time != null ? hhmmToMins(t._time) : parseTimeMins(t.label))
 
   const rawTasks = [
-    ...todayCommitments.filter(c=>!c.block).map(c=>({
+    ...todayCommitments.filter(c=>!isBlockLike(c)).map(c=>({
       id:c.id, label:c.time?`${fmt12(c.time)} — ${c.text}`:c.text,
       title:c.text,
       note:[c.person&&`With: ${c.person}`,c.prepMin&&`Leave ${c.prepMin} min early`].filter(Boolean).join(' · '),
@@ -1579,7 +1593,7 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
       subCount:Array.isArray(c.subtasks)?c.subtasks.length:0,
       subDone:Array.isArray(c.subtasks)?c.subtasks.filter(s=>s.done).length:0,
     })),
-    ...templateTodos.filter(t=>!t.block),
+    ...templateTodos.filter(t=>!isBlockLike(t)),
     ...customTasks,
   ]
   const allTasks = applyOverrides(rawTasks)
@@ -2358,7 +2372,7 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
     const tmpl = c ? null : (recurringTasks || []).find(t => t.id === id)
     if (!c && !tmpl) return []
     const n = blockTasksToday(id).length
-    const items = [{ label:'Edit block', onClick:()=>openContainer(id) }]
+    const items = [{ label: autoBlocks.has(id) ? 'Edit event' : 'Edit block', onClick:()=>openContainer(id) }]
     items.push({
       label: n ? `Clear from today — block + ${plural(n, 'task')}` : 'Remove from today',
       danger: true,

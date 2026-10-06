@@ -354,6 +354,36 @@ const folded = await bandLabels()
 eq('collapsing study hides lunch inside it', [folded.includes('STUDY'), folded.includes('LUNCH')], [true, false])
 eq('and the task inside lunch', await page.evaluate(() => document.body.innerText.includes('Read chapter 4')), false)
 
+// ── Events that hold events become blocks on their own ─────────
+// Nobody marked anything a block here: study is just an event, lunch is an
+// event inside it, and a reading task sits inside lunch. The longer ones turn
+// into blocks so each nests in the next — Russian dolls.
+console.log('\n— plain events that hold other events —')
+await seed(today => ({
+  commitments: [
+    { id:'e-study', text:'Study', date:today, time:'12:00', durationMins:120, cat:'', done:false },
+    { id:'e-lunch', text:'Lunch', date:today, time:'12:30', durationMins:45,  cat:'', done:false },
+    { id:'e-read',  text:'Read chapter 4', date:today, time:'12:35', durationMins:30, cat:'', done:false },
+    { id:'e-gym',   text:'Gym', date:today, time:'17:00', durationMins:60, cat:'', done:false },
+  ],
+  commitment_meta: {},
+  recurring_tasks_v2: [], recurring_meta: {}, recurring_exceptions: {}, completions: {},
+}))
+await page.evaluate(() => localStorage.setItem('vivian_collapsed_blocks', JSON.stringify({ 'e-study': false, 'e-lunch': false })))
+await page.reload({ waitUntil: 'networkidle' })
+await page.waitForTimeout(250)
+const dolls = await bandLabels()
+eq('study and lunch both become blocks, outer first', [dolls.indexOf('STUDY') >= 0, dolls.indexOf('LUNCH') > dolls.indexOf('STUDY')], [true, true])
+eq('the innermost stays a task, sitting on both films', await page.evaluate(() => {
+  const row = document.querySelector('[data-task-row="e-read"]')
+  return row ? [...row.querySelectorAll('div')].filter(d => d.style.position === 'absolute' && d.style.zIndex === '-1' && d.style.opacity === '0.16').map(d => d.style.left) : null
+}), ['44px', '52px'])
+eq('an event holding nothing stays an ordinary task', [dolls.includes('GYM'), await page.evaluate(() => !!document.querySelector('[data-task-row="e-gym"]'))], [false, true])
+await openMenu('Study')
+eq('its menu edits the event', (await menuItems())[0], 'Edit event')
+await page.keyboard.press('Escape')
+eq('nothing was rewritten as a block', await store('commitment_meta'), {})
+
 eq('no uncaught errors', errors, [])
 
 await browser.close()
