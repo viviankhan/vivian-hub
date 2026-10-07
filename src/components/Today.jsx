@@ -6,13 +6,14 @@ import { Icon } from './IconPicker.jsx'
 import { iconColorOn, suggestGlyph } from '../lib/glyphs.jsx'
 import { bloomBurst } from '../lib/bloom.js'
 import AddItemModal from './AddItemModal.jsx'
-import AiAssistant from './AiAssistant.jsx'
+import AiAssistant, { useAssistantQueue, runQueued, decoratePlan } from './AiAssistant.jsx'
+import { startQueue, unseenCount, workingCount, readyCount, itemLabel } from '../lib/assistantQueue.js'
 import DayRail from './DayRail.jsx'
 import { aiScheduleAvailable, recurringFromTask } from '../lib/parseEvent.js'
 import FocusMode from './FocusMode.jsx'
 import DateField from './DateField.jsx'
 import TimeField from './TimeField.jsx'
-import { setItemReminders } from '../lib/notifications.js'
+import { setItemReminders, notifyAssistantReady } from '../lib/notifications.js'
 import CalendarLegend from './CalendarLegend.jsx'
 import ImportedCalendarCard from './ImportedCalendarCard.jsx'
 import { importedOn, buildImportedRows, importedKey } from '../lib/importedTasks.js'
@@ -1267,7 +1268,8 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
   const [addingTask,  setAddingTask]  = useState(false)
   const [addPreset,   setAddPreset]   = useState(null)  // {time, cat} when adding inside a block
   const [importRow,   setImportRow]   = useState(null)  // imported event being edited into the schedule
-  const [pasterOpen,  setPasterOpen]  = useState(false) // AI assistant sheet
+  const [pasterOpen,  setPasterOpen]  = useState(false) // AI assistant sheet: false | 'new' | 'queue'
+  const [aiToast,     setAiToast]     = useState(null)  // { label, count } when queued suggestions land
   const [expandedRoutines, setExpandedRoutines] = useState({})  // routineId → show its done tasks individually
   // Explicit collapse overrides for time blocks (keyed by block id). A stored
   // true/false is the user's choice; NO entry means "auto" — a block folds up on
@@ -2219,6 +2221,53 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
     subtasks: Array.isArray(c.subtasks) ? c.subtasks.map(s => ({ text: s.text, done: !!s.done })) : [],
   })), [commitments, todos, weekState])
 
+  // The assistant's queue runs here in the background: whatever you sent it
+  // is read while you get on with things (or leave), and lands in the queue
+  // for review. It's asked about your tasks as they are when it runs.
+  const queueItems = useAssistantQueue()
+  const assistantCtx = useRef({})
+  assistantCtx.current = { categories, tasks: assistantTasks }
+  const pasterOpenRef = useRef(pasterOpen)
+  pasterOpenRef.current = pasterOpen
+  useEffect(() => {
+    if (!aiScheduleAvailable) return
+    // Not stopped on unmount: a request sent from Today keeps being read while
+    // you're on another tab (it uses the tasks as Today last saw them).
+    startQueue({
+      run: runQueued,
+      ctx: () => assistantCtx.current,
+      decorate: decoratePlan,
+      onReady: (item) => {
+        const count = ((item.plan && item.plan.actions) || []).length
+        const visible = typeof document === 'undefined' || document.visibilityState === 'visible'
+        // Away from the app → a notification; here but not looking at the
+        // queue → a quiet toast; looking at it → nothing, you can see it.
+        if (!visible) notifyAssistantReady({ id: item.id, label: itemLabel(item), count })
+        else if (pasterOpenRef.current !== 'queue') setAiToast({ label: itemLabel(item), count })
+      },
+    })
+  }, [])
+  // Arriving from a "Suggestions ready" notification opens the queue — on a
+  // fresh launch (the URL says so) or in an app that was already open (the
+  // service worker says so).
+  useEffect(() => {
+    try {
+      const u = new URL(window.location.href)
+      if (u.searchParams.get('assistant') === 'queue') {
+        setPasterOpen('queue')
+        u.searchParams.delete('assistant')
+        window.history.replaceState(null, '', u.pathname + u.search + u.hash)
+      }
+    } catch {}
+    const onMsg = (e) => {
+      const d = e && e.data
+      if (d && d.type === 'notification-click' && String(d.url || '').includes('assistant=queue')) setPasterOpen('queue')
+    }
+    navigator.serviceWorker?.addEventListener?.('message', onMsg)
+    return () => navigator.serviceWorker?.removeEventListener?.('message', onMsg)
+  }, [])
+  useEffect(() => { if (!aiToast) return; const t = setTimeout(() => setAiToast(null), 9000); return () => clearTimeout(t) }, [aiToast])
+
   // Apply a confirmed plan of assistant actions using the ordinary task ops.
   const applyAssistantActions = (actions) => {
     (actions || []).forEach((a, idx) => {
@@ -2237,6 +2286,7 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
           durationMins: a.durationMins || null,
           cat: (a.categoryIds && a.categoryIds[0]) || null, cats: Array.isArray(a.categoryIds) ? a.categoryIds : [],
           description: a.description || '', subtasks, done: false, person: null, prepMin: null,
+          icon: a.icon || null, color: a.color || null,
           createdAt: new Date().toISOString(),
         }
         if (addCommitment) addCommitment(commitment)
@@ -2851,12 +2901,24 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
       {/* AI assistant button, stacked above the + FAB. Only shown when the AI
           function can be reached (Supabase configured). */}
       {aiScheduleAvailable && (
-        <button onClick={()=>setPasterOpen(true)} className="today-fab-ai" title="AI assistant — type it or add a photo" aria-label="AI assistant"
+        <button onClick={()=>{ setAiToast(null); setPasterOpen(readyCount(queueItems) ? 'queue' : 'new') }}
+          className={`today-fab-ai${workingCount(queueItems) ? ' working' : ''}`}
+          title="AI assistant — type it or add a photo" aria-label={`AI assistant${readyCount(queueItems) ? ` — ${readyCount(queueItems)} ready to review` : ''}`}
           style={{position:'fixed',width:44,height:44,borderRadius:'50%',border:'none',
             background:'linear-gradient(135deg,#7BBFD4,#C8BFDF)',color:'#17313f',fontSize:19,cursor:'pointer',
             boxShadow:'0 4px 16px rgba(0,0,0,.22)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:100}}>
           ✨
+          {readyCount(queueItems) > 0 && (
+            <span data-testid="assistant-badge" className={unseenCount(queueItems) ? 'aq-badge new' : 'aq-badge'}>{readyCount(queueItems)}</span>
+          )}
         </button>
+      )}
+      {aiToast && (
+        <div className="aq-toast" role="status">
+          <span>✨ {aiToast.count ? `${aiToast.count} suggestion${aiToast.count > 1 ? 's' : ''}` : 'Suggestions'} ready for “{aiToast.label}”</span>
+          <button onClick={()=>{ setAiToast(null); setPasterOpen('queue') }}>Review</button>
+          <button aria-label="Dismiss" onClick={()=>setAiToast(null)}>✕</button>
+        </div>
       )}
 
       {focusTask&&<FocusMode
@@ -2888,7 +2950,8 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
         title="Add to my schedule"/>}
       {addingTask&&<AddItemModal presetDate={dateKey} presetTime={addPreset?.time||''} presetDur={addPreset?.dur||null} presetCat={addPreset?.cat||''} categories={categories} routines={routines} templates={taskTemplates} labelModel={labelModel} onSave={handleAdd} onSaveRecurring={addRecurringTask} onClose={()=>{ setAddingTask(false); setAddPreset(null) }} title="Add to Today"/>}
       {/* AI assistant: command → plan → confirm → apply. */}
-      {pasterOpen&&<AiAssistant categories={categories} tasks={assistantTasks}
+      {pasterOpen&&<AiAssistant categories={categories} tasks={assistantTasks} initialView={pasterOpen}
+        onView={v=>setPasterOpen(v)}
         onApply={applyAssistantActions} onClose={()=>setPasterOpen(false)} />}
       {editing&&<AddItemModal existing={editing} categories={categories} routines={routines} onSave={handleSaveEdit}
         onSaveRecurring={addRecurringTask}

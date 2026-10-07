@@ -625,6 +625,18 @@ export function notifyArrival(name) {
   })
 }
 
+// The AI assistant finished reading something you queued. Tapping it opens the
+// queue (Today reads ?assistant=queue). Only when notifications are permitted.
+export function notifyAssistantReady({ id, label, count }) {
+  if (permissionState() !== 'granted') return
+  fire({
+    id: 'assistant:' + (id || Date.now()),
+    name: '✨ Suggestions ready',
+    body: `${count ? `${count} suggestion${count > 1 ? 's' : ''}` : 'Your plan'} for “${label || 'your upload'}” — tap to review.`,
+    url: BASE + '?assistant=queue',
+  })
+}
+
 // Fire a one-off test notification so the user can confirm it works.
 export function sendTestNotification() {
   fire({
