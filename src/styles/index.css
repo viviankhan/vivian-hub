@@ -767,7 +767,7 @@ textarea { resize: vertical; min-height: 160px; line-height: 1.6; }
 @keyframes aq-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .today-fab-ai.working::after, .aq-spin { animation: none; } }
 .aq-toast {
-  position: fixed; left: 50%; transform: translateX(-50%); bottom: 28px; z-index: 600;
+  position: fixed; left: 50%; transform: translateX(-50%); top: calc(14px + env(safe-area-inset-top)); z-index: 600;
   display: flex; align-items: center; gap: 10px; max-width: calc(100vw - 32px); box-sizing: border-box;
   background: #17313f; color: #fff; border-radius: 14px; padding: 10px 10px 10px 14px;
   font-size: 13px; font-family: 'DM Sans', sans-serif; box-shadow: 0 8px 26px rgba(0,0,0,.28);
@@ -792,7 +792,6 @@ textarea { resize: vertical; min-height: 160px; line-height: 1.6; }
   /* Lift the FAB above the bottom bar. */
   .today-fab { bottom: calc(92px + env(safe-area-inset-bottom)); right: 18px; }
   .today-fab-ai { bottom: calc(152px + env(safe-area-inset-bottom)); right: 22px; }
-  .aq-toast { bottom: calc(96px + env(safe-area-inset-bottom)); }
   /* Phones (portrait) get their own background choice, sized by viewport height
      so the scene reads instead of collapsing to a sliver at the bottom the way
      a width-scaled desktop scene does on a narrow screen. */
@@ -1854,6 +1853,45 @@ textarea { resize: vertical; min-height: 160px; line-height: 1.6; }
 .rail-back { border: 1.5px solid var(--border); background: #fff; border-radius: 999px; padding: 6px 12px;
   font-size: 12px; font-weight: 700; color: var(--muted); cursor: pointer; font-family: inherit; }
 .rail-back.on { border-color: var(--teal); background: var(--green-light); color: var(--teal); }
+/* Changing a stretch: a calendar of when you were last around, and the two
+   ends — each a day and a time — that you can move. */
+.rail-gap-adjust { margin-left: auto; flex-shrink: 0; border: 1.5px solid var(--border); background: #fff; border-radius: 999px;
+  padding: 5px 11px; font-size: 11.5px; font-weight: 700; color: var(--teal); cursor: pointer; font-family: inherit; }
+.rail-cal { border: 1.5px solid var(--border); border-radius: 16px; background: #fff; padding: 10px 10px 12px; margin-bottom: 8px; }
+.rail-cal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+.rail-cal-head b { font-size: 13px; color: var(--forest); }
+.rail-cal-nav { width: 30px; height: 30px; border-radius: 50%; border: none; background: var(--green-light); color: var(--teal);
+  font-size: 18px; line-height: 1; cursor: pointer; font-family: inherit; }
+.rail-cal-nav:disabled { opacity: .3; cursor: default; }
+.rail-cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; }
+.rail-cal-wd { text-align: center; font-size: 10px; font-weight: 700; color: var(--muted); padding: 2px 0 4px; }
+.rail-cal-day { position: relative; height: 38px; border: none; background: transparent; border-radius: 10px; cursor: pointer;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; padding: 0;
+  font-family: inherit; font-size: 12.5px; font-weight: 600; color: var(--text); }
+.rail-cal-day:disabled { color: #C7CCD3; cursor: default; }
+.rail-cal-day.today > span { text-decoration: underline; text-underline-offset: 2px; }
+.rail-cal-day.in { background: color-mix(in srgb, var(--teal) 14%, #fff); border-radius: 0; }
+.rail-cal-day.edge { background: var(--teal); color: #fff; }
+.rail-cal-day.edge.start { border-radius: 10px 0 0 10px; }
+.rail-cal-day.edge.end { border-radius: 0 10px 10px 0; }
+.rail-cal-day.one { border-radius: 10px; }
+.rail-cal-dot { display: block; border-radius: 50%; background: var(--teal); }
+.rail-cal-day.edge .rail-cal-dot { background: #fff; }
+.rail-cal-legend { display: flex; align-items: center; gap: 6px; font-size: 10.5px; color: var(--muted); margin: 6px 2px 0; }
+.rail-cal-ends { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; }
+.rail-cal-end { border: 1.5px solid var(--border); border-radius: 12px; padding: 7px 9px; cursor: pointer; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.rail-cal-end.on { border-color: var(--teal); background: color-mix(in srgb, var(--teal) 6%, #fff); }
+.rail-cal-end-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
+.rail-cal-end-day { font-size: 12.5px; font-weight: 700; color: var(--forest); }
+.rail-cal-end input { border: 1px solid var(--border); border-radius: 8px; padding: 4px 6px; font-family: inherit; font-size: 13px;
+  color: var(--text); background: #fff; width: 100%; box-sizing: border-box; }
+.rail-cal-tip { font-size: 11px; color: var(--muted); margin-top: 6px; }
+.rail-cal-visits { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; margin-top: 8px; font-size: 11px; color: var(--muted); }
+.rail-cal-visit { border: 1px solid var(--border); background: #fff; border-radius: 8px; padding: 3px 8px; font-size: 11px;
+  font-weight: 600; color: var(--teal); cursor: pointer; font-family: inherit; }
+.rail-cal-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 8px; }
+.rail-cal-link { border: none; background: none; padding: 2px 0; color: var(--teal); font-size: 11.5px; font-weight: 700; cursor: pointer; font-family: inherit; text-align: left; }
+.rail-cal-note { font-size: 11px; color: var(--muted); }
 /* The pile those days are still holding — offered, never assumed, and never
    dressed up as having got it all done. */
 .rail-letgo { display: flex; align-items: flex-start; gap: 10px; width: 100%; text-align: left; margin-top: 14px;

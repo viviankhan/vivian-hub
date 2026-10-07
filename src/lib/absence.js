@@ -304,3 +304,66 @@ function dayRuns(days, keys) {
   }
   return runs
 }
+
+// ── Picking the stretch on a calendar ──────────────────────────
+// Logging a stretch by hand starts from what the app already knows: when you
+// were last around. Visits (presence.js) and check-ins you made at the time
+// are the evidence; a check-in written afterwards (via the catch-up itself)
+// is not, since it says nothing about when you were here.
+export function activityIntervals({ visits = [], checkins = [] } = {}) {
+  const out = []
+  for (const v of visits || []) {
+    if (Array.isArray(v) && Number.isFinite(v[0]) && Number.isFinite(v[1])) out.push([v[0], Math.max(v[0], v[1])])
+  }
+  for (const c of checkins || []) {
+    if (!c || c.via === 'absence') continue
+    const t = Date.parse(c.ts)
+    if (Number.isFinite(t)) out.push([t, t])
+  }
+  out.sort((a, b) => a[0] - b[0])
+  // Join what overlaps, so a check-in made mid-visit doesn't split it.
+  const merged = []
+  for (const p of out) {
+    const last = merged[merged.length - 1]
+    if (last && p[0] <= last[1] + 60000) last[1] = Math.max(last[1], p[1])
+    else merged.push([p[0], p[1]])
+  }
+  return merged
+}
+
+// day key → { mins, spans } — how much you were around each day, and when.
+export function activityByDay(intervals) {
+  const map = new Map()
+  for (const [s, e] of intervals || []) {
+    const pieces = e > s ? splitByDay(s, e) : [{ key: dayKey(new Date(s)), startMs: s, endMs: e }]
+    for (const seg of pieces) {
+      const d = map.get(seg.key) || { mins: 0, spans: [] }
+      d.mins += Math.round((seg.endMs - seg.startMs) / 60000)
+      d.spans.push([seg.startMs, seg.endMs])
+      map.set(seg.key, d)
+    }
+  }
+  return map
+}
+
+// The stretch you most likely mean: the most recent quiet gap long enough to
+// count under your rule — from the last moment you were seen before it to the
+// first moment you were back. Failing that, the longest gap in the window.
+// Null when there is nothing to go on.
+export function suggestStretch(intervals, { nowMs = Date.now(), rule } = {}) {
+  const r = normalizeRule(rule)
+  const since = nowMs - r.maxDays * 86400000
+  const list = (intervals || []).filter(p => p[1] >= since && p[0] <= nowMs)
+  if (!list.length) return null
+  // You're here now — that's the far side of the newest gap.
+  const marks = [...list, [nowMs, nowMs]]
+  let best = null, bestMins = 0
+  for (let i = marks.length - 1; i > 0; i--) {
+    const startMs = Math.max(marks[i - 1][1], since), endMs = marks[i][0]
+    if (endMs <= startMs) continue
+    const mins = wakingMinutes(startMs, endMs, r)
+    if (mins >= r.hours * 60) return { startMs, endMs }
+    if (mins > bestMins) { bestMins = mins; best = { startMs, endMs } }
+  }
+  return bestMins >= 60 ? best : null
+}

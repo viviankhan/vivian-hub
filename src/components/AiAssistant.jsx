@@ -177,7 +177,7 @@ function ActionEditor({ action, categories, onSave, onCancel }) {
                 style={{ position:'relative', width:50, height:50, borderRadius:14, border:'none', background:tint, color:iconColorOn(tint), cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', padding:0 }}>
                 {liveIcon ? <Icon value={liveIcon} size={24} color={iconColorOn(tint)} />
                   : <span style={{ fontSize:20, fontWeight:700 }}>{((d.title || '').trim()[0] || '?').toUpperCase()}</span>}
-                <span aria-hidden="true" style={{ position:'absolute', bottom:-5, right:-5, width:20, height:20, borderRadius:'50%', background:'white', boxShadow:'0 1px 4px rgba(0,0,0,.25)', fontSize:10, display:'flex', alignItems:'center', justifyContent:'center' }}>✎</span>
+                <span aria-hidden="true" style={{ position:'absolute', bottom:-5, right:-5, width:20, height:20, borderRadius:'50%', background:'white', boxShadow:'0 1px 4px rgba(0,0,0,.25)', fontSize:11, lineHeight:1, display:'flex', alignItems:'center', justifyContent:'center' }}>🎨</span>
               </button>
             </div>
           )}
