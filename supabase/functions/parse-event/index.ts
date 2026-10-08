@@ -84,6 +84,7 @@ const RESPONSE_SCHEMA = {
           durationMins: { type: 'integer', description: 'Minutes for a create/reschedule, or 0.' },
           categoryIds:  { type: 'array', items: { type: 'string' }, description: 'For create: matching category ids from the list.' },
           description:  { type: 'string', description: 'For create: a tidy write-up. Else "".' },
+          icon:         { type: 'string', description: 'For create: one or two plain words naming a simple pictogram that fits it ("tooth", "dumbbell", "book", "flask", "plane", "cake"). Else "".' },
           subtasks: {
             type: 'array',
             description: 'For create/addSubtasks: the subtask items.',
@@ -247,7 +248,7 @@ Respond with ONLY a JSON object (no prose, no markdown, no code fences) of this 
 
 Each action object is one of these shapes. COPY the shape and fill in EVERY field that applies — never leave out the dates on a create or event:
 - create — a new single-day TASK (something to do on one day):
-  {"kind":"create","title":"Dentist","date":"2026-08-25","dateFrom":"Tues Aug 25","time":"15:00","durationMins":60,"categoryIds":[],"description":"Bring insurance card","subtasks":[{"text":"call to confirm","done":false}],"reminders":[]}
+  {"kind":"create","title":"Dentist","date":"2026-08-25","dateFrom":"Tues Aug 25","time":"15:00","durationMins":60,"categoryIds":[],"description":"Bring insurance card","icon":"tooth","subtasks":[{"text":"call to confirm","done":false}],"reminders":[]}
 - event — a multi-day calendar EVENT spanning a range of days (a trip, a vacation, someone away/out, a conference — anything covering more than one day or phrased as an absence/trip/period). date is the START day, endDate the END day:
   {"kind":"event","title":"Danya trip to Mexico","date":"2026-08-14","dateFrom":"14–18th","endDate":"2026-08-18","allDay":true}
 - create that REPEATS — add a "repeat" object. Birthdays and anniversaries are ALWAYS yearly; "every Monday and Wednesday" is weekly with those days; "every day"/"daily" is daily; "on the 1st of every month" is monthly; "every other week" is interval 2. date is the FIRST occurrence on or after today (for a birthday, its next date). endDate only when an end is stated:
@@ -458,6 +459,7 @@ ${command || fallbackCommand}
         durationMins: Number.isFinite(a.durationMins) ? Math.max(0, Math.min(1440, Math.round(a.durationMins))) : 0,
         categoryIds: Array.isArray(a.categoryIds) ? a.categoryIds.filter((id: string) => validCats.has(id)).slice(0, 4) : [],
         description: String(a.description || '').trim().slice(0, 4000),
+        icon: String(a.icon || '').trim().toLowerCase().slice(0, 40),
         subtasks: cleanSubs(a.subtasks),
         reminders: Array.isArray(a.reminders) ? a.reminders.map((n: any) => Math.round(Number(n))).filter((n: number) => Number.isFinite(n) && n >= 0 && n <= 40320).slice(0, 6) : [],
         repeat: cleanRepeat(a.repeat),

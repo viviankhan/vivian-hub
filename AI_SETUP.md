@@ -4,7 +4,7 @@ The ✨ button on **Today** opens an assistant: type an instruction — "make a
 task for the dentist next Tue 3pm", "add the Aug 17 assignments to my Orgo
 task's subtasks and check them off", "reschedule the lab to Friday" — and it
 plans the changes against your current tasks, shows you the plan, and applies it
-only after you tap **Apply**. It can create tasks, add/check subtasks on an
+only after you tap **Accept**. It can create tasks, add/check subtasks on an
 existing task, mark tasks complete, and reschedule.
 
 **Or just show it a picture.** Tap **📷 Add a photo** (or paste a screenshot
@@ -29,6 +29,15 @@ the description. Add an instruction to narrow it down — "just the exams and du
 dates", "only Day 2". A PDF is sent as the file itself, so Gemini reads its
 tables and even scanned pages; a Word file is turned into text in the browser
 first. Old `.doc` files can't be read — save them as `.docx` or PDF.
+
+**No waiting around.** Tapping **Plan it** files the request in a queue and the
+assistant reads it in the background — close the sheet or leave the app. The ✨
+button shows a count when suggestions are ready (plus a notification if
+reminders are allowed and the app is in the background). In the **Queue** tab
+each request's suggestions can be edited (title, date, icon & color, labels…),
+accepted, or deleted, and **Clear queue** empties it. A request the phone cut
+off mid-read is simply asked again the next time Bloom opens. New tasks also
+come with an icon picked to match them, which you can change in **Edit**.
 
 It runs on **Google Gemini's free tier**. The AI key stays on the server (a
 Supabase Edge Function), never in the app's public code. You just do this once.
@@ -85,7 +94,11 @@ See `RECEIPTS.md` for the B&B tracker.
   `supabase/functions/parse-event/index.ts` and redeploy. The flash models read
   pictures and PDFs as well as text, so photo and document support need no extra
   setup — the same `parse-event` deploy covers them. (After updating the app,
-  redeploy `parse-event` once so it accepts documents.)
+  redeploy `parse-event` once so it accepts documents — and so it suggests an
+  icon for each new task; without the redeploy icons are still matched from
+  the task's title, just less often.)
+- **The queue** lives on this device only (in the browser's IndexedDB), photos
+  included, until you accept, delete, or clear each request.
 - **If the ✨ button does nothing / errors:** it means the function isn't
   deployed yet or the key isn't set — re-run steps 2 and 3. The button only
   appears when your Supabase URL is configured (`VITE_SUPABASE_URL`).

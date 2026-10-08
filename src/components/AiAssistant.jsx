@@ -4,13 +4,25 @@
 // AND/OR add photos of the thing — a screenshot of an email about a seminar, a
 // syllabus page, a flyer, a handwritten list — or attach a document: a whole
 // syllabus or event agenda as a PDF or Word file. It plans the actions against your
-// current tasks, shows the plan for you to confirm, then the parent applies it.
-// Nothing changes until you tap Apply.
-import { useRef, useState } from 'react'
+// current tasks and suggests changes. Nothing changes until you accept them.
+//
+// Requests go into a queue (lib/assistantQueue.js) rather than making you
+// wait: tap "Plan it" and you're free to close the sheet — or the app. Each
+// request is read in the background, and its suggestions wait in the queue to
+// be edited, accepted, or deleted whenever you come back to them.
+import { useEffect, useRef, useState } from 'react'
 import { runAssistant, MAX_ASSISTANT_IMAGES, REPEAT_FREQS, describeRepeat, normalizeRepeat } from '../lib/parseEvent.js'
 import { compressImage, dataUrlToBase64 } from '../lib/trackers.js'
 import { readDocument, docKind, DOC_ACCEPT, MAX_ASSISTANT_DOCS } from '../lib/docText.js'
 import { defaultLeadsLabel } from '../lib/notifications.js'
+import { suggestGlyph, iconColorOn } from '../lib/glyphs.jsx'
+import { activeAccent } from '../lib/appearance.js'
+import { Icon } from './IconPicker.jsx'
+import ColorIconPicker from './ColorIconPicker.jsx'
+import {
+  STATUS, getQueue, subscribe, loadQueue, enqueue, updatePlan, removeItem, clearQueue, retry,
+  markAllSeen, itemLabel,
+} from '../lib/assistantQueue.js'
 
 function fmt12(t) {
   if (!t) return ''
@@ -114,6 +126,9 @@ function ActionEditor({ action, categories, onSave, onCancel }) {
     reminders: Array.isArray(action.reminders) ? [...action.reminders] : [],
     categoryIds: Array.isArray(action.categoryIds) ? [...action.categoryIds] : [] }))
   const set = (k, v) => setD(prev => ({ ...prev, [k]: v }))
+  const [pickIcon, setPickIcon] = useState(false)
+  // Until you pick one yourself, the icon follows the title as you retype it.
+  const [iconTouched, setIconTouched] = useState(false)
   const row = { display:'flex', gap:8, marginTop:10 }
   const hasTitle = d.kind === 'create' || d.kind === 'event'
   const hasWhen  = d.kind === 'create' || d.kind === 'reschedule'
@@ -123,6 +138,7 @@ function ActionEditor({ action, categories, onSave, onCancel }) {
     if (!canSave) return
     const out = { ...d }
     if (hasTitle) out.title = d.title.trim()
+    if (d.kind === 'create' && !iconTouched && out.title !== action.title) out.icon = guessIcon({ ...out, icon: '' }) || action.icon || ''
     if (hasWhen) {
       out.date = d.date || null
       out.time = d.time || null
@@ -147,13 +163,35 @@ function ActionEditor({ action, categories, onSave, onCancel }) {
 
   const setSub = (j, patch) => set('subtasks', d.subtasks.map((s, k) => k === j ? { ...s, ...patch } : s))
 
+  const tint = d.color || (categories.find(c => c.id === d.categoryIds[0]) || {}).color || activeAccent()
+  const liveIcon = (!iconTouched && d.kind === 'create' && d.title !== action.title) ? (guessIcon({ ...d, icon: '' }) || d.icon) : d.icon
+
   return (
     <div>
       {hasTitle && (
-        <Field label="Title">
-          <textarea value={d.title || ''} onChange={e => set('title', e.target.value)} rows={2} autoFocus
-            style={{ ...field, resize:'vertical', lineHeight:1.45 }} />
-        </Field>
+        <div style={{ display:'flex', gap:10, alignItems:'flex-start' }}>
+          {d.kind === 'create' && (
+            <div style={{ flexShrink:0 }}>
+              <span style={lbl}>Icon</span>
+              <button type="button" onClick={() => setPickIcon(true)} aria-label="Change icon and color" data-testid="assistant-icon-btn"
+                style={{ position:'relative', width:50, height:50, borderRadius:14, border:'none', background:tint, color:iconColorOn(tint), cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', padding:0 }}>
+                {liveIcon ? <Icon value={liveIcon} size={24} color={iconColorOn(tint)} />
+                  : <span style={{ fontSize:20, fontWeight:700 }}>{((d.title || '').trim()[0] || '?').toUpperCase()}</span>}
+                <span aria-hidden="true" style={{ position:'absolute', bottom:-5, right:-5, width:20, height:20, borderRadius:'50%', background:'white', boxShadow:'0 1px 4px rgba(0,0,0,.25)', fontSize:11, lineHeight:1, display:'flex', alignItems:'center', justifyContent:'center' }}>🎨</span>
+              </button>
+            </div>
+          )}
+          <Field label="Title" style={{ flex:1 }}>
+            <textarea value={d.title || ''} onChange={e => set('title', e.target.value)} rows={2} autoFocus
+              style={{ ...field, resize:'vertical', lineHeight:1.45 }} />
+          </Field>
+        </div>
+      )}
+      {pickIcon && (
+        <ColorIconPicker color={d.color || ''} icon={liveIcon || ''}
+          onColor={c => set('color', c)}
+          onIcon={v => { set('icon', v); setIconTouched(true) }}
+          onClose={() => setPickIcon(false)} />
       )}
 
       {hasWhen && (<>
@@ -274,18 +312,233 @@ function ActionEditor({ action, categories, onSave, onCancel }) {
   )
 }
 
-export default function AiAssistant({ categories = [], tasks = [], onApply, onClose }) {
+// ── Icons for what the AI suggests ─────────────────────────────
+// The AI names a pictogram in a word or two ("tooth"); that, else the title,
+// else the notes, is matched against the icon set — so a new task arrives with
+// a real icon rather than just its first letter. You can change it in Edit.
+export function guessIcon(a) {
+  if (!a) return null
+  if (typeof a.icon === 'string' && (a.icon.startsWith('glyph:') || a.icon.startsWith('data:'))) return a.icon
+  return suggestGlyph(a.icon) || suggestGlyph(a.title) || suggestGlyph(String(a.description || '').slice(0, 300)) || null
+}
+export function decoratePlan(plan) {
+  if (!plan) return plan
+  const actions = (plan.actions || []).map(a => (a && a.kind === 'create') ? { ...a, icon: guessIcon(a) || '' } : a)
+  return { ...plan, actions }
+}
+
+// ── The queue, for React ───────────────────────────────────────
+export function useAssistantQueue() {
+  const [items, setItems] = useState(getQueue)
+  useEffect(() => {
+    const off = subscribe(setItems)
+    loadQueue().then(() => setItems(getQueue()))
+    return off
+  }, [])
+  return items
+}
+
+// What actually reads a queued request. Photos are kept as data URLs; the
+// base64 the AI needs is cut from them right before sending.
+export function runQueued(item, { categories = [], tasks = [] } = {}) {
+  return runAssistant(item.command.trim(), {
+    categories, tasks, today: item.today,
+    images: (item.photos || []).map(p => ({ data: dataUrlToBase64(p.url), mimeType: p.mimeType || 'image/jpeg' })).filter(p => p.data),
+    documents: (item.docs || []).map(d => d.data ? { name: d.name, mimeType: d.mimeType, data: d.data } : { name: d.name, text: d.text }),
+  })
+}
+
+function agoLabel(ms) {
+  const mins = Math.round((Date.now() - ms) / 60000)
+  if (mins < 1) return 'just now'
+  if (mins < 60) return `${mins} min ago`
+  const h = Math.round(mins / 60)
+  if (h < 24) return `${h} h ago`
+  return new Date(ms).toLocaleDateString('en-US', { month:'short', day:'numeric' })
+}
+
+const card = { background:'white', borderRadius:12, border:'1px solid var(--border)', padding:'12px 14px', marginBottom:8 }
+const small = { border:'1px solid var(--border)', background:'white', borderRadius:8, padding:'3px 9px', fontSize:12, fontWeight:600, cursor:'pointer', fontFamily:'DM Sans,sans-serif' }
+
+// One suggested change, read-only, with Edit and ✕.
+function ActionCard({ a, categories, titleOf, onEdit, onRemove }) {
+  const labelsOf = (ids) => (Array.isArray(ids) ? ids : []).map(id => (categories.find(c => c.id === id) || {}).label).filter(Boolean)
+  const chips = []
+  if (a.kind === 'event') {
+    const span = a.endDate && a.endDate !== a.startDate ? `${prettyDate(a.startDate)} → ${prettyDate(a.endDate)}` : prettyDate(a.startDate)
+    if (span) chips.push(span)
+    if (a.allDay === false) { if (a.startTime) chips.push(fmt12(a.startTime) + (a.endTime ? '–' + fmt12(a.endTime) : '')) }
+    else chips.push('all day')
+  } else {
+    if (a.date) chips.push(prettyDate(a.date))
+    if (a.time) chips.push(fmt12(a.time))
+    if (a.durationMins) chips.push(prettyDur(a.durationMins))
+  }
+  if (a.repeat) chips.push(describeRepeat(normalizeRepeat(a.repeat, a.date)))
+  labelsOf(a.categoryIds).forEach(l => chips.push(l))
+  const flag = a.needsDate ? (a.guessedToday ? 'Check the date — no date found, so it defaulted to today' : 'Needs a date — pick the day it falls on') : ''
+  const reminders = Array.isArray(a.reminders) ? a.reminders : []
+  const tint = a.color || (categories.find(c => c.id === (a.categoryIds || [])[0]) || {}).color || activeAccent()
+  const icon = a.kind === 'create' ? (a.icon || (categories.find(c => c.id === (a.categoryIds || [])[0]) || {}).icon || '') : ''
+  return (
+    <div style={card}>
+      <div style={{ display:'flex', gap:9, alignItems:'flex-start' }}>
+        {a.kind === 'create' && (
+          <button type="button" onClick={onEdit} aria-label="Change icon" title="Change icon"
+            style={{ width:30, height:30, borderRadius:9, background:tint, border:'none', padding:0, flexShrink:0, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', color:iconColorOn(tint) }}>
+            {icon ? <Icon value={icon} size={17} color={iconColorOn(tint)} /> : <span style={{ fontWeight:700, fontSize:14 }}>{((a.title || '').trim()[0] || '?').toUpperCase()}</span>}
+          </button>
+        )}
+        <div style={{ flex:1, minWidth:0, fontSize:13.5, fontWeight:600, color:'var(--text)', lineHeight:1.4, overflowWrap:'anywhere', paddingTop: a.kind === 'create' ? 5 : 0 }}>{headline(a, titleOf)}</div>
+        <div style={{ display:'flex', gap:5, flexShrink:0 }}>
+          <button type="button" onClick={onEdit} style={{ ...small, color:'var(--forest)' }}>Edit</button>
+          <button type="button" onClick={onRemove} aria-label="Remove this change" style={{ ...small, color:'var(--muted)' }}>✕</button>
+        </div>
+      </div>
+      {flag && (
+        <button type="button" onClick={onEdit}
+          style={{ marginTop:7, display:'block', textAlign:'left', fontSize:11.5, fontWeight:700, color:'#B4341F', background:'#FBEBE7', border:'1px solid #F3C6BC', borderRadius:8, padding:'4px 9px', cursor:'pointer', fontFamily:'DM Sans,sans-serif' }}>
+          ⚠ {flag} · tap to set it
+        </button>
+      )}
+      {chips.length > 0 && (
+        <div style={{ marginTop:7, display:'flex', flexWrap:'wrap', gap:6 }}>
+          {chips.map((c, j) => (
+            <span key={j} style={{ fontSize:11.5, fontWeight:600, color:'var(--forest)', background:'rgba(123,191,212,.16)', border:'1px solid rgba(123,191,212,.35)', borderRadius:8, padding:'2px 8px' }}>{c}</span>
+          ))}
+        </div>
+      )}
+      {a.description && (
+        <div style={{ marginTop:8, fontSize:12.5, color:'var(--muted)', lineHeight:1.5, whiteSpace:'pre-wrap', overflowWrap:'anywhere' }}>{a.description}</div>
+      )}
+      {Array.isArray(a.subtasks) && a.subtasks.length > 0 && (
+        <div style={{ marginTop:8, display:'flex', flexDirection:'column', gap:4 }}>
+          {a.subtasks.map((s, j) => (
+            <div key={j} style={{ display:'flex', alignItems:'flex-start', gap:7, fontSize:12.5, color:'var(--muted)' }}>
+              <span style={{ flexShrink:0, marginTop:1 }}>{s.done ? '☑' : '☐'}</span>
+              <span style={{ minWidth:0, overflowWrap:'anywhere' }}>{s.text}</span>
+            </div>
+          ))}
+        </div>
+      )}
+      {reminders.length === 0 && a.kind === 'create' && (
+        <div style={{ marginTop:8, fontSize:11.5, color:'var(--muted)', display:'flex', gap:6, alignItems:'center' }}>
+          <span style={{ opacity:.8 }}>🔔</span><span>Your default reminders: {defaultLeadsLabel()}</span>
+        </div>
+      )}
+      {reminders.length > 0 && (
+        <div style={{ marginTop:8, fontSize:11.5, color:'var(--muted)', display:'flex', flexWrap:'wrap', gap:6, alignItems:'center' }}>
+          <span style={{ opacity:.8 }}>🔔</span>
+          {reminders.map((m, j) => <span key={j} style={{ background:'#F3F2F6', border:'1px solid var(--border)', borderRadius:8, padding:'2px 7px' }}>{remindLabel(m)}</span>)}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// One request in the queue: what you sent, where it's at, and — once read —
+// its suggestions, each editable, with Accept and Delete for the lot.
+function QueueItem({ item, categories, titleOf, onAccept }) {
+  const [editingIdx, setEditingIdx] = useState(null)
+  const [open, setOpen] = useState(true)
+  const plan = item.plan || { summary: '', actions: [] }
+  const actions = plan.actions || []
+  const undated = actions.filter(a => a && a.needsDate).length
+  const ready = item.status === STATUS.READY
+  const working = item.status === STATUS.PENDING || item.status === STATUS.RUNNING
+  const canAccept = ready && actions.length > 0 && editingIdx === null && undated === 0
+
+  const setActions = (next) => updatePlan(item.id, { ...plan, actions: next })
+  const statusPill = working
+    ? { text: item.status === STATUS.RUNNING ? 'Reading…' : 'Waiting…', bg:'#EEF4FA', fg:'#2D5B78' }
+    : item.status === STATUS.ERROR ? { text:'Couldn’t read', bg:'#FEF3F2', fg:'#B42318' }
+    : { text: `${actions.length} suggestion${actions.length === 1 ? '' : 's'}`, bg:'rgba(62,156,134,.14)', fg:'var(--forest)' }
+
+  return (
+    <div data-testid="assistant-queue-item" data-status={item.status}
+      style={{ background:'#FBFAFD', border:'1px solid var(--border)', borderRadius:16, padding:12, marginBottom:12 }}>
+      <div style={{ display:'flex', gap:10, alignItems:'center', cursor: ready ? 'pointer' : 'default' }} onClick={() => ready && setOpen(o => !o)}>
+        {item.photos && item.photos[0]
+          ? <img src={item.photos[0].url} alt="" style={{ width:42, height:42, objectFit:'cover', borderRadius:9, border:'1px solid var(--border)', flexShrink:0, background:'white' }} />
+          : <span aria-hidden="true" style={{ width:42, height:42, borderRadius:9, background:'linear-gradient(135deg,#7BBFD4,#C8BFDF)', flexShrink:0, display:'flex', alignItems:'center', justifyContent:'center', fontSize:18 }}>{(item.docs || []).length ? '📄' : '✨'}</span>}
+        <div style={{ flex:1, minWidth:0 }}>
+          <div style={{ fontSize:13, fontWeight:700, color:'var(--text)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{itemLabel(item)}</div>
+          <div style={{ fontSize:11.5, color:'var(--muted)', marginTop:2 }}>
+            {agoLabel(item.createdAt)}{(item.photos || []).length > 1 ? ` · ${item.photos.length} photos` : ''}
+          </div>
+        </div>
+        <span style={{ fontSize:11, fontWeight:700, borderRadius:10, padding:'3px 9px', background:statusPill.bg, color:statusPill.fg, flexShrink:0, display:'inline-flex', alignItems:'center', gap:5 }}>
+          {working && <span className="aq-spin" aria-hidden="true" />}{statusPill.text}
+        </span>
+      </div>
+
+      {working && (
+        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginTop:10, gap:8 }}>
+          <span style={{ fontSize:11.5, color:'var(--muted)', lineHeight:1.45 }}>You can close this — I’ll let you know when the suggestions are ready.</span>
+          <button type="button" onClick={() => removeItem(item.id)} style={{ ...small, color:'#B42318', flexShrink:0 }}>Delete</button>
+        </div>
+      )}
+
+      {item.status === STATUS.ERROR && (<>
+        <div style={{ fontSize:12, color:'#B42318', background:'#FEF3F2', border:'1px solid #FECDCA', borderRadius:10, padding:'8px 11px', marginTop:10, lineHeight:1.45 }}>{item.error}</div>
+        <div style={{ display:'flex', gap:6, justifyContent:'flex-end', marginTop:8 }}>
+          <button type="button" onClick={() => removeItem(item.id)} style={{ ...small, color:'#B42318' }}>Delete</button>
+          <button type="button" onClick={() => retry(item.id)} style={{ ...small, color:'var(--forest)' }}>Try again</button>
+        </div>
+      </>)}
+
+      {ready && open && (<div style={{ marginTop:10 }}>
+        {plan.summary && <div style={{ fontSize:12.5, color:'var(--muted)', lineHeight:1.5, marginBottom:8 }}>{plan.summary}</div>}
+        {actions.length === 0
+          ? <div style={{ ...card, color:'var(--muted)', fontSize:13 }}>No changes to make.</div>
+          : actions.map((a, i) => editingIdx === i ? (
+              <div key={i} style={{ ...card, borderColor:'var(--forest)' }}>
+                <ActionEditor action={a} categories={categories}
+                  onSave={next => { setActions(actions.map((x, k) => k === i ? next : x)); setEditingIdx(null) }}
+                  onCancel={() => setEditingIdx(null)} />
+              </div>
+            ) : (
+              <ActionCard key={i} a={a} categories={categories} titleOf={titleOf}
+                onEdit={() => setEditingIdx(i)}
+                onRemove={() => { setActions(actions.filter((_, k) => k !== i)); setEditingIdx(null) }} />
+            ))}
+        {editingIdx !== null && <div style={{ fontSize:11.5, color:'var(--muted)', marginTop:4 }}>Tap Done on the change you’re editing to accept.</div>}
+        {editingIdx === null && undated > 0 && (
+          <div style={{ fontSize:11.5, color:'#B4341F', marginTop:4, lineHeight:1.45 }}>
+            Set a date for the {undated === 1 ? 'item' : `${undated} items`} marked ⚠ (or remove {undated === 1 ? 'it' : 'them'}) to accept — so nothing lands on the wrong day.
+          </div>
+        )}
+        <div style={{ display:'flex', gap:8, marginTop:10 }}>
+          <button type="button" onClick={() => removeItem(item.id)}
+            style={{ padding:'11px 14px', borderRadius:12, border:'1px solid var(--border)', background:'white', color:'#B42318', cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:600, fontSize:13.5 }}>Delete</button>
+          <button type="button" onClick={() => { if (canAccept) onAccept(item) }} disabled={!canAccept}
+            style={{ flex:1, padding:'11px', borderRadius:12, border:'none', background: canAccept ? 'var(--forest)' : '#E1E1E6', color: canAccept ? 'var(--green-light)' : '#9CA3AF', cursor: canAccept ? 'pointer' : 'default', fontFamily:'DM Sans,sans-serif', fontWeight:700, fontSize:14 }}>
+            {actions.length ? `Accept ${actions.length} change${actions.length > 1 ? 's' : ''}` : 'Accept'}
+          </button>
+        </div>
+      </div>)}
+    </div>
+  )
+}
+
+export default function AiAssistant({ categories = [], tasks = [], onApply, onClose, onView, initialView = 'new' }) {
+  const items = useAssistantQueue()
+  const [view, setView]       = useState(initialView === 'queue' ? 'queue' : 'new')
   const [command, setCommand] = useState('')
-  const [busy, setBusy]       = useState(false)
   const [err, setErr]         = useState('')
-  const [plan, setPlan]       = useState(null)   // { summary, actions }
-  const [editingIdx, setEditingIdx] = useState(null) // which planned action is open for editing
+  const [justQueued, setJustQueued] = useState(false)
+  const [confirmClear, setConfirmClear] = useState(false)
   const [photos, setPhotos]   = useState([])     // { id, url, data, mimeType }
   const [loadingPhotos, setLoadingPhotos] = useState(0)
   const [docs, setDocs]       = useState([])     // { id, name, kind, data?, mimeType?, text?, truncated? }
   const [loadingDocs, setLoadingDocs] = useState(0)
   const fileRef = useRef(null)
   const docRef = useRef(null)
+
+  // Looking at the queue is reading it: the ✨ badge settles.
+  const unseen = items.filter(it => it.status === STATUS.READY && !it.seen).length
+  useEffect(() => { if (view === 'queue' && unseen) markAllSeen() }, [view, unseen])
+  useEffect(() => { onView?.(view) }, [view])
 
   // Take photos from the picker, the camera, or a paste. Each is downscaled in
   // the browser (a full-res phone photo is far more than the model needs and
@@ -321,7 +574,8 @@ export default function AiAssistant({ categories = [], tasks = [], onApply, onCl
 
   // A syllabus or agenda as a file. A PDF is sent whole (the model reads it,
   // tables and scans included); a Word file is turned into text right here.
-  // The file itself never leaves the device any other way, and isn't saved.
+  // The file itself never leaves the device any other way, and isn't saved to
+  // your planner — only to this device's queue until you clear it.
   const addDocs = async (fileList) => {
     const files = Array.from(fileList || []).filter(Boolean)
     if (!files.length) return
@@ -363,39 +617,32 @@ export default function AiAssistant({ categories = [], tasks = [], onApply, onCl
   }
 
   const titleOf = (id) => (tasks.find(t => t.id === id) || {}).title
-  const labelsOf = (ids) => (Array.isArray(ids) ? ids : [])
-    .map(id => (categories.find(c => c.id === id) || {}).label)
-    .filter(Boolean)
 
   const canPlan = !!command.trim() || photos.length > 0 || docs.length > 0
   const preparing = loadingPhotos + loadingDocs
 
-  const plated = async () => {
-    if (!canPlan || busy || preparing) return
-    setBusy(true); setErr('')
-    try {
-      const res = await runAssistant(command.trim(), {
-        categories, tasks,
-        images: photos.map(p => ({ data: p.data, mimeType: p.mimeType })),
-        documents: docs.map(d => d.data ? { name: d.name, mimeType: d.mimeType, data: d.data } : { name: d.name, text: d.text }),
-      })
-      setPlan(res); setEditingIdx(null)
-    } catch (e) {
-      setErr((e && e.message) || 'Something went wrong.')
-    } finally { setBusy(false) }
+  // File the request and clear the box for the next one. The queue does the
+  // waiting, so you don't have to.
+  const plated = () => {
+    if (!canPlan || preparing) return
+    enqueue({ command: command.trim(), photos, docs })
+    setCommand(''); setPhotos([]); setDocs([]); setErr('')
+    setJustQueued(true)
+    setView('queue')
   }
 
-  const undated = plan ? plan.actions.filter(a => a && a.needsDate).length : 0
-  const canApply = !!plan && plan.actions.length > 0 && editingIdx === null && undated === 0
-  const apply = () => { if (canApply) { onApply(plan.actions); onClose() } }
+  const accept = (item) => {
+    onApply((item.plan && item.plan.actions) || [])
+    removeItem(item.id)
+    if (getQueue().length === 0) onClose()
+  }
 
-  const updateAction = (i, next) => { setPlan(p => ({ ...p, actions: p.actions.map((a, k) => k === i ? next : a) })); setEditingIdx(null) }
-  const removeAction = (i) => { setPlan(p => ({ ...p, actions: p.actions.filter((_, k) => k !== i) })); setEditingIdx(null) }
-
-  const card = { background:'white', borderRadius:12, border:'1px solid var(--border)', padding:'12px 14px', marginBottom:8 }
+  const working = items.filter(it => it.status === STATUS.PENDING || it.status === STATUS.RUNNING).length
+  const tab = (on) => ({ flex:1, padding:'8px 10px', borderRadius:10, border:'none', cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:700, fontSize:13,
+    background: on ? 'white' : 'transparent', color: on ? 'var(--text)' : 'var(--muted)', boxShadow: on ? '0 1px 4px rgba(20,40,60,.12)' : 'none' })
 
   return (
-    <div onClick={busy ? undefined : onClose}
+    <div onClick={onClose}
       style={{ position:'fixed', inset:0, background:'rgba(20,28,38,.5)', zIndex:640, display:'flex', alignItems:'flex-end', justifyContent:'center' }}>
       <div onClick={e => e.stopPropagation()}
         style={{ background:'#F3F2F6', borderRadius:'22px 22px 0 0', width:'100%', maxWidth:480, maxHeight:'92vh', overflowY:'auto', boxShadow:'0 -10px 44px rgba(20,40,60,.28)' }}>
@@ -408,12 +655,18 @@ export default function AiAssistant({ categories = [], tasks = [], onApply, onCl
           </div>
           <div style={{ fontSize:20, fontWeight:800, color:'#17313f', marginTop:8, fontFamily:'DM Sans,sans-serif' }}>✨ Tell me what to do</div>
           <div style={{ fontSize:12.5, color:'rgba(0,0,0,.62)', marginTop:4, lineHeight:1.5 }}>
-            Add a task, paste an event, add a photo of one, attach a syllabus or agenda (PDF or Word), or give an instruction about your existing tasks — I’ll show you the plan before anything changes.
+            Add a task, paste an event, add a photo of one, attach a syllabus or agenda (PDF or Word), or give an instruction about your existing tasks. It goes into your queue — close this anytime, and review the suggestions when they’re ready.
+          </div>
+          <div style={{ display:'flex', gap:4, marginTop:12, background:'rgba(255,255,255,.35)', borderRadius:12, padding:3 }}>
+            <button type="button" style={tab(view === 'new')} onClick={() => setView('new')}>New request</button>
+            <button type="button" style={tab(view === 'queue')} onClick={() => { setView('queue'); setJustQueued(false) }} data-testid="assistant-queue-tab">
+              Queue{items.length ? ` (${items.length})` : ''}{unseen && view !== 'queue' ? ' •' : ''}
+            </button>
           </div>
         </div>
 
         <div style={{ padding:'16px 14px calc(20px + env(safe-area-inset-bottom))' }}>
-          {!plan ? (<>
+          {view === 'new' ? (<>
             <div style={{ position:'relative' }}>
               <textarea value={command} onChange={e => setCommand(e.target.value)} onPaste={onPaste} autoFocus
                 placeholder={"e.g. Add the Aug 17 assignments to my Orgo task’s subtasks and check them off. Or: Dentist next Tue 3pm, bring insurance card. Or attach a syllabus below and say “just the exams and due dates”."}
@@ -432,19 +685,19 @@ export default function AiAssistant({ categories = [], tasks = [], onApply, onCl
               onChange={e => { addDocs(e.target.files); e.target.value = '' }} />
             <div style={{ display:'flex', alignItems:'center', gap:8, marginTop:10, flexWrap:'wrap' }}>
               <button type="button" onClick={() => fileRef.current?.click()}
-                disabled={busy || photos.length >= MAX_ASSISTANT_IMAGES}
+                disabled={photos.length >= MAX_ASSISTANT_IMAGES}
                 style={{ padding:'9px 14px', borderRadius:12, border:'1px solid var(--border)', fontFamily:'DM Sans,sans-serif', fontWeight:600, fontSize:13,
-                  background: (busy || photos.length >= MAX_ASSISTANT_IMAGES) ? '#EDEDF1' : 'white',
-                  color: (busy || photos.length >= MAX_ASSISTANT_IMAGES) ? '#9CA3AF' : 'var(--forest)',
-                  cursor: (busy || photos.length >= MAX_ASSISTANT_IMAGES) ? 'default' : 'pointer' }}>
+                  background: photos.length >= MAX_ASSISTANT_IMAGES ? '#EDEDF1' : 'white',
+                  color: photos.length >= MAX_ASSISTANT_IMAGES ? '#9CA3AF' : 'var(--forest)',
+                  cursor: photos.length >= MAX_ASSISTANT_IMAGES ? 'default' : 'pointer' }}>
                 📷 {photos.length ? 'Add another photo' : 'Add a photo'}
               </button>
               <button type="button" onClick={() => docRef.current?.click()}
-                disabled={busy || docs.length >= MAX_ASSISTANT_DOCS}
+                disabled={docs.length >= MAX_ASSISTANT_DOCS}
                 style={{ padding:'9px 14px', borderRadius:12, border:'1px solid var(--border)', fontFamily:'DM Sans,sans-serif', fontWeight:600, fontSize:13,
-                  background: (busy || docs.length >= MAX_ASSISTANT_DOCS) ? '#EDEDF1' : 'white',
-                  color: (busy || docs.length >= MAX_ASSISTANT_DOCS) ? '#9CA3AF' : 'var(--forest)',
-                  cursor: (busy || docs.length >= MAX_ASSISTANT_DOCS) ? 'default' : 'pointer' }}>
+                  background: docs.length >= MAX_ASSISTANT_DOCS ? '#EDEDF1' : 'white',
+                  color: docs.length >= MAX_ASSISTANT_DOCS ? '#9CA3AF' : 'var(--forest)',
+                  cursor: docs.length >= MAX_ASSISTANT_DOCS ? 'default' : 'pointer' }}>
                 📄 {docs.length ? 'Add another file' : 'Add a PDF or Word file'}
               </button>
               <span style={{ fontSize:11.5, color:'var(--muted)' }}>
@@ -463,8 +716,8 @@ export default function AiAssistant({ categories = [], tasks = [], onApply, onCl
                 {photos.map(p => (
                   <div key={p.id} style={{ position:'relative' }}>
                     <img src={p.url} alt="Attached" style={{ width:74, height:74, objectFit:'cover', borderRadius:10, border:'1px solid var(--border)', display:'block', background:'white' }} />
-                    <button type="button" onClick={() => removePhoto(p.id)} disabled={busy} aria-label="Remove photo"
-                      style={{ position:'absolute', top:-6, right:-6, width:22, height:22, borderRadius:'50%', border:'1px solid var(--border)', background:'white', color:'var(--muted)', fontSize:11, lineHeight:1, cursor: busy ? 'default' : 'pointer', boxShadow:'0 1px 4px rgba(20,40,60,.18)' }}>✕</button>
+                    <button type="button" onClick={() => removePhoto(p.id)} aria-label="Remove photo"
+                      style={{ position:'absolute', top:-6, right:-6, width:22, height:22, borderRadius:'50%', border:'1px solid var(--border)', background:'white', color:'var(--muted)', fontSize:11, lineHeight:1, cursor:'pointer', boxShadow:'0 1px 4px rgba(20,40,60,.18)' }}>✕</button>
                   </div>
                 ))}
               </div>
@@ -479,124 +732,52 @@ export default function AiAssistant({ categories = [], tasks = [], onApply, onCl
                       {d.kind === 'pdf' ? 'PDF' : d.kind === 'docx' ? 'DOC' : 'TXT'}
                     </span>
                     <span style={{ flex:1, minWidth:0, fontSize:13, color:'var(--text)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{d.name}</span>
-                    <button type="button" onClick={() => removeDoc(d.id)} disabled={busy} aria-label={`Remove ${d.name}`}
-                      style={{ width:24, height:24, flexShrink:0, borderRadius:'50%', border:'1px solid var(--border)', background:'white', color:'var(--muted)', fontSize:11, lineHeight:1, cursor: busy ? 'default' : 'pointer' }}>✕</button>
+                    <button type="button" onClick={() => removeDoc(d.id)} aria-label={`Remove ${d.name}`}
+                      style={{ width:24, height:24, flexShrink:0, borderRadius:'50%', border:'1px solid var(--border)', background:'white', color:'var(--muted)', fontSize:11, lineHeight:1, cursor:'pointer' }}>✕</button>
                   </div>
                 ))}
               </div>
             )}
 
             {err && <div style={{ fontSize:12, color:'#B42318', background:'#FEF3F2', border:'1px solid #FECDCA', borderRadius:10, padding:'9px 12px', marginTop:10, lineHeight:1.45 }}>{err}</div>}
-            <button onClick={plated} disabled={!canPlan || busy || preparing > 0}
+            <button onClick={plated} disabled={!canPlan || preparing > 0}
               style={{ width:'100%', marginTop:12, padding:'14px', borderRadius:14, border:'none',
-                background:(!canPlan||busy||preparing>0)?'#E1E1E6':'var(--forest)', color:(!canPlan||busy||preparing>0)?'#9CA3AF':'var(--green-light)',
-                cursor:(!canPlan||busy||preparing>0)?'default':'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:700, fontSize:15 }}>
-              {busy ? (docs.length ? 'Reading the document…' : photos.length ? 'Reading the photo…' : 'Thinking…') : 'Plan it'}
+                background:(!canPlan||preparing>0)?'#E1E1E6':'var(--forest)', color:(!canPlan||preparing>0)?'#9CA3AF':'var(--green-light)',
+                cursor:(!canPlan||preparing>0)?'default':'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:700, fontSize:15 }}>
+              Plan it
             </button>
             <div style={{ fontSize:10.5, color:'var(--muted)', marginTop:10, textAlign:'center', lineHeight:1.5 }}>
-              Uses a free AI model — your text, any photos or files you add, and a list of your task titles are sent to Google Gemini. Photos are shrunk on your phone first; a Word file is turned into text first. Neither is saved to your planner. Nothing changes until you review and tap Apply.
+              Uses a free AI model — your text, any photos or files you add, and a list of your task titles are sent to Google Gemini. Photos are shrunk on your phone first; a Word file is turned into text first. They wait in this device’s queue until you accept, delete, or clear them — never in your planner. Nothing changes until you tap Accept.
             </div>
           </>) : (<>
-            {/* Plan review */}
-            <div style={{ fontSize:14, fontWeight:700, color:'var(--text)', marginBottom:4 }}>Here’s the plan</div>
-            {plan.summary && <div style={{ fontSize:13, color:'var(--muted)', lineHeight:1.5, marginBottom:12 }}>{plan.summary}</div>}
-            {plan.actions.length === 0 ? (
-              <div style={{ ...card, color:'var(--muted)', fontSize:13 }}>No changes to make.</div>
-            ) : plan.actions.map((a, i) => {
-              const chips = []
-              if (a.kind === 'event') {
-                const span = a.endDate && a.endDate !== a.startDate
-                  ? `${prettyDate(a.startDate)} → ${prettyDate(a.endDate)}`
-                  : prettyDate(a.startDate)
-                if (span) chips.push(span)
-                if (a.allDay === false) {
-                  if (a.startTime) chips.push(fmt12(a.startTime) + (a.endTime ? '–' + fmt12(a.endTime) : ''))
-                } else {
-                  chips.push('all day')
-                }
-              } else {
-                if (a.date) chips.push(prettyDate(a.date))
-                if (a.time) chips.push(fmt12(a.time))
-                if (a.durationMins) chips.push(prettyDur(a.durationMins))
-              }
-              if (a.repeat) chips.push(describeRepeat(normalizeRepeat(a.repeat, a.date)))
-              labelsOf(a.categoryIds).forEach(l => chips.push(l))
-              const flag = a.needsDate
-                ? (a.guessedToday ? 'Check the date — no date found, so it defaulted to today' : 'Needs a date — pick the day it falls on')
-                : ''
-              const reminders = Array.isArray(a.reminders) ? a.reminders : []
-              if (editingIdx === i) return (
-                <div key={i} style={{ ...card, borderColor:'var(--forest)' }}>
-                  <ActionEditor action={a} categories={categories}
-                    onSave={next => updateAction(i, next)} onCancel={() => setEditingIdx(null)} />
-                </div>
-              )
-              const small = { border:'1px solid var(--border)', background:'white', borderRadius:8, padding:'3px 9px', fontSize:12, fontWeight:600, cursor:'pointer', fontFamily:'DM Sans,sans-serif' }
-              return (
-              <div key={i} style={card}>
-                <div style={{ display:'flex', gap:8, alignItems:'flex-start' }}>
-                  <div style={{ flex:1, minWidth:0, fontSize:13.5, fontWeight:600, color:'var(--text)', lineHeight:1.4, overflowWrap:'anywhere' }}>{headline(a, titleOf)}</div>
-                  <div style={{ display:'flex', gap:5, flexShrink:0 }}>
-                    <button type="button" onClick={() => setEditingIdx(i)} style={{ ...small, color:'var(--forest)' }}>Edit</button>
-                    <button type="button" onClick={() => removeAction(i)} aria-label="Remove this change" style={{ ...small, color:'var(--muted)' }}>✕</button>
-                  </div>
-                </div>
-                {flag && (
-                  <button type="button" onClick={() => setEditingIdx(i)}
-                    style={{ marginTop:7, display:'block', textAlign:'left', fontSize:11.5, fontWeight:700, color:'#B4341F', background:'#FBEBE7', border:'1px solid #F3C6BC', borderRadius:8, padding:'4px 9px', cursor:'pointer', fontFamily:'DM Sans,sans-serif' }}>
-                    ⚠ {flag} · tap to set it
-                  </button>
-                )}
-                {chips.length > 0 && (
-                  <div style={{ marginTop:7, display:'flex', flexWrap:'wrap', gap:6 }}>
-                    {chips.map((c, j) => (
-                      <span key={j} style={{ fontSize:11.5, fontWeight:600, color:'var(--forest)', background:'rgba(123,191,212,.16)', border:'1px solid rgba(123,191,212,.35)', borderRadius:8, padding:'2px 8px' }}>{c}</span>
-                    ))}
-                  </div>
-                )}
-                {a.description && (
-                  <div style={{ marginTop:8, fontSize:12.5, color:'var(--muted)', lineHeight:1.5, whiteSpace:'pre-wrap', overflowWrap:'anywhere' }}>{a.description}</div>
-                )}
-                {Array.isArray(a.subtasks) && a.subtasks.length > 0 && (
-                  <div style={{ marginTop:8, display:'flex', flexDirection:'column', gap:4 }}>
-                    {a.subtasks.map((s, j) => (
-                      <div key={j} style={{ display:'flex', alignItems:'flex-start', gap:7, fontSize:12.5, color:'var(--muted)' }}>
-                        <span style={{ flexShrink:0, marginTop:1 }}>{s.done ? '☑' : '☐'}</span>
-                        <span style={{ minWidth:0, overflowWrap:'anywhere' }}>{s.text}</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-                {reminders.length === 0 && a.kind === 'create' && (
-                  <div style={{ marginTop:8, fontSize:11.5, color:'var(--muted)', display:'flex', gap:6, alignItems:'center' }}>
-                    <span style={{ opacity:.8 }}>🔔</span>
-                    <span>Your default reminders: {defaultLeadsLabel()}</span>
-                  </div>
-                )}
-                {reminders.length > 0 && (
-                  <div style={{ marginTop:8, fontSize:11.5, color:'var(--muted)', display:'flex', flexWrap:'wrap', gap:6, alignItems:'center' }}>
-                    <span style={{ opacity:.8 }}>🔔</span>
-                    {reminders.map((m, j) => (
-                      <span key={j} style={{ background:'#F3F2F6', border:'1px solid var(--border)', borderRadius:8, padding:'2px 7px' }}>{remindLabel(m)}</span>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )})}
-            {editingIdx !== null && <div style={{ fontSize:11.5, color:'var(--muted)', marginTop:6 }}>Tap Done on the change you’re editing to apply.</div>}
-            {editingIdx === null && undated > 0 && (
-              <div style={{ fontSize:11.5, color:'#B4341F', marginTop:6, lineHeight:1.45 }}>
-                Set a date for the {undated === 1 ? 'item' : `${undated} items`} marked ⚠ (or remove {undated === 1 ? 'it' : 'them'}) to apply — so nothing lands on the wrong day.
+            {justQueued && working > 0 && (
+              <div style={{ fontSize:12.5, color:'#2D5B78', background:'#EEF4FA', border:'1px solid #CFE0EE', borderRadius:12, padding:'10px 12px', marginBottom:12, lineHeight:1.5 }}>
+                Added to your queue. Feel free to close this or leave the app — I’ll keep reading, and let you know when the suggestions are ready.
               </div>
             )}
-            <div style={{ display:'flex', gap:8, marginTop:14 }}>
-              <button onClick={()=>{ setPlan(null); setEditingIdx(null) }}
-                style={{ padding:'13px 16px', borderRadius:12, border:'1px solid var(--border)', background:'white', color:'var(--muted)', cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:600, fontSize:14 }}>Back</button>
-              <button onClick={apply} disabled={!canApply}
-                style={{ flex:1, padding:'13px', borderRadius:12, border:'none', background: canApply ? 'var(--forest)' : '#E1E1E6', color: canApply ? 'var(--green-light)' : '#9CA3AF', cursor: canApply ? 'pointer' : 'default', fontFamily:'DM Sans,sans-serif', fontWeight:700, fontSize:15 }}>
-                Apply {plan.actions.length ? `${plan.actions.length} change${plan.actions.length > 1 ? 's' : ''}` : ''}
-              </button>
-            </div>
+            {items.length === 0 ? (
+              <div style={{ textAlign:'center', color:'var(--muted)', fontSize:13, padding:'26px 10px', lineHeight:1.6 }}>
+                Your queue is empty.<br />
+                <button type="button" onClick={() => setView('new')} style={{ ...small, marginTop:10, color:'var(--forest)', padding:'7px 14px', fontSize:13 }}>＋ New request</button>
+              </div>
+            ) : (<>
+              <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:10 }}>
+                <span style={{ fontSize:12, color:'var(--muted)' }}>
+                  {[working ? `${working} reading` : '', items.length - working ? `${items.length - working} to review` : ''].filter(Boolean).join(' · ')}
+                </span>
+                {confirmClear ? (
+                  <span style={{ display:'inline-flex', gap:6 }}>
+                    <button type="button" onClick={() => setConfirmClear(false)} style={{ ...small, color:'var(--muted)' }}>Keep</button>
+                    <button type="button" onClick={() => { clearQueue(); setConfirmClear(false) }} style={{ ...small, color:'white', background:'#B42318', borderColor:'#B42318' }} data-testid="assistant-clear-confirm">Clear all {items.length}</button>
+                  </span>
+                ) : (
+                  <button type="button" onClick={() => setConfirmClear(true)} style={{ ...small, color:'#B42318' }} data-testid="assistant-clear">Clear queue</button>
+                )}
+              </div>
+              {[...items].reverse().map(it => (
+                <QueueItem key={it.id} item={it} categories={categories} titleOf={titleOf} onAccept={accept} />
+              ))}
+            </>)}
           </>)}
         </div>
       </div>

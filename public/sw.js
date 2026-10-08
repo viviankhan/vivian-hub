@@ -200,7 +200,9 @@ self.addEventListener('notificationclick', event => {
   event.waitUntil(
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(list => {
       for (const client of list) {
-        if ('focus' in client) { client.focus(); return }
+        // Already open: bring it forward and tell it where the tap pointed
+        // (e.g. ?assistant=queue opens the AI queue).
+        if ('focus' in client) { try { client.postMessage({ type: 'notification-click', url }) } catch {} client.focus(); return }
       }
       if (self.clients.openWindow) return self.clients.openWindow(url)
     })

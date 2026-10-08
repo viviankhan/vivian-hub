@@ -136,6 +136,8 @@ export function recurringFromTask(t, repeat, { id, today }) {
     durationMins: t.durationMins || null,
     startDate,
     endDate: r.endDate || null,
+    ...(t.icon ? { icon: t.icon } : {}),
+    ...(t.color ? { color: t.color } : {}),
   }
 }
 
@@ -222,7 +224,9 @@ export const MAX_ASSISTANT_IMAGES = 10
 // — the command is optional when at least one photo or document is attached.
 // Returns { summary, actions }. Throws an Error with a readable message on
 // failure. A valid-but-empty plan comes back as { summary, actions: [], error }.
-export async function runAssistant(command, { categories = [], tasks = [], images = [], documents = [] } = {}) {
+export async function runAssistant(command, { categories = [], tasks = [], images = [], documents = [], today = null } = {}) {
+  // A queued request answers relative to the day it was asked, not the day it ran.
+  const day = /^\d{4}-\d{2}-\d{2}$/.test(String(today || '')) ? today : todayStr()
   if (!ENDPOINT) throw new Error('The AI assistant needs your Supabase URL configured.')
   const photos = (images || [])
     .map(im => (typeof im === 'string' ? { data: im, mimeType: 'image/jpeg' } : { data: im?.data || '', mimeType: im?.mimeType || 'image/jpeg' }))
@@ -242,7 +246,7 @@ export async function runAssistant(command, { categories = [], tasks = [], image
       headers,
       body: JSON.stringify({
         command,
-        today: todayStr(),
+        today: day,
         categories: (categories || []).map(c => ({ id: c.id, label: c.label })),
         tasks: (tasks || []).slice(0, 150),
         images: photos,
@@ -270,6 +274,6 @@ export async function runAssistant(command, { categories = [], tasks = [], image
   let actions = applyRepeatDefaults(keepAskedReminders(filled.actions, command))
   let summary = data.summary || ''
   if (filled.added) summary += ` (+${filled.added} more appointment${filled.added > 1 ? 's' : ''} found on the screenshots.)`
-  if (photos.length || docs.length) actions = flagGuessedDates(mergeDuplicateItems(actions), { today: todayStr(), command })
+  if (photos.length || docs.length) actions = flagGuessedDates(mergeDuplicateItems(actions), { today: day, command })
   return { summary, actions }
 }

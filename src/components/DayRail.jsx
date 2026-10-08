@@ -52,7 +52,10 @@ import { savePhotos, deletePhoto, photoIds } from '../lib/photos.js'
 import {
   DEFAULT_ABSENCE_RULE, absenceLine, absenceLength, whenPhrase, buildCatchUp,
   makeStretch, daysAgoStart, STRETCH_CHOICES, streakPhrase,
+  activityIntervals, activityByDay, suggestStretch,
 } from '../lib/absence.js'
+import { getVisits } from '../lib/presence.js'
+import StretchCalendar from './StretchCalendar.jsx'
 import {
   dayKey, keyToDate, MOODS, moodMeta, selectableEmotions, makeEmotion, emotionMeta, EMOTION_PALETTE, checkinsForDay,
   DEFAULT_EFFECTS, POSITIVE_EFFECTS, makeEffect, EFFECT_COLORS, isActive, activeEpisode, startEpisode, endEpisode, setEpisodeNote,
@@ -443,7 +446,7 @@ export default function DayRail({
       dayCount: new Set(built.checkins.map(c => c.date)).size || span.days.length,
       released,
     }))
-    if (absence && span === absence) onResolveAbsence?.(absence.id)
+    if (absence && (span === absence || span.fromAbsence === absence.id)) onResolveAbsence?.(absence.id)
     setSheet(null); setMenu(false)
   }
   // "Not this time." The absence is marked answered so it is never raised
@@ -739,7 +742,7 @@ export default function DayRail({
           {sheet === 'catchup' && (
             <CatchUpSheet gap={absence} rule={rules} effects={effectList}
               onLog={logCatchUp} onSkip={absence ? dismissAbsence : closeAll} onCreateEffect={createEffect}
-              countWaiting={countWaiting} />
+              countWaiting={countWaiting} activity={activityIntervals({ visits: getVisits(), checkins })} />
           )}
           {sheet === 'status' && (
             <StatusSheet effects={effectList} episodes={episodes} byId={byId}
@@ -969,12 +972,24 @@ function MomentSheet({ onClose, onLog, timed, isToday, dayName, emotions: option
 // span it found, and opened by hand it asks how far back the streak goes. And
 // because coming back to a column of OVERDUE is the opposite of a way back in,
 // it offers — never assumes — to let go of what those days were still holding.
-function CatchUpSheet({ gap, rule, effects, onLog, onSkip, onCreateEffect, countWaiting }) {
+function CatchUpSheet({ gap, rule, effects, onLog, onSkip, onCreateEffect, countWaiting, activity = [] }) {
   const found = !!gap
-  // Hand-logged: how far back the streak goes, in days. The blob's own answer
-  // is exact, so it is kept exactly.
-  const [back, setBack] = useState(2)
-  const stretch = useMemo(() => (found ? gap : makeStretch(daysAgoStart(back), Date.now(), rule)), [found, gap, back, rule])
+  // When you were last around, for the calendar — and the stretch it suggests:
+  // the newest quiet gap long enough to count under your rule.
+  const nowRef = useRef(Date.now())
+  const byDay = useMemo(() => activityByDay(activity), [activity])
+  const suggestion = useMemo(() => suggestStretch(activity, { nowMs: nowRef.current, rule }), [activity, rule])
+  // Hand-logged: it opens on the suggestion (or the last three days when there
+  // is none), on a calendar where both ends can be moved. The blob's own
+  // answer is exact, so it is kept — unless you choose to adjust it.
+  const [back, setBack] = useState(suggestion ? null : 2)
+  const [custom, setCustom] = useState(() => (found ? null : (suggestion || { startMs: daysAgoStart(2), endMs: nowRef.current })))
+  const [adjusting, setAdjusting] = useState(!found)
+  const stretch = useMemo(() => {
+    if (custom) return { ...makeStretch(custom.startMs, custom.endMs, rule), fromAbsence: found ? gap.id : null }
+    return found ? gap : makeStretch(daysAgoStart(back ?? 2), Date.now(), rule)
+  }, [found, gap, back, rule, custom])
+  const endIsNow = Date.now() - stretch.endMs < 90000
   const days = stretch.days || []
   const multiDay = days.length > 1
   const r = { ...DEFAULT_ABSENCE_RULE, ...(rule || {}) }
@@ -995,7 +1010,7 @@ function CatchUpSheet({ gap, rule, effects, onLog, onSkip, onCreateEffect, count
   // that referred to days no longer on the sheet.
   useEffect(() => {
     setPicked(p => (Object.keys(p).length ? Object.fromEntries(Object.keys(p).map(id => [id, days.map(d => d.key)])) : p))
-  }, [stretch.startMs])
+  }, [stretch.startMs, stretch.endMs])
 
   const toggle = (id) => setPicked(p => {
     if (p[id]) { const { [id]: _drop, ...rest } = p; return rest }
@@ -1045,7 +1060,8 @@ function CatchUpSheet({ gap, rule, effects, onLog, onSkip, onCreateEffect, count
       {!found && (
         <div className="rail-backs">
           {STRETCH_CHOICES.map(c => (
-            <button key={c.days} className={`rail-back ${back === c.days ? 'on' : ''}`} onClick={() => setBack(c.days)}>
+            <button key={c.days} className={`rail-back ${back === c.days ? 'on' : ''}`}
+              onClick={() => { setBack(c.days); setCustom({ startMs: daysAgoStart(c.days), endMs: Date.now() }) }}>
               {c.label}
             </button>
           ))}
@@ -1055,11 +1071,21 @@ function CatchUpSheet({ gap, rule, effects, onLog, onSkip, onCreateEffect, count
           never does so without showing exactly which hours it means. */}
       <div className="rail-gap">
         <RewindClock size={18} />
-        <div>
-          <b>{found ? whenPhrase(stretch.startMs) : `Since ${whenPhrase(stretch.startMs)}`} → now</b>
-          <span>{found ? absenceLength(stretch, r) : fmtDuration(stretch.awayMins)}{multiDay ? ` · ${days.length} days` : ''}</span>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <b>{whenPhrase(stretch.startMs)} → {endIsNow ? 'now' : whenPhrase(stretch.endMs)}</b>
+          <span>{(found && !custom) ? absenceLength(stretch, r) : fmtDuration(stretch.awayMins)}{multiDay ? ` · ${days.length} days` : ''}</span>
         </div>
+        <button type="button" className="rail-gap-adjust" data-testid="stretch-adjust"
+          onClick={() => { if (!custom) setCustom({ startMs: stretch.startMs, endMs: stretch.endMs }); setAdjusting(a => !a) }}>
+          {adjusting ? 'Done' : 'Change'}
+        </button>
       </div>
+      {adjusting && (
+        <StretchCalendar value={{ startMs: stretch.startMs, endMs: stretch.endMs }} byDay={byDay}
+          suggestion={found ? { startMs: gap.startMs, endMs: gap.endMs } : suggestion}
+          nowMs={Date.now()}
+          onChange={(v) => { setBack(null); setCustom(v) }} />
+      )}
 
       <div className="rail-gap-ask">What were you carrying?</div>
       <div className="rail-conds">

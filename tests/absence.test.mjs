@@ -164,5 +164,35 @@ eq('nonsense falls back to the defaults',
 eq('an absurd threshold is clamped, not honoured', A.normalizeRule({ hours: 9999 }).hours, 168)
 eq('an empty rule is the default rule', A.normalizeRule(null), A.DEFAULT_ABSENCE_RULE)
 
+console.log('\n— picking a stretch on the calendar: when you were last around —')
+{
+  const visits = [
+    [at(2026, 3, 2, 9), at(2026, 3, 2, 11)],
+    [at(2026, 3, 2, 10, 30), at(2026, 3, 2, 12)],     // overlaps: one sitting
+    [at(2026, 3, 3, 14), at(2026, 3, 3, 15)],
+    [at(2026, 3, 9, 10), at(2026, 3, 9, 10, 20)],     // back after six days
+  ]
+  const checkins = [
+    { ts: new Date(at(2026, 3, 3, 18)).toISOString() },              // made at the time
+    { ts: new Date(at(2026, 3, 5, 12)).toISOString(), via: 'absence' }, // written afterwards
+  ]
+  const iv = A.activityIntervals({ visits, checkins })
+  eq('overlapping visits join; a backfilled check-in is not evidence',
+    iv, [[at(2026, 3, 2, 9), at(2026, 3, 2, 12)], [at(2026, 3, 3, 14), at(2026, 3, 3, 15)], [at(2026, 3, 3, 18), at(2026, 3, 3, 18)], [at(2026, 3, 9, 10), at(2026, 3, 9, 10, 20)]])
+  const byDay = A.activityByDay(iv)
+  eq('minutes per day', [byDay.get('2026-03-02').mins, byDay.get('2026-03-03').mins, byDay.has('2026-03-05')], [180, 60, false])
+  const now = at(2026, 3, 9, 10, 20)
+  eq('suggests the last time seen → the moment you came back',
+    A.suggestStretch(iv, { nowMs: now, rule: RULE }), { startMs: at(2026, 3, 3, 18), endMs: at(2026, 3, 9, 10) })
+  eq('nothing to go on → no suggestion', A.suggestStretch([], { nowMs: now, rule: RULE }), null)
+  // Only short gaps: the longest one is offered rather than nothing.
+  const busy = [[at(2026, 3, 9, 9), at(2026, 3, 9, 10)], [at(2026, 3, 9, 13), at(2026, 3, 9, 14)]]
+  eq('no gap long enough → the longest there is',
+    A.suggestStretch(busy, { nowMs: at(2026, 3, 9, 14), rule: RULE }), { startMs: at(2026, 3, 9, 10), endMs: at(2026, 3, 9, 13) })
+  // A hand-chosen end in the past is kept, not stretched to now.
+  const st = A.makeStretch(at(2026, 3, 3, 18), at(2026, 3, 5, 9), RULE)
+  eq('a chosen end is honoured', [st.endMs, st.days.map(d => d.key)], [at(2026, 3, 5, 9), ['2026-03-03', '2026-03-04', '2026-03-05']])
+}
+
 console.log(`\n${pass} passed, ${fail} failed\n`)
 process.exit(fail ? 1 : 0)
