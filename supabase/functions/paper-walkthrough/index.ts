@@ -86,9 +86,9 @@ Sections:
 - "heading" is a short plain phrase (no numbering).
 
 Figures:
-- For a section whose point is best seen in one of the paper's figures, set "figure" to
+- The listener cannot see the paper, so the figures must be talked through. Every main figure in the paper (and any key table) goes with the one section that discusses it: set that section's "figure" to
   {"page": <1-based PDF page number>, "box_2d": [ymin, xmin, ymax, xmax], "caption": ""}
-  otherwise leave it null.
+  A paper with figures should have a figure on most sections. Leave "figure" null only where no figure fits, or the paper has none.
 - "box_2d" is the region of that page holding the figure itself (all of its panels and axis labels), normalized to 0-1000, with [0,0] the top-left of the page. Exclude the printed figure legend text and the running page header or footer.
 - Use each figure at most once. Only point at real figures or tables that appear in the PDF; never invent one.
 - "caption" is a spoken walkthrough of the figure for a listener who cannot see it, ${FIGURE_STYLE}
@@ -137,14 +137,18 @@ function normalize(o: any) {
     sections: o.sections.slice(0, 12).map((s: any) => {
       let figure = null
       const f = s?.figure
-      if (f && Number.isFinite(Number(f.page)) && Array.isArray(f.box_2d) && f.box_2d.length === 4) {
-        const [y0, x0, y1, x1] = f.box_2d.map(clamp)
+      const box = Array.isArray(f?.box_2d) ? f.box_2d : f?.box
+      if (f && Number.isFinite(Number(f.page)) && Array.isArray(box) && box.length === 4) {
+        const [y0, x0, y1, x1] = box.map(clamp)
         const key = `${f.page}:${Math.round(y0 / 50)}:${Math.round(x0 / 50)}`
         if (y1 - y0 > 40 && x1 - x0 > 40 && !seenFig.has(key)) {
           seenFig.add(key)
           figure = { page: Math.max(1, Math.round(Number(f.page))), box: [y0, x0, y1, x1], caption: str(f.caption) }
         }
       }
+      // No usable box: the image can't be cut out, but the description is
+      // still read aloud, so keep it.
+      if (!figure && str(f?.caption)) figure = { caption: str(f.caption) }
       return { heading: str(s?.heading), body: str(s?.body).replace(/\r\n/g, '\n'), figure }
     }).filter((s: any) => s.body),
     terms: (Array.isArray(o.terms) ? o.terms : [])
@@ -207,9 +211,12 @@ async function generateWalkthrough(pdf: string): Promise<Walk> {
     },
   })
 
-  let data: any = null
   let lastStatus = 0
   let lastDetail = ''
+  // Set when a model answered but not with a usable walkthrough. The next
+  // model is tried then too, and this is what is reported if none does better.
+  let badReply = ''
+  let badCount = 0
   for (const model of await modelsToTry()) {
     const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(GEMINI_KEY)}`
     let r: Response
@@ -223,24 +230,37 @@ async function generateWalkthrough(pdf: string): Promise<Walk> {
     } catch (e) {
       return fail(502, `Couldn't reach the AI service: ${(e as Error)?.message || e}`)
     }
-    if (r.ok) { data = await r.json().catch(() => null); lastGood = model; break }
-    lastStatus = r.status
-    lastDetail = await r.text().catch(() => '')
-    if (r.status === 400 && /API key not valid/i.test(lastDetail)) return fail(502, 'The Gemini API key is invalid. Set a valid GEMINI_API_KEY secret and redeploy.')
-    if (r.status === 403) return fail(502, 'Gemini access is blocked for this key (403).', lastDetail)
-    // 404 / 429 / 5xx / a 400 for an option an older model lacks: next model.
+    if (!r.ok) {
+      lastStatus = r.status
+      lastDetail = await r.text().catch(() => '')
+      if (r.status === 400 && /API key not valid/i.test(lastDetail)) return fail(502, 'The Gemini API key is invalid. Set a valid GEMINI_API_KEY secret and redeploy.')
+      if (r.status === 403) return fail(502, 'Gemini access is blocked for this key (403).', lastDetail)
+      // 404 / 429 / 5xx / a 400 for an option an older model lacks: next model.
+      continue
+    }
+    const data: any = await r.json().catch(() => null)
+    const out = readWalkthrough(data)
+    if (out.ok) { lastGood = model; return { ok: true, value: normalize(out.value) } }
+    badReply = out.why
+    console.warn(`paper-walkthrough: ${model} gave no usable walkthrough: ${out.why} ${out.raw.slice(0, 200)}`)
+    lastDetail = out.raw
+    // A whole PDF is slow to read; two tries is all the time limit allows.
+    if (++badCount >= 2) break
   }
-  if (!data) {
-    if ([429, 500, 502, 503].includes(lastStatus)) return fail(503, 'The AI models are busy right now. Try again in a minute.', lastDetail)
-    if (lastStatus === 404) return fail(502, 'None of the Gemini models this key can use were found. Check the GEMINI_API_KEY secret is a Google AI Studio key.', lastDetail)
-    return fail(502, `AI service error (${lastStatus}).`, lastDetail)
-  }
+  if (badReply) return fail(502, badReply, lastDetail)
+  if ([429, 500, 502, 503].includes(lastStatus)) return fail(503, 'The AI models are busy right now. Try again in a minute.', lastDetail)
+  if (lastStatus === 404) return fail(502, 'None of the Gemini models this key can use were found. Check the GEMINI_API_KEY secret is a Google AI Studio key.', lastDetail)
+  return fail(502, `AI service error (${lastStatus}).`, lastDetail)
+}
 
-  const parts: any[] = data?.candidates?.[0]?.content?.parts || []
+// A Gemini reply → the walkthrough object, or why it isn't one.
+function readWalkthrough(data: any): { ok: true; value: any } | { ok: false; why: string; raw: string } {
+  const cand = data?.candidates?.[0]
+  const parts: any[] = cand?.content?.parts || []
   const raw = parts.filter(p => typeof p?.text === 'string' && !p.thought).map(p => p.text).join('')
   if (!raw) {
-    const blocked = data?.promptFeedback?.blockReason
-    return fail(502, blocked ? `The AI declined this PDF (${blocked}).` : 'The AI returned nothing usable.')
+    const blocked = data?.promptFeedback?.blockReason || (/SAFETY|RECITATION|PROHIBITED|BLOCK/.test(cand?.finishReason || '') && cand.finishReason)
+    return { ok: false, why: blocked ? `The AI declined this PDF (${blocked}).` : 'The AI returned nothing usable. Try again.', raw: '' }
   }
   const cleaned = raw.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim()
   let out: any
@@ -248,9 +268,17 @@ async function generateWalkthrough(pdf: string): Promise<Walk> {
     const m = cleaned.match(/\{[\s\S]*\}/)
     try { out = m ? JSON.parse(m[0]) : null } catch { out = null }
   }
-  if (!out || !Array.isArray(out.sections) || !out.sections.length) return fail(502, 'The AI did not return a walkthrough. Try again.')
-
-  return { ok: true, value: normalize(out) }
+  // Some models wrap the object in an array or under a key of their own.
+  const find = (o: any, depth = 0): any => {
+    if (!o || typeof o !== 'object' || depth > 3) return null
+    if (Array.isArray(o.sections) && o.sections.length) return o
+    for (const v of Array.isArray(o) ? o : Object.values(o)) { const hit = find(v, depth + 1); if (hit) return hit }
+    return null
+  }
+  const found = find(out)
+  if (found) return { ok: true, value: found }
+  const cut = cand?.finishReason === 'MAX_TOKENS'
+  return { ok: false, why: cut ? 'The walkthrough was cut off before it finished. Try again.' : 'The AI did not return a walkthrough. Try again.', raw: cleaned.slice(0, 300) }
 }
 
 // ── Background mode: read a stored PDF with nobody waiting ──────
