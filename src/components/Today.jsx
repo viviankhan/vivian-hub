@@ -2730,7 +2730,16 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
             out.push(
               bb({ ...s, id:s.id+':nt', end:now, roundBottom:false }, true),
               <NowMarker key={'now-'+s.id} now={now} bandTint={s.color} bandOpacity={BLOCK_FILM_OPACITY} outerTints={s.outer} />,
-              bb({ ...s, id:s.id+':nb', start:now, roundTop:false, label:null }, false),
+              bb({ ...s, id:s.id+':nb', start:now, roundTop:false, label:null, showMenu:false }, false),
+            )
+          } else if (wantNow && !nowState.done && !s.collapsed && now === s.start && s.end > s.start) {
+            // "Now" right at the segment's top (e.g. the minute a task inside the
+            // block ends and its empty tail begins) — the line goes above it, not
+            // after the whole stretch. On a block's true top it stays outside the film.
+            nowState.done = true
+            out.push(
+              <NowMarker key={'now-'+s.id} now={now} bandTint={s.roundTop ? null : s.color} bandOpacity={BLOCK_FILM_OPACITY} outerTints={s.roundTop ? null : s.outer} />,
+              bb(s, true),
             )
           } else {
             out.push(bb(s, true))

@@ -406,6 +406,38 @@ eq('and it unticks again', await studyCheck().getAttribute('aria-pressed'), 'fal
 
 eq('no uncaught errors', errors, [])
 
+// ── "Now" the minute a task inside a block ends ────────────────
+// The block's empty tail starts at exactly now; the now-line has to sit at the
+// top of that tail, not below the whole stretch (which left the finished task
+// looking stranded above an empty block).
+console.log('\n— now at the very start of a block’s empty tail —')
+{
+  const clockPage = await ctx.newPage()
+  await clockPage.clock.install({ time: new Date('2026-10-08T16:00:00') })
+  await clockPage.goto(URL_, { waitUntil: 'networkidle' })
+  await clockPage.evaluate(() => {
+    const d = {
+      commitments: [{ id:'c-cls', text:'Class', date:'2026-10-08', time:'14:00', durationMins:120, cat:'class', done:false }],
+      commitment_meta: {},
+      recurring_tasks_v2: [{ id:'r-work', label:'9:30 AM — Work', days:[], startDate:null }],
+      recurring_meta: { 'r-work': { block:true, color:'#D9C7EE', durationMins:510, freq:'daily' } },
+      recurring_exceptions: {}, completions: {},
+    }
+    for (const [k, v] of Object.entries(d)) localStorage.setItem('vivian_' + k, JSON.stringify(v))
+  })
+  await clockPage.reload({ waitUntil: 'networkidle' })
+  await clockPage.waitForSelector('[data-task-row="c-cls"]')
+  const [rowBottom, nowTop, addHint] = await clockPage.evaluate(() => {
+    const row = document.querySelector('[data-task-row="c-cls"]').getBoundingClientRect()
+    const now = document.querySelector('[data-now-nodule]').getBoundingClientRect()
+    const hint = [...document.querySelectorAll('span')].find(s => s.textContent.includes('Add a task in this block')).getBoundingClientRect()
+    return [row.bottom, now.top, hint.top]
+  })
+  eq('the now-line sits right under the class', nowTop - rowBottom < 40, true)
+  eq('above the empty rest of the block', nowTop < addHint, true)
+  await clockPage.close()
+}
+
 await browser.close()
 server.close()
 console.log(`\n${pass} passed, ${fail} failed`)
