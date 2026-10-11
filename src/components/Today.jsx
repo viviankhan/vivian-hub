@@ -1389,9 +1389,10 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
   // An event with something scheduled inside it becomes a block for the day,
   // so what's inside nests in it (see lib/autoBlocks.js). Read off the day as
   // it stands — including any times moved for just today.
+  const inRoutine = (x) => !!x.routine && (routines || []).some(r => r.id === x.routine)
   const autoBlocks = autoBlockIds([
-    ...todayCommitments.filter(c => c.time).map(c => ({ id:c.id, start:blockStart(c.id, hhmmToMins(c.time)), dur:c.durationMins || 0, block:!!c.block })),
-    ...templateTodos.filter(o => o._time).map(o => ({ id:o.id, start:blockStart(o.id, hhmmToMins(o._time)), dur:o._dur || 0, block:!!o.block })),
+    ...todayCommitments.filter(c => c.time).map(c => ({ id:c.id, start:blockStart(c.id, hhmmToMins(c.time)), dur:c.durationMins || 0, block:!!c.block, inRoutine:inRoutine(c) })),
+    ...templateTodos.filter(o => o._time).map(o => ({ id:o.id, start:blockStart(o.id, hhmmToMins(o._time)), dur:o._dur || 0, block:!!o.block, inRoutine:inRoutine(o) })),
   ])
   const isBlockLike = (x) => !!x.block || autoBlocks.has(x.id)
   const blocks = [

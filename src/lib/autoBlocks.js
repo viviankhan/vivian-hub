@@ -8,14 +8,19 @@
 // Russian-doll style. It's worked out fresh from the day's schedule each time
 // rather than saved, so it undoes itself the moment the inner event moves out
 // or is deleted, and the event itself is never rewritten.
+//
+// Steps of a routine (Sleep Tight at 10:30 in the night routine) sit out of
+// this both ways: they're filed under their routine, not nested by time, so one
+// landing inside an evening event would turn it into a block with nothing
+// visible in it.
 // ─────────────────────────────────────────────────────────────
 
-// items: [{ id, start (minutes), dur (minutes, 0 for a point in time), block }]
+// items: [{ id, start (minutes), dur (minutes, 0 for a point in time), block, inRoutine }]
 // Returns the ids of the plain events (not already blocks) that wholly contain
 // a strictly shorter event. Two events of the same length never swallow each
 // other; one that only partly overlaps another is left alone.
 export function autoBlockIds(items) {
-  const timed = (items || []).filter(x => x && x.id != null && Number.isFinite(x.start))
+  const timed = (items || []).filter(x => x && x.id != null && Number.isFinite(x.start) && !x.inRoutine)
   const out = new Set()
   for (const c of timed) {
     const cDur = c.dur || 0

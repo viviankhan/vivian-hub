@@ -35,6 +35,10 @@ eq('an event inside a real block does not change',
   ids([ev('work', 540, 480, true), ev('study', 720, 120)]), [])
 eq('an event with no duration never becomes a block',
   ids([ev('a', 540, 0), ev('b', 540, 0)]), [])
+eq('a routine step inside an event does not make it a block',
+  ids([ev('dance', 1310, 80), { ...ev('sleep', 1350, 0), inRoutine:true }]), [])
+eq('a routine step never becomes a block itself',
+  ids([{ ...ev('walk', 1110, 30), inRoutine:true }, ev('call', 1115, 5)]), [])
 eq('untimed items are ignored',
   ids([ev('a', 540, 60), { id:'b', start:null, dur:0 }]), [])
 
