@@ -1483,7 +1483,14 @@ export default function App() {
   const adoptImportedEvent = useCallback((span, dateStr, timeHHMM, durationMins) => {
     const key = importedKey(span)
     if (importedAdoptions[key]) return
-    const cid = 'c-imp-' + Date.now().toString(36)
+    // Random tail: "Spread out" adopts a whole pile in one tick, and a bare
+    // timestamp would hand every one of them the same id.
+    const cid = 'c-imp-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7)
+    // A copy placed on a different day than the original says when it's
+    // really due, so the deadline is never lost.
+    const due = dateStr !== span.startDate && span.startDate
+      ? ' · due ' + new Date(span.startDate + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
+      : ''
     addCommitment({
       id: cid,
       text: (span.label || 'Busy').trim(),
@@ -1497,7 +1504,7 @@ export default function App() {
       // Note where it came from. This must be `description` (kept in the meta
       // blob), NOT `note` — `commitments` has no `note` column, so passing one
       // makes the cloud insert fail ("could not find the 'note' column").
-      description: span.calendarName ? `From ${span.calendarName}` : 'From a subscribed calendar',
+      description: (span.calendarName ? `From ${span.calendarName}` : 'From a subscribed calendar') + due,
       createdAt: new Date().toISOString(),
     })
     markImportedAdopted(key, cid)

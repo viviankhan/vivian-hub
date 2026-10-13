@@ -8,7 +8,7 @@ import { iconColorOn } from '../lib/glyphs.jsx'
 import RecurringFilter from './RecurringFilter.jsx'
 import { getRecurringFilter, RECURRING_FILTER_EVENT, visibleRecurring } from '../lib/viewFilter.js'
 import CalendarLegend from './CalendarLegend.jsx'
-import { importedKey, assumedDuration, isTimed } from '../lib/importedTasks.js'
+import { importedKey, assumedDuration, isTimed, courseOf, spreadGroupKey, planSpread } from '../lib/importedTasks.js'
 
 // Shading for how busy a day is (number of events on it). Derived from the
 // active theme accent (var(--teal)) via color-mix — a light→accent wash — so it
@@ -50,6 +50,10 @@ export default function Calendar({ commitments, vacations, events, log, categori
   const [adding, setAdding] = useState(false)
   const [editing, setEditing] = useState(null)
   const [editingRec, setEditingRec] = useState(null)  // recurring template being edited
+  // "Spread out": which day+class pile has its start-date picker open, and the
+  // start date chosen in it.
+  const [spreading, setSpreading] = useState(null)
+  const [spreadStart, setSpreadStart] = useState('')
   const [editingRecDate, setEditingRecDate] = useState(null)  // occurrence date for single-event edits
   // Which repeating groups / everyday habits show here (synced with the Week view).
   const [recFilter, setRecFilter] = useState(getRecurringFilter)
@@ -279,6 +283,29 @@ export default function Calendar({ commitments, vacations, events, log, categori
   // Multi-day events covering a given date (for the colored bands + detail).
   const eventsOn = (dateStr) => (events || []).filter(ev => dateStr >= ev.startDate && dateStr <= ev.endDate)
   const selectedSpans = selected ? eventsOn(selected) : []
+  // Piles worth spreading: two or more imported items from the same class, due
+  // on the selected day, not yet ticked off or added to the schedule. Only for
+  // a day still ahead, since there have to be days before it to spread onto.
+  const spreadGroups = (() => {
+    if (!selected || selected <= today || !adoptImportedEvent) return []
+    const groups = new Map()
+    for (const ev of selectedSpans) {
+      if (!ev.external || ev.startDate !== selected) continue
+      const k = importedKey(ev)
+      if (importedAdoptions[k] || todos?.[k] || weekState?.[k]) continue
+      const g = spreadGroupKey(ev)
+      if (!groups.has(g)) groups.set(g, { key: g, name: courseOf(ev) || ev.calendarName || 'Subscribed calendar', color: ev.color, spans: [] })
+      groups.get(g).spans.push(ev)
+    }
+    return [...groups.values()].filter(g => g.spans.length >= 2)
+  })()
+  const spreadOut = (group) => {
+    const start = spreadStart && spreadStart < selected ? spreadStart : today
+    for (const { span, date } of planSpread(group.spans, start, selected)) {
+      adoptImportedEvent(span, date, null, assumedDuration({ ...span, startTime: null }))
+    }
+    setSpreading(null)
+  }
 
   return (
     <div>
@@ -389,6 +416,39 @@ export default function Calendar({ commitments, vacations, events, log, categori
           {/* Multi-day events covering this day. Subscribed-calendar events can be
               ticked off (a real completion, reflected everywhere) or added into
               your own schedule as a commitment you can then move around. */}
+          {/* A class that piled several items onto this one due date: adopt them
+              all as your own tasks, spaced out over the days before it. */}
+          {spreadGroups.map(g => {
+            const open = spreading === selected + '|' + g.key
+            return (
+            <div key={'spread'+g.key} style={{ padding:'10px 12px', borderRadius:10, marginBottom:8, background:`${g.color}10`, border:`1px dashed ${g.color}88` }}>
+              <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+                <div style={{ flex:1, minWidth:0, fontSize:12.5, color:'var(--text)', lineHeight:1.4 }}>
+                  <b>{g.spans.length} {g.name}</b> items are all due this day.
+                </div>
+                {!open && (
+                  <button onClick={() => { setSpreading(selected + '|' + g.key); setSpreadStart(today) }}
+                    style={{ fontSize:11, padding:'5px 11px', borderRadius:14, border:`1px solid ${g.color}`, background:'white', color:g.color, cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:700, flexShrink:0, whiteSpace:'nowrap' }}>Spread out</button>
+                )}
+              </div>
+              {open && (
+                <div style={{ display:'flex', flexWrap:'wrap', alignItems:'center', gap:8, marginTop:9 }}>
+                  <label style={{ fontSize:12, color:'var(--muted)', display:'flex', alignItems:'center', gap:6 }}>
+                    Start
+                    <input type="date" value={spreadStart} min={today} max={selected} onChange={e => setSpreadStart(e.target.value)}
+                      style={{ fontSize:12, padding:'4px 6px', borderRadius:7, border:'1px solid var(--border)', fontFamily:'DM Sans,sans-serif' }} />
+                  </label>
+                  <button onClick={() => spreadOut(g)}
+                    style={{ fontSize:11, padding:'5px 11px', borderRadius:14, border:'none', background:g.color, color:iconColorOn(g.color), cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:700 }}>Spread {g.spans.length} tasks</button>
+                  <button onClick={() => setSpreading(null)}
+                    style={{ fontSize:11, padding:'5px 9px', borderRadius:14, border:'1px solid var(--border)', background:'white', color:'var(--muted)', cursor:'pointer', fontFamily:'DM Sans,sans-serif' }}>Cancel</button>
+                  <div style={{ flexBasis:'100%', fontSize:11, color:'var(--muted)', lineHeight:1.45 }}>
+                    Each one becomes a task of yours, spaced out from the start date to this day. The Canvas originals stay here so you still see the real deadline.
+                  </div>
+                </div>
+              )}
+            </div>
+          )})}
           {selectedSpans.map((ev, i) => {
             const impKey = ev.external ? importedKey(ev) : null
             const impDone = impKey ? !!(todos?.[impKey] || weekState?.[impKey]) : false

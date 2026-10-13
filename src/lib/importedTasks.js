@@ -113,3 +113,62 @@ export function buildImportedRows(spans, dateStr, occupied = [], nowMins = null)
     }
   })
 }
+
+// ── Spreading a pile-up out ───────────────────────────────────
+// A class calendar (Canvas especially) often dumps a whole unit's work on one
+// due date. "Spread out" adopts each of those items as a commitment of your own
+// and places the copies on the days leading up to the deadline, so the work is
+// paced instead of piled. The feed itself is never touched: the originals stay
+// on their real due date (shown as "Added"), so the deadline is still visible.
+
+// The course an imported item belongs to. Canvas ends each title with the
+// course in brackets ("Problem Set 4 [CHEM 2420 Organic Chemistry II]"); other
+// feeds have no tag, so they group by calendar alone.
+export function courseOf(span) {
+  const m = /\[([^\[\]]+)\]\s*$/.exec((span && span.label) || '')
+  return m ? m[1].trim() : ''
+}
+// The group a "Spread out" button acts on: one course within one calendar.
+export function spreadGroupKey(span) {
+  return `${(span && span.calendarId) || ''}|${courseOf(span)}`
+}
+
+function addDays(dateStr, n) {
+  const d = new Date(dateStr + 'T12:00:00')
+  d.setDate(d.getDate() + n)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+function daysBetween(a, b) {
+  return Math.round((new Date(b + 'T12:00:00') - new Date(a + 'T12:00:00')) / 86400000)
+}
+
+// Dates for `count` items spread evenly from `startDate` through `dueDate`,
+// earliest first. The last item lands on the due date itself and the rest are
+// spaced out before it. With room to spare the start day is left free; with
+// more items than days every day is used and some get more than one.
+// A start on or after the due date leaves nothing to spread: every item stays
+// on the due date.
+export function spreadDates(startDate, dueDate, count) {
+  if (!count || count < 1) return []
+  const span = startDate ? daysBetween(startDate, dueDate) : 0
+  if (!(span > 0)) return Array(count).fill(dueDate)
+  const out = []
+  for (let i = 0; i < count; i++) {
+    // Room to spare: skip the start day and space evenly up to the deadline.
+    // Tight on days: use the start day too, so no day doubles up needlessly.
+    const offset = count <= span
+      ? Math.round(((i + 1) * span) / count)
+      : Math.floor((i * (span + 1)) / count)
+    out.push(addDays(startDate, offset))
+  }
+  return out
+}
+
+// Which items to spread and where each one goes. Items keep the feed's order
+// (by time, then title), so whatever the class lists first is started first.
+export function planSpread(spans, startDate, dueDate) {
+  const items = (spans || []).slice().sort((a, b) =>
+    (a.startTime || '').localeCompare(b.startTime || '') || (a.label || '').localeCompare(b.label || ''))
+  const dates = spreadDates(startDate, dueDate, items.length)
+  return items.map((span, i) => ({ span, date: dates[i] }))
+}
