@@ -21,6 +21,10 @@ const DATE_KEY_RE = /^(\d{4}-\d{2}-\d{2})_(.+)$/
 // Join a task's subtasks into one searchable string ("Draft intro · Run assay").
 // Subtasks describe what the work actually involved, so they're prime material
 // for skill inference — included whether or not they were checked off.
+function subtaskList(subs) {
+  if (!Array.isArray(subs)) return []
+  return subs.map(s => (s && s.text ? String(s.text).trim() : '')).filter(Boolean)
+}
 function subtaskText(subs) {
   if (!Array.isArray(subs)) return ''
   return subs.map(s => (s && s.text ? String(s.text) : '')).filter(Boolean).join(' · ')
@@ -64,12 +68,12 @@ export function computeActivity({ log = [], commitments = [], recurringTasks = [
     const key = e.storageKey || ''
     const date = e.date || (e.ts ? String(e.ts).slice(0, 10) : '')
     if (!date) continue
-    let mins = 0, cat = e.tag || '', title = cleanTitle(e.label || ''), desc = '', subs = ''
+    let mins = 0, cat = e.tag || '', title = cleanTitle(e.label || ''), desc = '', subs = '', subList = []
     const c = cById.get(key)
     if (c) {
       if (c.block) continue
       mins = c.durationMins || 0; cat = cat || c.cat || ''; if (!title) title = (c.text || '').trim()
-      desc = c.description || ''; subs = subtaskText(c.subtasks)
+      desc = c.description || ''; subs = subtaskText(c.subtasks); subList = subtaskList(c.subtasks)
     } else {
       const m = key.match(DATE_KEY_RE)
       if (m && rById.has(m[2])) {
@@ -77,10 +81,10 @@ export function computeActivity({ log = [], commitments = [], recurringTasks = [
         if (t.block) continue
         mins = t.durationMins || 0; cat = cat || t.cat || t.tag || ''
         if (!title) title = (t.title || t.text || '').trim()
-        desc = t.note || t.description || ''; subs = subtaskText(t.subtasks)
+        desc = t.note || t.description || ''; subs = subtaskText(t.subtasks); subList = subtaskList(t.subtasks)
       }
     }
-    out.push({ date, mins, cat, title: title || 'Untitled', desc, subs, kind: 'log' })
+    out.push({ date, mins, cat, title: title || 'Untitled', desc, subs, subList, kind: 'log' })
   }
   return out
 }
@@ -112,7 +116,7 @@ export function computeTimeEntries({ commitments = [], recurringTasks = [], comp
   for (const c of commitments) {
     if (c.block) continue
     if (!c.done || !c.durationMins || !c.date) continue
-    entries.push({ date: c.date, mins: c.durationMins, cat: c.cat || '', title: (c.text || '').trim(), desc: c.description || '', subs: subtaskText(c.subtasks), kind: 'task' })
+    entries.push({ date: c.date, mins: c.durationMins, cat: c.cat || '', title: (c.text || '').trim(), desc: c.description || '', subs: subtaskText(c.subtasks), subList: subtaskList(c.subtasks), kind: 'task' })
   }
 
   // Recurring occurrences: one entry per date the task was checked off.
@@ -123,7 +127,7 @@ export function computeTimeEntries({ commitments = [], recurringTasks = [], comp
     if (!m) continue                                  // a plain commitment id — handled above
     const t = recById.get(m[2])
     if (!t || t.block || !t.durationMins) continue
-    entries.push({ date: m[1], mins: t.durationMins, cat: t.cat || t.tag || '', title: (t.title || t.text || '').trim(), desc: t.note || t.description || '', subs: subtaskText(t.subtasks), kind: 'recurring' })
+    entries.push({ date: m[1], mins: t.durationMins, cat: t.cat || t.tag || '', title: (t.title || t.text || '').trim(), desc: t.note || t.description || '', subs: subtaskText(t.subtasks), subList: subtaskList(t.subtasks), kind: 'recurring' })
   }
 
   return entries
@@ -196,6 +200,9 @@ export function answerQuery(entries, query, categories) {
     byCategory: agg.byCategory,
     byTask: agg.byTask.slice(0, 8),
     skills: computeSkills(matched, categories).slice(0, 6),
+    // The matched entries themselves, newest first — so the page can show what
+    // you actually wrote about each one, not just totals.
+    entries: matched.slice().sort((a, b) => (b.date || '').localeCompare(a.date || '')),
   }
 }
 

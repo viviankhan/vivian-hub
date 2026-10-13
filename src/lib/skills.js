@@ -68,8 +68,11 @@ const TAXONOMY = [
     phrases: ['lit review', 'literature review', 'look into', 'gather sources', 'systematic review'] },
 
   { id: 'lab', label: 'Lab work', icon: 'glyph:flask', color: '#4FA96B',
-    words: ['lab', 'assay', 'pipette', 'culture', 'microscope', 'dissection', 'specimen', 'sample', 'reagent', 'titration', 'pcr', 'gel', 'centrifuge', 'buffer', 'protocol', 'staining'],
-    phrases: ['run the assay', 'lab work', 'wet lab', 'cell culture', 'bench work'] },
+    words: ['lab', 'assay', 'pipette', 'culture', 'microscope', 'microscopy', 'dissection', 'dissect', 'specimen', 'sample', 'reagent', 'titration', 'pcr', 'qpcr', 'rtpcr', 'gel', 'agarose', 'centrifuge', 'buffer', 'protocol', 'staining', 'stain',
+      'blot', 'western', 'elisa', 'transfect', 'transfection', 'plasmid', 'miniprep', 'midiprep', 'ligation', 'primer', 'cdna', 'rna', 'dna', 'mrna', 'sirna', 'crispr', 'cloning',
+      'electrophoresis', 'sds', 'lysate', 'lyse', 'lysis', 'antibody', 'immunostain', 'immunofluorescence', 'ihc', 'confocal', 'cytometry', 'facs', 'trypsin', 'trypsinize', 'confluence', 'confluent', 'passage', 'hek293', 'hela',
+      'incubate', 'incubation', 'incubator', 'aliquot', 'autoclave', 'biosafety', 'mice', 'mouse', 'rat', 'colony', 'genotype', 'genotyping', 'spectrophotometer', 'nanodrop', 'chromatography', 'hplc', 'purify', 'purification', 'extraction', 'pellet', 'resuspend', 'dilution', 'ponceau', 'dmem', 'fbs'],
+    phrases: ['run the assay', 'lab work', 'wet lab', 'cell culture', 'bench work', 'master mix', 'flow cytometry', 'gel run', 'run gel', 'tissue culture', 'lab meeting', 'lab notebook'] },
 
   { id: 'math', label: 'Math & problem solving', icon: 'glyph:calculator', color: '#E0A24F',
     words: ['math', 'calculus', 'algebra', 'equation', 'integral', 'derivative', 'geometry', 'trig', 'trigonometry', 'proof', 'compute', 'calculate', 'formula'],
@@ -89,7 +92,7 @@ const TAXONOMY = [
 
   { id: 'planning', label: 'Planning & organizing', icon: 'glyph:clipboard', color: '#8B9AA9',
     words: ['plan', 'planning', 'organize', 'schedule', 'roadmap', 'milestone', 'agenda', 'prioritize', 'coordinate', 'delegate', 'outline', 'strategy'],
-    phrases: ['plan out', 'set up', 'game plan', 'to-do', 'project plan', 'map out', 'block out'] },
+    phrases: ['plan out', 'game plan', 'to-do', 'project plan', 'map out', 'block out'] },
 
   { id: 'teaching', label: 'Teaching & mentoring', icon: 'glyph:gradcap', color: '#C99A4F',
     words: ['teach', 'tutor', 'mentor', 'explain', 'grade', 'grading', 'coach', 'onboard'],
@@ -165,12 +168,13 @@ export function computeSkills(entries = [], categories = []) {
       let row = map.get(id)
       if (!row) {
         const m = skillMeta(id)
-        row = { id, label: m.label, icon: m.icon, color: m.color, mins: 0, count: 0, days: new Set(), tasks: new Map() }
+        row = { id, label: m.label, icon: m.icon, color: m.color, mins: 0, count: 0, days: new Set(), tasks: new Map(), lastDate: '', entries: [] }
         map.set(id, row)
       }
       row.mins += e.mins || 0
       row.count += 1
-      if (e.date) row.days.add(e.date)
+      row.entries.push(e)
+      if (e.date) { row.days.add(e.date); if (e.date > row.lastDate) row.lastDate = e.date }
       const title = (e.title || 'Untitled').trim() || 'Untitled'
       const tkey = title.toLowerCase()
       const t = row.tasks.get(tkey) || { title, mins: 0, count: 0 }
@@ -183,8 +187,43 @@ export function computeSkills(entries = [], categories = []) {
       ...r,
       days: r.days.size,
       tasks: [...r.tasks.values()].sort((a, b) => b.count - a.count || b.mins - a.mins),
+      entries: r.entries.slice().sort((a, b) => (b.date || '').localeCompare(a.date || '')),
     }))
     .sort((a, b) => b.mins - a.mins || b.count - a.count)
+}
+
+// How much of the tracked time/sessions maps to at least one skill. Skills
+// overlap, so summing the rows overstates it — this counts each entry once.
+export function skillCoverage(entries = [], categories = []) {
+  let mins = 0, count = 0
+  for (const e of entries) {
+    if (inferSkills(entryText(e, categories)).length) { mins += e.mins || 0; count += 1 }
+  }
+  return { mins, count }
+}
+
+function ymd(d) {
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
+}
+
+// Per-skill momentum: the last `days` days vs the `days` before that.
+// Returns Map(id → { recentMins, priorMins, recentCount, priorCount }).
+export function skillTrend(entries = [], categories = [], days = 30, now = new Date()) {
+  const d = new Date(now); d.setHours(0, 0, 0, 0)
+  d.setDate(d.getDate() - (days - 1)); const recentCut = ymd(d)
+  d.setDate(d.getDate() - days); const priorCut = ymd(d)
+  const out = new Map()
+  for (const e of entries) {
+    if (!e.date || e.date < priorCut) continue
+    const recent = e.date >= recentCut
+    for (const id of inferSkills(entryText(e, categories))) {
+      const r = out.get(id) || { recentMins: 0, priorMins: 0, recentCount: 0, priorCount: 0 }
+      if (recent) { r.recentMins += e.mins || 0; r.recentCount += 1 }
+      else { r.priorMins += e.mins || 0; r.priorCount += 1 }
+      out.set(id, r)
+    }
+  }
+  return out
 }
 
 // Does a free-typed topic name one of the skills directly? Used so "how many
