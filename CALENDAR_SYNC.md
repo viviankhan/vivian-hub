@@ -49,6 +49,12 @@ If you deployed from the **dashboard**, open the function → **Details/Settings
 and switch **Verify JWT** (a.k.a. "Enforce JWT verification") **off**. The
 function is a read-only URL fetcher with SSRF guards, so leaving it open is safe.
 
+**Still "auth-blocked" with Verify JWT off?** Check what code is actually
+deployed. If the function answers `{"message":"Invalid credentials","code":"INVALID_CREDENTIALS"}`,
+it's running a dashboard template (which checks credentials itself), not Bloom's
+proxy. Redeploy this repo's `supabase/functions/ics-proxy/index.ts` over it with
+the CLI command above.
+
 That's it — the app automatically calls `https://<your-project>.supabase.co/functions/v1/ics-proxy`.
 The function only ever fetches the calendar URL you pass it and returns the text;
 it never touches your database, and it refuses local/private hosts.
