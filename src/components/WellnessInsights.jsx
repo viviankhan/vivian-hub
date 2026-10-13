@@ -1,100 +1,127 @@
 // src/components/WellnessInsights.jsx
 // ─────────────────────────────────────────────────────────────
-// The mind-and-body half of Informatics: a mood trend, how much time each
-// physical condition has held you, and the correlations the app has noticed
-// between conditions, mood, energy and getting things done. Reads the same
-// wellness logic the Wellness tab uses, framed as analytics.
+// The Mind & body view of the Insights tab: mood and energy over the chosen
+// window as one chart, the feelings that kept coming up, how long each
+// condition held you, and the correlations the app has noticed between
+// conditions, mood, energy and getting things done. It reads the same wellness
+// logic the Wellness tab uses, framed as analytics, and takes its numbers from
+// the parent so every tile and chart on the page agrees.
 // ─────────────────────────────────────────────────────────────
 import { useMemo } from 'react'
 import { Glyph, iconColorOn } from '../lib/glyphs.jsx'
+import { EffectIcon } from './IconPicker.jsx'
+import MoodChart from './MoodChart.jsx'
 import {
-  MOODS, moodMeta, DEFAULT_EFFECTS, effectTotals, fmtDuration,
-  buildDailyRecords, computeInsights, moodTrend,
+  moodMeta, emotionMeta, fmtDuration, keyToDate, INTENSITY_MAX, intensityColor,
+  buildDailyRecords, computeInsights, emotionTally,
 } from '../lib/wellness.js'
 
-function Sparkline({ trend }) {
-  const pts = trend.map((d, i) => ({ i, mood: d.mood }))
-  const vals = pts.filter(p => p.mood != null)
-  if (vals.length < 2) return <div style={{ fontSize: 12, color: 'var(--muted)' }}>Check in a few days to see your trend.</div>
-  const W = 240, H = 46, n = trend.length
-  const x = i => (i / (n - 1)) * W
-  const y = m => H - 4 - ((m - 1) / 4) * (H - 8)
-  // Connect across gaps by carrying the last known value.
-  let last = null
-  const line = pts.map(p => { if (p.mood != null) last = p.mood; return last == null ? null : `${x(p.i).toFixed(1)},${y(last).toFixed(1)}` })
-    .filter(Boolean).join(' ')
-  return (
-    <svg viewBox={`0 0 ${W} ${H}`} width="100%" height={H} preserveAspectRatio="none" aria-hidden="true" style={{ display: 'block' }}>
-      <polyline points={line} fill="none" stroke="var(--teal)" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
-      {vals.map(p => <circle key={p.i} cx={x(p.i)} cy={y(p.mood)} r="2.6" fill={moodMeta(Math.round(p.mood)).color} />)}
-    </svg>
-  )
+function dayLabel(key) {
+  try { return keyToDate(key).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) } catch { return key }
 }
 
-export default function WellnessInsights({ checkins = [], effects, episodes = [], log = [] }) {
-  const effectList = (effects && effects.length) ? effects : DEFAULT_EFFECTS
-  const trend = useMemo(() => moodTrend(checkins, 21), [checkins])
-  const records = useMemo(() => buildDailyRecords({ checkins, episodes, log, effects: effectList }), [checkins, episodes, log, effectList])
-  const { insights } = useMemo(() => computeInsights({ records, effects: effectList }), [records, effectList])
-  const totals = useMemo(() => effectTotals(episodes), [episodes])
+export default function MindBody({ checkins = [], effects = [], episodes = [], log = [], days = 30, rangeLabel = '', series = [], summary, fxRows = [] }) {
+  // Patterns need history to mean anything, so they always look back at least
+  // two months even when the range row is set to the past week.
+  const patternDays = Math.max(60, days)
+  const records = useMemo(() => buildDailyRecords({ checkins, episodes, log, effects, windowDays: patternDays }), [checkins, episodes, log, effects, patternDays])
+  const { insights } = useMemo(() => computeInsights({ records, effects }), [records, effects])
+  const feelings = useMemo(() => emotionTally(series).map(t => ({ ...t, meta: emotionMeta(t.id) })).filter(t => t.meta).slice(0, 10), [series])
+  const maxFx = fxRows.reduce((m, r) => Math.max(m, r.mins), 1)
 
-  const moods = trend.map(d => d.mood).filter(m => m != null)
-  const avg = moods.length ? Math.round((moods.reduce((a, b) => a + b, 0) / moods.length) * 10) / 10 : null
-  const firstHalf = moods.slice(0, Math.floor(moods.length / 2))
-  const lastHalf = moods.slice(Math.floor(moods.length / 2))
-  const mean = a => a.length ? a.reduce((x, y) => x + y, 0) / a.length : null
-  const dir = (mean(firstHalf) != null && mean(lastHalf) != null) ? (mean(lastHalf) - mean(firstHalf)) : 0
-  const arrow = dir > 0.25 ? '↑' : dir < -0.25 ? '↓' : '→'
-  const arrowColor = dir > 0.25 ? '#5FA87F' : dir < -0.25 ? '#C0554A' : 'var(--muted)'
+  if (!summary?.days && !fxRows.length) {
+    return (
+      <section className="in-card in-empty">
+        <Glyph id="pulse" size={22} color="var(--muted)" />
+        <p>Once you log a few moods and conditions, your patterns show up here — how you tend to feel, what conditions cost you time, and what moves with what.</p>
+      </section>
+    )
+  }
 
-  const topConditions = [...totals.values()]
-    .map(r => ({ ...r, fx: effectList.find(f => f.id === r.effectId) }))
-    .filter(r => r.fx).sort((a, b) => b.mins - a.mins).slice(0, 5)
-  const maxMins = topConditions.reduce((m, r) => Math.max(m, r.mins), 1)
-  const nothing = moods.length === 0 && topConditions.length === 0
+  const dir = summary?.direction || 0
+  const arrow = dir > 0.25 ? 'up' : dir < -0.25 ? 'down' : null
 
   return (
-    <div className="wi-card">
-      <div className="wi-head">
-        <span className="wi-title"><Glyph id="pulse" size={16} /> Mind &amp; body</span>
-        {avg != null && <span className="wi-avg">avg mood {avg}<span style={{ color: arrowColor, fontWeight: 800, marginLeft: 5 }}>{arrow}</span></span>}
-      </div>
-
-      {nothing ? (
-        <div className="wi-empty">Once you log a few moods and conditions, your patterns show up here — how you tend to feel, what conditions cost you time, and what moves with what.</div>
-      ) : (
-        <>
-          <div className="wi-sub">Mood · last 21 days</div>
-          <Sparkline trend={trend} />
-
-          {topConditions.length > 0 && (
-            <>
-              <div className="wi-sub" style={{ marginTop: 14 }}>Time carried by condition</div>
-              <div className="wi-bars">
-                {topConditions.map(r => (
-                  <div key={r.effectId} className="wi-bar-row">
-                    <span className="wi-bar-ico" style={{ background: r.fx.color, color: iconColorOn(r.fx.color) }}><Glyph id={r.fx.icon} size={13} /></span>
-                    <span className="wi-bar-name">{r.fx.name}</span>
-                    <span className="wi-bar-track"><span className="wi-bar-fill" style={{ width: `${Math.max(4, (r.mins / maxMins) * 100)}%`, background: r.fx.color }} /></span>
-                    <span className="wi-bar-val">{fmtDuration(r.mins)}</span>
-                  </div>
-                ))}
-              </div>
-            </>
+    <>
+      <section className="in-card">
+        <div className="in-card-head">
+          <h3 className="serif">Mood &amp; energy</h3>
+          {summary?.avg != null && (
+            <span className="in-card-meta">
+              avg mood {summary.avg}
+              {arrow && <b className={`in-dir ${arrow}`}>{arrow === 'up' ? '↑' : '↓'} {Math.abs(dir)}</b>}
+            </span>
           )}
+        </div>
+        <MoodChart series={series} />
+        {summary?.days > 0 && (
+          <div className="in-card-foot in-mood-foot">
+            <span>{summary.days} of {days} days have a check-in · {summary.moments} moment{summary.moments === 1 ? '' : 's'}</span>
+            {summary.energy != null && <span>avg energy {summary.energy}</span>}
+            {summary.best && summary.worst && summary.best.date !== summary.worst.date && (
+              <span>
+                best <b style={{ color: moodMeta(Math.round(summary.best.mood)).color }}>●</b> {dayLabel(summary.best.date)} · hardest <b style={{ color: moodMeta(Math.round(summary.worst.mood)).color }}>●</b> {dayLabel(summary.worst.date)}
+              </span>
+            )}
+          </div>
+        )}
+      </section>
 
-          {insights.length > 0 && (
-            <>
-              <div className="wi-sub" style={{ marginTop: 14 }}>What relates to what</div>
-              <ul className="wi-insights">
-                {insights.slice(0, 5).map(i => (
-                  <li key={i.id} className={`wi-insight ${i.good ? 'good' : 'watch'}`}>{i.text}</li>
-                ))}
-              </ul>
-            </>
-          )}
-        </>
+      {feelings.length > 0 && (
+        <section className="in-card">
+          <div className="in-card-head">
+            <h3 className="serif">Feelings that came up</h3>
+            <span className="in-card-meta">{rangeLabel}</span>
+          </div>
+          <div className="in-emos">
+            {feelings.map(f => (
+              <span key={f.id} className="in-emo" style={{ borderColor: f.meta.color }}>
+                <i style={{ background: f.meta.color }} />{f.meta.name}<b>{f.days}d</b>
+              </span>
+            ))}
+          </div>
+        </section>
       )}
-    </div>
+
+      {fxRows.length > 0 && (
+        <section className="in-card">
+          <div className="in-card-head">
+            <h3 className="serif">Time carried by condition</h3>
+            <span className="in-card-meta">{fmtDuration(fxRows.reduce((a, r) => a + r.mins, 0))} · {rangeLabel}</span>
+          </div>
+          <div className="in-rows">
+            {fxRows.slice(0, 8).map(r => (
+              <div key={r.effectId} className="in-row">
+                <div className="in-row-top">
+                  <span className="in-fx-ico" style={{ background: r.fx.color, color: iconColorOn(r.fx.color) }}><EffectIcon icon={r.fx.icon} size={13} /></span>
+                  <span className="in-row-name">{r.fx.name}</span>
+                  <span className="in-row-meta">{r.count}× {r.peak > 0 && <b className="in-peak" style={{ color: intensityColor(r.peak) }}>peak {r.peak}/{INTENSITY_MAX}</b>}</span>
+                  <span className="in-row-val">{fmtDuration(r.mins)}</span>
+                </div>
+                <div className="in-bar" aria-hidden="true"><div className="in-bar-fill" style={{ width: `${Math.max(2, (r.mins / maxFx) * 100)}%`, background: r.fx.color }} /></div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
+      <section className="in-card">
+        <div className="in-card-head">
+          <h3 className="serif">What relates to what</h3>
+          <span className="in-card-meta">last {patternDays} days</span>
+        </div>
+        {insights.length === 0 ? (
+          <p className="in-card-sub" style={{ margin: 0 }}>
+            Keep checking in and logging conditions for a couple of weeks. Once there’s enough history, this is where Bloom says how your mood, energy, conditions and finished tasks move together.
+          </p>
+        ) : (
+          <ul className="in-insights">
+            {insights.slice(0, 8).map(i => (
+              <li key={i.id} className={`in-insight ${i.good ? 'good' : i.strength < 0 ? 'watch' : ''}`}>{i.text}</li>
+            ))}
+          </ul>
+        )}
+      </section>
+    </>
   )
 }
