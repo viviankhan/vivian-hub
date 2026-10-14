@@ -15,6 +15,7 @@
 // ─────────────────────────────────────────────────────────────
 
 import { computeSkills, skillForTopic, entryText, inferSkills } from './skills.js'
+import { computeTopics } from './topics.js'
 
 const DATE_KEY_RE = /^(\d{4}-\d{2}-\d{2})_(.+)$/
 
@@ -220,7 +221,7 @@ const SUMMARY_INTENT = /summar|overview|about (me|myself)|tell me about (me|myse
 // Answer a free-typed question about yourself. Detects a few intents and
 // returns a typed result the Informatics page renders differently:
 //   { type:'skills'  , skills, sessions, totalMins }
-//   { type:'overview', byCategory, byTask, skills, totalMins, sessions, days }
+//   { type:'overview', byCategory, byTask, topics, skills, totalMins, sessions, days }
 //   { type:'topic'   , ...answerQuery(...) }   ← the classic "hours on X"
 export function answerQuestion(entries, query, categories) {
   const q = (query || '').trim()
@@ -246,6 +247,8 @@ export function answerQuestion(entries, query, categories) {
       days: agg.days,
       byCategory: agg.byCategory.slice(0, 8),
       byTask: agg.byTask.slice(0, 6),
+      // The things you worked on, read from titles, descriptions and subtasks.
+      topics: computeTopics(entries).slice(0, 6),
       skills: computeSkills(entries, categories).slice(0, 6),
     }
   }

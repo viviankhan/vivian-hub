@@ -20,6 +20,7 @@ import { useTimeframe, TimeframePicker } from './Timeframe.jsx'
 import MindBody from './WellnessInsights.jsx'
 import { computeEntries, filterByDates, aggregate, answerQuestion, fmtHours, decimalHours } from '../lib/insights.js'
 import { computeSkills, skillCoverage, skillTrend } from '../lib/skills.js'
+import { computeTopics } from '../lib/topics.js'
 import {
   DEFAULT_EFFECTS, moodMeta, fmtDuration, keyToDate,
   moodSeriesBetween, moodSummary, effectTotalsBetween,
@@ -188,6 +189,7 @@ export default function Informatics({ commitments = [], recurringTasks = [], com
   const [asked, setAsked] = useState('')      // the submitted question
   const [logOpen, setLogOpen] = useState(false)
   const [openSkill, setOpenSkill] = useState(null)   // expanded skill row (shows its tasks)
+  const [openTopic, setOpenTopic] = useState(null)   // expanded topic row (shows its sessions)
 
   // ── Time & skills ────────────────────────────────────────────
   const allEntries = useMemo(
@@ -197,6 +199,10 @@ export default function Informatics({ commitments = [], recurringTasks = [], com
   const entries = useMemo(() => filterByDates(allEntries, tf.from, tf.to), [allEntries, tf.from, tf.to])
   const agg = useMemo(() => aggregate(entries, categories), [entries, categories])
   const skills = useMemo(() => computeSkills(entries, categories), [entries, categories])
+  // The things you worked on, read from titles, descriptions and subtasks — a
+  // task called "Work" with a description about the grant proposal counts
+  // toward "Grant proposal", not toward "Work".
+  const topics = useMemo(() => computeTopics(entries), [entries])
   const answer = useMemo(() => asked ? answerQuestion(entries, asked, categories) : null, [asked, entries, categories])
 
   // Momentum: the window against the same number of days before it (a week
@@ -228,18 +234,20 @@ export default function Informatics({ commitments = [], recurringTasks = [], com
   const totalSessions = entries.length
   const maxCatV = Math.max(1, ...agg.byCategory.map(c => hasHours ? c.mins : c.count))
   const maxSkillV = Math.max(1, ...skills.map(s => hasHours ? s.mins : s.count))
+  const maxTopicV = Math.max(1, ...topics.map(t => hasHours ? t.mins : t.count))
   const rangeLabel = tf.label
   const inRange = tf.phrase
 
   // Suggestions of what to ask: a couple of self-questions, then the top
-  // skills, areas, and a few frequent task names — the things there's data for.
+  // topics (short ones — a long cluster label is not a question), skills and
+  // areas — the things there's data for.
   const suggestions = [
     ...(skills.length ? ['What skills am I using?'] : []),
     ...(totalSessions ? ['Where does my time go?'] : []),
+    ...topics.filter(t => !t.fallback && t.label.length <= 28 && !/[:,]/.test(t.label)).slice(0, 3).map(t => t.label),
     ...skills.slice(0, 3).map(s => s.label),
-    ...agg.byCategory.slice(0, 3).map(c => c.label),
-    ...agg.byTask.slice(0, 3).map(t => t.title),
-  ].filter((v, i, a) => v && a.indexOf(v) === i).slice(0, 8)
+    ...agg.byCategory.slice(0, 2).map(c => c.label),
+  ].filter((v, i, a) => v && a.indexOf(v) === i).slice(0, 9)
 
   const ask = (text) => { const v = (text ?? query).trim(); setAsked(v); setQuery(v) }
   const clearAnswer = () => { setAsked(''); setQuery('') }
@@ -371,8 +379,15 @@ export default function Informatics({ commitments = [], recurringTasks = [], com
                   ))}
                 </div>
               )}
-              {answer.skills.length > 0 && (
+              {answer.topics && answer.topics.length > 0 && (
                 <div className="in-chips">
+                  <span className="in-chips-label">Topics</span>
+                  {answer.topics.map(t => <span key={t.id} className="in-chip">{t.label} · {t.mins > 0 ? fmtHours(t.mins) : sessions(t.count)}</span>)}
+                </div>
+              )}
+              {answer.skills.length > 0 && (
+                <div className="in-chips faint">
+                  <span className="in-chips-label">Skills</span>
                   {answer.skills.map(s => <span key={s.id} className="in-chip"><Icon value={s.icon} size={12} color="currentColor" />{s.label}</span>)}
                 </div>
               )}
@@ -442,21 +457,27 @@ export default function Informatics({ commitments = [], recurringTasks = [], com
             <section className="in-card">
               <div className="in-card-head">
                 <h3 className="serif">Topics &amp; projects</h3>
-                <span className="in-card-meta">{agg.byTask.length} thing{agg.byTask.length === 1 ? '' : 's'}</span>
+                <span className="in-card-meta">{topics.length} topic{topics.length === 1 ? '' : 's'}</span>
               </div>
-              <div className="in-rank">
-                {agg.byTask.slice(0, 12).map((t, i) => {
+              <div className="in-rows">
+                {topics.slice(0, 14).map(t => {
                   const c = categories.find(x => x.id === t.cat)
+                  const open = openTopic === t.id
                   return (
-                    <div key={t.title} className="in-rank-row">
-                      <span className="in-rank-n">{i + 1}</span>
-                      <span className="in-dot" style={{ background: c?.color || '#C9CFD6' }} />
-                      <span className="in-rank-name">{t.title}</span>
-                      <span className="in-rank-count">{sessions(t.count)}</span>
-                      {t.mins > 0 && <span className="in-rank-val">{fmtHours(t.mins)}</span>}
+                    <div key={t.id}>
+                      <BarRow color={c?.color || 'var(--muted)'} name={t.label}
+                        icon={<span className="in-dot" style={{ background: c?.color || 'var(--border)' }} />}
+                        meta={`${sessions(t.count)}${t.fallback ? ' · by title' : ''}`}
+                        value={t.mins > 0 ? fmtHours(t.mins) : `${t.days} day${t.days === 1 ? '' : 's'}`}
+                        frac={(hasHours ? t.mins : t.count) / maxTopicV}
+                        onClick={() => setOpenTopic(open ? null : t.id)} open={open} />
+                      {open && t.entries.length > 0 && <div className="in-row-detail"><EntryLog entries={t.entries} /></div>}
                     </div>
                   )
                 })}
+              </div>
+              <div className="in-card-foot">
+                Read from the titles, descriptions and subtasks of what you finished, so a task called “Work” counts toward what its notes say it was. One session can count toward several topics, so the rows overlap. Tap one to see what fed it.
               </div>
             </section>
 
