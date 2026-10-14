@@ -1,25 +1,60 @@
+// src/components/BloomWellness.jsx
+// ─────────────────────────────────────────────────────────────
+// The Wellness tab. One scene at the top — your companion standing under
+// today's sky, with today's cloud floating beside it and your level, streak and
+// petals in the corner — then three views so the tab is a few screens you can
+// take in rather than one long scroll:
+//   • Today        check in (a new moment each time), read today back, and see
+//                  which conditions are running right now;
+//   • Journal      six weeks of clouds laid out as a calendar, the mood and
+//                  energy chart over the chosen timeframe, the patterns Bloom
+//                  has noticed, and the rule for when you go quiet;
+//   • Conditions   the status-effect tiles you flip on and off, and how long
+//                  each one held you over the chosen timeframe.
+// Nothing on the tab is a running total: the chart and the ledger read the
+// same timeframe the Insights tab does (the past 7 days unless you set
+// another — see lib/timeframe.js), and the scene counts this week's check-ins.
+// The game/analysis logic is all in lib/wellness.js; this file only lays it out
+// and persists through the callbacks App.jsx hands it.
+// ─────────────────────────────────────────────────────────────
 import { useState, useMemo, useRef, useEffect } from 'react'
 import { Glyph, iconColorOn } from '../lib/glyphs.jsx'
 import { Companion, MoodCloud, DayCloud, AlienSky } from '../lib/critters.jsx'
 import ColorPickRow from './ColorPickRow.jsx'
 import { EffectIcon } from './IconPicker.jsx'
 import IconSearchSheet from './IconSearchSheet.jsx'
+import Segmented, { useRememberedView } from './Segmented.jsx'
+import { useTimeframe, TimeframePicker } from './Timeframe.jsx'
+import { shiftKey } from '../lib/timeframe.js'
+import MoodChart from './MoodChart.jsx'
 import { bloomBurst } from '../lib/bloom.js'
 import { PhotoStrip, PhotoPicker, PhotoAttacher } from './PhotoAttach.jsx'
 import TimeField from './TimeField.jsx'
 import { photoIds, savePhotos, MAX_PHOTOS } from '../lib/photos.js'
 import {
-  DEFAULT_ABSENCE_RULE, HOUR_CHOICES, normalizeRule, wakingMinutes,
+  HOUR_CHOICES, normalizeRule, wakingMinutes,
 } from '../lib/absence.js'
 import {
   dayKey, keyToDate, MOODS, ENERGY, moodMeta, promptForDay,
-  selectableEmotions, emotionMeta, makeEmotion, EMOTION_PALETTE, checkinsForDay, daySegments, emotionWeights, pastDayKeys, effectOnDay,
+  selectableEmotions, emotionMeta, makeEmotion, EMOTION_PALETTE, checkinsForDay, daySegments, emotionWeights, effectOnDay,
   stageForLevel, nextStage, levelFromXp, liveStreak, applyCheckIn, awardPetals, REWARDS,
   DEFAULT_EFFECTS, POSITIVE_EFFECTS, makeEffect, EFFECT_COLORS,
-  activeEpisode, isActive, toggleEpisode, patchEpisode, episodeMinutes, fmtDuration, effectTotals,
+  activeEpisode, isActive, toggleEpisode, patchEpisode, episodeMinutes, fmtDuration,
   INTENSITY_MAX, intensityColor,
-  buildDailyRecords, computeInsights, moodTrend, shareText,
+  buildDailyRecords, computeInsights, moodSeriesBetween, effectTotalsBetween, calendarWeeks, shareText,
 } from '../lib/wellness.js'
+
+// The theme's deep surface colour, read live from the variable the theme sets,
+// so the sky in the scene is tinted toward whichever look is on.
+function themeDeep() {
+  try { return getComputedStyle(document.documentElement).getPropertyValue('--forest').trim() || '#2A4858' } catch { return '#2A4858' }
+}
+
+const VIEWS = [
+  { id: 'today',      label: 'Today',      glyph: 'sun' },
+  { id: 'journal',    label: 'Journal',    glyph: 'calendar' },
+  { id: 'conditions', label: 'Conditions', glyph: 'pulse' },
+]
 
 // Short "h:mm am" time for a check-in moment.
 function clockTime(ts) {
@@ -71,33 +106,6 @@ function ProgressRing({ pct, size = 118, stroke = 8, children }) {
         {children}
       </div>
     </div>
-  )
-}
-
-// A tiny 14-day mood sparkline. Missing days leave a gap so streaks read clearly.
-function Sparkline({ points, width = 260, height = 46 }) {
-  const vals = points.map(p => p.mood)
-  const n = points.length
-  const stepX = n > 1 ? width / (n - 1) : width
-  const y = v => height - 6 - ((v - 1) / 4) * (height - 12)
-  // Build line segments only between consecutive present values.
-  const segs = []
-  let cur = []
-  points.forEach((p, i) => {
-    if (p.mood == null) { if (cur.length > 1) segs.push(cur); cur = [] }
-    else cur.push([i * stepX, y(p.mood)])
-  })
-  if (cur.length > 1) segs.push(cur)
-  return (
-    <svg width="100%" viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" style={{ display: 'block' }} aria-hidden="true">
-      {segs.map((s, si) => (
-        <polyline key={si} points={s.map(([x, yy]) => `${x},${yy}`).join(' ')}
-          fill="none" stroke="var(--teal)" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
-      ))}
-      {points.map((p, i) => p.mood != null && (
-        <circle key={i} cx={i * stepX} cy={y(p.mood)} r="3" fill={moodMeta(p.mood).color} />
-      ))}
-    </svg>
   )
 }
 
@@ -251,7 +259,7 @@ function ShareSheet({ game, tracked, stage, onClose }) {
           <div className="wl-share-stats">
             <div><b><Glyph id="flame" size={16} /> {liveStreak(game)}</b><span>days in a row</span></div>
             <div><b><Glyph id="flower" size={16} /> {game?.petals || 0}</b><span>petals</span></div>
-            <div><b><Glyph id="chart" size={16} /> {tracked}</b><span>days tracked</span></div>
+            <div><b><Glyph id="chart" size={16} /> {tracked}/7</b><span>past 7 days</span></div>
           </div>
           <div className="wl-share-tag">Growing a calmer week, one check-in at a time.</div>
         </div>
@@ -452,17 +460,36 @@ function QuietRule({ rule, onChange }) {
     return { mins, asks: mins >= r.hours * 60 }
   }, [r.skipSleep, r.sleepStart, r.sleepEnd, r.hours])
 
+  // Folded by default: a setting you touch once, read back in one line.
+  const [open, setOpen] = useState(false)
+  const hoursLabel = r.hours >= 24 && r.hours % 24 === 0 ? `${r.hours / 24} day${r.hours === 24 ? '' : 's'}` : `${r.hours}h`
+  const summary = r.enabled
+    ? `Asks after ${hoursLabel} away${r.skipSleep ? ' · nights don\u2019t count' : ''}`
+    : 'Off \u2014 Bloom won\u2019t ask about days away'
+
   return (
-    <section className="wl-card">
-      <div className="wl-card-head">
-        <h3 className="serif">When I go quiet</h3>
-        <button className="wl-link" onClick={() => set({ enabled: !r.enabled })}>{r.enabled ? 'Turn off' : 'Turn on'}</button>
+    <section className={`wl-card wl-rule ${open ? 'open' : ''}`}>
+      <button type="button" className="wl-rule-head" onClick={() => setOpen(o => !o)} aria-expanded={open}>
+        <span className="wl-rule-ico"><Glyph id="moon" size={16} /></span>
+        <span className="wl-rule-title">
+          <h3 className="serif">When I go quiet</h3>
+          <span className="wl-rule-sum">{summary}</span>
+        </span>
+        <span className={`in-chevron ${open ? 'open' : ''}`} aria-hidden="true">›</span>
+      </button>
+
+      {open && (
+      <>
+      <div className="wl-rule-intro">
+        <p className="wl-card-sub" style={{ margin: 0 }}>
+          The days worth recording are often the ones you don't open anything. Come back after a long
+          stretch away and the blob will ask how it was — then write your answer onto the days it covered,
+          at the hours they really happened.
+        </p>
+        <button type="button" className={`wl-rule-toggle ${r.enabled ? 'on' : ''}`} onClick={() => set({ enabled: !r.enabled })} role="switch" aria-checked={r.enabled}>
+          {r.enabled ? 'On' : 'Off'}
+        </button>
       </div>
-      <p className="wl-card-sub">
-        The days worth recording are often the ones you don't open anything. Come back after a long
-        stretch away and the blob will ask how it was — then write your answer onto the days it covered,
-        at the hours they really happened.
-      </p>
 
       {r.enabled ? (
         <>
@@ -512,10 +539,52 @@ function QuietRule({ rule, onChange }) {
       ) : (
         <div className="wl-rule-foot">Bloom won't ask about the days you were away. You can still fill any of them in yourself from the rewind clock on the day rail.</div>
       )}
+      </>
+      )}
     </section>
   )
 }
 const ruleTimeStyle = { border: '1.5px solid var(--border)', borderRadius: 11, padding: '8px 10px', fontSize: 13, fontFamily: 'inherit', background: '#fff', color: 'var(--text)', boxSizing: 'border-box', width: '100%' }
+
+
+// ── The journal calendar ───────────────────────────────────────
+// Six weeks of days (twelve, if you ask), Monday first, each one the cloud it
+// became. Tap a day to open it. Empty past days keep a faint ring so a gap in
+// the record reads as a gap, not as nothing having happened.
+function CloudCalendar({ checkins, treasures, episodes, weeks, today, onOpen }) {
+  const rows = useMemo(() => calendarWeeks(weeks, today), [weeks, today])
+  const hasPics = (key) => treasures.some(t => t.date === key)
+    || checkins.some(c => c.date === key && photoIds(c).length > 0)
+    || (episodes || []).some(e => photoIds(e).length > 0 && effectOnDay([e], e.effectId, key))
+  return (
+    <div className="wl-cal" role="grid" aria-label="Past days">
+      <div className="wl-cal-dow" aria-hidden="true">{['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((d, i) => <span key={i}>{d}</span>)}</div>
+      {rows.map((row, ri) => (
+        <div key={ri} className="wl-cal-row" role="row">
+          {row.map(d => {
+            if (d.future) return <span key={d.key} className="wl-cal-day future" role="gridcell" aria-hidden="true" />
+            const seg = daySegments(checkins, d.key)
+            const w = seg.count ? emotionWeights(checkins, d.key) : null
+            const label = d.first ? keyToDate(d.key).toLocaleDateString('en-US', { month: 'short' }) : d.day
+            return (
+              <button key={d.key} type="button" role="gridcell"
+                className={`wl-cal-day ${seg.count ? 'has' : ''} ${d.key === today ? 'today' : ''}`}
+                onClick={() => onOpen(d.key)} aria-label={`${keyToDate(d.key).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}${seg.count ? `, ${moodMeta(seg.dominant).label.toLowerCase()}` : ', nothing logged'}`}>
+                <span className="wl-cal-cloud">
+                  {seg.count
+                    ? <DayCloud segments={seg.segments} emotions={seg.emotions} weights={w} dominant={seg.dominant} face={false} size={34} animate={false} twinkle={false} mist={10} />
+                    : <span className="wl-cal-blank" />}
+                  {hasPics(d.key) && <span className="wl-cal-pip" />}
+                </span>
+                <span className={`wl-cal-num ${d.first ? 'first' : ''}`}>{label}</span>
+              </button>
+            )
+          })}
+        </div>
+      ))}
+    </div>
+  )
+}
 
 export default function BloomWellness({
   checkins, persistCheckins,
@@ -526,8 +595,11 @@ export default function BloomWellness({
   emotionPrefs, persistEmotionPrefs,
   rules, persistRules,
   log = [],
+  onOpenInsights,
 }) {
   const today = dayKey()
+  const [view, setView] = useRememberedView('bloom_wellness_view', 'today', VIEWS.map(v => v.id))
+  const tf = useTimeframe()
 
   // Live "now" tick so active-effect timers (and the day cloud's proportions)
   // stay current while the tab is open.
@@ -538,12 +610,10 @@ export default function BloomWellness({
   }, [])
 
   // A day can hold several timestamped moments; this is today's, and the
-  // time-proportional blend that drives the end-of-day cloud.
+  // time-proportional blend that drives the day cloud in the scene.
   const todayMoments = useMemo(() => checkinsForDay(checkins, today), [checkins, today])
   const daySeg = useMemo(() => daySegments(checkins, today), [checkins, today])
   const todayWeights = useMemo(() => emotionWeights(checkins, today), [checkins, today])
-  // Past days that have any check-in (the "sky journal"), newest first.
-  const journal = useMemo(() => pastDayKeys(checkins, 21).filter(k => k !== today), [checkins, today])
   const [openDate, setOpenDate] = useState(null)   // day whose detail sheet is open
 
   // ── Check-in draft (a new moment each time) ──────────────────
@@ -552,8 +622,8 @@ export default function BloomWellness({
   const [emotionsSel, setEmotionsSel] = useState([])
   const [note, setNote] = useState('')
   const [photos, setPhotos] = useState([])   // data URLs; written as their own rows on submit
-  // Start in the picker when nothing's logged yet today; otherwise show the day
-  // cloud and let the user add another moment.
+  // Start in the picker when nothing's logged yet today; otherwise show the
+  // day's record and let the user add another moment.
   const [editing, setEditing] = useState(todayMoments.length === 0)
   useEffect(() => { if (todayMoments.length === 0) setEditing(true) }, [todayMoments.length])
 
@@ -587,7 +657,7 @@ export default function BloomWellness({
     setEditing(false)
   }
 
-  // ── Status effects ───────────────────────────────────────────
+  // ── Conditions (status effects) ──────────────────────────────
   const effectList = (effects && effects.length) ? effects : DEFAULT_EFFECTS
   const [editor, setEditor] = useState(null)     // draft for the create/edit sheet
   const [share, setShare] = useState(false)
@@ -640,296 +710,335 @@ export default function BloomWellness({
   const stage = stageForLevel(lv.level)
   const next = nextStage(lv.level)
   const streak = liveStreak(game)
-  const trend = useMemo(() => moodTrend(checkins, 14), [checkins])
-  const trackedDays = useMemo(() => new Set((checkins || []).map(c => c.date)).size, [checkins])
+  // How many of the last seven days have a check-in — the scene's third chip
+  // and the share card both say this, never an all-time count.
+  const weekDays = useMemo(() => {
+    const from = shiftKey(today, -6)
+    return new Set((checkins || []).filter(c => c.date >= from && c.date <= today).map(c => c.date)).size
+  }, [checkins, today])
 
-  // ── Insights ─────────────────────────────────────────────────
+  // ── Journal derived ──────────────────────────────────────────
+  const [weeks, setWeeks] = useState(6)
+  const series = useMemo(() => moodSeriesBetween(checkins, tf.from, tf.to), [checkins, tf.from, tf.to])
   const { insights } = useMemo(
     () => computeInsights({ records: buildDailyRecords({ checkins, episodes, log, effects: effectList, windowDays: 60 }), effects: effectList }),
     [checkins, episodes, log, effectList],
   )
-  const totals = useMemo(() => effectTotals(episodes), [episodes])
+  const totals = useMemo(() => effectTotalsBetween(episodes, tf.from, tf.to), [episodes, tf.from, tf.to])
+  const ledger = effectList.filter(f => totals.get(f.id)).map(f => ({ fx: f, ...totals.get(f.id) })).sort((a, b) => b.mins - a.mins)
+  const ledgerMax = ledger.reduce((m, r) => Math.max(m, r.mins), 1)
 
   const story = editing
     ? 'A quiet moment for yourself. How are you, really?'
     : streak >= 3
       ? `${streak} days in a row — ${stage.name} is thriving on your consistency.`
       : `${stage.name} is glad you came back.`
+  const toNext = next ? ` · ${next.level - lv.level} level${next.level - lv.level > 1 ? 's' : ''} to ${next.name}` : ''
+
+  // The record of today, read back under the scene once there's a moment.
+  const todayRecord = (
+    <>
+      <div className="wl-day-legend">
+        {daySeg.props.map(p => (
+          <span key={p.v} className="wl-legend-item">
+            <span className="wl-legend-dot" style={{ background: moodMeta(p.v).color }} />
+            {moodMeta(p.v).label} {Math.round(p.pct * 100)}%
+          </span>
+        ))}
+      </div>
+      {daySeg.emotions.length > 0 && (
+        <div className="wl-day-linings">
+          {daySeg.emotions.map(id => {
+            const e = emotionMeta(id); if (!e) return null
+            return <span key={id} className="wl-lining-chip" style={{ borderColor: e.color, color: '#4A5560' }}>
+              <span className="wl-emo-dot" style={{ background: e.color }} />{e.name}
+            </span>
+          })}
+        </div>
+      )}
+      <div className="wl-moments">
+        {todayMoments.map(m => (
+          <div key={m.id || m.ts} className="wl-moment">
+            <MoodCloud v={m.mood} emotions={m.emotions} size={40} />
+            <div className="wl-moment-body">
+              <div className="wl-moment-top">
+                <span className="wl-moment-mood">{moodMeta(m.mood).label}</span>
+                <span className="wl-moment-time">{clockTime(m.ts)}</span>
+              </div>
+              {(m.emotions && m.emotions.length > 0) && (
+                <div className="wl-moment-emos">{m.emotions.map(id => emotionMeta(id)?.name).filter(Boolean).join(' · ')}</div>
+              )}
+              {m.note && <div className="wl-moment-note">“{m.note}”</div>}
+              <PhotoStrip ids={photoIds(m)} className="wl-moment-photos" />
+            </div>
+          </div>
+        ))}
+      </div>
+    </>
+  )
+
+  const activeBanner = activeNow.length > 0 && (
+    <section className="wl-active">
+      <div className="wl-active-head">
+        <span><Glyph id="pulse" size={16} /> Active right now</span>
+        {view !== 'conditions' && <button type="button" className="wl-link sm" onClick={() => setView('conditions')}>All conditions ›</button>}
+      </div>
+      <div className="wl-active-list">
+        {activeNow.map(({ fx, ep, since }) => (
+          <div key={fx.id} className="wl-active-item">
+            <button type="button" className="wl-active-pill" style={{ background: fx.color, color: iconColorOn(fx.color) }} onClick={() => toggleEffect(fx.id)} title="Tap to end">
+              <EffectIcon icon={fx.icon} size={14} color={iconColorOn(fx.color)} /> {fx.name}
+              <b>{fmtDuration(since)}</b>
+              <span className="wl-active-x">✕</span>
+            </button>
+            {/* A condition flipped on from this tab never passed through the
+                rail's sheet, so this is where it gets a photo — straight onto
+                the span that's running. */}
+            {ep && (
+              <PhotoAttacher ids={photoIds(ep)}
+                onChange={next => persistEpisodes(patchEpisode(episodes, ep.id, { photos: next }))} />
+            )}
+          </div>
+        ))}
+      </div>
+    </section>
+  )
 
   return (
     <div className="wl-wrap">
-      {/* ── Companion + progress ── */}
-      <section className="wl-hero">
-        <ProgressRing pct={lv.pct}>
-          <div className="wl-companion" title={`${stage.name} · level ${lv.level}`}>
-            <Companion level={lv.level} mood={daySeg.overall} size={104} />
+      {/* ── The scene: companion, today's cloud, level & stats ── */}
+      <section className="wl-scene">
+        <AlienSky className="wl-scene-bg" tint={themeDeep()} />
+        <div className="wl-scene-top">
+          <div className="wl-scene-id">
+            <div className="serif wl-scene-name">{game?.companionName || 'Sprout'}</div>
+            <div className="wl-scene-sub">Level {lv.level} · {stage.name}{toNext}</div>
           </div>
-        </ProgressRing>
-        <div className="wl-hero-body">
-          <div className="wl-hero-top">
-            <div>
-              <div className="serif wl-hero-name">{game?.companionName || 'Sprout'}</div>
-              <div className="wl-hero-sub">Level {lv.level} · {stage.name}</div>
-            </div>
-            <button className="wl-share-btn" onClick={() => setShare(true)} title="Share your progress">
-              <Glyph id="gift" size={16} /> Share
-            </button>
-          </div>
-          <div className="wl-chips">
-            {/* "Streak" belongs to the condition stretches now (a depressed
-                streak, a manic one — see lib/absence.js); the companion's
-                consecutive check-in days take the plainer name so one screen
-                never uses the word for two different things. */}
-            <span className="wl-stat"><Glyph id="flame" size={15} /> {streak}<i>in a row</i></span>
-            <span className="wl-stat"><Glyph id="flower" size={15} /> {game?.petals || 0}<i>petals</i></span>
-            <span className="wl-stat"><Glyph id="calendar" size={15} /> {trackedDays}<i>days</i></span>
-          </div>
-          <div className="wl-story">{story}{next && !editing ? ` ${next.level - lv.level} level${next.level - lv.level > 1 ? 's' : ''} to ${next.name}.` : ''}</div>
+          <button type="button" className="wl-share-btn" onClick={() => setShare(true)} title="Share your progress">
+            <Glyph id="gift" size={15} /> Share
+          </button>
         </div>
-      </section>
-
-      {/* ── Today's check-in ── */}
-      <section className="wl-card">
-        <div className="wl-card-head">
-          <h3 className="serif">{editing ? (todayMoments.length ? 'Another moment' : 'How are you?') : 'Today'}</h3>
-          {!editing && <button className="wl-link" onClick={() => setEditing(true)}>+ Check in</button>}
-          {editing && todayMoments.length > 0 && <button className="wl-link" onClick={() => setEditing(false)}>Cancel</button>}
-        </div>
-
-        {editing ? (
-          <>
-            <div className="wl-ask">Which cloud are you?</div>
-            <div className="wl-moods">
-              {MOODS.map(m => (
-                <button key={m.v} className={`wl-mood ${mood === m.v ? 'on' : ''}`}
-                  onClick={() => setMood(m.v)} style={mood === m.v ? { borderColor: m.color, background: m.color + '1A' } : {}}>
-                  <span className="wl-mood-face"><MoodCloud v={m.v} size={38} animate={mood === m.v} /></span>
-                  <span className="wl-mood-label">{m.label}</span>
-                </button>
-              ))}
-            </div>
-
-            <div className="wl-ask">Any complex feelings? <span className="wl-optional">the cloud's lining · up to 4</span></div>
-            <EmotionPicker options={emotionOptions} selected={emotionsSel}
-              onToggle={toggleEmotion} onAdd={addEmotion} onDelete={deleteEmotion} />
-
-            {/* Live preview — your cloud forming, with its emotion lining shimmering. */}
-            {mood && (
-              <div className="wl-preview">
-                <span className="wl-bob"><MoodCloud v={mood} emotions={emotionsSel} size={92} animate /></span>
-                <div className="wl-preview-cap">
-                  {moodMeta(mood).label}
-                  {emotionsSel.length ? ' · ' + emotionsSel.map(id => emotionMeta(id)?.name).filter(Boolean).join(', ') : ''}
-                </div>
-              </div>
-            )}
-
-            <div className="wl-ask">Energy?</div>
-            <div className="wl-energy">
-              {ENERGY.map(e => (
-                <button key={e.v} className={`wl-energy-bar ${energy && energy >= e.v ? 'on' : ''}`}
-                  onClick={() => setEnergy(e.v)} title={e.label} style={{ height: 14 + e.v * 7 }} />
-              ))}
-              <span className="wl-energy-label">{energy ? ENERGY[energy - 1].label : ''}</span>
-            </div>
-
-            <div className="wl-ask">{promptForDay(today)} <span className="wl-optional">optional</span></div>
-            <textarea className="wl-note" rows={2} value={note} onChange={(e) => setNote(e.target.value)}
-              placeholder="A line for future-you…" />
-
-            <div className="wl-ask">A photo? <span className="wl-optional">optional · up to {MAX_PHOTOS}</span></div>
-            <PhotoPicker photos={photos} onChange={setPhotos} />
-
-            <button ref={checkInBtn} className="wl-btn primary block" disabled={!mood} onClick={submitCheckIn}>
-              {todayMoments.length ? 'Add this moment' : 'Check in'}
-              {mood ? ` · +${todayMoments.length ? 3 : REWARDS.checkIn + (note.trim() ? REWARDS.reflection : 0)} petals` : ''}
-            </button>
-          </>
-        ) : (
-          <>
-            {/* The day cloud floating in an alien sky. */}
-            <div className="wl-sky">
-              <AlienSky className="wl-sky-bg" />
-              <div className="wl-sky-title">
-                {daySeg.count > 1
-                  ? `${daySeg.count} moments today`
-                  : `Feeling ${moodMeta(daySeg.dominant).label.toLowerCase()}`}
-              </div>
-              <button className="wl-sky-cloud wl-float" onClick={() => setOpenDate(today)} title="See today's details" aria-label="Open today's cloud details">
-                <DayCloud segments={daySeg.segments} emotions={daySeg.emotions} weights={todayWeights} dominant={daySeg.dominant} faceMood={daySeg.overall} size={128} animate />
+        <div className="wl-scene-stage">
+          <div className="wl-scene-companion" title={`${stage.name} · level ${lv.level} · ${lv.pct}% to the next`}>
+            <ProgressRing pct={lv.pct} size={100} stroke={6}>
+              <Companion level={lv.level} mood={daySeg.overall} size={84} />
+            </ProgressRing>
+          </div>
+          <div className="wl-scene-sky">
+            {todayMoments.length > 0 ? (
+              <button type="button" className="wl-scene-cloud wl-float" onClick={() => setOpenDate(today)} aria-label="Open today's cloud">
+                <DayCloud segments={daySeg.segments} emotions={daySeg.emotions} weights={todayWeights} dominant={daySeg.dominant} faceMood={daySeg.overall} size={112} animate />
               </button>
-            </div>
-
-            {/* Proportional legend: how much of the day each mood coloured. */}
-            <div className="wl-day-legend">
-              {daySeg.props.map(p => (
-                <span key={p.v} className="wl-legend-item">
-                  <span className="wl-legend-dot" style={{ background: moodMeta(p.v).color }} />
-                  {moodMeta(p.v).label} {Math.round(p.pct * 100)}%
-                </span>
-              ))}
-            </div>
-            {daySeg.emotions.length > 0 && (
-              <div className="wl-day-linings">
-                {daySeg.emotions.map(id => {
-                  const e = emotionMeta(id); if (!e) return null
-                  return <span key={id} className="wl-lining-chip" style={{ borderColor: e.color, color: '#4A5560' }}>
-                    <span className="wl-emo-dot" style={{ background: e.color }} />{e.name}
-                  </span>
-                })}
+            ) : (
+              <button type="button" className="wl-scene-nocloud" onClick={() => { setView('today'); setEditing(true) }}>
+                <span className="wl-scene-nocloud-ring" />
+                <span>No cloud yet today</span>
+              </button>
+            )}
+            {todayMoments.length > 0 && (
+              <div className="wl-scene-caption">
+                {daySeg.count > 1 ? `${daySeg.count} moments today` : `Feeling ${moodMeta(daySeg.dominant).label.toLowerCase()}`}
               </div>
             )}
+          </div>
+        </div>
+        <div className="wl-scene-foot">
+          <div className="wl-chips">
+            {/* "Streak" belongs to the condition stretches (a depressed streak, a
+                manic one — see lib/absence.js); the companion's consecutive
+                check-in days take the plainer name so one screen never uses
+                the word for two different things. */}
+            <span className="wl-stat"><Glyph id="flame" size={14} /> {streak}<i>in a row</i></span>
+            <span className="wl-stat"><Glyph id="flower" size={14} /> {game?.petals || 0}<i>petals</i></span>
+            <span className="wl-stat"><Glyph id="calendar" size={14} /> {weekDays}/7<i>past 7 days</i></span>
+          </div>
+          <div className="wl-story">{story}</div>
+        </div>
+      </section>
 
-            {/* Each moment logged today. */}
-            <div className="wl-moments">
-              {todayMoments.map(m => (
-                <div key={m.id || m.ts} className="wl-moment">
-                  <MoodCloud v={m.mood} emotions={m.emotions} size={40} />
-                  <div className="wl-moment-body">
-                    <div className="wl-moment-top">
-                      <span className="wl-moment-mood">{moodMeta(m.mood).label}</span>
-                      <span className="wl-moment-time">{clockTime(m.ts)}</span>
-                    </div>
-                    {(m.emotions && m.emotions.length > 0) && (
-                      <div className="wl-moment-emos">{m.emotions.map(id => emotionMeta(id)?.name).filter(Boolean).join(' · ')}</div>
-                    )}
-                    {m.note && <div className="wl-moment-note">“{m.note}”</div>}
-                    <PhotoStrip ids={photoIds(m)} className="wl-moment-photos" />
-                  </div>
+      <Segmented ariaLabel="Wellness view" items={VIEWS.map(v => v.id === 'conditions' ? { ...v, badge: activeNow.length } : v)} value={view} onChange={setView} />
+
+      {/* ── Today ── */}
+      {view === 'today' && (
+        <>
+          <section className="wl-card">
+            <div className="wl-card-head">
+              <h3 className="serif">{editing ? (todayMoments.length ? 'Another moment' : 'How are you?') : 'Today'}</h3>
+              {!editing && <button type="button" className="wl-link" onClick={() => setEditing(true)}>+ Check in</button>}
+              {editing && todayMoments.length > 0 && <button type="button" className="wl-link" onClick={() => setEditing(false)}>Cancel</button>}
+            </div>
+
+            {editing ? (
+              <>
+                <div className="wl-ask">Which cloud are you?</div>
+                <div className="wl-moods">
+                  {MOODS.map(m => (
+                    <button type="button" key={m.v} className={`wl-mood ${mood === m.v ? 'on' : ''}`}
+                      onClick={() => setMood(m.v)} style={mood === m.v ? { borderColor: m.color, background: m.color + '1A' } : {}}>
+                      <span className="wl-mood-face"><MoodCloud v={m.v} size={38} animate={mood === m.v} /></span>
+                      <span className="wl-mood-label">{m.label}</span>
+                    </button>
+                  ))}
                 </div>
+
+                <div className="wl-ask">Any complex feelings? <span className="wl-optional">the cloud's lining · up to 4</span></div>
+                <EmotionPicker options={emotionOptions} selected={emotionsSel}
+                  onToggle={toggleEmotion} onAdd={addEmotion} onDelete={deleteEmotion} />
+
+                {/* Live preview — your cloud forming, with its emotion lining shimmering. */}
+                {mood && (
+                  <div className="wl-preview">
+                    <span className="wl-bob"><MoodCloud v={mood} emotions={emotionsSel} size={92} animate /></span>
+                    <div className="wl-preview-cap">
+                      {moodMeta(mood).label}
+                      {emotionsSel.length ? ' · ' + emotionsSel.map(id => emotionMeta(id)?.name).filter(Boolean).join(', ') : ''}
+                    </div>
+                  </div>
+                )}
+
+                <div className="wl-ask">Energy?</div>
+                <div className="wl-energy">
+                  {ENERGY.map(e => (
+                    <button type="button" key={e.v} className={`wl-energy-bar ${energy && energy >= e.v ? 'on' : ''}`}
+                      onClick={() => setEnergy(e.v)} title={e.label} aria-label={e.label} style={{ height: 14 + e.v * 7 }} />
+                  ))}
+                  <span className="wl-energy-label">{energy ? ENERGY[energy - 1].label : ''}</span>
+                </div>
+
+                <div className="wl-ask">{promptForDay(today)} <span className="wl-optional">optional</span></div>
+                <textarea className="wl-note" rows={2} value={note} onChange={(e) => setNote(e.target.value)}
+                  placeholder="A line for future-you…" />
+
+                <div className="wl-ask">A photo? <span className="wl-optional">optional · up to {MAX_PHOTOS}</span></div>
+                <PhotoPicker photos={photos} onChange={setPhotos} />
+
+                <button ref={checkInBtn} type="button" className="wl-btn primary block" disabled={!mood} onClick={submitCheckIn}>
+                  {todayMoments.length ? 'Add this moment' : 'Check in'}
+                  {mood ? ` · +${todayMoments.length ? 3 : REWARDS.checkIn + (note.trim() ? REWARDS.reflection : 0)} petals` : ''}
+                </button>
+              </>
+            ) : todayRecord}
+          </section>
+
+          {activeBanner || (
+            <button type="button" className="wl-hint" onClick={() => setView('conditions')}>
+              <Glyph id="pulse" size={14} /> No condition running right now · <b>start one ›</b>
+            </button>
+          )}
+        </>
+      )}
+
+      {/* ── Journal ── */}
+      {view === 'journal' && (
+        <>
+          <section className="wl-card">
+            <div className="wl-card-head">
+              <h3 className="serif">Past skies</h3>
+              <button type="button" className="wl-link sm" onClick={() => setWeeks(w => w === 6 ? 12 : 6)}>{weeks === 6 ? 'Show 12 weeks' : 'Show 6 weeks'}</button>
+            </div>
+            <p className="wl-card-sub">Every day becomes a cloud. Tap one to revisit its moments, feelings, photos and treasures.</p>
+            <CloudCalendar checkins={checkins || []} treasures={treasures} episodes={episodes} weeks={weeks} today={today} onOpen={setOpenDate} />
+            <div className="wl-day-legend wl-cal-legend">
+              {MOODS.map(m => (
+                <span key={m.v} className="wl-legend-item"><span className="wl-legend-dot" style={{ background: m.color }} />{m.label}</span>
               ))}
             </div>
-          </>
-        )}
+          </section>
 
-        {trend.some(t => t.mood != null) && (
-          <div className="wl-trend">
-            <div className="wl-trend-head"><span>Mood · last 14 days</span></div>
-            <Sparkline points={trend} />
-          </div>
-        )}
-      </section>
+          <section className="wl-card">
+            <div className="wl-card-head">
+              <h3 className="serif">Mood &amp; energy</h3>
+            </div>
+            <TimeframePicker compact />
+            <MoodChart series={series} height={150} label={tf.phrase}
+              emptyText={(checkins || []).length ? `No check-ins ${tf.phrase}.` : undefined} />
+          </section>
 
-      {/* ── Past skies (the cloud journal) ── */}
-      {journal.length > 0 && (
-        <section className="wl-card">
-          <div className="wl-card-head"><h3 className="serif">Past skies</h3></div>
-          <p className="wl-card-sub">Every day becomes a cloud. Tap one to revisit its moments, feelings, photos and treasures.</p>
-          <div className="wl-journal">
-            {journal.map(key => {
-              const seg = daySegments(checkins, key)
-              const w = emotionWeights(checkins, key)
-              // The camera pip means "there are pictures on this day" — a pinned
-              // treasure, or a photo attached to a moment or a condition.
-              const hasTreasure = treasures.some(t => t.date === key)
-                || checkins.some(c => c.date === key && photoIds(c).length > 0)
-                || (episodes || []).some(e => photoIds(e).length > 0 && effectOnDay([e], e.effectId, key))
-              return (
-                <button key={key} className="wl-journal-day" onClick={() => setOpenDate(key)}>
-                  <span className="wl-journal-cloud">
-                    <DayCloud segments={seg.segments} emotions={seg.emotions} weights={w} dominant={seg.dominant}
-                      face={false} size={74} animate={false} twinkle={false} mist={20} />
-                    {hasTreasure && <span className="wl-journal-gem"><Glyph id="camera" size={11} color="#fff" /></span>}
-                  </span>
-                  <span className="wl-journal-date">{keyToDate(key).toLocaleDateString('en-US', { weekday: 'short' })}<b>{keyToDate(key).getDate()}</b></span>
-                </button>
-              )
-            })}
-          </div>
-        </section>
+          <section className="wl-card">
+            <div className="wl-card-head">
+              <h3 className="serif">Patterns</h3>
+              <span className="wl-card-meta">
+                past 60 days
+                {onOpenInsights && <> · <button type="button" className="wl-link sm" onClick={onOpenInsights}>More in Insights ›</button></>}
+              </span>
+            </div>
+            {insights.length === 0 ? (
+              <p className="wl-empty">
+                Keep checking in and logging conditions for a couple of weeks — once there's
+                enough history, Bloom starts surfacing how your mood, energy, conditions and
+                finished tasks relate to one another.
+              </p>
+            ) : (
+              <div className="wl-insights">
+                {insights.slice(0, 4).map(ins => (
+                  <div key={ins.id} className={`wl-insight ${ins.good ? 'good' : ins.strength < 0 ? 'watch' : ''}`}>
+                    <span className="wl-insight-dot" />
+                    <span className="wl-insight-text">{ins.text}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+
+          <QuietRule rule={rules} onChange={persistRules} />
+        </>
       )}
 
-      {/* ── Active now ── */}
-      {activeNow.length > 0 && (
-        <section className="wl-active">
-          <div className="wl-active-head"><Glyph id="pulse" size={16} /> Active right now</div>
-          <div className="wl-active-list">
-            {activeNow.map(({ fx, ep, since }) => (
-              <div key={fx.id} className="wl-active-item">
-                <button className="wl-active-pill" style={{ background: fx.color, color: iconColorOn(fx.color) }} onClick={() => toggleEffect(fx.id)}>
-                  <EffectIcon icon={fx.icon} size={14} color={iconColorOn(fx.color)} /> {fx.name}
-                  <b>{fmtDuration(since)}</b>
-                  <span className="wl-active-x">✕</span>
-                </button>
-                {/* A condition flipped on from this tab never passed through the
-                    rail's sheet, so this is where it gets a photo — straight
-                    onto the span that's running. */}
-                {ep && (
-                  <PhotoAttacher ids={photoIds(ep)}
-                    onChange={next => persistEpisodes(patchEpisode(episodes, ep.id, { photos: next }))} />
-                )}
+      {/* ── Conditions ── */}
+      {view === 'conditions' && (
+        <>
+          {activeBanner}
+          <section className="wl-card">
+            <div className="wl-card-head">
+              <h3 className="serif">Conditions</h3>
+              <button type="button" className="wl-link" onClick={openNew}>+ New</button>
+            </div>
+            <p className="wl-card-sub">Flip one on when it starts and off when it lifts — Bloom records how long it lasts, like a status effect you can toggle. The pencil on a tile edits it.</p>
+
+            <div className="wl-fx-group-label"><Glyph id="pulse" size={14} /> Physical</div>
+            <div className="wl-fx-grid">
+              {physical.map(fx => (
+                <EffectChip key={fx.id} effect={fx} active={isActive(episodes, fx.id)}
+                  since={isActive(episodes, fx.id) ? episodeMinutes(activeEpisode(episodes, fx.id)) : 0}
+                  onToggle={() => toggleEffect(fx.id)} onEdit={() => openEdit(fx)} />
+              ))}
+            </div>
+
+            <div className="wl-fx-group-label"><Glyph id="brain" size={14} /> Mental</div>
+            <div className="wl-fx-grid">
+              {mental.map(fx => (
+                <EffectChip key={fx.id} effect={fx} active={isActive(episodes, fx.id)}
+                  since={isActive(episodes, fx.id) ? episodeMinutes(activeEpisode(episodes, fx.id)) : 0}
+                  onToggle={() => toggleEffect(fx.id)} onEdit={() => openEdit(fx)} />
+              ))}
+            </div>
+          </section>
+
+          {/* The "how long have I felt this" ledger, over the chosen timeframe. */}
+          {(episodes || []).length > 0 && (
+            <section className="wl-card">
+              <div className="wl-card-head">
+                <h3 className="serif">Time by condition</h3>
               </div>
-            ))}
-          </div>
-        </section>
+              <TimeframePicker compact />
+              {ledger.length === 0 && <p className="wl-empty">Nothing ran {tf.phrase}.</p>}
+              <div className="wl-ledger">
+                {ledger.map(r => (
+                  <div key={r.fx.id} className="wl-ledger-row">
+                    <div className="wl-ledger-top">
+                      <span className="wl-ledger-ico" style={{ background: r.fx.color, color: iconColorOn(r.fx.color) }}><EffectIcon icon={r.fx.icon} size={13} /></span>
+                      <span className="wl-ledger-name">{r.fx.name}</span>
+                      <span className="wl-ledger-count">{r.count}×</span>
+                      <span className="wl-ledger-val">{fmtDuration(r.mins)}</span>
+                    </div>
+                    <div className="in-bar" aria-hidden="true"><div className="in-bar-fill" style={{ width: `${Math.max(2, (r.mins / ledgerMax) * 100)}%`, background: r.fx.color }} /></div>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
+        </>
       )}
-
-      {/* ── Status effects (conditions) ── */}
-      <section className="wl-card">
-        <div className="wl-card-head">
-          <h3 className="serif">Status effects</h3>
-          <button className="wl-link" onClick={openNew}>+ New</button>
-        </div>
-        <p className="wl-card-sub">Flip a condition on when it starts and off when it lifts — Bloom records how long each one lasts, like a status effect you can toggle.</p>
-
-        <div className="wl-fx-group-label"><Glyph id="pulse" size={14} /> Physical</div>
-        <div className="wl-fx-grid">
-          {physical.map(fx => (
-            <EffectChip key={fx.id} effect={fx} active={isActive(episodes, fx.id)}
-              since={isActive(episodes, fx.id) ? episodeMinutes(activeEpisode(episodes, fx.id)) : 0}
-              onToggle={() => toggleEffect(fx.id)} onEdit={() => openEdit(fx)} />
-          ))}
-        </div>
-
-        <div className="wl-fx-group-label"><Glyph id="brain" size={14} /> Mental</div>
-        <div className="wl-fx-grid">
-          {mental.map(fx => (
-            <EffectChip key={fx.id} effect={fx} active={isActive(episodes, fx.id)}
-              since={isActive(episodes, fx.id) ? episodeMinutes(activeEpisode(episodes, fx.id)) : 0}
-              onToggle={() => toggleEffect(fx.id)} onEdit={() => openEdit(fx)} />
-          ))}
-        </div>
-      </section>
-
-      {/* ── Patterns & insights ── */}
-      <section className="wl-card">
-        <div className="wl-card-head"><h3 className="serif">Patterns</h3></div>
-        {insights.length === 0 ? (
-          <p className="wl-empty">
-            Keep checking in and toggling conditions for a couple of weeks — once there's
-            enough history, Bloom starts surfacing how your mood, energy, conditions and
-            finished tasks relate to one another.
-          </p>
-        ) : (
-          <div className="wl-insights">
-            {insights.slice(0, 8).map(ins => (
-              <div key={ins.id} className={`wl-insight ${ins.good ? 'good' : ins.strength < 0 ? 'watch' : ''}`}>
-                <span className="wl-insight-dot" />
-                <span className="wl-insight-text">{ins.text}</span>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* Condition time totals — the "how long have I felt this" ledger. */}
-        {totals.size > 0 && (
-          <div className="wl-totals">
-            <div className="wl-totals-head">Tracked time by condition</div>
-            {effectList.filter(f => totals.get(f.id)).map(f => {
-              const t = totals.get(f.id)
-              return (
-                <div key={f.id} className="wl-total-row">
-                  <span className="wl-total-name"><span className="wl-total-swatch" style={{ background: f.color }} /> {f.name}</span>
-                  <span className="wl-total-val">{fmtDuration(t.mins)} · {t.count}×</span>
-                </div>
-              )
-            })}
-          </div>
-        )}
-      </section>
-
-      {/* ── The rule for when you go quiet ── */}
-      <QuietRule rule={rules} onChange={persistRules} />
 
       <p className="wl-footer">Bloom's wellness tools are for reflection and self-awareness, not a substitute for professional care. If you're struggling, reach out to someone you trust.</p>
 
@@ -945,7 +1054,7 @@ export default function BloomWellness({
         <EffectEditor draft={editor} onChange={setEditor} onSave={saveEditor}
           onDelete={deleteEditor} onClose={() => setEditor(null)} />
       )}
-      {share && <ShareSheet game={game} tracked={trackedDays} stage={stage} onClose={() => setShare(false)} />}
+      {share && <ShareSheet game={game} tracked={weekDays} stage={stage} onClose={() => setShare(false)} />}
       {openDate && (
         <DayDetail date={openDate} checkins={checkins} episodes={episodes} effects={effectList} log={log}
           treasures={treasures}

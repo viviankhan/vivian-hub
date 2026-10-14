@@ -692,14 +692,137 @@ export function moodTrend(checkins, n = 14) {
 
 // The shareable progress summary (plain text) — used by the Web Share sheet and
 // the copy button, so "share with a friend" works with no social backend.
+// `tracked` is how many of the last seven days have a check-in — the share
+// card carries the same week the scene does, never an all-time count.
 export function shareText({ game, tracked, stage }) {
   const lv = levelFromXp(game?.xp || 0)
   const streak = liveStreak(game)
   const lines = [
     `${stage.emoji} My Bloom companion is a level ${lv.level} ${stage.name}!`,
     `🔥 ${streak}-day check-in streak · 🌸 ${game?.petals || 0} petals`,
-    `📈 ${tracked} days of mood tracked`,
+    `📈 ${tracked} of the last 7 days checked in`,
     `Growing a calmer week, one check-in at a time.`,
   ]
   return lines.join('\n')
+}
+
+// ── Looking back over a window ─────────────────────────────────
+// The Insights tab and the wellness journal both read the same few shapes: a
+// day-by-day series, its headline numbers, and what each condition cost inside
+// a window. They live here, pure, so a chart and a stat tile can never disagree.
+
+// Every day-key from `fromKey` to `toKey`, inclusive, oldest first.
+export function dayKeysBetween(fromKey, toKey) {
+  const out = []
+  const d = keyToDate(fromKey), end = keyToDate(toKey)
+  while (d <= end) { out.push(dayKey(d)); d.setDate(d.getDate() + 1) }
+  return out
+}
+
+// One row per day from `fromKey` to `toKey`, oldest first: the day's average
+// mood and energy, how many moments it holds, and the complex emotions tagged
+// on it. Days with nothing logged keep nulls so a chart can leave an honest gap.
+export function moodSeriesBetween(checkins, fromKey, toKey) {
+  const byDay = new Map()
+  for (const c of checkins || []) {
+    if (c.mood == null) continue
+    const a = byDay.get(c.date) || { mood: [], energy: [], emotions: new Set() }
+    a.mood.push(c.mood)
+    if (c.energy) a.energy.push(c.energy)
+    for (const e of c.emotions || []) a.emotions.add(e)
+    byDay.set(c.date, a)
+  }
+  return dayKeysBetween(fromKey, toKey).map(key => {
+    const a = byDay.get(key)
+    return {
+      date: key,
+      mood: a ? round1(mean(a.mood)) : null,
+      energy: a && a.energy.length ? round1(mean(a.energy)) : null,
+      count: a ? a.mood.length : 0,
+      emotions: a ? [...a.emotions] : [],
+    }
+  })
+}
+// The same over the last `n` days ending today.
+export function moodSeries(checkins, n = 30) {
+  const keys = recentDayKeys(n)
+  return moodSeriesBetween(checkins, keys[0], keys[keys.length - 1])
+}
+
+// The headline numbers for a mood series: how many days have anything, the
+// average mood and energy, which way the later half moved against the earlier
+// (in mood points; + is up), and the best and hardest days.
+export function moodSummary(series) {
+  const days = (series || []).filter(d => d.mood != null)
+  if (!days.length) return { days: 0, moments: 0, avg: null, energy: null, direction: 0, best: null, worst: null }
+  const avg = round1(mean(days.map(d => d.mood)))
+  const withEnergy = days.filter(d => d.energy != null)
+  const energy = withEnergy.length ? round1(mean(withEnergy.map(d => d.energy))) : null
+  const half = Math.floor(days.length / 2)
+  const first = days.slice(0, half), last = days.slice(half)
+  const direction = first.length && last.length ? round1(mean(last.map(d => d.mood)) - mean(first.map(d => d.mood))) : 0
+  let best = days[0], worst = days[0]
+  for (const d of days) { if (d.mood > best.mood) best = d; if (d.mood < worst.mood) worst = d }
+  return { days: days.length, moments: days.reduce((a, d) => a + d.count, 0), avg, energy, direction, best, worst }
+}
+
+// Which complex emotions kept coming up across a series — one count per day
+// they were tagged, most-present first.
+export function emotionTally(series) {
+  const counts = new Map()
+  for (const d of series || []) for (const e of d.emotions || []) counts.set(e, (counts.get(e) || 0) + 1)
+  return [...counts.entries()].map(([id, days]) => ({ id, days })).sort((a, b) => b.days - a.days)
+}
+
+// effectTotals, but only the part of each span that fell between two days —
+// a migraine that started before the window counts from the window's first
+// morning, not from when it began, and one still running stops counting at
+// the window's end (or now, whichever comes first). Carries the worst
+// intensity rated.
+export function effectTotalsBetween(episodes, fromKey, toKey, now = Date.now()) {
+  const from = keyToDate(fromKey).getTime()
+  // Step a calendar day for the end edge: on a clock-change day 24 hours lands
+  // an hour either side of midnight.
+  const endDay = keyToDate(toKey); endDay.setDate(endDay.getDate() + 1)
+  const to = Math.min(now, endDay.getTime())
+  const by = new Map()
+  for (const e of episodes || []) {
+    const s = Date.parse(e.start)
+    if (Number.isNaN(s)) continue
+    const en = e.end ? Date.parse(e.end) : now
+    const a = Math.max(s, from), b = Math.min(en, to)
+    if (b <= a) continue
+    const row = by.get(e.effectId) || { effectId: e.effectId, count: 0, mins: 0, peak: 0 }
+    row.count += 1
+    row.mins += Math.round((b - a) / 60000)
+    if (e.intensity > row.peak) row.peak = e.intensity
+    by.set(e.effectId, row)
+  }
+  return by
+}
+// The same over the last `n` days ending today.
+export function effectTotalsWithin(episodes, n, now = Date.now()) {
+  const keys = recentDayKeys(n)
+  return effectTotalsBetween(episodes, keys[0], keys[keys.length - 1], now)
+}
+
+// The last `weeks` calendar weeks as rows of seven day-keys, Monday first,
+// ending with the week that holds today. The grid stays rectangular, so the
+// days after today come back too — flagged `future` for the UI to leave blank.
+export function calendarWeeks(weeks = 6, todayKey = dayKey()) {
+  const today = keyToDate(todayKey)
+  const dow = (today.getDay() + 6) % 7            // Monday → 0
+  const end = new Date(today); end.setDate(today.getDate() + (6 - dow))
+  const start = new Date(end); start.setDate(end.getDate() - weeks * 7 + 1)
+  const rows = []
+  for (let w = 0; w < weeks; w++) {
+    const row = []
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(start); d.setDate(start.getDate() + w * 7 + i)
+      const key = dayKey(d)
+      row.push({ key, day: d.getDate(), first: d.getDate() === 1, future: key > todayKey })
+    }
+    rows.push(row)
+  }
+  return rows
 }

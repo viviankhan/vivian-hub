@@ -65,6 +65,11 @@
   --green-light: #E8F6FA;
   --green-mid:   #7BBFD4;
   --on-accent:   #FFFFFF;   /* readable foreground on the accent color (FAB) */
+  /* The two "status" inks every insight, delta and momentum row shares. Dark
+     enough to read as 11px text on white and on the cream; decorative uses
+     (stripes, dots) mix them toward white. */
+  --good:        #2F7A55;
+  --watch:       #B54E44;
 }
 
 html, body {
@@ -822,31 +827,38 @@ textarea { resize: vertical; min-height: 160px; line-height: 1.6; }
 /* ── WELLNESS TAB (Bloom companion · mood · status effects) ───── */
 .wl-wrap { max-width: 760px; margin: 0 auto; display: flex; flex-direction: column; gap: 16px; padding-bottom: 90px; }
 
-/* Companion hero */
-.wl-hero {
-  display: flex; align-items: center; gap: 18px;
-  background: linear-gradient(135deg, var(--forest), var(--teal));
-  color: #fff; border-radius: 22px; padding: 20px 22px;
-  box-shadow: 0 10px 34px rgba(42,72,88,.22);
-}
-.wl-companion { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; }
-.wl-companion-emoji { font-size: 46px; line-height: 1; filter: drop-shadow(0 4px 10px rgba(0,0,0,.25)); animation: wl-sway 5s ease-in-out infinite; }
-@keyframes wl-sway { 0%,100% { transform: rotate(-4deg) translateY(0); } 50% { transform: rotate(4deg) translateY(-3px); } }
-.wl-hero-body { flex: 1; min-width: 0; }
-.wl-hero-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
-.wl-hero-name { font-size: 24px; font-weight: 600; line-height: 1.05; }
-.wl-hero-sub { font-size: 12.5px; opacity: .82; margin-top: 2px; }
+/* The scene: companion, today's cloud, level & stats, under one sky. */
+.wl-scene { position: relative; overflow: hidden; border-radius: 22px; color: #fff; padding: 16px 18px 14px; min-height: 236px;
+  display: flex; flex-direction: column; gap: 10px; box-shadow: 0 10px 34px rgba(0,0,0,.22); isolation: isolate; }
+.wl-scene-bg { position: absolute; inset: 0; z-index: -2; }
+/* A dusk band behind the name and the stats, so the moon and the stars never
+   sit under the type. */
+.wl-scene::before { content: ''; position: absolute; inset: 0; z-index: -1; pointer-events: none;
+  background: linear-gradient(180deg, rgba(8,10,24,.6) 0%, rgba(8,10,24,0) 42%, rgba(8,10,24,0) 70%, rgba(8,10,24,.36) 100%); }
+.wl-scene-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.wl-scene-name { font-size: 24px; font-weight: 600; line-height: 1.05; text-shadow: 0 1px 10px rgba(0,0,0,.35); }
+.wl-scene-sub { font-size: 12px; opacity: .86; margin-top: 3px; text-shadow: 0 1px 8px rgba(0,0,0,.35); }
 .wl-share-btn {
   flex-shrink: 0; display: inline-flex; align-items: center; gap: 6px;
   background: rgba(255,255,255,.16); color: #fff; border: none; cursor: pointer;
   border-radius: 999px; padding: 7px 13px; font-size: 12.5px; font-weight: 600; font-family: inherit;
 }
 .wl-share-btn:hover { background: rgba(255,255,255,.26); }
-.wl-chips { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
-.wl-stat { display: inline-flex; align-items: center; gap: 5px; background: rgba(255,255,255,.15); border-radius: 12px; padding: 6px 11px; font-size: 17px; font-weight: 700; }
+.wl-scene-stage { display: flex; align-items: flex-end; gap: 14px; min-height: 118px; }
+.wl-scene-companion { flex-shrink: 0; display: grid; place-items: center; filter: drop-shadow(0 6px 14px rgba(0,0,0,.28)); }
+.wl-scene-sky { flex: 1; min-width: 0; align-self: stretch; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 2px; }
+.wl-scene-cloud { background: none; border: none; padding: 0; cursor: pointer; display: block; filter: drop-shadow(0 8px 16px rgba(0,0,0,.25)); }
+.wl-scene-caption { font-size: 12.5px; font-weight: 700; text-shadow: 0 1px 8px rgba(0,0,0,.45); }
+.wl-scene-nocloud { display: inline-flex; align-items: center; gap: 8px; margin-bottom: 26px; background: rgba(255,255,255,.1); border: 1.5px dashed rgba(255,255,255,.5);
+  color: #fff; border-radius: 999px; padding: 8px 14px 8px 10px; font-size: 12.5px; font-weight: 600; cursor: pointer; font-family: inherit; }
+.wl-scene-nocloud:hover { background: rgba(255,255,255,.18); }
+.wl-scene-nocloud-ring { width: 14px; height: 14px; border-radius: 50%; border: 2px dashed rgba(255,255,255,.75); }
+.wl-scene-foot { display: flex; flex-direction: column; gap: 8px; }
+.wl-chips { display: flex; gap: 8px; flex-wrap: wrap; }
+.wl-stat { display: inline-flex; align-items: center; gap: 5px; background: rgba(255,255,255,.15); border-radius: 12px; padding: 5px 10px; font-size: 15px; font-weight: 700; }
 .wl-stat i { font-style: normal; font-size: 11px; font-weight: 500; opacity: .8; }
 .wl-stat svg { opacity: .92; }
-.wl-story { margin-top: 12px; font-size: 13px; line-height: 1.4; opacity: .92; }
+.wl-story { font-size: 12.5px; line-height: 1.4; opacity: .92; text-shadow: 0 1px 8px rgba(0,0,0,.35); }
 
 /* Generic card */
 .wl-card { background: #fff; border: 1px solid var(--border); border-radius: 18px; padding: 18px 18px 20px; box-shadow: 0 4px 18px rgba(60,72,88,.05); }
@@ -854,6 +866,8 @@ textarea { resize: vertical; min-height: 160px; line-height: 1.6; }
 .wl-card-head h3 { font-size: 19px; color: var(--forest); font-weight: 600; }
 .wl-card-sub { font-size: 12.5px; color: var(--muted); line-height: 1.45; margin: 2px 0 14px; }
 .wl-link { background: none; border: none; color: var(--teal); font-weight: 600; font-size: 13px; cursor: pointer; font-family: inherit; }
+.wl-link.sm { font-size: 12px; }
+.wl-card-meta { font-size: 12px; font-weight: 600; color: var(--muted); }
 
 /* Check-in */
 .wl-ask { font-size: 13.5px; font-weight: 600; color: var(--text); margin: 14px 0 8px; }
@@ -881,20 +895,17 @@ textarea { resize: vertical; min-height: 160px; line-height: 1.6; }
 .wl-btn.ghost.danger { color: #C0554A; }
 .wl-btn.block { display: block; width: 100%; margin-top: 16px; }
 
-/* Today (already checked in) */
-.wl-today-done { display: flex; gap: 14px; align-items: center; padding: 6px 0 2px; }
-.wl-today-face { font-size: 44px; line-height: 1; }
-.wl-today-mood { font-size: 15px; font-weight: 700; color: var(--forest); }
-.wl-today-note { font-size: 13px; color: var(--text); font-style: italic; margin-top: 3px; }
-.wl-today-hint { font-size: 11.5px; color: var(--muted); margin-top: 5px; }
-
-/* Mood trend */
-.wl-trend { margin-top: 18px; border-top: 1px dashed var(--border); padding-top: 12px; }
-.wl-trend-head { font-size: 11.5px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .6px; margin-bottom: 6px; }
+/* The one-line nudge under Today when no condition is running. */
+.wl-hint { display: inline-flex; align-items: center; gap: 6px; align-self: flex-start; background: none; border: 1.5px dashed var(--border);
+  border-radius: 999px; padding: 8px 14px; font-size: 12px; color: var(--muted); cursor: pointer; font-family: inherit; }
+.wl-hint b { color: var(--forest); font-weight: 700; }
+.wl-hint:hover { background: var(--cream); }
 
 /* Active-now banner */
 .wl-active { background: var(--green-light); border: 1px solid var(--border); border-radius: 16px; padding: 12px 14px; }
-.wl-active-head { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 700; color: var(--teal); text-transform: uppercase; letter-spacing: .5px; margin-bottom: 9px; }
+.wl-active-head { display: flex; align-items: center; justify-content: space-between; gap: 6px; font-size: 12px; font-weight: 700; color: var(--teal); text-transform: uppercase; letter-spacing: .5px; margin-bottom: 9px; }
+.wl-active-head > span { display: inline-flex; align-items: center; gap: 6px; }
+.wl-active-head .wl-link { text-transform: none; letter-spacing: 0; }
 .wl-active-list { display: flex; flex-wrap: wrap; gap: 7px; }
 /* One running condition: its pill, with its photos tucked underneath. */
 .wl-active-item { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
@@ -921,18 +932,18 @@ textarea { resize: vertical; min-height: 160px; line-height: 1.6; }
 .wl-empty { font-size: 13px; color: var(--muted); line-height: 1.5; }
 .wl-insights { display: flex; flex-direction: column; gap: 8px; }
 .wl-insight { display: flex; gap: 10px; align-items: flex-start; background: var(--cream); border-radius: 12px; padding: 11px 13px; border-left: 3px solid var(--muted); }
-.wl-insight.good { border-left-color: #6F9F8B; }
-.wl-insight.watch { border-left-color: #C97A6D; }
+.wl-insight.good { border-left-color: color-mix(in srgb, var(--good) 65%, #fff); }
+.wl-insight.watch { border-left-color: color-mix(in srgb, var(--watch) 65%, #fff); }
 .wl-insight-dot { flex-shrink: 0; width: 7px; height: 7px; border-radius: 50%; background: currentColor; margin-top: 6px; opacity: .5; }
 .wl-insight-text { font-size: 13px; line-height: 1.45; color: var(--text); }
 
-/* Condition time totals */
-.wl-totals { margin-top: 16px; border-top: 1px dashed var(--border); padding-top: 12px; }
-.wl-totals-head { font-size: 11.5px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .6px; margin-bottom: 8px; }
-.wl-total-row { display: flex; align-items: center; justify-content: space-between; padding: 4px 0; font-size: 13px; }
-.wl-total-name { display: inline-flex; align-items: center; gap: 8px; color: var(--text); }
-.wl-total-swatch { width: 11px; height: 11px; border-radius: 50%; }
-.wl-total-val { color: var(--muted); font-weight: 600; font-variant-numeric: tabular-nums; }
+/* The "how long have I felt this" ledger. */
+.wl-ledger { display: flex; flex-direction: column; gap: 10px; }
+.wl-ledger-top { display: flex; align-items: center; gap: 8px; }
+.wl-ledger-ico { width: 22px; height: 22px; border-radius: 7px; display: inline-grid; place-items: center; flex-shrink: 0; }
+.wl-ledger-name { flex: 1; min-width: 0; font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.wl-ledger-count { font-size: 11px; color: var(--muted); flex-shrink: 0; }
+.wl-ledger-val { font-size: 12.5px; font-weight: 700; flex-shrink: 0; min-width: 48px; text-align: right; font-variant-numeric: tabular-nums; }
 
 .wl-footer { font-size: 11px; color: var(--muted); text-align: center; line-height: 1.5; padding: 0 8px; }
 
@@ -956,15 +967,10 @@ textarea { resize: vertical; min-height: 160px; line-height: 1.6; }
 .wl-input:focus { outline: none; border-color: var(--teal); }
 .wl-seg { display: flex; gap: 6px; }
 .wl-seg-btn { flex: 1; border: 1.5px solid var(--border); background: var(--cream); border-radius: 12px; padding: 9px; font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit; color: var(--text); }
-.wl-seg-btn.on { border-color: var(--teal); background: var(--green-light); color: var(--teal); }
-.wl-swatches { display: flex; flex-wrap: wrap; gap: 8px; }
-.wl-swatch { width: 30px; height: 30px; border-radius: 50%; border: 2px solid transparent; cursor: pointer; }
-.wl-swatch.on { border-color: var(--forest); box-shadow: 0 0 0 2px #fff inset; }
-.wl-icon-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 7px; }
+.wl-seg-btn.on { border-color: var(--teal); background: var(--green-light); color: var(--forest); }
 /* "Choose an icon…" row that opens the searchable icon sheet (wellness editor). */
 .wl-iconpick { display: flex; align-items: center; gap: 10px; width: 100%; border: 1.5px solid var(--border); background: var(--cream); border-radius: 12px; padding: 8px 12px; font-size: 13px; font-weight: 600; color: var(--text); cursor: pointer; font-family: inherit; }
 .wl-iconpick-ico { width: 34px; height: 34px; border-radius: 9px; display: grid; place-items: center; flex-shrink: 0; }
-.wl-icon-btn { aspect-ratio: 1; display: flex; align-items: center; justify-content: center; border: 1.5px solid var(--border); background: var(--cream); border-radius: 11px; cursor: pointer; color: var(--text); }
 .wl-modal-actions { display: flex; align-items: center; gap: 8px; margin-top: 20px; }
 
 /* Share card */
@@ -1040,11 +1046,7 @@ textarea { resize: vertical; min-height: 160px; line-height: 1.6; }
 .wl-preview { display: flex; flex-direction: column; align-items: center; gap: 4px; margin: 16px 0 4px; }
 .wl-preview-cap { font-size: 12.5px; font-weight: 600; color: var(--muted); text-align: center; max-width: 90%; }
 
-/* End-of-day cloud + proportional legend */
-.wl-day { display: flex; gap: 16px; align-items: center; padding: 4px 0 6px; }
-.wl-day-cloud { flex-shrink: 0; }
-.wl-day-body { min-width: 0; flex: 1; }
-.wl-day-title { font-size: 16px; font-weight: 700; color: var(--forest); }
+/* Proportional legend: how much of the day each mood coloured */
 .wl-day-legend { display: flex; flex-wrap: wrap; gap: 6px 12px; margin-top: 8px; }
 .wl-legend-item { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text); font-weight: 600; }
 .wl-legend-dot { width: 10px; height: 10px; border-radius: 50%; }
@@ -1062,16 +1064,11 @@ textarea { resize: vertical; min-height: 160px; line-height: 1.6; }
 .wl-moment-emos { font-size: 11.5px; color: var(--teal); font-weight: 600; margin-top: 1px; }
 .wl-moment-note { font-size: 12.5px; color: var(--text); font-style: italic; margin-top: 2px; }
 
-/* ── Alien sky (the day cloud floats here) ───────────────────── */
-.wl-sky { position: relative; border-radius: 18px; overflow: hidden; height: 176px; margin-bottom: 14px; box-shadow: inset 0 0 44px rgba(20,10,40,.4); }
-.wl-sky-bg { position: absolute; inset: 0; }
-.wl-sky-title { position: absolute; top: 13px; left: 16px; z-index: 2; color: #fff; font-weight: 700; font-size: 15px; letter-spacing: .2px; text-shadow: 0 1px 8px rgba(0,0,0,.45); }
-.wl-sky-cloud { position: absolute; left: 50%; top: 54%; z-index: 2; background: none; border: none; padding: 0; cursor: pointer; }
+/* ── Floating clouds (the scene's day cloud, the check-in preview) ── */
 .wl-float { animation: wl-float 7s ease-in-out infinite; }
 @keyframes wl-float {
-  0%   { transform: translate(-54%, -50%) rotate(-1.8deg); }
-  50%  { transform: translate(-46%, -60%) rotate(1.8deg); }
-  100% { transform: translate(-54%, -50%) rotate(-1.8deg); }
+  0%, 100% { transform: translateY(0) rotate(-1.8deg); }
+  50%      { transform: translateY(-8px) rotate(1.8deg); }
 }
 .wl-bob { display: inline-block; animation: wl-bob 6s ease-in-out infinite; }
 @keyframes wl-bob {
@@ -1079,18 +1076,32 @@ textarea { resize: vertical; min-height: 160px; line-height: 1.6; }
   50%      { transform: translateY(-6px) rotate(1.2deg); }
 }
 @media (prefers-reduced-motion: reduce) {
-  .wl-float { animation: none; transform: translate(-50%, -54%); }
-  .wl-bob { animation: none; }
+  .wl-float, .wl-bob { animation: none; }
 }
 
-/* ── Past-skies journal + day detail + treasures ─────────────── */
-.wl-journal { display: flex; gap: 12px; overflow-x: auto; padding: 4px 2px 8px; -webkit-overflow-scrolling: touch; }
-.wl-journal-day { flex: 0 0 auto; background: none; border: none; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 4px; border-radius: 14px; font-family: inherit; }
-.wl-journal-day:hover { background: var(--cream); }
-.wl-journal-cloud { position: relative; display: block; }
-.wl-journal-gem { position: absolute; right: -2px; bottom: 4px; width: 18px; height: 18px; border-radius: 50%; background: var(--teal); display: flex; align-items: center; justify-content: center; box-shadow: 0 1px 4px rgba(0,0,0,.25); }
-.wl-journal-date { font-size: 11px; color: var(--muted); font-weight: 600; display: flex; flex-direction: column; align-items: center; line-height: 1.1; }
-.wl-journal-date b { font-size: 14px; color: var(--forest); }
+/* ── The journal calendar + day detail + treasures ────────────── */
+.wl-cal { display: flex; flex-direction: column; gap: 4px; }
+.wl-cal-dow, .wl-cal-row { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; }
+.wl-cal-dow span { text-align: center; font-size: 10px; font-weight: 700; color: var(--muted); letter-spacing: .04em; }
+.wl-cal-day { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 5px 2px 4px; border: none; background: none;
+  border-radius: 12px; cursor: pointer; font-family: inherit; min-width: 0; }
+.wl-cal-day:hover { background: var(--cream); }
+.wl-cal-day.future { cursor: default; }
+.wl-cal-day.today { background: color-mix(in srgb, var(--teal) 10%, transparent); }
+.wl-cal-cloud { position: relative; width: 34px; height: 34px; display: grid; place-items: center; }
+.wl-cal-cloud > svg { width: 100%; height: 100%; }
+@media (min-width: 640px) {
+  .wl-cal-cloud { width: 46px; height: 46px; }
+  .wl-cal-num { font-size: 11.5px; }
+}
+.wl-cal-blank { width: 14px; height: 14px; border-radius: 50%; border: 1.5px dashed color-mix(in srgb, var(--border) 70%, var(--muted)); }
+.wl-cal-day.today .wl-cal-blank { border-color: var(--teal); }
+.wl-cal-pip { position: absolute; right: 0; bottom: 2px; width: 8px; height: 8px; border-radius: 50%; background: var(--teal); box-shadow: 0 0 0 2px #fff; }
+.wl-cal-num { font-size: 10.5px; color: var(--muted); font-weight: 600; font-variant-numeric: tabular-nums; }
+.wl-cal-num.first { color: var(--forest); font-weight: 800; }
+.wl-cal-day.has .wl-cal-num { color: var(--text); }
+.wl-cal-legend { margin-top: 12px; justify-content: center; }
+.wl-cal-legend .wl-legend-item { font-size: 11px; color: var(--muted); }
 
 .wl-day-detail-head { display: flex; gap: 14px; align-items: center; margin-bottom: 6px; }
 .wl-detail-cloud { flex-shrink: 0; }
@@ -1448,25 +1459,217 @@ textarea { resize: vertical; min-height: 160px; line-height: 1.6; }
 .tw-chip-ico { display: inline-flex; }
 .tw-chip-time { font-size: 10.5px; font-weight: 700; opacity: .82; padding-left: 2px; }
 
-/* ── Wellness insights (Informatics: mind & body) ─────────────── */
-.wi-card { background: #fff; border: 1px solid var(--border); border-radius: 16px; padding: 15px 16px 16px; margin-bottom: 16px; box-shadow: 0 4px 18px rgba(60,72,88,.05); }
-.wi-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
-.wi-title { display: inline-flex; align-items: center; gap: 7px; font-size: 15px; font-weight: 700; color: var(--forest); }
-.wi-avg { font-size: 12px; font-weight: 600; color: var(--muted); }
-.wi-sub { font-size: 11px; font-weight: 700; letter-spacing: .03em; text-transform: uppercase; color: var(--muted); margin-bottom: 6px; }
-.wi-empty { font-size: 13px; line-height: 1.5; color: var(--muted); }
-.wi-bars { display: flex; flex-direction: column; gap: 8px; }
-.wi-bar-row { display: flex; align-items: center; gap: 9px; }
-.wi-bar-ico { flex-shrink: 0; width: 24px; height: 24px; border-radius: 7px; display: grid; place-items: center; }
-.wi-bar-name { flex-shrink: 0; width: 84px; font-size: 12px; font-weight: 600; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.wi-bar-track { flex: 1; height: 9px; border-radius: 6px; background: #EEECF0; overflow: hidden; }
-.wi-bar-fill { display: block; height: 100%; border-radius: 6px; transition: width .4s ease; }
-.wi-bar-val { flex-shrink: 0; width: 48px; text-align: right; font-size: 11px; font-weight: 700; color: var(--muted); }
-.wi-insights { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 7px; }
-.wi-insight { position: relative; padding: 8px 12px 8px 26px; border-radius: 10px; font-size: 12.5px; line-height: 1.45; color: var(--text); background: var(--cream); }
-.wi-insight::before { content: ''; position: absolute; left: 11px; top: 12px; width: 7px; height: 7px; border-radius: 50%; }
-.wi-insight.good::before { background: #5FA87F; }
-.wi-insight.watch::before { background: #D0956B; }
+/* ── Segmented view switcher (Insights · Wellness) ────────────── */
+.seg { display: flex; gap: 3px; padding: 3px; background: color-mix(in srgb, var(--border) 45%, transparent); border-radius: 999px; }
+.seg-btn { flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 34px; padding: 6px 10px;
+  border: none; border-radius: 999px; background: transparent; color: var(--muted); font-family: inherit; font-size: 12.5px; font-weight: 700;
+  cursor: pointer; white-space: nowrap; min-width: 0; transition: background .15s, color .15s, box-shadow .15s; }
+.seg-btn:hover { color: var(--text); }
+.seg-btn.on { background: #fff; color: var(--forest); box-shadow: 0 2px 8px rgba(60,72,88,.12); }
+.seg-badge { font-size: 10px; font-weight: 800; background: var(--teal); color: #fff; border-radius: 999px; padding: 1px 6px; line-height: 1.4; }
+
+/* ── Timeframe picker (Insights · Wellness) ───────────────────── */
+/* A row of windows ending today, plus "Custom…" for two dates you set. It
+   wraps rather than scrolls, so every choice is on screen on a phone. The
+   chosen one is remembered on this device and shared by every picker. */
+.tf { min-width: 0; flex: 1 1 auto; }
+.tf-chips { display: flex; flex-wrap: wrap; gap: 6px; padding: 2px 0; }
+.tf-chip { flex-shrink: 0; border: 1.5px solid var(--border); background: #fff; border-radius: 999px; padding: 7px 13px;
+  font-size: 12.5px; font-weight: 700; color: var(--muted); cursor: pointer; font-family: inherit; white-space: nowrap;
+  font-variant-numeric: tabular-nums; transition: color .12s, border-color .12s, background .12s; }
+.tf-chip:hover { color: var(--text); }
+.tf-chip.on { border-color: var(--teal); background: var(--green-light); color: var(--forest); }
+.tf-custom { display: flex; gap: 8px; margin-top: 8px; }
+.tf-custom label { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.tf-custom span { font-size: 10.5px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+.tf-custom input { width: 100%; font-size: 12.5px; padding: 8px 10px; border-radius: 10px; border: 1.5px solid var(--border); font-family: inherit; color: var(--text); background: #fff; }
+.tf-custom input:focus { outline: none; border-color: var(--teal); }
+.tf.compact { margin: -2px 0 12px; }
+.tf.compact .tf-chip { padding: 5px 11px; font-size: 11.5px; }
+
+/* ── INSIGHTS TAB ─────────────────────────────────────────────── */
+.in-wrap { display: flex; flex-direction: column; gap: 14px; }
+.in-head .page-sub { margin-bottom: 0; }
+.in-toolbar { display: flex; align-items: flex-start; gap: 10px; }
+.in-toolbar .tf { flex: 1; min-width: 0; }
+.in-log-btn { display: inline-flex; align-items: center; gap: 5px; margin-left: auto; margin-top: 2px; border: none; border-radius: 999px; padding: 9px 14px;
+  background: var(--forest); color: var(--green-light); font-family: inherit; font-size: 12.5px; font-weight: 700; cursor: pointer; }
+
+/* Headline tiles — each opens the view it summarizes */
+.in-tiles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.in-tile { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; text-align: left; padding: 13px 14px 12px; min-width: 0;
+  background: #fff; border: 1px solid var(--border); border-radius: 16px; font-family: inherit; color: var(--text); cursor: pointer;
+  box-shadow: 0 4px 18px rgba(60,72,88,.05); transition: transform .12s, box-shadow .12s; }
+.in-tile:hover { transform: translateY(-1px); box-shadow: 0 6px 20px rgba(60,72,88,.1); }
+.in-tile-label { font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); }
+.in-tile-value { display: flex; align-items: baseline; gap: 7px; min-width: 0; max-width: 100%; }
+.in-tile-num { font-size: 22px; font-weight: 600; line-height: 1.1; color: var(--forest); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.in-tile-swatch { width: 10px; height: 10px; border-radius: 3px; flex-shrink: 0; align-self: center; }
+.in-tile-delta { font-size: 11.5px; font-weight: 800; }
+.in-tile-delta.good { color: var(--good); }
+.in-tile-delta.watch { color: var(--watch); }
+.in-tile-sub { font-size: 11.5px; line-height: 1.35; color: var(--muted); max-width: 100%; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+
+/* Cards */
+.in-card { background: #fff; border: 1px solid var(--border); border-radius: 18px; padding: 16px; box-shadow: 0 4px 18px rgba(60,72,88,.05); }
+.in-card-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
+.in-card-head h3 { font-size: 18px; color: var(--forest); font-weight: 600; }
+.in-card-meta { font-size: 12px; font-weight: 600; color: var(--muted); text-align: right; display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.in-card-sub { font-size: 12.5px; color: var(--muted); line-height: 1.45; margin: -4px 0 12px; }
+.in-card-foot { font-size: 11.5px; color: var(--muted); line-height: 1.5; margin-top: 12px; padding-top: 10px; border-top: 1px dashed var(--border); }
+.in-link { background: none; border: none; color: var(--teal); font-weight: 600; font-size: 13px; cursor: pointer; font-family: inherit; }
+.in-empty { display: flex; gap: 12px; align-items: flex-start; font-size: 13px; color: var(--muted); line-height: 1.5; }
+.in-empty svg { flex-shrink: 0; margin-top: 2px; }
+.in-empty p { margin: 0; }
+.in-dir.up { color: var(--good); }
+.in-dir.down { color: var(--watch); }
+
+/* Inputs & pills */
+.in-input { width: 100%; font-size: 14px; padding: 11px 13px; border-radius: 12px; border: 1px solid var(--border); background: var(--cream); font-family: inherit; color: var(--text); }
+.in-input:focus { outline: none; border-color: var(--teal); }
+.in-primary { border: none; border-radius: 12px; padding: 11px 18px; background: var(--forest); color: var(--green-light); font-family: inherit; font-size: 13px; font-weight: 700; cursor: pointer; white-space: nowrap; }
+.in-primary:disabled { background: var(--border); color: var(--muted); cursor: default; }
+.in-pills { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 10px; }
+.in-pill { display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; font-weight: 600; padding: 5px 11px; border-radius: 999px; border: 1px solid var(--border);
+  background: #fff; color: var(--muted); cursor: pointer; font-family: inherit; max-width: 100%; }
+.in-pill:hover { color: var(--text); }
+.in-pill.on { border-color: var(--teal); background: var(--green-light); color: var(--forest); }
+.in-hm { display: inline-flex; align-items: center; gap: 4px; margin-left: 4px; font-size: 11px; color: var(--muted); }
+.in-num { width: 46px; font-size: 13px; padding: 7px 6px; border-radius: 8px; border: 1px solid var(--border); text-align: center; font-family: inherit; color: var(--text); background: #fff; }
+.in-form-row { display: flex; gap: 8px; align-items: center; margin-top: 12px; }
+.in-form-row .in-primary { margin-left: auto; }
+.in-date { font-size: 12.5px; padding: 9px 10px; border-radius: 10px; border: 1px solid var(--border); font-family: inherit; color: var(--text); background: #fff; }
+
+/* Ask about yourself */
+.in-ask-row { display: flex; gap: 8px; align-items: center; }
+.in-ask-row .in-input { flex: 1; min-width: 0; }
+.in-try { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 10px; }
+.in-try-label { font-size: 11px; color: var(--muted); font-weight: 700; letter-spacing: .04em; text-transform: uppercase; margin-right: 2px; }
+
+/* The answer */
+.in-answer { position: relative; background: linear-gradient(150deg, var(--forest), color-mix(in srgb, var(--forest) 72%, #0B1014)); color: var(--green-light); border-radius: 18px; padding: 18px 20px; }
+.in-answer-x { position: absolute; z-index: 2; top: 10px; right: 12px; width: 26px; height: 26px; border-radius: 50%; border: none; cursor: pointer; font-size: 12px; font-family: inherit;
+  background: rgba(255,255,255,.12); color: inherit; }
+.in-answer-x.muted { background: var(--cream); color: var(--muted); }
+.in-noanswer { position: relative; background: color-mix(in srgb, var(--watch) 10%, #fff); border-color: color-mix(in srgb, var(--watch) 32%, var(--border)); font-size: 13px; color: var(--text); padding-right: 44px; line-height: 1.5; }
+.in-kicker { font-size: 12.5px; opacity: .8; padding-right: 30px; }
+.in-hero { font-size: 38px; font-weight: 600; line-height: 1.1; margin: 4px 0 2px; letter-spacing: -.01em; }
+.in-hero-serif { font-size: 28px; font-weight: 700; line-height: 1.2; margin: 4px 0 4px; }
+.in-answer-sub { font-size: 12.5px; opacity: .82; line-height: 1.45; }
+.in-answer-moves { display: flex; flex-direction: column; gap: 4px; margin-top: 12px; font-size: 12.5px; }
+.in-answer-moves > div > span { opacity: .7; }
+.in-note { font-size: 11px; opacity: .6; margin-top: 8px; line-height: 1.45; }
+.in-answer-rows { margin-top: 12px; border-top: 1px solid rgba(255,255,255,.16); padding-top: 6px; display: flex; flex-direction: column; }
+.in-arow-wrap { padding: 6px 0; }
+.in-arow { display: flex; align-items: center; gap: 8px; width: 100%; background: none; border: none; color: inherit; font-family: inherit; font-size: 12.5px; text-align: left; padding: 3px 0; cursor: pointer; }
+.in-arow.static { cursor: default; opacity: .92; }
+.in-arow-body { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.in-arow-name { flex: 1; min-width: 0; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.in-arow-sub { font-size: 11px; opacity: .65; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.in-arow-delta { font-size: 11px; font-weight: 700; flex-shrink: 0; }
+.in-arow-delta.up { color: color-mix(in srgb, var(--good) 45%, #fff); }
+.in-arow-delta.down { color: color-mix(in srgb, var(--watch) 45%, #fff); }
+.in-arow-val { font-weight: 600; flex-shrink: 0; min-width: 56px; text-align: right; display: flex; flex-direction: column; align-items: flex-end; }
+.in-arow-val small { font-size: 10.5px; opacity: .6; font-weight: 500; }
+.in-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; align-items: center; }
+.in-chips.faint { margin-top: 10px; }
+.in-chips-label { font-size: 11px; opacity: .7; }
+.in-chip { display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; font-weight: 600; padding: 4px 10px; border-radius: 999px; background: rgba(255,255,255,.14); }
+
+/* Bars & rows */
+.in-rows { display: flex; flex-direction: column; gap: 10px; }
+.in-row { display: block; width: 100%; padding: 0; border: none; background: none; text-align: left; font-family: inherit; color: var(--text); border-radius: 10px; }
+.in-row.tappable { cursor: pointer; }
+.in-row.tappable:hover .in-row-name { color: var(--teal); }
+.in-row-top { display: flex; align-items: center; gap: 8px; min-height: 22px; }
+.in-row-ico { display: inline-flex; width: 18px; justify-content: center; flex-shrink: 0; }
+.in-row-name { flex: 1; min-width: 0; font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.in-row-meta { font-size: 11px; color: var(--muted); flex-shrink: 0; display: inline-flex; gap: 6px; align-items: center; }
+.in-row-val { font-size: 12.5px; font-weight: 700; color: var(--text); flex-shrink: 0; min-width: 48px; text-align: right; font-variant-numeric: tabular-nums; }
+.in-row-detail { margin: 8px 0 2px 26px; }
+.in-chevron { display: inline-block; font-size: 16px; color: var(--muted); line-height: 1; transition: transform .15s; flex-shrink: 0; }
+.in-chevron.open { transform: rotate(90deg); }
+.in-bar { height: 6px; border-radius: 4px; background: color-mix(in srgb, var(--border) 55%, transparent); overflow: hidden; margin-top: 6px; }
+.in-bar.dark { background: rgba(255,255,255,.12); margin: 4px 0 0 22px; }
+.in-bar-fill { height: 100%; border-radius: 4px; transition: width .4s ease; background: var(--teal); }
+.in-bar.dark .in-bar-fill { background: rgba(255,255,255,.6); }
+.in-dot { width: 10px; height: 10px; border-radius: 3px; flex-shrink: 0; display: inline-block; }
+.in-fx-ico { width: 22px; height: 22px; border-radius: 7px; display: inline-grid; place-items: center; flex-shrink: 0; }
+.in-peak { font-weight: 800; }
+
+/* Ranked lists */
+.in-rank { display: flex; flex-direction: column; }
+.in-rank-row { display: flex; align-items: center; gap: 10px; padding: 9px 0; border-top: 1px solid color-mix(in srgb, var(--border) 60%, transparent); }
+.in-rank-row:first-child { border-top: none; padding-top: 2px; }
+.in-rank-n { font-size: 11px; color: var(--muted); width: 16px; flex-shrink: 0; font-variant-numeric: tabular-nums; }
+.in-rank-name { flex: 1; min-width: 0; font-size: 13px; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: flex; flex-direction: column; }
+.in-rank-name small { font-size: 11px; color: var(--muted); }
+.in-rank-count { font-size: 11px; color: var(--muted); flex-shrink: 0; }
+.in-rank-val { font-size: 12.5px; font-weight: 700; flex-shrink: 0; min-width: 48px; text-align: right; font-variant-numeric: tabular-nums; }
+.in-del { background: none; border: none; cursor: pointer; color: var(--muted); font-size: 14px; padding: 2px 4px; flex-shrink: 0; font-family: inherit; }
+.in-del:hover { color: var(--watch); }
+
+/* Entry log — what you actually wrote for each one */
+.in-entries { margin-top: 6px; }
+.in-entry { padding: 8px 0; border-top: 1px solid color-mix(in srgb, var(--border) 60%, transparent); }
+.in-entries.dark .in-entry { border-top-color: rgba(255,255,255,.14); }
+.in-entry-top { display: flex; align-items: baseline; gap: 8px; font-size: 12.5px; }
+.in-entry-date { font-size: 11px; flex-shrink: 0; min-width: 44px; color: var(--muted); }
+.in-entry-title { flex: 1; min-width: 0; font-weight: 600; }
+.in-entry-mins { flex-shrink: 0; font-size: 11.5px; color: var(--muted); }
+.in-entries.dark .in-entry-date, .in-entries.dark .in-entry-mins, .in-entries.dark .in-entry-subs { color: inherit; opacity: .72; }
+.in-entry-desc { font-size: 12.5px; line-height: 1.5; white-space: pre-wrap; margin: 4px 0 0 52px; }
+.in-entry-subs { margin: 4px 0 0 52px; padding-left: 16px; font-size: 12px; line-height: 1.5; color: var(--muted); }
+.in-more { margin-top: 6px; font-size: 11.5px; font-weight: 600; padding: 4px 10px; border-radius: 14px; cursor: pointer; font-family: inherit; border: 1px solid var(--border); background: transparent; color: var(--text); }
+.in-entries.dark .in-more { border-color: rgba(255,255,255,.25); color: inherit; }
+
+/* Momentum */
+.in-momentum-row { display: flex; gap: 10px; align-items: baseline; font-size: 12.5px; padding: 5px 0; flex-wrap: wrap; }
+.in-momentum-k { font-size: 11px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; flex-shrink: 0; min-width: 84px; }
+.in-momentum-k.up { color: var(--good); }
+.in-momentum-k.down { color: var(--watch); }
+.in-momentum-item { display: inline-flex; align-items: center; gap: 5px; margin-right: 12px; font-weight: 600; }
+.in-momentum-item b { font-weight: 700; color: var(--muted); }
+.in-momentum-item b.up { color: var(--good); }
+
+/* Mind & body */
+.in-mood-foot { display: flex; flex-wrap: wrap; gap: 4px 14px; }
+.in-emos { display: flex; flex-wrap: wrap; gap: 7px; }
+.in-emo { display: inline-flex; align-items: center; gap: 6px; border: 1.5px solid; border-radius: 999px; padding: 5px 10px 5px 8px; font-size: 12px; font-weight: 600; color: var(--text); background: #fff; }
+.in-emo i { width: 10px; height: 10px; border-radius: 50%; }
+.in-emo b { font-weight: 700; color: var(--muted); font-size: 11px; }
+.in-insights { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 7px; }
+.in-insight { position: relative; padding: 9px 12px 9px 26px; border-radius: 10px; font-size: 12.5px; line-height: 1.45; color: var(--text); background: var(--cream); }
+.in-insight::before { content: ''; position: absolute; left: 11px; top: 13px; width: 7px; height: 7px; border-radius: 50%; background: var(--muted); }
+.in-insight.good::before { background: color-mix(in srgb, var(--good) 65%, #fff); }
+.in-insight.watch::before { background: color-mix(in srgb, var(--watch) 65%, #fff); }
+
+@media (min-width: 640px) {
+  .in-tiles { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+
+/* ── Mood & energy chart (MoodChart.jsx) ─────────────────────── */
+.mc { position: relative; }
+.mc-legend { display: flex; justify-content: flex-end; gap: 14px; font-size: 11px; font-weight: 600; color: var(--muted); margin-bottom: 2px; }
+.mc-key { display: inline-flex; align-items: center; gap: 6px; }
+.mc-key-line { display: inline-block; width: 16px; height: 2px; border-radius: 2px; }
+.mc-key-line.dashed { height: 0; background: none; border-top: 2px dashed; }
+.mc-svg { display: block; overflow: visible; touch-action: pan-y; outline: none; border-radius: 10px; }
+.mc-svg:focus-visible { box-shadow: 0 0 0 2px color-mix(in srgb, var(--teal) 45%, transparent); }
+.mc-grid { stroke: color-mix(in srgb, var(--border) 70%, transparent); stroke-width: 1; stroke-dasharray: 2 4; }
+.mc-ylab { font-size: 9.5px; fill: var(--muted); font-weight: 600; font-family: inherit; }
+.mc-xlab { font-size: 10px; fill: var(--muted); font-family: inherit; }
+.mc-hair { stroke: var(--forest); stroke-width: 1; opacity: .5; }
+.mc-tip { position: absolute; top: 24px; transform: translateX(10px); background: var(--forest); color: #fff; border-radius: 10px; padding: 8px 10px;
+  font-size: 11.5px; line-height: 1.4; pointer-events: none; z-index: 2; box-shadow: 0 6px 20px rgba(0,0,0,.2); white-space: nowrap; max-width: 220px; }
+.mc-tip.flip { transform: translateX(calc(-100% - 10px)); }
+.mc-tip-date { font-weight: 700; margin-bottom: 2px; }
+.mc-tip-row { display: flex; align-items: center; gap: 6px; }
+.mc-tip-row i { width: 12px; height: 2px; border-radius: 2px; display: inline-block; }
+.mc-tip-row i.dashed { height: 0; background: none; border-top: 2px dashed; }
+.mc-tip-row b { font-weight: 800; }
+.mc-tip-sub { opacity: .75; margin-top: 2px; white-space: normal; }
+.mc-empty { font-size: 12.5px; color: var(--muted); padding: 10px 0; }
 
 /* ── Wellness day-rail (Today tab) ────────────────────────────── */
 .today-root { position: relative; }
@@ -1792,23 +1995,37 @@ textarea { resize: vertical; min-height: 160px; line-height: 1.6; }
   font-size: 11.5px; font-weight: 600; cursor: pointer; font-family: inherit; padding: 8px; }
 
 /* ── "When I go quiet" — the absence rule's settings card ────────────── */
+/* Folded by default: one line says what the rule does; tap to open it. */
+.wl-rule { padding: 0; overflow: hidden; }
+.wl-rule-head { display: flex; align-items: center; gap: 12px; width: 100%; padding: 14px 18px; background: none; border: none; text-align: left;
+  cursor: pointer; font-family: inherit; color: var(--text); }
+.wl-rule-head:hover { background: var(--cream); }
+.wl-rule-ico { width: 34px; height: 34px; border-radius: 10px; background: var(--green-light); color: var(--teal); display: grid; place-items: center; flex-shrink: 0; }
+.wl-rule-title { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.wl-rule-title h3 { font-size: 17px; color: var(--forest); font-weight: 600; }
+.wl-rule-sum { font-size: 12px; color: var(--muted); }
+.wl-rule.open > .wl-rule-head { border-bottom: 1px dashed var(--border); }
+.wl-rule.open > *:not(.wl-rule-head) { margin-left: 18px; margin-right: 18px; }
+.wl-rule.open > *:last-child { margin-bottom: 18px; }
+.wl-rule-intro { display: flex; gap: 12px; align-items: flex-start; margin-top: 14px; }
+.wl-rule-intro .wl-rule-toggle { margin-left: 0; flex-shrink: 0; }
 .wl-rule-ask { display: flex; align-items: center; gap: 10px; font-size: 12.5px; font-weight: 700;
   color: var(--forest); margin: 16px 0 9px; }
 .wl-rule-chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .wl-rule-chip { border: 1.5px solid var(--border); background: #fff; border-radius: 999px; padding: 6px 13px;
   font-size: 12.5px; font-weight: 700; color: var(--text); cursor: pointer; font-family: inherit;
   font-variant-numeric: tabular-nums; }
-.wl-rule-chip.on { border-color: var(--teal); background: var(--green-light); color: var(--teal); }
+.wl-rule-chip.on { border-color: var(--teal); background: var(--green-light); color: var(--forest); }
 .wl-rule-toggle { margin-left: auto; border: 1.5px solid var(--border); background: #fff; border-radius: 999px;
   padding: 5px 12px; font-size: 11.5px; font-weight: 700; color: var(--muted); cursor: pointer; font-family: inherit; }
-.wl-rule-toggle.on { border-color: var(--teal); background: var(--green-light); color: var(--teal); }
+.wl-rule-toggle.on { border-color: var(--teal); background: var(--green-light); color: var(--forest); }
 .wl-rule-toggle.block { display: block; width: 100%; margin: 14px 0 0; padding: 10px; font-size: 12.5px; text-align: center; }
 .wl-rule-night { display: flex; gap: 10px; margin-top: 4px; }
 .wl-rule-field { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
 .wl-rule-field > span { font-size: 10.5px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
 /* The rule, said back in the user's own numbers — the answer to "will this
    pester me every morning?", shown rather than promised. */
-.wl-rule-preview { margin-top: 12px; border-radius: 12px; background: var(--green-light); color: var(--teal);
+.wl-rule-preview { margin-top: 12px; border-radius: 12px; background: var(--green-light); color: var(--forest);
   padding: 9px 12px; font-size: 11.5px; font-weight: 600; line-height: 1.45; }
 .wl-rule-preview.warn { background: #FBF0E4; color: #A8703A; }
 .wl-rule-foot { font-size: 11.5px; color: var(--muted); line-height: 1.5; margin-top: 12px; }

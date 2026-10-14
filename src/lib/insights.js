@@ -143,6 +143,11 @@ export function filterByRange(entries, range) {
   return entries.filter(e => e.date >= cut)
 }
 
+// Restrict entries to the days from `from` to `to` inclusive (YYYY-MM-DD).
+export function filterByDates(entries, from, to) {
+  return entries.filter(e => e.date && (!from || e.date >= from) && (!to || e.date <= to))
+}
+
 function catMeta(catId, categories) {
   const c = (categories || []).find(x => x.id === catId)
   return { id: catId || '', label: c?.label || (catId ? catId : 'Uncategorized'), color: c?.color || '#9AA6B2', icon: c?.icon || '' }

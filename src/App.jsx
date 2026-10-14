@@ -2163,7 +2163,7 @@ export default function App() {
           treasures={wlTreasures} persistTreasures={persistWlTreasures}
           emotionPrefs={wlEmotions} persistEmotionPrefs={persistWlEmotions}
           rules={wlRules} persistRules={persistWlRules}
-          log={log} />}
+          log={log} onOpenInsights={() => setTab('informatics')} />}
         {tab==='informatics' && <Informatics commitments={commitmentsView} recurringTasks={recurringTasksEnriched} completions={completions} log={log} categories={categories} timeLogs={timeLogs} addTimeLog={addTimeLog} deleteTimeLog={deleteTimeLog} wlCheckins={wlCheckins} wlEffects={wlEffects} wlEpisodes={wlEpisodes} />}
         {tab==='records'     && <Insights
           folders={trackerFolders} people={trackerPeople} entries={trackerEntries}
