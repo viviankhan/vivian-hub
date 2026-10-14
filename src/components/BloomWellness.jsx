@@ -259,7 +259,7 @@ function ShareSheet({ game, tracked, stage, onClose }) {
           <div className="wl-share-stats">
             <div><b><Glyph id="flame" size={16} /> {liveStreak(game)}</b><span>days in a row</span></div>
             <div><b><Glyph id="flower" size={16} /> {game?.petals || 0}</b><span>petals</span></div>
-            <div><b><Glyph id="chart" size={16} /> {tracked}</b><span>days tracked</span></div>
+            <div><b><Glyph id="chart" size={16} /> {tracked}/7</b><span>past 7 days</span></div>
           </div>
           <div className="wl-share-tag">Growing a calmer week, one check-in at a time.</div>
         </div>
@@ -710,9 +710,8 @@ export default function BloomWellness({
   const stage = stageForLevel(lv.level)
   const next = nextStage(lv.level)
   const streak = liveStreak(game)
-  // The share card still counts every day ever tracked; the scene itself only
-  // says how many of the last seven days have a check-in.
-  const trackedDays = useMemo(() => new Set((checkins || []).map(c => c.date)).size, [checkins])
+  // How many of the last seven days have a check-in — the scene's third chip
+  // and the share card both say this, never an all-time count.
   const weekDays = useMemo(() => {
     const from = shiftKey(today, -6)
     return new Set((checkins || []).filter(c => c.date >= from && c.date <= today).map(c => c.date)).size
@@ -851,7 +850,7 @@ export default function BloomWellness({
                 the word for two different things. */}
             <span className="wl-stat"><Glyph id="flame" size={14} /> {streak}<i>in a row</i></span>
             <span className="wl-stat"><Glyph id="flower" size={14} /> {game?.petals || 0}<i>petals</i></span>
-            <span className="wl-stat"><Glyph id="calendar" size={14} /> {weekDays}/7<i>this week</i></span>
+            <span className="wl-stat"><Glyph id="calendar" size={14} /> {weekDays}/7<i>past 7 days</i></span>
           </div>
           <div className="wl-story">{story}</div>
         </div>
@@ -949,16 +948,19 @@ export default function BloomWellness({
           <section className="wl-card">
             <div className="wl-card-head">
               <h3 className="serif">Mood &amp; energy</h3>
-              <span className="wl-card-meta">{tf.label}</span>
             </div>
             <TimeframePicker compact />
-            <MoodChart series={series} height={150} />
+            <MoodChart series={series} height={150} label={tf.phrase}
+              emptyText={(checkins || []).length ? `No check-ins ${tf.phrase}.` : undefined} />
           </section>
 
           <section className="wl-card">
             <div className="wl-card-head">
               <h3 className="serif">Patterns</h3>
-              {onOpenInsights && <button type="button" className="wl-link sm" onClick={onOpenInsights}>More in Insights ›</button>}
+              <span className="wl-card-meta">
+                past 60 days
+                {onOpenInsights && <> · <button type="button" className="wl-link sm" onClick={onOpenInsights}>More in Insights ›</button></>}
+              </span>
             </div>
             {insights.length === 0 ? (
               <p className="wl-empty">
@@ -1017,7 +1019,6 @@ export default function BloomWellness({
             <section className="wl-card">
               <div className="wl-card-head">
                 <h3 className="serif">Time by condition</h3>
-                <span className="wl-card-meta">{tf.label}</span>
               </div>
               <TimeframePicker compact />
               {ledger.length === 0 && <p className="wl-empty">Nothing ran {tf.phrase}.</p>}
@@ -1053,7 +1054,7 @@ export default function BloomWellness({
         <EffectEditor draft={editor} onChange={setEditor} onSave={saveEditor}
           onDelete={deleteEditor} onClose={() => setEditor(null)} />
       )}
-      {share && <ShareSheet game={game} tracked={trackedDays} stage={stage} onClose={() => setShare(false)} />}
+      {share && <ShareSheet game={game} tracked={weekDays} stage={stage} onClose={() => setShare(false)} />}
       {openDate && (
         <DayDetail date={openDate} checkins={checkins} episodes={episodes} effects={effectList} log={log}
           treasures={treasures}

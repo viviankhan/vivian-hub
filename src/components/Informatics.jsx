@@ -551,7 +551,7 @@ export default function Informatics({ commitments = [], recurringTasks = [], com
 
       {view === 'body' && (
         <MindBody checkins={wlCheckins} effects={effectList} episodes={wlEpisodes} log={log}
-          days={days} rangeLabel={rangeLabel} series={series} summary={mood} fxRows={fxRows} />
+          days={days} rangeLabel={rangeLabel} phrase={inRange} series={series} summary={mood} fxRows={fxRows} />
       )}
     </div>
   )

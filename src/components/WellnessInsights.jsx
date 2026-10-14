@@ -20,7 +20,7 @@ function dayLabel(key) {
   try { return keyToDate(key).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) } catch { return key }
 }
 
-export default function MindBody({ checkins = [], effects = [], episodes = [], log = [], days = 30, rangeLabel = '', series = [], summary, fxRows = [] }) {
+export default function MindBody({ checkins = [], effects = [], episodes = [], log = [], days = 30, rangeLabel = '', phrase = '', series = [], summary, fxRows = [] }) {
   // Patterns need history to mean anything, so they always look back at least
   // two months even when the range row is set to the past week.
   const patternDays = Math.max(60, days)
@@ -29,7 +29,11 @@ export default function MindBody({ checkins = [], effects = [], episodes = [], l
   const feelings = useMemo(() => emotionTally(series).map(t => ({ ...t, meta: emotionMeta(t.id) })).filter(t => t.meta).slice(0, 10), [series])
   const maxFx = fxRows.reduce((m, r) => Math.max(m, r.mins), 1)
 
-  if (!summary?.days && !fxRows.length) {
+  // Nothing at all, ever: say what the view is for. Nothing in this window:
+  // say so, and still show the longer-run patterns underneath.
+  const nothingEver = !(checkins || []).length && !(episodes || []).length
+  const nothingHere = !summary?.days && !fxRows.length
+  if (nothingEver) {
     return (
       <section className="in-card in-empty">
         <Glyph id="pulse" size={22} color="var(--muted)" />
@@ -43,6 +47,12 @@ export default function MindBody({ checkins = [], effects = [], episodes = [], l
 
   return (
     <>
+      {nothingHere ? (
+        <section className="in-card in-empty">
+          <Glyph id="pulse" size={22} color="var(--muted)" />
+          <p>No check-ins or conditions {phrase}. Widen the timeframe above to see more.</p>
+        </section>
+      ) : (
       <section className="in-card">
         <div className="in-card-head">
           <h3 className="serif">Mood &amp; energy</h3>
@@ -53,7 +63,7 @@ export default function MindBody({ checkins = [], effects = [], episodes = [], l
             </span>
           )}
         </div>
-        <MoodChart series={series} />
+        <MoodChart series={series} label={phrase} emptyText={`No check-ins ${phrase}.`} />
         {summary?.days > 0 && (
           <div className="in-card-foot in-mood-foot">
             <span>{summary.days} of {days} days have a check-in · {summary.moments} moment{summary.moments === 1 ? '' : 's'}</span>
@@ -66,6 +76,7 @@ export default function MindBody({ checkins = [], effects = [], episodes = [], l
           </div>
         )}
       </section>
+      )}
 
       {feelings.length > 0 && (
         <section className="in-card">
@@ -108,7 +119,7 @@ export default function MindBody({ checkins = [], effects = [], episodes = [], l
       <section className="in-card">
         <div className="in-card-head">
           <h3 className="serif">What relates to what</h3>
-          <span className="in-card-meta">last {patternDays} days</span>
+          <span className="in-card-meta">past {patternDays} days</span>
         </div>
         {insights.length === 0 ? (
           <p className="in-card-sub" style={{ margin: 0 }}>

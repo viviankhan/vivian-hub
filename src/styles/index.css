@@ -65,9 +65,11 @@
   --green-light: #E8F6FA;
   --green-mid:   #7BBFD4;
   --on-accent:   #FFFFFF;   /* readable foreground on the accent color (FAB) */
-  /* The two "status" inks every insight, delta and momentum row shares. */
-  --good:        #6F9F8B;
-  --watch:       #C97A6D;
+  /* The two "status" inks every insight, delta and momentum row shares. Dark
+     enough to read as 11px text on white and on the cream; decorative uses
+     (stripes, dots) mix them toward white. */
+  --good:        #2F7A55;
+  --watch:       #B54E44;
 }
 
 html, body {
@@ -896,7 +898,7 @@ textarea { resize: vertical; min-height: 160px; line-height: 1.6; }
 /* The one-line nudge under Today when no condition is running. */
 .wl-hint { display: inline-flex; align-items: center; gap: 6px; align-self: flex-start; background: none; border: 1.5px dashed var(--border);
   border-radius: 999px; padding: 8px 14px; font-size: 12px; color: var(--muted); cursor: pointer; font-family: inherit; }
-.wl-hint b { color: var(--teal); font-weight: 700; }
+.wl-hint b { color: var(--forest); font-weight: 700; }
 .wl-hint:hover { background: var(--cream); }
 
 /* Active-now banner */
@@ -930,8 +932,8 @@ textarea { resize: vertical; min-height: 160px; line-height: 1.6; }
 .wl-empty { font-size: 13px; color: var(--muted); line-height: 1.5; }
 .wl-insights { display: flex; flex-direction: column; gap: 8px; }
 .wl-insight { display: flex; gap: 10px; align-items: flex-start; background: var(--cream); border-radius: 12px; padding: 11px 13px; border-left: 3px solid var(--muted); }
-.wl-insight.good { border-left-color: var(--good); }
-.wl-insight.watch { border-left-color: var(--watch); }
+.wl-insight.good { border-left-color: color-mix(in srgb, var(--good) 65%, #fff); }
+.wl-insight.watch { border-left-color: color-mix(in srgb, var(--watch) 65%, #fff); }
 .wl-insight-dot { flex-shrink: 0; width: 7px; height: 7px; border-radius: 50%; background: currentColor; margin-top: 6px; opacity: .5; }
 .wl-insight-text { font-size: 13px; line-height: 1.45; color: var(--text); }
 
@@ -965,7 +967,7 @@ textarea { resize: vertical; min-height: 160px; line-height: 1.6; }
 .wl-input:focus { outline: none; border-color: var(--teal); }
 .wl-seg { display: flex; gap: 6px; }
 .wl-seg-btn { flex: 1; border: 1.5px solid var(--border); background: var(--cream); border-radius: 12px; padding: 9px; font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit; color: var(--text); }
-.wl-seg-btn.on { border-color: var(--teal); background: var(--green-light); color: var(--teal); }
+.wl-seg-btn.on { border-color: var(--teal); background: var(--green-light); color: var(--forest); }
 /* "Choose an icon…" row that opens the searchable icon sheet (wellness editor). */
 .wl-iconpick { display: flex; align-items: center; gap: 10px; width: 100%; border: 1.5px solid var(--border); background: var(--cream); border-radius: 12px; padding: 8px 12px; font-size: 13px; font-weight: 600; color: var(--text); cursor: pointer; font-family: inherit; }
 .wl-iconpick-ico { width: 34px; height: 34px; border-radius: 9px; display: grid; place-items: center; flex-shrink: 0; }
@@ -1476,7 +1478,7 @@ textarea { resize: vertical; min-height: 160px; line-height: 1.6; }
   font-size: 12.5px; font-weight: 700; color: var(--muted); cursor: pointer; font-family: inherit; white-space: nowrap;
   font-variant-numeric: tabular-nums; transition: color .12s, border-color .12s, background .12s; }
 .tf-chip:hover { color: var(--text); }
-.tf-chip.on { border-color: var(--teal); background: var(--green-light); color: var(--teal); }
+.tf-chip.on { border-color: var(--teal); background: var(--green-light); color: var(--forest); }
 .tf-custom { display: flex; gap: 8px; margin-top: 8px; }
 .tf-custom label { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
 .tf-custom span { font-size: 10.5px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
@@ -1488,9 +1490,9 @@ textarea { resize: vertical; min-height: 160px; line-height: 1.6; }
 /* ── INSIGHTS TAB ─────────────────────────────────────────────── */
 .in-wrap { display: flex; flex-direction: column; gap: 14px; }
 .in-head .page-sub { margin-bottom: 0; }
-.in-toolbar { display: flex; align-items: center; gap: 10px; }
+.in-toolbar { display: flex; align-items: flex-start; gap: 10px; }
 .in-toolbar .tf { flex: 1; min-width: 0; }
-.in-log-btn { display: inline-flex; align-items: center; gap: 5px; margin-left: auto; border: none; border-radius: 999px; padding: 9px 14px;
+.in-log-btn { display: inline-flex; align-items: center; gap: 5px; margin-left: auto; margin-top: 2px; border: none; border-radius: 999px; padding: 9px 14px;
   background: var(--forest); color: var(--green-light); font-family: inherit; font-size: 12.5px; font-weight: 700; cursor: pointer; }
 
 /* Headline tiles — each opens the view it summarizes */
@@ -1531,7 +1533,7 @@ textarea { resize: vertical; min-height: 160px; line-height: 1.6; }
 .in-pill { display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; font-weight: 600; padding: 5px 11px; border-radius: 999px; border: 1px solid var(--border);
   background: #fff; color: var(--muted); cursor: pointer; font-family: inherit; max-width: 100%; }
 .in-pill:hover { color: var(--text); }
-.in-pill.on { border-color: var(--teal); background: var(--green-light); color: var(--teal); }
+.in-pill.on { border-color: var(--teal); background: var(--green-light); color: var(--forest); }
 .in-hm { display: inline-flex; align-items: center; gap: 4px; margin-left: 4px; font-size: 11px; color: var(--muted); }
 .in-num { width: 46px; font-size: 13px; padding: 7px 6px; border-radius: 8px; border: 1px solid var(--border); text-align: center; font-family: inherit; color: var(--text); background: #fff; }
 .in-form-row { display: flex; gap: 8px; align-items: center; margin-top: 12px; }
@@ -1639,8 +1641,8 @@ textarea { resize: vertical; min-height: 160px; line-height: 1.6; }
 .in-insights { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 7px; }
 .in-insight { position: relative; padding: 9px 12px 9px 26px; border-radius: 10px; font-size: 12.5px; line-height: 1.45; color: var(--text); background: var(--cream); }
 .in-insight::before { content: ''; position: absolute; left: 11px; top: 13px; width: 7px; height: 7px; border-radius: 50%; background: var(--muted); }
-.in-insight.good::before { background: var(--good); }
-.in-insight.watch::before { background: var(--watch); }
+.in-insight.good::before { background: color-mix(in srgb, var(--good) 65%, #fff); }
+.in-insight.watch::before { background: color-mix(in srgb, var(--watch) 65%, #fff); }
 
 @media (min-width: 640px) {
   .in-tiles { grid-template-columns: repeat(4, minmax(0, 1fr)); }
@@ -2013,17 +2015,17 @@ textarea { resize: vertical; min-height: 160px; line-height: 1.6; }
 .wl-rule-chip { border: 1.5px solid var(--border); background: #fff; border-radius: 999px; padding: 6px 13px;
   font-size: 12.5px; font-weight: 700; color: var(--text); cursor: pointer; font-family: inherit;
   font-variant-numeric: tabular-nums; }
-.wl-rule-chip.on { border-color: var(--teal); background: var(--green-light); color: var(--teal); }
+.wl-rule-chip.on { border-color: var(--teal); background: var(--green-light); color: var(--forest); }
 .wl-rule-toggle { margin-left: auto; border: 1.5px solid var(--border); background: #fff; border-radius: 999px;
   padding: 5px 12px; font-size: 11.5px; font-weight: 700; color: var(--muted); cursor: pointer; font-family: inherit; }
-.wl-rule-toggle.on { border-color: var(--teal); background: var(--green-light); color: var(--teal); }
+.wl-rule-toggle.on { border-color: var(--teal); background: var(--green-light); color: var(--forest); }
 .wl-rule-toggle.block { display: block; width: 100%; margin: 14px 0 0; padding: 10px; font-size: 12.5px; text-align: center; }
 .wl-rule-night { display: flex; gap: 10px; margin-top: 4px; }
 .wl-rule-field { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
 .wl-rule-field > span { font-size: 10.5px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
 /* The rule, said back in the user's own numbers — the answer to "will this
    pester me every morning?", shown rather than promised. */
-.wl-rule-preview { margin-top: 12px; border-radius: 12px; background: var(--green-light); color: var(--teal);
+.wl-rule-preview { margin-top: 12px; border-radius: 12px; background: var(--green-light); color: var(--forest);
   padding: 9px 12px; font-size: 11.5px; font-weight: 600; line-height: 1.45; }
 .wl-rule-preview.warn { background: #FBF0E4; color: #A8703A; }
 .wl-rule-foot { font-size: 11.5px; color: var(--muted); line-height: 1.5; margin-top: 12px; }

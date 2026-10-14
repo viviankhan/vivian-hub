@@ -68,7 +68,7 @@ function runs(series, pick, x, y) {
   return out
 }
 
-export default function MoodChart({ series = [], height = 170, showEnergy = true, className = '' }) {
+export default function MoodChart({ series = [], height = 170, showEnergy = true, className = '', emptyText, label }) {
   const wrap = useRef(null)
   const width = useWidth(wrap)
   const [hover, setHover] = useState(null)   // index of the day under the pointer / focus
@@ -104,7 +104,7 @@ export default function MoodChart({ series = [], height = 170, showEnergy = true
   }
 
   if (!present) {
-    return <div className={`mc-empty ${className}`}>Check in on a few days and the trend draws itself here.</div>
+    return <div className={`mc-empty ${className}`}>{emptyText || 'Check in on a few days and the trend draws itself here.'}</div>
   }
 
   const h = hover != null ? series[hover] : null
@@ -118,7 +118,7 @@ export default function MoodChart({ series = [], height = 170, showEnergy = true
         {showEnergy && <span className="mc-key"><i className="mc-key-line dashed" style={{ borderColor: ENERGY_COLOR }} />Energy</span>}
       </div>
       <svg width={width} height={height} className="mc-svg" role="img" tabIndex={0}
-        aria-label={`Mood over the last ${n} days, ${present} logged`}
+        aria-label={`Mood ${label || `over ${n} days`}, ${present} of ${n} days logged`}
         onPointerMove={e => pick(e.clientX)} onPointerLeave={() => setHover(null)}
         onKeyDown={onKey} onBlur={() => setHover(null)}>
         {/* the five mood steps, as a recessive grid with the cloud colour on the left */}

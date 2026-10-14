@@ -206,15 +206,18 @@ function ymd(d) {
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
 }
 
-// Per-skill momentum: the last `days` days vs the `days` before that.
+// Per-skill momentum: the `days` days ending on `now` vs the `days` before
+// them. Entries dated after `now` are ignored, so a window that ends in the
+// past compares what it holds, not everything logged since.
 // Returns Map(id → { recentMins, priorMins, recentCount, priorCount }).
 export function skillTrend(entries = [], categories = [], days = 30, now = new Date()) {
   const d = new Date(now); d.setHours(0, 0, 0, 0)
+  const endKey = ymd(d)
   d.setDate(d.getDate() - (days - 1)); const recentCut = ymd(d)
   d.setDate(d.getDate() - days); const priorCut = ymd(d)
   const out = new Map()
   for (const e of entries) {
-    if (!e.date || e.date < priorCut) continue
+    if (!e.date || e.date < priorCut || e.date > endKey) continue
     const recent = e.date >= recentCut
     for (const id of inferSkills(entryText(e, categories))) {
       const r = out.get(id) || { recentMins: 0, priorMins: 0, recentCount: 0, priorCount: 0 }

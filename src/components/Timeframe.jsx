@@ -10,10 +10,13 @@ import { useMemo, useSyncExternalStore } from 'react'
 import { dayKey } from '../lib/wellness.js'
 import { PRESETS, resolveTimeframe, getTimeframe, setTimeframe, subscribeTimeframe } from '../lib/timeframe.js'
 
-// The resolved window: { id, from, to, days, label, phrase }.
+// The resolved window: { id, from, to, days, label, phrase }. Today is part
+// of the memo key, so a preset rolls over on the first render after midnight
+// instead of staying pinned to the day the tab was opened.
 export function useTimeframe() {
   const raw = useSyncExternalStore(subscribeTimeframe, getTimeframe, getTimeframe)
-  return useMemo(() => resolveTimeframe(raw), [raw])
+  const today = dayKey()
+  return useMemo(() => resolveTimeframe(raw, today), [raw, today])
 }
 
 export function TimeframePicker({ compact = false, className = '' }) {

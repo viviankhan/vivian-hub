@@ -692,13 +692,15 @@ export function moodTrend(checkins, n = 14) {
 
 // The shareable progress summary (plain text) — used by the Web Share sheet and
 // the copy button, so "share with a friend" works with no social backend.
+// `tracked` is how many of the last seven days have a check-in — the share
+// card carries the same week the scene does, never an all-time count.
 export function shareText({ game, tracked, stage }) {
   const lv = levelFromXp(game?.xp || 0)
   const streak = liveStreak(game)
   const lines = [
     `${stage.emoji} My Bloom companion is a level ${lv.level} ${stage.name}!`,
     `🔥 ${streak}-day check-in streak · 🌸 ${game?.petals || 0} petals`,
-    `📈 ${tracked} days of mood tracked`,
+    `📈 ${tracked} of the last 7 days checked in`,
     `Growing a calmer week, one check-in at a time.`,
   ]
   return lines.join('\n')
@@ -779,7 +781,10 @@ export function emotionTally(series) {
 // intensity rated.
 export function effectTotalsBetween(episodes, fromKey, toKey, now = Date.now()) {
   const from = keyToDate(fromKey).getTime()
-  const to = Math.min(now, keyToDate(toKey).getTime() + 86400000)
+  // Step a calendar day for the end edge: on a clock-change day 24 hours lands
+  // an hour either side of midnight.
+  const endDay = keyToDate(toKey); endDay.setDate(endDay.getDate() + 1)
+  const to = Math.min(now, endDay.getTime())
   const by = new Map()
   for (const e of episodes || []) {
     const s = Date.parse(e.start)
