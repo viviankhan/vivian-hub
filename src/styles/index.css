@@ -65,6 +65,9 @@
   --green-light: #E8F6FA;
   --green-mid:   #7BBFD4;
   --on-accent:   #FFFFFF;   /* readable foreground on the accent color (FAB) */
+  /* The two "status" inks every insight, delta and momentum row shares. */
+  --good:        #6F9F8B;
+  --watch:       #C97A6D;
 }
 
 html, body {
@@ -824,12 +827,12 @@ textarea { resize: vertical; min-height: 160px; line-height: 1.6; }
 
 /* The scene: companion, today's cloud, level & stats, under one sky. */
 .wl-scene { position: relative; overflow: hidden; border-radius: 22px; color: #fff; padding: 16px 18px 14px; min-height: 236px;
-  display: flex; flex-direction: column; gap: 10px; box-shadow: 0 10px 34px rgba(36,26,71,.26); isolation: isolate; }
+  display: flex; flex-direction: column; gap: 10px; box-shadow: 0 10px 34px rgba(0,0,0,.22); isolation: isolate; }
 .wl-scene-bg { position: absolute; inset: 0; z-index: -2; }
 /* A dusk band behind the name and the stats, so the moon and the stars never
    sit under the type. */
 .wl-scene::before { content: ''; position: absolute; inset: 0; z-index: -1; pointer-events: none;
-  background: linear-gradient(180deg, rgba(28,18,58,.62) 0%, rgba(28,18,58,0) 42%, rgba(28,18,58,0) 70%, rgba(28,18,58,.38) 100%); }
+  background: linear-gradient(180deg, rgba(8,10,24,.6) 0%, rgba(8,10,24,0) 42%, rgba(8,10,24,0) 70%, rgba(8,10,24,.36) 100%); }
 .wl-scene-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
 .wl-scene-name { font-size: 24px; font-weight: 600; line-height: 1.05; text-shadow: 0 1px 10px rgba(0,0,0,.35); }
 .wl-scene-sub { font-size: 12px; opacity: .86; margin-top: 3px; text-shadow: 0 1px 8px rgba(0,0,0,.35); }
@@ -927,8 +930,8 @@ textarea { resize: vertical; min-height: 160px; line-height: 1.6; }
 .wl-empty { font-size: 13px; color: var(--muted); line-height: 1.5; }
 .wl-insights { display: flex; flex-direction: column; gap: 8px; }
 .wl-insight { display: flex; gap: 10px; align-items: flex-start; background: var(--cream); border-radius: 12px; padding: 11px 13px; border-left: 3px solid var(--muted); }
-.wl-insight.good { border-left-color: #6F9F8B; }
-.wl-insight.watch { border-left-color: #C97A6D; }
+.wl-insight.good { border-left-color: var(--good); }
+.wl-insight.watch { border-left-color: var(--watch); }
 .wl-insight-dot { flex-shrink: 0; width: 7px; height: 7px; border-radius: 50%; background: currentColor; margin-top: 6px; opacity: .5; }
 .wl-insight-text { font-size: 13px; line-height: 1.45; color: var(--text); }
 
@@ -1463,11 +1466,30 @@ textarea { resize: vertical; min-height: 160px; line-height: 1.6; }
 .seg-btn.on { background: #fff; color: var(--forest); box-shadow: 0 2px 8px rgba(60,72,88,.12); }
 .seg-badge { font-size: 10px; font-weight: 800; background: var(--teal); color: #fff; border-radius: 999px; padding: 1px 6px; line-height: 1.4; }
 
+/* ── Timeframe picker (Insights · Wellness) ───────────────────── */
+/* A row of windows ending today, plus "Custom…" for two dates you set. It
+   wraps rather than scrolls, so every choice is on screen on a phone. The
+   chosen one is remembered on this device and shared by every picker. */
+.tf { min-width: 0; flex: 1 1 auto; }
+.tf-chips { display: flex; flex-wrap: wrap; gap: 6px; padding: 2px 0; }
+.tf-chip { flex-shrink: 0; border: 1.5px solid var(--border); background: #fff; border-radius: 999px; padding: 7px 13px;
+  font-size: 12.5px; font-weight: 700; color: var(--muted); cursor: pointer; font-family: inherit; white-space: nowrap;
+  font-variant-numeric: tabular-nums; transition: color .12s, border-color .12s, background .12s; }
+.tf-chip:hover { color: var(--text); }
+.tf-chip.on { border-color: var(--teal); background: var(--green-light); color: var(--teal); }
+.tf-custom { display: flex; gap: 8px; margin-top: 8px; }
+.tf-custom label { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.tf-custom span { font-size: 10.5px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+.tf-custom input { width: 100%; font-size: 12.5px; padding: 8px 10px; border-radius: 10px; border: 1.5px solid var(--border); font-family: inherit; color: var(--text); background: #fff; }
+.tf-custom input:focus { outline: none; border-color: var(--teal); }
+.tf.compact { margin: -2px 0 12px; }
+.tf.compact .tf-chip { padding: 5px 11px; font-size: 11.5px; }
+
 /* ── INSIGHTS TAB ─────────────────────────────────────────────── */
 .in-wrap { display: flex; flex-direction: column; gap: 14px; }
 .in-head .page-sub { margin-bottom: 0; }
-.in-toolbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.in-toolbar .seg { flex: 1; min-width: 230px; max-width: 420px; }
+.in-toolbar { display: flex; align-items: center; gap: 10px; }
+.in-toolbar .tf { flex: 1; min-width: 0; }
 .in-log-btn { display: inline-flex; align-items: center; gap: 5px; margin-left: auto; border: none; border-radius: 999px; padding: 9px 14px;
   background: var(--forest); color: var(--green-light); font-family: inherit; font-size: 12.5px; font-weight: 700; cursor: pointer; }
 
@@ -1482,8 +1504,8 @@ textarea { resize: vertical; min-height: 160px; line-height: 1.6; }
 .in-tile-num { font-size: 22px; font-weight: 600; line-height: 1.1; color: var(--forest); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .in-tile-swatch { width: 10px; height: 10px; border-radius: 3px; flex-shrink: 0; align-self: center; }
 .in-tile-delta { font-size: 11.5px; font-weight: 800; }
-.in-tile-delta.good { color: #4F9A74; }
-.in-tile-delta.watch { color: #C0554A; }
+.in-tile-delta.good { color: var(--good); }
+.in-tile-delta.watch { color: var(--watch); }
 .in-tile-sub { font-size: 11.5px; line-height: 1.35; color: var(--muted); max-width: 100%; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 
 /* Cards */
@@ -1497,14 +1519,14 @@ textarea { resize: vertical; min-height: 160px; line-height: 1.6; }
 .in-empty { display: flex; gap: 12px; align-items: flex-start; font-size: 13px; color: var(--muted); line-height: 1.5; }
 .in-empty svg { flex-shrink: 0; margin-top: 2px; }
 .in-empty p { margin: 0; }
-.in-dir.up { color: #4F9A74; }
-.in-dir.down { color: #C0554A; }
+.in-dir.up { color: var(--good); }
+.in-dir.down { color: var(--watch); }
 
 /* Inputs & pills */
 .in-input { width: 100%; font-size: 14px; padding: 11px 13px; border-radius: 12px; border: 1px solid var(--border); background: var(--cream); font-family: inherit; color: var(--text); }
 .in-input:focus { outline: none; border-color: var(--teal); }
 .in-primary { border: none; border-radius: 12px; padding: 11px 18px; background: var(--forest); color: var(--green-light); font-family: inherit; font-size: 13px; font-weight: 700; cursor: pointer; white-space: nowrap; }
-.in-primary:disabled { background: #E5E7EB; color: #9CA3AF; cursor: default; }
+.in-primary:disabled { background: var(--border); color: var(--muted); cursor: default; }
 .in-pills { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 10px; }
 .in-pill { display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; font-weight: 600; padding: 5px 11px; border-radius: 999px; border: 1px solid var(--border);
   background: #fff; color: var(--muted); cursor: pointer; font-family: inherit; max-width: 100%; }
@@ -1523,11 +1545,11 @@ textarea { resize: vertical; min-height: 160px; line-height: 1.6; }
 .in-try-label { font-size: 11px; color: var(--muted); font-weight: 700; letter-spacing: .04em; text-transform: uppercase; margin-right: 2px; }
 
 /* The answer */
-.in-answer { position: relative; background: linear-gradient(150deg, var(--forest), #2c3a34); color: var(--green-light); border-radius: 18px; padding: 18px 20px; }
+.in-answer { position: relative; background: linear-gradient(150deg, var(--forest), color-mix(in srgb, var(--forest) 72%, #0B1014)); color: var(--green-light); border-radius: 18px; padding: 18px 20px; }
 .in-answer-x { position: absolute; z-index: 2; top: 10px; right: 12px; width: 26px; height: 26px; border-radius: 50%; border: none; cursor: pointer; font-size: 12px; font-family: inherit;
   background: rgba(255,255,255,.12); color: inherit; }
 .in-answer-x.muted { background: var(--cream); color: var(--muted); }
-.in-noanswer { position: relative; background: #FBF3E7; border-color: #E6DCC8; font-size: 13px; color: var(--text); padding-right: 44px; line-height: 1.5; }
+.in-noanswer { position: relative; background: color-mix(in srgb, var(--watch) 10%, #fff); border-color: color-mix(in srgb, var(--watch) 32%, var(--border)); font-size: 13px; color: var(--text); padding-right: 44px; line-height: 1.5; }
 .in-kicker { font-size: 12.5px; opacity: .8; padding-right: 30px; }
 .in-hero { font-size: 38px; font-weight: 600; line-height: 1.1; margin: 4px 0 2px; letter-spacing: -.01em; }
 .in-hero-serif { font-size: 28px; font-weight: 700; line-height: 1.2; margin: 4px 0 4px; }
@@ -1543,8 +1565,8 @@ textarea { resize: vertical; min-height: 160px; line-height: 1.6; }
 .in-arow-name { flex: 1; min-width: 0; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .in-arow-sub { font-size: 11px; opacity: .65; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .in-arow-delta { font-size: 11px; font-weight: 700; flex-shrink: 0; }
-.in-arow-delta.up { color: #9FE3B5; }
-.in-arow-delta.down { color: #F2B8A8; }
+.in-arow-delta.up { color: color-mix(in srgb, var(--good) 45%, #fff); }
+.in-arow-delta.down { color: color-mix(in srgb, var(--watch) 45%, #fff); }
 .in-arow-val { font-weight: 600; flex-shrink: 0; min-width: 56px; text-align: right; display: flex; flex-direction: column; align-items: flex-end; }
 .in-arow-val small { font-size: 10.5px; opacity: .6; font-weight: 500; }
 .in-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; align-items: center; }
@@ -1582,8 +1604,8 @@ textarea { resize: vertical; min-height: 160px; line-height: 1.6; }
 .in-rank-name small { font-size: 11px; color: var(--muted); }
 .in-rank-count { font-size: 11px; color: var(--muted); flex-shrink: 0; }
 .in-rank-val { font-size: 12.5px; font-weight: 700; flex-shrink: 0; min-width: 48px; text-align: right; font-variant-numeric: tabular-nums; }
-.in-del { background: none; border: none; cursor: pointer; color: #B9B3AC; font-size: 14px; padding: 2px 4px; flex-shrink: 0; font-family: inherit; }
-.in-del:hover { color: #C0554A; }
+.in-del { background: none; border: none; cursor: pointer; color: var(--muted); font-size: 14px; padding: 2px 4px; flex-shrink: 0; font-family: inherit; }
+.in-del:hover { color: var(--watch); }
 
 /* Entry log — what you actually wrote for each one */
 .in-entries { margin-top: 6px; }
@@ -1602,11 +1624,11 @@ textarea { resize: vertical; min-height: 160px; line-height: 1.6; }
 /* Momentum */
 .in-momentum-row { display: flex; gap: 10px; align-items: baseline; font-size: 12.5px; padding: 5px 0; flex-wrap: wrap; }
 .in-momentum-k { font-size: 11px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; flex-shrink: 0; min-width: 84px; }
-.in-momentum-k.up { color: #4F9A74; }
-.in-momentum-k.down { color: #C0554A; }
+.in-momentum-k.up { color: var(--good); }
+.in-momentum-k.down { color: var(--watch); }
 .in-momentum-item { display: inline-flex; align-items: center; gap: 5px; margin-right: 12px; font-weight: 600; }
 .in-momentum-item b { font-weight: 700; color: var(--muted); }
-.in-momentum-item b.up { color: #4F9A74; }
+.in-momentum-item b.up { color: var(--good); }
 
 /* Mind & body */
 .in-mood-foot { display: flex; flex-wrap: wrap; gap: 4px 14px; }
@@ -1617,8 +1639,8 @@ textarea { resize: vertical; min-height: 160px; line-height: 1.6; }
 .in-insights { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 7px; }
 .in-insight { position: relative; padding: 9px 12px 9px 26px; border-radius: 10px; font-size: 12.5px; line-height: 1.45; color: var(--text); background: var(--cream); }
 .in-insight::before { content: ''; position: absolute; left: 11px; top: 13px; width: 7px; height: 7px; border-radius: 50%; background: var(--muted); }
-.in-insight.good::before { background: #5FA87F; }
-.in-insight.watch::before { background: #D0956B; }
+.in-insight.good::before { background: var(--good); }
+.in-insight.watch::before { background: var(--watch); }
 
 @media (min-width: 640px) {
   .in-tiles { grid-template-columns: repeat(4, minmax(0, 1fr)); }

@@ -7,10 +7,13 @@
 //   • Today        check in (a new moment each time), read today back, and see
 //                  which conditions are running right now;
 //   • Journal      six weeks of clouds laid out as a calendar, the mood and
-//                  energy chart, the patterns Bloom has noticed, and the rule
-//                  for when you go quiet;
+//                  energy chart over the chosen timeframe, the patterns Bloom
+//                  has noticed, and the rule for when you go quiet;
 //   • Conditions   the status-effect tiles you flip on and off, and how long
-//                  each one has held you over time.
+//                  each one held you over the chosen timeframe.
+// Nothing on the tab is a running total: the chart and the ledger read the
+// same timeframe the Insights tab does (the past 7 days unless you set
+// another — see lib/timeframe.js), and the scene counts this week's check-ins.
 // The game/analysis logic is all in lib/wellness.js; this file only lays it out
 // and persists through the callbacks App.jsx hands it.
 // ─────────────────────────────────────────────────────────────
@@ -21,6 +24,8 @@ import ColorPickRow from './ColorPickRow.jsx'
 import { EffectIcon } from './IconPicker.jsx'
 import IconSearchSheet from './IconSearchSheet.jsx'
 import Segmented, { useRememberedView } from './Segmented.jsx'
+import { useTimeframe, TimeframePicker } from './Timeframe.jsx'
+import { shiftKey } from '../lib/timeframe.js'
 import MoodChart from './MoodChart.jsx'
 import { bloomBurst } from '../lib/bloom.js'
 import { PhotoStrip, PhotoPicker, PhotoAttacher } from './PhotoAttach.jsx'
@@ -34,10 +39,16 @@ import {
   selectableEmotions, emotionMeta, makeEmotion, EMOTION_PALETTE, checkinsForDay, daySegments, emotionWeights, effectOnDay,
   stageForLevel, nextStage, levelFromXp, liveStreak, applyCheckIn, awardPetals, REWARDS,
   DEFAULT_EFFECTS, POSITIVE_EFFECTS, makeEffect, EFFECT_COLORS,
-  activeEpisode, isActive, toggleEpisode, patchEpisode, episodeMinutes, fmtDuration, effectTotals,
+  activeEpisode, isActive, toggleEpisode, patchEpisode, episodeMinutes, fmtDuration,
   INTENSITY_MAX, intensityColor,
-  buildDailyRecords, computeInsights, moodSeries, calendarWeeks, shareText,
+  buildDailyRecords, computeInsights, moodSeriesBetween, effectTotalsBetween, calendarWeeks, shareText,
 } from '../lib/wellness.js'
+
+// The theme's deep surface colour, read live from the variable the theme sets,
+// so the sky in the scene is tinted toward whichever look is on.
+function themeDeep() {
+  try { return getComputedStyle(document.documentElement).getPropertyValue('--forest').trim() || '#2A4858' } catch { return '#2A4858' }
+}
 
 const VIEWS = [
   { id: 'today',      label: 'Today',      glyph: 'sun' },
@@ -588,6 +599,7 @@ export default function BloomWellness({
 }) {
   const today = dayKey()
   const [view, setView] = useRememberedView('bloom_wellness_view', 'today', VIEWS.map(v => v.id))
+  const tf = useTimeframe()
 
   // Live "now" tick so active-effect timers (and the day cloud's proportions)
   // stay current while the tab is open.
@@ -698,16 +710,22 @@ export default function BloomWellness({
   const stage = stageForLevel(lv.level)
   const next = nextStage(lv.level)
   const streak = liveStreak(game)
+  // The share card still counts every day ever tracked; the scene itself only
+  // says how many of the last seven days have a check-in.
   const trackedDays = useMemo(() => new Set((checkins || []).map(c => c.date)).size, [checkins])
+  const weekDays = useMemo(() => {
+    const from = shiftKey(today, -6)
+    return new Set((checkins || []).filter(c => c.date >= from && c.date <= today).map(c => c.date)).size
+  }, [checkins, today])
 
   // ── Journal derived ──────────────────────────────────────────
   const [weeks, setWeeks] = useState(6)
-  const series = useMemo(() => moodSeries(checkins, 30), [checkins])
+  const series = useMemo(() => moodSeriesBetween(checkins, tf.from, tf.to), [checkins, tf.from, tf.to])
   const { insights } = useMemo(
     () => computeInsights({ records: buildDailyRecords({ checkins, episodes, log, effects: effectList, windowDays: 60 }), effects: effectList }),
     [checkins, episodes, log, effectList],
   )
-  const totals = useMemo(() => effectTotals(episodes), [episodes])
+  const totals = useMemo(() => effectTotalsBetween(episodes, tf.from, tf.to), [episodes, tf.from, tf.to])
   const ledger = effectList.filter(f => totals.get(f.id)).map(f => ({ fx: f, ...totals.get(f.id) })).sort((a, b) => b.mins - a.mins)
   const ledgerMax = ledger.reduce((m, r) => Math.max(m, r.mins), 1)
 
@@ -791,7 +809,7 @@ export default function BloomWellness({
     <div className="wl-wrap">
       {/* ── The scene: companion, today's cloud, level & stats ── */}
       <section className="wl-scene">
-        <AlienSky className="wl-scene-bg" />
+        <AlienSky className="wl-scene-bg" tint={themeDeep()} />
         <div className="wl-scene-top">
           <div className="wl-scene-id">
             <div className="serif wl-scene-name">{game?.companionName || 'Sprout'}</div>
@@ -833,7 +851,7 @@ export default function BloomWellness({
                 the word for two different things. */}
             <span className="wl-stat"><Glyph id="flame" size={14} /> {streak}<i>in a row</i></span>
             <span className="wl-stat"><Glyph id="flower" size={14} /> {game?.petals || 0}<i>petals</i></span>
-            <span className="wl-stat"><Glyph id="calendar" size={14} /> {trackedDays}<i>days</i></span>
+            <span className="wl-stat"><Glyph id="calendar" size={14} /> {weekDays}/7<i>this week</i></span>
           </div>
           <div className="wl-story">{story}</div>
         </div>
@@ -931,8 +949,9 @@ export default function BloomWellness({
           <section className="wl-card">
             <div className="wl-card-head">
               <h3 className="serif">Mood &amp; energy</h3>
-              <span className="wl-card-meta">last 30 days</span>
+              <span className="wl-card-meta">{tf.label}</span>
             </div>
+            <TimeframePicker compact />
             <MoodChart series={series} height={150} />
           </section>
 
@@ -993,13 +1012,15 @@ export default function BloomWellness({
             </div>
           </section>
 
-          {/* The "how long have I felt this" ledger. */}
-          {ledger.length > 0 && (
+          {/* The "how long have I felt this" ledger, over the chosen timeframe. */}
+          {(episodes || []).length > 0 && (
             <section className="wl-card">
               <div className="wl-card-head">
                 <h3 className="serif">Time by condition</h3>
-                <span className="wl-card-meta">all time</span>
+                <span className="wl-card-meta">{tf.label}</span>
               </div>
+              <TimeframePicker compact />
+              {ledger.length === 0 && <p className="wl-empty">Nothing ran {tf.phrase}.</p>}
               <div className="wl-ledger">
                 {ledger.map(r => (
                   <div key={r.fx.id} className="wl-ledger-row">

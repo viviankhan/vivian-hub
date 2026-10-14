@@ -3,27 +3,28 @@
 // The "Insights" tab — where your time, your skills and your wellbeing went,
 // read from everything you finished and every check-in you made.
 //
-// The page is built so no two numbers on it can disagree: one range row at the
-// top scopes everything below it. Under that, a row of headline tiles (time
+// The page is built so no two numbers on it can disagree: one timeframe at the
+// top — the past 7 days unless you set another — scopes everything below it,
+// and nothing on it is cumulative. Under that, a row of headline tiles (time
 // tracked, top area, mood, conditions), the question box — "how many hours on
 // MCAT?", "what skills am I using?", "where does my time go?" — and then three
 // views, Time · Skills · Mind & body, so each is a screen you can take in rather
 // than a scroll you give up on. The arithmetic lives in lib/insights.js,
-// lib/skills.js and lib/wellness.js; this file only lays it out.
+// lib/skills.js, lib/wellness.js and lib/timeframe.js; this file only lays it out.
 // ─────────────────────────────────────────────────────────────
 import { useMemo, useState } from 'react'
 import { Icon } from './IconPicker.jsx'
 import { Glyph } from '../lib/glyphs.jsx'
 import Segmented, { useRememberedView } from './Segmented.jsx'
+import { useTimeframe, TimeframePicker } from './Timeframe.jsx'
 import MindBody from './WellnessInsights.jsx'
-import { computeEntries, filterByRange, aggregate, answerQuestion, fmtHours, decimalHours } from '../lib/insights.js'
+import { computeEntries, filterByDates, aggregate, answerQuestion, fmtHours, decimalHours } from '../lib/insights.js'
 import { computeSkills, skillCoverage, skillTrend } from '../lib/skills.js'
 import {
-  DEFAULT_EFFECTS, moodMeta, fmtDuration,
-  windowForRange, moodSeries, moodSummary, effectTotalsWithin,
+  DEFAULT_EFFECTS, moodMeta, fmtDuration, keyToDate,
+  moodSeriesBetween, moodSummary, effectTotalsBetween,
 } from '../lib/wellness.js'
 
-const RANGES = [['week', 'Past week'], ['month', 'Past month'], ['all', 'All time']]
 const VIEWS = [
   { id: 'time',   label: 'Time',        glyph: 'clock' },
   { id: 'skills', label: 'Skills',      glyph: 'target' },
@@ -181,7 +182,7 @@ function LogTimeCard({ categories, onSave, onClose }) {
 
 // ── The tab ────────────────────────────────────────────────────
 export default function Informatics({ commitments = [], recurringTasks = [], completions = {}, log = [], categories = [], timeLogs = [], addTimeLog, deleteTimeLog, wlCheckins = [], wlEffects, wlEpisodes = [] }) {
-  const [range, setRange] = useRememberedView('bloom_insights_range', 'month', RANGES.map(r => r[0]))
+  const tf = useTimeframe()
   const [view, setView] = useRememberedView('bloom_insights_view', 'time', VIEWS.map(v => v.id))
   const [query, setQuery] = useState('')
   const [asked, setAsked] = useState('')      // the submitted question
@@ -193,16 +194,16 @@ export default function Informatics({ commitments = [], recurringTasks = [], com
     () => computeEntries({ log, commitments, recurringTasks, completions, timeLogs }),
     [log, commitments, recurringTasks, completions, timeLogs],
   )
-  const entries = useMemo(() => filterByRange(allEntries, range), [allEntries, range])
+  const entries = useMemo(() => filterByDates(allEntries, tf.from, tf.to), [allEntries, tf.from, tf.to])
   const agg = useMemo(() => aggregate(entries, categories), [entries, categories])
   const skills = useMemo(() => computeSkills(entries, categories), [entries, categories])
   const answer = useMemo(() => asked ? answerQuestion(entries, asked, categories) : null, [asked, entries, categories])
 
-  // Momentum: last 7 days vs the 7 before for the week view, otherwise 30 vs 30;
-  // and how much of the tracked time maps to a skill at all (rows overlap, so
-  // their sum overstates it).
-  const trendDays = range === 'week' ? 7 : 30
-  const trend = useMemo(() => skillTrend(allEntries, categories, trendDays), [allEntries, categories, trendDays])
+  // Momentum: the window against the same number of days before it (a week
+  // against the week before, by default); and how much of the tracked time
+  // maps to a skill at all (rows overlap, so their sum overstates it).
+  const trendDays = Math.max(7, Math.min(90, tf.days))
+  const trend = useMemo(() => skillTrend(allEntries, categories, trendDays, keyToDate(tf.to)), [allEntries, categories, trendDays, tf.to])
   const coverage = useMemo(() => skillCoverage(entries, categories), [entries, categories])
   const skillMoves = useMemo(() => {
     const withDelta = skills.map(s => ({ s, d: delta(trend.get(s.id)) })).filter(x => x.d)
@@ -214,10 +215,10 @@ export default function Informatics({ commitments = [], recurringTasks = [], com
 
   // ── Mind & body (the same window, in days) ───────────────────
   const effectList = (wlEffects && wlEffects.length) ? wlEffects : DEFAULT_EFFECTS
-  const days = useMemo(() => windowForRange(range, { checkins: wlCheckins, episodes: wlEpisodes }), [range, wlCheckins, wlEpisodes])
-  const series = useMemo(() => moodSeries(wlCheckins, days), [wlCheckins, days])
+  const days = tf.days
+  const series = useMemo(() => moodSeriesBetween(wlCheckins, tf.from, tf.to), [wlCheckins, tf.from, tf.to])
   const mood = useMemo(() => moodSummary(series), [series])
-  const fxTotals = useMemo(() => effectTotalsWithin(wlEpisodes, days), [wlEpisodes, days])
+  const fxTotals = useMemo(() => effectTotalsBetween(wlEpisodes, tf.from, tf.to), [wlEpisodes, tf.from, tf.to])
   const fxRows = useMemo(() => [...fxTotals.values()]
     .map(r => ({ ...r, fx: effectList.find(f => f.id === r.effectId) }))
     .filter(r => r.fx).sort((a, b) => b.mins - a.mins), [fxTotals, effectList])
@@ -227,8 +228,8 @@ export default function Informatics({ commitments = [], recurringTasks = [], com
   const totalSessions = entries.length
   const maxCatV = Math.max(1, ...agg.byCategory.map(c => hasHours ? c.mins : c.count))
   const maxSkillV = Math.max(1, ...skills.map(s => hasHours ? s.mins : s.count))
-  const rangeLabel = RANGES.find(r => r[0] === range)?.[1].toLowerCase()
-  const inRange = rangeLabel === 'all time' ? 'yet' : `in the ${rangeLabel}`
+  const rangeLabel = tf.label
+  const inRange = tf.phrase
 
   // Suggestions of what to ask: a couple of self-questions, then the top
   // skills, areas, and a few frequent task names — the things there's data for.
@@ -244,7 +245,7 @@ export default function Informatics({ commitments = [], recurringTasks = [], com
   const clearAnswer = () => { setAsked(''); setQuery('') }
 
   // Manual logs within the current range, most recent first (for the list + delete).
-  const rangeLogs = filterByRange((timeLogs || []).map(t => ({ ...t })), range)
+  const rangeLogs = filterByDates((timeLogs || []).map(t => ({ ...t })), tf.from, tf.to)
     .slice().sort((a, b) => (b.date || '').localeCompare(a.date || ''))
 
   const topCat = agg.byCategory[0]
@@ -256,9 +257,9 @@ export default function Informatics({ commitments = [], recurringTasks = [], com
         <div className="page-sub">Where your time, skills and wellbeing went — read from everything you finished and every check-in.</div>
       </div>
 
-      {/* One range row scopes the whole page. */}
+      {/* One timeframe scopes the whole page — the past 7 days unless you set another. */}
       <div className="in-toolbar">
-        <Segmented ariaLabel="Range" items={RANGES.map(([id, label]) => ({ id, label }))} value={range} onChange={setRange} />
+        <TimeframePicker />
         {!logOpen && addTimeLog && (
           <button type="button" className="in-log-btn" onClick={() => setLogOpen(true)}><Glyph id="plus" size={13} /> Log time</button>
         )}
@@ -323,7 +324,7 @@ export default function Informatics({ commitments = [], recurringTasks = [], com
                   <div className="in-answer-moves">
                     {skillMoves.rising.length > 0 && <div><span>Picking up</span> <b>{skillMoves.rising.map(s => `${s.label} (${delta(trend.get(s.id)).text})`).join(', ')}</b></div>}
                     {skillMoves.fading.length > 0 && <div><span>Dropped off</span> <b>{skillMoves.fading.map(s => `${s.label} (last ${ago(s.lastDate)})`).join(', ')}</b></div>}
-                    <div className="in-note">last {trendDays} days vs the {trendDays} before</div>
+                    <div className="in-note">{trendDays} days vs the {trendDays} before</div>
                   </div>
                 )}
                 <div className="in-answer-rows">
@@ -499,7 +500,7 @@ export default function Informatics({ commitments = [], recurringTasks = [], com
               <section className="in-card in-momentum">
                 <div className="in-card-head">
                   <h3 className="serif">Momentum</h3>
-                  <span className="in-card-meta">last {trendDays} days vs the {trendDays} before</span>
+                  <span className="in-card-meta">{trendDays} days vs the {trendDays} before</span>
                 </div>
                 {skillMoves.rising.length > 0 && (
                   <div className="in-momentum-row">

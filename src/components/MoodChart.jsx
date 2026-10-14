@@ -15,7 +15,9 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { MOODS, ENERGY, moodMeta, emotionMeta, keyToDate } from '../lib/wellness.js'
 
 const PAD = { top: 10, right: 12, bottom: 24, left: 54 }
-const ENERGY_COLOR = '#E39A86'
+// Energy is the quieter series: dashed, in the muted ink, so it reads apart
+// from the accent-coloured mood line under every theme.
+const ENERGY_COLOR = 'var(--muted)'
 
 // The rendered width of an element, kept current as it resizes. The chart
 // draws in real pixels (not a stretched viewBox), so its text stays crisp.
@@ -132,10 +134,10 @@ export default function MoodChart({ series = [], height = 170, showEnergy = true
             textAnchor={l.i === 0 ? 'start' : l.i === n - 1 ? 'end' : 'middle'}>{l.text}</text>
         ))}
         {energyRuns.map((r, i) => r.length > 1
-          ? <polyline key={`e${i}`} points={r.join(' ')} fill="none" stroke={ENERGY_COLOR} strokeWidth="2" strokeDasharray="4 4" strokeLinecap="round" strokeLinejoin="round" />
+          ? <polyline key={`e${i}`} points={r.join(' ')} fill="none" style={{ stroke: ENERGY_COLOR }} strokeWidth="2" strokeDasharray="4 4" strokeLinecap="round" strokeLinejoin="round" />
           : null)}
         {moodRuns.map((r, i) => r.length > 1
-          ? <polyline key={`m${i}`} points={r.join(' ')} fill="none" stroke="var(--teal)" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
+          ? <polyline key={`m${i}`} points={r.join(' ')} fill="none" style={{ stroke: 'var(--teal)' }} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
           : null)}
         {series.map((d, i) => d.mood != null && (dots || i === hover) && (
           <circle key={i} cx={x(i)} cy={y(d.mood)} r={i === hover ? 5 : 3.6}

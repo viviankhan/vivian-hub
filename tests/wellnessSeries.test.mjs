@@ -62,13 +62,16 @@ eq('an open span straddling the edge counts from the window\'s first morning', w
 const all = W.effectTotalsWithin(episodes, 60, now)
 eq('a wider window picks the older span back up', all.get('fx-migraine').count, 2)
 
-console.log('\n— how far "all time" reaches back —')
-eq('a week is a week', W.windowForRange('week'), 7)
-eq('a month is thirty days', W.windowForRange('month'), 30)
-eq('all time with no history is floored at a month', W.windowForRange('all', { checkins: [] }), 30)
-eq('all time reaches the oldest check-in', W.windowForRange('all', { checkins: [ci(100, 3, 3)] }), 101)
-eq('…and the oldest condition', W.windowForRange('all', { episodes: [{ start: back(45).toISOString() }] }), 46)
-eq('…but never past a year', W.windowForRange('all', { checkins: [ci(900, 3, 3)] }), 365)
+console.log('\n— the same helpers between two dates you set —')
+const between = W.moodSeriesBetween(checkins, key(3), key(1))
+eq('a custom window has exactly its days', between.map(d => d.date), [3, 2, 1].map(key))
+eq('…and only their moments', between.map(d => d.mood), [null, 5, null])
+eq('a one-day window is one row', W.dayKeysBetween(key(0), key(0)), [key(0)])
+eq('a window ending yesterday clips a still-running span at midnight',
+  W.effectTotalsBetween([{ id: 'x', effectId: 'fx-calm', start: hoursAgo(24 * 3), end: null }], key(3), key(1), now).get('fx-calm').mins,
+  Math.round((W.keyToDate(key(0)).getTime() - (now - 24 * 3 * 3600000)) / 60000))
+eq('a span entirely after the window does not count', W.effectTotalsBetween([episodes[0]], key(20), key(10), now).has('fx-migraine'), false)
+eq('…but one that started before and is still running does', W.effectTotalsBetween(episodes, key(20), key(10), now).has('fx-calm'), true)
 
 console.log('\n— the journal calendar —')
 const weeks = W.calendarWeeks(6)

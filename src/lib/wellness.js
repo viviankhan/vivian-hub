@@ -709,26 +709,18 @@ export function shareText({ game, tracked, stage }) {
 // day-by-day series, its headline numbers, and what each condition cost inside
 // a window. They live here, pure, so a chart and a stat tile can never disagree.
 
-// How many days a range id ('week' | 'month' | 'all') covers. 'all' stretches
-// back to the first thing ever recorded — floored at a month so a brand-new
-// history still gets a readable chart, capped at a year so the per-day tables
-// stay small.
-export function windowForRange(range, { checkins = [], episodes = [] } = {}, todayKey = dayKey()) {
-  if (range === 'week') return 7
-  if (range === 'month') return 30
-  let earliest = todayKey
-  for (const c of checkins || []) if (c.date && c.date < earliest) earliest = c.date
-  for (const e of episodes || []) {
-    const t = Date.parse(e.start)
-    if (!Number.isNaN(t)) { const k = dayKey(new Date(t)); if (k < earliest) earliest = k }
-  }
-  return Math.max(30, Math.min(365, daysBetween(earliest, todayKey) + 1))
+// Every day-key from `fromKey` to `toKey`, inclusive, oldest first.
+export function dayKeysBetween(fromKey, toKey) {
+  const out = []
+  const d = keyToDate(fromKey), end = keyToDate(toKey)
+  while (d <= end) { out.push(dayKey(d)); d.setDate(d.getDate() + 1) }
+  return out
 }
 
-// One row per day over the last `n` days, oldest first: the day's average mood
-// and energy, how many moments it holds, and the complex emotions tagged on it.
-// Days with nothing logged keep nulls so a chart can leave an honest gap.
-export function moodSeries(checkins, n = 30) {
+// One row per day from `fromKey` to `toKey`, oldest first: the day's average
+// mood and energy, how many moments it holds, and the complex emotions tagged
+// on it. Days with nothing logged keep nulls so a chart can leave an honest gap.
+export function moodSeriesBetween(checkins, fromKey, toKey) {
   const byDay = new Map()
   for (const c of checkins || []) {
     if (c.mood == null) continue
@@ -738,7 +730,7 @@ export function moodSeries(checkins, n = 30) {
     for (const e of c.emotions || []) a.emotions.add(e)
     byDay.set(c.date, a)
   }
-  return recentDayKeys(n).map(key => {
+  return dayKeysBetween(fromKey, toKey).map(key => {
     const a = byDay.get(key)
     return {
       date: key,
@@ -748,6 +740,11 @@ export function moodSeries(checkins, n = 30) {
       emotions: a ? [...a.emotions] : [],
     }
   })
+}
+// The same over the last `n` days ending today.
+export function moodSeries(checkins, n = 30) {
+  const keys = recentDayKeys(n)
+  return moodSeriesBetween(checkins, keys[0], keys[keys.length - 1])
 }
 
 // The headline numbers for a mood series: how many days have anything, the
@@ -775,17 +772,20 @@ export function emotionTally(series) {
   return [...counts.entries()].map(([id, days]) => ({ id, days })).sort((a, b) => b.days - a.days)
 }
 
-// effectTotals, but only the part of each span that fell inside the last `n`
-// days — a migraine that started before the window counts from the window's
-// first morning, not from when it began. Carries the worst intensity rated.
-export function effectTotalsWithin(episodes, n, now = Date.now()) {
-  const from = keyToDate(recentDayKeys(n)[0]).getTime()
+// effectTotals, but only the part of each span that fell between two days —
+// a migraine that started before the window counts from the window's first
+// morning, not from when it began, and one still running stops counting at
+// the window's end (or now, whichever comes first). Carries the worst
+// intensity rated.
+export function effectTotalsBetween(episodes, fromKey, toKey, now = Date.now()) {
+  const from = keyToDate(fromKey).getTime()
+  const to = Math.min(now, keyToDate(toKey).getTime() + 86400000)
   const by = new Map()
   for (const e of episodes || []) {
     const s = Date.parse(e.start)
     if (Number.isNaN(s)) continue
     const en = e.end ? Date.parse(e.end) : now
-    const a = Math.max(s, from), b = Math.min(en, now)
+    const a = Math.max(s, from), b = Math.min(en, to)
     if (b <= a) continue
     const row = by.get(e.effectId) || { effectId: e.effectId, count: 0, mins: 0, peak: 0 }
     row.count += 1
@@ -794,6 +794,11 @@ export function effectTotalsWithin(episodes, n, now = Date.now()) {
     by.set(e.effectId, row)
   }
   return by
+}
+// The same over the last `n` days ending today.
+export function effectTotalsWithin(episodes, n, now = Date.now()) {
+  const keys = recentDayKeys(n)
+  return effectTotalsBetween(episodes, keys[0], keys[keys.length - 1], now)
 }
 
 // The last `weeks` calendar weeks as rows of seven day-keys, Monday first,
