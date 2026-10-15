@@ -58,4 +58,18 @@ t('keeps the feed order, by time then title', () => {
   assert.deepEqual(plan.map(p => p.date), ['2026-10-14', '2026-10-15', '2026-10-16'])
 })
 
+t('weekdays only keeps Saturdays and Sundays free', () => {
+  // Thu Oct 15 → Sun Oct 18: only Fri the 16th is a weekday after the start.
+  assert.deepEqual(spreadDates('2026-10-15', '2026-10-18', 6, { weekdaysOnly: true }),
+    ['2026-10-15', '2026-10-15', '2026-10-15', '2026-10-16', '2026-10-16', '2026-10-16'])
+  // Mon Oct 12 → Sun Oct 25 with room to spare: nothing on a weekend.
+  const out = spreadDates('2026-10-12', '2026-10-25', 5, { weekdaysOnly: true })
+  assert.deepEqual(out, ['2026-10-14', '2026-10-16', '2026-10-19', '2026-10-21', '2026-10-23'])
+  for (const d of out) assert.ok(![0, 6].includes(new Date(d + 'T12:00:00').getDay()), d)
+})
+
+t('weekdays only falls back to the weekend when there is no weekday to use', () => {
+  assert.deepEqual(spreadDates('2026-10-17', '2026-10-18', 2, { weekdaysOnly: true }), ['2026-10-17', '2026-10-18'])
+})
+
 console.log(`  ${n} passed`)

@@ -6,6 +6,7 @@ import http from 'node:http'
 import { readFileSync, existsSync } from 'node:fs'
 import { extname, join, normalize } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { spreadDates } from '../src/lib/importedTasks.js'
 
 const DIST = fileURLToPath(new URL('../dist', import.meta.url)).replace(/\/$/, '')
 const BASE = '/vivian-hub/'
@@ -81,7 +82,8 @@ const commitments = await page.evaluate(() => JSON.parse(localStorage.getItem('v
 const mine = commitments.filter(c => /CHEM 2420/.test(c.text)).sort((a, b) => a.date.localeCompare(b.date))
 eq('adopts all four as tasks of your own', mine.length, 4)
 eq('each with its own id', new Set(mine.map(c => c.id)).size, 4)
-eq('spaced from today through the due date', mine.map(c => c.date), [ymd(plus(2)), ymd(plus(4)), ymd(plus(6)), due])
+eq('spaced from today through the due date, weekdays only', mine.map(c => c.date), spreadDates(today, due, 4, { weekdaysOnly: true }))
+eq('nothing lands on a weekend', mine.some(c => [0, 6].includes(new Date(c.date + 'T12:00:00').getDay())), false)
 eq('nothing lands before today', mine.every(c => c.date > today), true)
 eq('the English essay is left alone', commitments.some(c => /ENGL/.test(c.text)), false)
 const meta = await page.evaluate(() => JSON.parse(localStorage.getItem('vivian_commitment_meta') || '{}'))

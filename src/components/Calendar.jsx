@@ -54,6 +54,8 @@ export default function Calendar({ commitments, vacations, events, log, categori
   // start date chosen in it.
   const [spreading, setSpreading] = useState(null)
   const [spreadStart, setSpreadStart] = useState('')
+  // Keep weekends free by default: spread work only onto Monday–Friday.
+  const [spreadWeekdays, setSpreadWeekdays] = useState(true)
   const [editingRecDate, setEditingRecDate] = useState(null)  // occurrence date for single-event edits
   // Which repeating groups / everyday habits show here (synced with the Week view).
   const [recFilter, setRecFilter] = useState(getRecurringFilter)
@@ -301,7 +303,7 @@ export default function Calendar({ commitments, vacations, events, log, categori
   })()
   const spreadOut = (group) => {
     const start = spreadStart && spreadStart < selected ? spreadStart : today
-    for (const { span, date } of planSpread(group.spans, start, selected)) {
+    for (const { span, date } of planSpread(group.spans, start, selected, { weekdaysOnly: spreadWeekdays })) {
       adoptImportedEvent(span, date, null, assumedDuration({ ...span, startTime: null }))
     }
     setSpreading(null)
@@ -438,12 +440,16 @@ export default function Calendar({ commitments, vacations, events, log, categori
                     <input type="date" value={spreadStart} min={today} max={selected} onChange={e => setSpreadStart(e.target.value)}
                       style={{ fontSize:12, padding:'4px 6px', borderRadius:7, border:'1px solid var(--border)', fontFamily:'DM Sans,sans-serif' }} />
                   </label>
+                  <label style={{ fontSize:12, color:'var(--muted)', display:'flex', alignItems:'center', gap:5, cursor:'pointer' }}>
+                    <input type="checkbox" checked={spreadWeekdays} onChange={e => setSpreadWeekdays(e.target.checked)} />
+                    Weekdays only
+                  </label>
                   <button onClick={() => spreadOut(g)}
                     style={{ fontSize:11, padding:'5px 11px', borderRadius:14, border:'none', background:g.color, color:iconColorOn(g.color), cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:700 }}>Spread {g.spans.length} tasks</button>
                   <button onClick={() => setSpreading(null)}
                     style={{ fontSize:11, padding:'5px 9px', borderRadius:14, border:'1px solid var(--border)', background:'white', color:'var(--muted)', cursor:'pointer', fontFamily:'DM Sans,sans-serif' }}>Cancel</button>
                   <div style={{ flexBasis:'100%', fontSize:11, color:'var(--muted)', lineHeight:1.45 }}>
-                    Each one becomes a task of yours, spaced out from the start date to this day. The Canvas originals stay here so you still see the real deadline.
+                    Each one becomes a task of yours, spaced out from the start date to this day{spreadWeekdays ? ', skipping weekends' : ''}. The Canvas originals stay here so you still see the real deadline.
                   </div>
                 </div>
               )}

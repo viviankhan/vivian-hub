@@ -148,27 +148,36 @@ function daysBetween(a, b) {
 // more items than days every day is used and some get more than one.
 // A start on or after the due date leaves nothing to spread: every item stays
 // on the due date.
-export function spreadDates(startDate, dueDate, count) {
+// `weekdaysOnly` keeps Saturdays and Sundays free: work due on a weekend ends
+// on the Friday before it. If the window holds no weekday at all, weekends
+// are used after all rather than pushing anything past the due date.
+export function spreadDates(startDate, dueDate, count, { weekdaysOnly = false } = {}) {
   if (!count || count < 1) return []
   const span = startDate ? daysBetween(startDate, dueDate) : 0
   if (!(span > 0)) return Array(count).fill(dueDate)
+  let days = []
+  for (let i = 0; i <= span; i++) days.push(addDays(startDate, i))
+  if (weekdaysOnly) {
+    const weekdays = days.filter(d => { const w = new Date(d + 'T12:00:00').getDay(); return w !== 0 && w !== 6 })
+    if (weekdays.length) days = weekdays
+  }
+  // Room to spare: skip the start day and space evenly up to the deadline.
+  // Tight on days: use the start day too, so no day doubles up needlessly.
+  const after = days.filter(d => d > startDate)
   const out = []
   for (let i = 0; i < count; i++) {
-    // Room to spare: skip the start day and space evenly up to the deadline.
-    // Tight on days: use the start day too, so no day doubles up needlessly.
-    const offset = count <= span
-      ? Math.round(((i + 1) * span) / count)
-      : Math.floor((i * (span + 1)) / count)
-    out.push(addDays(startDate, offset))
+    out.push(count <= after.length
+      ? after[Math.round(((i + 1) * after.length) / count) - 1]
+      : days[Math.floor((i * days.length) / count)])
   }
   return out
 }
 
 // Which items to spread and where each one goes. Items keep the feed's order
 // (by time, then title), so whatever the class lists first is started first.
-export function planSpread(spans, startDate, dueDate) {
+export function planSpread(spans, startDate, dueDate, opts) {
   const items = (spans || []).slice().sort((a, b) =>
     (a.startTime || '').localeCompare(b.startTime || '') || (a.label || '').localeCompare(b.label || ''))
-  const dates = spreadDates(startDate, dueDate, items.length)
+  const dates = spreadDates(startDate, dueDate, items.length, opts)
   return items.map((span, i) => ({ span, date: dates[i] }))
 }
