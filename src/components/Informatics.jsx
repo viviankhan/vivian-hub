@@ -20,6 +20,7 @@ import { useTimeframe, TimeframePicker } from './Timeframe.jsx'
 import MindBody from './WellnessInsights.jsx'
 import { computeEntries, filterByDates, aggregate, answerQuestion, fmtHours, decimalHours } from '../lib/insights.js'
 import { computeSkills, skillCoverage, skillTrend } from '../lib/skills.js'
+import { computeTopics } from '../lib/topics.js'
 import {
   DEFAULT_EFFECTS, moodMeta, fmtDuration, keyToDate,
   moodSeriesBetween, moodSummary, effectTotalsBetween,
@@ -115,13 +116,15 @@ function EntryLog({ entries = [], dark = false, initial = 8 }) {
 }
 
 // A row with a bar under it: icon · name · value, then the bar.
-function BarRow({ icon, color, name, meta, value, frac, onClick, open }) {
+// `wrap` lets a long name take two lines instead of cutting off the part
+// that says what the work was.
+function BarRow({ icon, color, name, meta, value, frac, onClick, open, wrap = false }) {
   const Tag = onClick ? 'button' : 'div'
   return (
     <Tag type={onClick ? 'button' : undefined} className={`in-row ${onClick ? 'tappable' : ''}`} onClick={onClick} aria-expanded={onClick ? !!open : undefined}>
-      <div className="in-row-top">
+      <div className={`in-row-top ${wrap ? 'wrap' : ''}`}>
         <span className="in-row-ico" style={{ color }}>{icon}</span>
-        <span className="in-row-name">{name}</span>
+        <span className={`in-row-name ${wrap ? 'wrap' : ''}`}>{name}</span>
         {meta && <span className="in-row-meta">{meta}</span>}
         <span className="in-row-val">{value}</span>
         {onClick && <span className={`in-chevron ${open ? 'open' : ''}`} aria-hidden="true">›</span>}
@@ -188,6 +191,8 @@ export default function Informatics({ commitments = [], recurringTasks = [], com
   const [asked, setAsked] = useState('')      // the submitted question
   const [logOpen, setLogOpen] = useState(false)
   const [openSkill, setOpenSkill] = useState(null)   // expanded skill row (shows its tasks)
+  const [openTopic, setOpenTopic] = useState(null)   // expanded topic row (shows its sessions)
+  const [allTopics, setAllTopics] = useState(false)  // show every topic row, not just the top ones
 
   // ── Time & skills ────────────────────────────────────────────
   const allEntries = useMemo(
@@ -197,7 +202,13 @@ export default function Informatics({ commitments = [], recurringTasks = [], com
   const entries = useMemo(() => filterByDates(allEntries, tf.from, tf.to), [allEntries, tf.from, tf.to])
   const agg = useMemo(() => aggregate(entries, categories), [entries, categories])
   const skills = useMemo(() => computeSkills(entries, categories), [entries, categories])
-  const answer = useMemo(() => asked ? answerQuestion(entries, asked, categories) : null, [asked, entries, categories])
+  // The things you worked on, read from titles, descriptions and subtasks — a
+  // task called "Work" with a description about the grant proposal counts
+  // toward "Grant proposal", not toward "Work".
+  const topics = useMemo(() => computeTopics(entries, { max: Infinity }), [entries])
+  const namedTopics = topics.filter(t => !t.fallback).length
+  // Asking for a topic by its exact name answers with that row's own sessions.
+  const answer = useMemo(() => asked ? answerQuestion(entries, asked, categories, { topics }) : null, [asked, entries, categories, topics])
 
   // Momentum: the window against the same number of days before it (a week
   // against the week before, by default); and how much of the tracked time
@@ -228,18 +239,20 @@ export default function Informatics({ commitments = [], recurringTasks = [], com
   const totalSessions = entries.length
   const maxCatV = Math.max(1, ...agg.byCategory.map(c => hasHours ? c.mins : c.count))
   const maxSkillV = Math.max(1, ...skills.map(s => hasHours ? s.mins : s.count))
+  const maxTopicV = Math.max(1, ...topics.map(t => hasHours ? t.mins : t.count))
   const rangeLabel = tf.label
   const inRange = tf.phrase
 
   // Suggestions of what to ask: a couple of self-questions, then the top
-  // skills, areas, and a few frequent task names — the things there's data for.
+  // topics (short ones — a long cluster label is not a question), skills and
+  // areas — the things there's data for.
   const suggestions = [
     ...(skills.length ? ['What skills am I using?'] : []),
     ...(totalSessions ? ['Where does my time go?'] : []),
+    ...topics.filter(t => !t.fallback && t.label.length <= 28 && !/[:,]/.test(t.label)).slice(0, 3).map(t => t.label),
     ...skills.slice(0, 3).map(s => s.label),
-    ...agg.byCategory.slice(0, 3).map(c => c.label),
-    ...agg.byTask.slice(0, 3).map(t => t.title),
-  ].filter((v, i, a) => v && a.indexOf(v) === i).slice(0, 8)
+    ...agg.byCategory.slice(0, 2).map(c => c.label),
+  ].filter((v, i, a) => v && a.indexOf(v) === i).slice(0, 9)
 
   const ask = (text) => { const v = (text ?? query).trim(); setAsked(v); setQuery(v) }
   const clearAnswer = () => { setAsked(''); setQuery('') }
@@ -371,8 +384,15 @@ export default function Informatics({ commitments = [], recurringTasks = [], com
                   ))}
                 </div>
               )}
-              {answer.skills.length > 0 && (
+              {answer.topics && answer.topics.length > 0 && (
                 <div className="in-chips">
+                  <span className="in-chips-label">Topics</span>
+                  {answer.topics.map(t => <span key={t.id} className="in-chip"><span className="in-chip-text">{t.label}</span> · {t.mins > 0 ? fmtHours(t.mins) : sessions(t.count)}</span>)}
+                </div>
+              )}
+              {answer.skills.length > 0 && (
+                <div className="in-chips faint">
+                  <span className="in-chips-label">Skills</span>
                   {answer.skills.map(s => <span key={s.id} className="in-chip"><Icon value={s.icon} size={12} color="currentColor" />{s.label}</span>)}
                 </div>
               )}
@@ -442,21 +462,38 @@ export default function Informatics({ commitments = [], recurringTasks = [], com
             <section className="in-card">
               <div className="in-card-head">
                 <h3 className="serif">Topics &amp; projects</h3>
-                <span className="in-card-meta">{agg.byTask.length} thing{agg.byTask.length === 1 ? '' : 's'}</span>
+                <span className="in-card-meta">
+                  {namedTopics} topic{namedTopics === 1 ? '' : 's'}
+                  {topics.length > namedTopics ? ` · ${topics.length - namedTopics} one-off${topics.length - namedTopics === 1 ? '' : 's'}` : ''}
+                </span>
               </div>
-              <div className="in-rank">
-                {agg.byTask.slice(0, 12).map((t, i) => {
+              <div className="in-rows">
+                {(allTopics ? topics : topics.slice(0, 14)).map(t => {
                   const c = categories.find(x => x.id === t.cat)
+                  const open = openTopic === t.id
+                  // A one-off already says everything about itself in its row,
+                  // so it shows its date and does not open.
+                  const oneOff = t.fallback && t.count === 1
                   return (
-                    <div key={t.title} className="in-rank-row">
-                      <span className="in-rank-n">{i + 1}</span>
-                      <span className="in-dot" style={{ background: c?.color || '#C9CFD6' }} />
-                      <span className="in-rank-name">{t.title}</span>
-                      <span className="in-rank-count">{sessions(t.count)}</span>
-                      {t.mins > 0 && <span className="in-rank-val">{fmtHours(t.mins)}</span>}
+                    <div key={t.id}>
+                      <BarRow color={c?.color || 'var(--muted)'} name={t.label} wrap
+                        icon={<span className="in-dot" style={{ background: c?.color || 'var(--border)' }} />}
+                        meta={oneOff ? shortDate(t.entries[0]?.date) : sessions(t.count)}
+                        value={t.mins > 0 ? fmtHours(t.mins) : `${t.days} day${t.days === 1 ? '' : 's'}`}
+                        frac={(hasHours ? t.mins : t.count) / maxTopicV}
+                        onClick={oneOff ? undefined : () => setOpenTopic(open ? null : t.id)} open={open} />
+                      {open && !oneOff && t.entries.length > 0 && <div className="in-row-detail"><EntryLog entries={t.entries} /></div>}
                     </div>
                   )
                 })}
+              </div>
+              {topics.length > 14 && (
+                <button type="button" className="in-more" onClick={() => setAllTopics(a => !a)}>
+                  {allTopics ? 'Show fewer' : `Show all ${topics.length}`}
+                </button>
+              )}
+              <div className="in-card-foot">
+                Read from the titles, descriptions and subtasks of what you finished, so a task called “Work” counts toward what its notes say it was. One session can count toward several topics, so the rows overlap. A one-off is a session nothing else matched, listed by its title and note. Tap a topic to see what fed it.
               </div>
             </section>
 
