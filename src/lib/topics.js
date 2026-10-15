@@ -9,19 +9,27 @@
 // shows up as a topic with hours behind it even when every session that fed
 // it was titled "Work".
 //
-// It is a transparent extractor, no model call: text is cut into runs of
-// content words at stopwords, punctuation and line breaks; every run and its
-// one-to-four word pieces are candidates; a candidate becomes a topic when
-// more than one session carries it. Phrases are matched on stems
-// ("passage"/"passages") and shown in the form you wrote most. A phrase that
-// only ever appears inside a longer one folds into it, so "CARS" does not
-// list beside "MCAT CARS passages". Phrases that always occur together are
-// one topic, named by the task and its parts ("Lab: Prep master mix, Analyze
-// gel bands"), and a narrow phrase whose sessions all sit inside a broader
-// topic folds into it ("MCAT biochem" under "MCAT"), so the rows read as
-// where the hours went rather than as overlapping fragments. Sessions nothing
-// recurs in are listed by their title and the first line of their note, so
-// no hour goes missing.
+// It is a transparent extractor, no model call:
+//   • Text is cut into runs of content words at stopwords, punctuation, line
+//     breaks, links, clock times and contractions. Any script's letters count
+//     (Résumé, Café, María). A number only rides along after a word that
+//     numbers things ("chapter 12", "section 2"); elsewhere it cuts the run.
+//   • Every piece of a run is a candidate, matched on stems
+//     ("passage"/"passages") and shown in the form you wrote most. A candidate
+//     becomes a topic when more than one session carries it.
+//   • A piece that only ever appears inside a longer phrase folds into it, so
+//     "CARS" does not list beside "MCAT CARS passages". Phrases that always
+//     occur together are one row, named by the task and its parts ("Lab: Prep
+//     master mix, Analyze gel bands"). A narrower topic folds into a broader
+//     one only when they share a word ("MCAT biochem" under "MCAT") — a place
+//     or a person that recurs in most notes never swallows the projects
+//     beside it.
+//   • A title that only labels the work ("Lab", "Study time", "Focus block")
+//     steps aside once the notes cover its sessions; a title that names the
+//     work ("Thesis", "Anki") stays on the row ("Thesis: pages").
+//   • Sessions nothing recurs in are listed by their title and the first line
+//     of their note, so no hour goes missing.
+// Rows can overlap: one session can count toward several topics.
 // ─────────────────────────────────────────────────────────────
 
 // Words that never carry a topic on their own and cut a phrase where they
@@ -51,11 +59,31 @@ const WEAK = new Set((
   'practice practicing practiced prep prepare preparing prepared plan planning planned meeting meetings call calls ' +
   'email emails check checking checked update updating updated fix fixing fixed draft drafting edit editing ' +
   'note notes homework assignment assignments lecture lectures class classes session sessions ' +
-  'learn learning learned look looking looked think thinking thought help helping'
+  'learn learning learned look looking looked think thinking thought help helping ' +
+  'forget remember send sending sent reply replying replied ask asking asked talk talking talked ' +
+  'discuss discussing discussed show showing showed present presenting presented submit submitting submitted ' +
+  'bring brought buy bought pick picked clean cleaning cleaned run running ran figure figuring'
 ).split(/\s+/))
 
-const MAX_WORDS = 4      // longest window; a whole run up to MAX_RUN words is also a candidate
-const MAX_RUN = 8
+// Words that name where or how you worked rather than what on — the labels
+// people put on a task. As a title they step aside once the notes say what
+// the work was; they never prefix a topic's name.
+const LABEL = new Set((
+  'lab admin deep focus block blocks time slot errand errands chore chores school research personal home ' +
+  'office routine gym misc general class classes lecture lectures meeting meetings shift job campus library ' +
+  'desk project projects stuff side hustle grind sprint pomodoro'
+).split(/\s+/))
+
+// Words that number things: a number may follow them ("chapter 12",
+// "problem set 3"). Anywhere else a number is a quantity, a year or a time
+// and cuts the phrase.
+const ORDINAL = new Set((
+  'chapter ch section sec lecture lec unit module lesson problem set pset exercise question part ' +
+  'episode ep figure fig table appendix level version phase round stage step quiz exam test midterm ' +
+  'assignment lab hw homework psalm verse room grade block'
+).split(/\s+/))
+
+const MAX_WINDOW = 10    // the longest phrase considered; runs are short once cut at stopwords
 
 // Fold a word toward its stem so plurals and verb forms line up: passages →
 // passage, classes → class, studies → study, analysis stays analysis.
@@ -70,45 +98,54 @@ function stem(w) {
 }
 
 // Cut text into runs of content words. A run ends at punctuation, a line
-// break or a stopword. Each token keeps its written form for display and a
-// lowercased stem for matching.
+// break, a stopword, a contraction, a clock time or a link; a number ends it
+// unless the word before it numbers things. Each token keeps its written
+// form for display and a lowercased stem for matching.
+const LINK = /\b(?:https?:\/\/|www\.)\S+|[^\s@]+@[^\s@]+\.[^\s@]+/giu
+const TOKEN = /\d{1,2}:\d{2}(?:\s*[ap]\.?m\.?)?|[\p{L}\p{N}][\p{L}\p{M}\p{N}'’-]*|\r?\n|[^\s\p{L}\p{N}]+/gu
+const ord = t => ORDINAL.has(t.key) || ORDINAL.has(t.form.toLowerCase())
 export function contentRuns(text) {
   const runs = []
   let cur = []
   const flush = () => { if (cur.length) runs.push(cur); cur = [] }
-  const re = /[A-Za-z0-9][A-Za-z0-9'’-]*|[^\sA-Za-z0-9]+|\r?\n/g
+  const src = String(text || '').replace(LINK, '\n')
   let m
-  while ((m = re.exec(String(text || ''))) !== null) {
+  TOKEN.lastIndex = 0
+  while ((m = TOKEN.exec(src)) !== null) {
     const raw = m[0]
-    if (!/^[A-Za-z0-9]/.test(raw)) { flush(); continue }          // punctuation or a line break
+    if (!/^[\p{L}\p{N}]/u.test(raw) || /^\d{1,2}:\d{2}/.test(raw)) { flush(); continue }   // punctuation, a break, a clock time
+    if (/['’](?:t|m|ll|ve|re|d)$/i.test(raw)) { flush(); continue }                         // I'm, don't, we'll — never a topic
     const form = raw.replace(/['’]s$/i, '').replace(/[-'’]+$/g, '')
     const low = form.toLowerCase()
     if (!low || STOP.has(low)) { flush(); continue }
-    const alpha = /[a-z]/i.test(low)
+    const alpha = /\p{L}/u.test(low)
+    if (!alpha) {
+      // A number rides along only after a word that numbers things.
+      if (cur.length && ord(cur[cur.length - 1])) { cur.push({ form, key: low, alpha }); continue }
+      flush(); continue
+    }
+    if (/^\d+(?:am|pm|st|nd|rd|th|k|x)?$/i.test(low)) { flush(); continue }                 // 9am, 3rd, 10k
     // A lone letter is noise; a two-letter token only counts when it is an
     // acronym written in capitals ("AI", "ER").
-    if (alpha && low.length < 3 && form !== form.toUpperCase()) { flush(); continue }
-    cur.push({ form, key: alpha ? stem(low) : low, alpha })
+    if (low.length < 3 && form !== form.toUpperCase()) { flush(); continue }
+    cur.push({ form, key: stem(low), alpha })
   }
   flush()
   return runs
 }
 
-// Every candidate phrase in one piece of text: each run's 1–4 word windows,
-// plus the whole run when it is longer than that, so a recurring sentence
-// becomes one topic rather than a row of overlapping pieces. A phrase starts
-// on a real word (a number may ride along after one), a single word must be
-// three letters or an acronym, and an activity word never stands alone.
+// Every candidate phrase in one piece of text: every window of every run, up
+// to MAX_WINDOW words, so the longest stretch two notes share is always on
+// the table. A phrase starts on a real word, a single word must be three
+// letters or an acronym, and an activity word never stands alone.
 export function phrasesIn(text) {
   const out = new Map()   // key → form (first seen)
   for (const run of contentRuns(text)) {
-    const sizes = []
-    for (let n = 1; n <= Math.min(MAX_WORDS, run.length); n++) sizes.push(n)
-    if (run.length > MAX_WORDS && run.length <= MAX_RUN) sizes.push(run.length)
-    for (const n of sizes) {
+    const top = Math.min(MAX_WINDOW, run.length)
+    for (let n = 1; n <= top; n++) {
       for (let i = 0; i + n <= run.length; i++) {
         const win = run.slice(i, i + n)
-        if (!win[0].alpha) continue                           // "12 pages" is a quantity, not a topic; "chapter 12" is fine
+        if (!win[0].alpha) continue
         if (n === 1 && (WEAK.has(win[0].key) || WEAK.has(win[0].form.toLowerCase()))) continue
         const key = win.map(t => t.key).join(' ')
         if (!out.has(key)) out.set(key, win.map(t => t.form).join(' '))
@@ -134,9 +171,14 @@ function display(forms, raw = false) {
 }
 // The first line of what was written about a session, for the rows nothing
 // recurs in: "Deep work: Wrote the whole discussion section of the thesis".
+// A pasted link reads as the site it points at ("Comments on docs.google.com").
+function siteOf(url) {
+  if (url.includes('@') && !/^(?:https?:|www\.)/i.test(url)) return url
+  try { return new URL(/^www\./i.test(url) ? 'https://' + url : url).hostname.replace(/^www\./, '') } catch { return '' }
+}
 function gistOf(e) {
   const lines = [String(e.desc || ''), ...(Array.isArray(e.subList) ? e.subList : [String(e.subs || '')])]
-    .flatMap(t => String(t).split(/\r?\n/)).map(t => t.replace(/\s+/g, ' ').trim()).filter(Boolean)
+    .flatMap(t => String(t).split(/\r?\n/)).map(t => t.replace(LINK, siteOf).replace(/\s+/g, ' ').trim()).filter(Boolean)
   const g = lines[0] || ''
   return g.length > 60 ? g.slice(0, 57).replace(/\s+\S*$/, '') + '…' : g
 }
@@ -147,6 +189,28 @@ function within(shortKey, longKey) {
 }
 
 function clip(str, n = 60) { return str.length > n ? str.slice(0, n - 3).replace(/[\s,:]+\S*$/, '') + '…' : str }
+// How many of a's sessions are also b's.
+function overlap(a, b) {
+  let both = 0
+  for (const i of a.idx) if (b.idx.has(i)) both++
+  return both
+}
+// Do two phrases share a word (on stems)?
+function shares(a, b) {
+  const bs = new Set(b.words)
+  return a.words.some(w => bs.has(w))
+}
+// A phrase made only of labelling or activity words: "Lab", "Study time".
+function generic(c) {
+  return c.words.every(w => LABEL.has(w) || WEAK.has(w) || STOP.has(w))
+}
+// Index phrases by each word they contain, so a pass only compares phrases
+// that could possibly relate.
+function indexByWord(list) {
+  const by = new Map()
+  for (const c of list) for (const w of new Set(c.words)) { let a = by.get(w); if (!a) by.set(w, a = []); a.push(c) }
+  return by
+}
 
 // Roll entries up by topic.
 //   entries: [{ title, desc, subList|subs, mins, date, cat }]
@@ -172,59 +236,65 @@ export function computeTopics(entries = [], { max = 40, minSessions = 2, fold = 
 
   // Enough support to be a topic: more than one session carries it.
   let kept = [...cands.values()].filter(c => c.count >= minSessions)
+  for (const c of kept) { c.words = c.key.split(' '); c.n = c.words.length; c.sig = [...c.idx].sort((a, b) => a - b).join(',') }
 
   // A phrase whose sessions nearly all sit inside a longer phrase is just a
   // piece of it: fold it away and keep the more descriptive one.
-  const byLen = kept.slice().sort((a, b) => b.key.split(' ').length - a.key.split(' ').length)
+  let byWord = indexByWord(kept)
   const dropped = new Set()
-  for (const long of byLen) {
-    if (dropped.has(long.key)) continue
-    for (const short of kept) {
-      if (dropped.has(short.key) || !within(short.key, long.key)) continue
-      let both = 0
-      for (const i of short.idx) if (long.idx.has(i)) both++
-      if (both / short.idx.size >= fold) dropped.add(short.key)
+  for (const long of kept.slice().sort((a, b) => b.n - a.n)) {
+    if (long.n === 1 || dropped.has(long.key)) continue
+    const seen = new Set()
+    for (const w of long.words) for (const short of byWord.get(w) || []) {
+      if (seen.has(short)) continue
+      seen.add(short)
+      if (short.n >= long.n || dropped.has(short.key) || !within(short.key, long.key)) continue
+      if (overlap(short, long) / short.idx.size >= fold) dropped.add(short.key)
     }
   }
   kept = kept.filter(c => !dropped.has(c.key))
 
   // Two overlapping pieces of one sentence that recur together are one topic:
   // when a shorter phrase shares a word and every session with a longer one,
-  // the longer wins.
-  const sameSet = (a, b) => a.idx.size === b.idx.size && [...a.idx].every(i => b.idx.has(i))
-  const shares = (a, b) => { const bs = new Set(b.key.split(' ')); return a.key.split(' ').some(w => bs.has(w)) }
+  // the longer wins. Only phrases with the same sessions can match, so each
+  // group of identical sessions is compared on its own.
+  const bySig = new Map()
+  for (const c of kept) { let a = bySig.get(c.sig); if (!a) bySig.set(c.sig, a = []); a.push(c) }
   const frag = new Set()
-  const byLen2 = kept.slice().sort((a, b) => b.key.split(' ').length - a.key.split(' ').length)
-  for (let i = 0; i < byLen2.length; i++) {
-    if (frag.has(byLen2[i].key)) continue
-    for (let j = i + 1; j < byLen2.length; j++) {
-      const a = byLen2[i], b = byLen2[j]
-      if (frag.has(b.key) || b.key.split(' ').length >= a.key.split(' ').length) continue
-      if (sameSet(a, b) && shares(a, b)) frag.add(b.key)
+  for (const group of bySig.values()) {
+    if (group.length < 2) continue
+    group.sort((a, b) => b.n - a.n)
+    for (let i = 0; i < group.length; i++) {
+      if (frag.has(group[i].key)) continue
+      for (let j = i + 1; j < group.length; j++) {
+        const a = group[i], b = group[j]
+        if (frag.has(b.key) || b.n >= a.n) continue
+        if (shares(a, b)) frag.add(b.key)
+      }
     }
   }
   kept = kept.filter(c => !frag.has(c.key))
 
   // Phrases that occur in exactly the same sessions are one topic, not several
   // rows that each count those hours again. Name it by what was written: the
-  // one phrase from the notes, or the task's name with its parts after it.
-  const sig = c => [...c.idx].sort((a, b) => a - b).join(',')
+  // phrase from the notes — after the task's name when the name says what the
+  // work was ("Thesis: pages") — or the name with its parts after it.
   const groups = new Map()
-  for (const c of kept) { const k = sig(c); if (!groups.has(k)) groups.set(k, []); groups.get(k).push(c) }
+  for (const c of kept) { let a = groups.get(c.sig); if (!a) groups.set(c.sig, a = []); a.push(c) }
   const merged = []
   for (const group of groups.values()) {
     if (group.length === 1) { merged.push(group[0]); continue }
-    const words = c => c.key.split(' ').length
-    const body = group.filter(c => c.inBody).sort((a, b) => words(b) - words(a) || b.forms.size - a.forms.size)
-    const titles = group.filter(c => !c.inBody).sort((a, b) => words(b) - words(a))
+    const body = group.filter(c => c.inBody).sort((a, b) => b.n - a.n || b.forms.size - a.forms.size)
+    const titles = group.filter(c => !c.inBody).sort((a, b) => b.n - a.n)
     const rep = body[0] || titles[0]
+    const named = titles.find(t => !generic(t))
     let label
     if (!body.length) label = display(titles[0].forms)
-    else if (body.length === 1) label = display(body[0].forms)
+    else if (body.length === 1) label = named ? clip(`${display(named.forms)}: ${display(body[0].forms, true)}`) : display(body[0].forms)
     else {
       // The strongest parts only: phrases over single words, at most three,
       // each exactly as written.
-      const multi = body.filter(c => words(c) > 1)
+      const multi = body.filter(c => c.n > 1)
       const parts = (multi.length ? multi : body).slice(0, 3).map(c => display(c.forms, true))
       label = titles.length ? clip(`${display(titles[0].forms)}: ${parts.join(', ')}`) : clip(parts.map((t, i) => i ? t : t.charAt(0).toUpperCase() + t.slice(1)).join(', '))
     }
@@ -232,38 +302,48 @@ export function computeTopics(entries = [], { max = 40, minSessions = 2, fold = 
   }
   kept = merged
 
-  // A narrower topic whose sessions nearly all sit inside a broader one is a
-  // facet of it — "MCAT biochem" under "MCAT" — and folds in; its text still
-  // shows in the broader topic's sessions. A bare one-word title never
-  // absorbs a phrase from the notes, only other bare titles.
-  const isLabel = c => !c.inBody && !c.key.includes(' ')
+  // A narrower topic whose sessions nearly all sit inside a broader one that
+  // shares a word with it is a facet of it — "MCAT biochem" under "MCAT" —
+  // and folds in; its text still shows in the broader topic's sessions. A
+  // word that recurs beside unrelated projects (a place, a person, a tool)
+  // shares no word with them, so it never swallows them. A title never
+  // absorbs a phrase from the notes.
   kept.sort((a, b) => b.idx.size - a.idx.size || b.mins - a.mins)
+  byWord = indexByWord(kept)
   const facet = new Set()
-  for (let i = 0; i < kept.length; i++) {
-    const big = kept[i]
+  for (const big of kept) {
     if (facet.has(big.key)) continue
-    for (let j = i + 1; j < kept.length; j++) {
-      const small = kept[j]
+    const seen = new Set()
+    for (const w of big.words) for (const small of byWord.get(w) || []) {
+      if (small === big || seen.has(small)) continue
+      seen.add(small)
       if (facet.has(small.key) || small.idx.size >= big.idx.size) continue
-      if (isLabel(big) && !isLabel(small)) continue
-      let both = 0
-      for (const k of small.idx) if (big.idx.has(k)) both++
-      if (both / small.idx.size >= fold) facet.add(small.key)
+      if (!big.inBody && small.inBody) continue
+      if (overlap(small, big) / small.idx.size >= fold) facet.add(small.key)
     }
   }
   kept = kept.filter(c => !facet.has(c.key))
 
-  // A one-word title that never appears in a note is a label ("Study",
-  // "Lab"), not a topic. When another topic already covers nearly all of its
-  // sessions, the label steps aside; when it is all we know, it stays.
+  // A title that never appears in a note is a label, not a topic, once the
+  // notes cover its sessions. A labelling title ("Lab", "Study time") steps
+  // aside when the topics from the notes together cover it; a one-word title
+  // that names the work steps aside only when a single topic covers it, and
+  // when it is all we know, it stays.
+  const fromNotes = new Set()
+  for (const c of kept) if (c.inBody) for (const i of c.idx) fromNotes.add(i)
   const labels = new Set()
   for (const c of kept) {
-    if (c.inBody || c.key.includes(' ')) continue
+    if (c.inBody) continue
+    if (generic(c)) {
+      let cov = 0
+      for (const i of c.idx) if (fromNotes.has(i)) cov++
+      if (cov / c.idx.size >= fold) labels.add(c.key)
+      continue
+    }
+    if (c.n > 1) continue
     for (const d of kept) {
       if (d === c || labels.has(d.key)) continue
-      let both = 0
-      for (const i of c.idx) if (d.idx.has(i)) both++
-      if (both / c.idx.size >= fold) { labels.add(c.key); break }
+      if (overlap(c, d) / c.idx.size >= fold) { labels.add(c.key); break }
     }
   }
   kept = kept.filter(c => !labels.has(c.key))
@@ -292,7 +372,7 @@ export function computeTopics(entries = [], { max = 40, minSessions = 2, fold = 
     for (const [k, v] of cats) if (v > n) { cat = k; n = v }
     return {
       id: c.key,
-      label: c.label || display(c.forms),
+      label: c.label || clip(display(c.forms)),
       mins: c.mins,
       count: c.count,
       days: new Set(es.map(e => e.date).filter(Boolean)).size,
@@ -303,5 +383,5 @@ export function computeTopics(entries = [], { max = 40, minSessions = 2, fold = 
     }
   })
   rows.sort((a, b) => b.mins - a.mins || b.count - a.count || a.label.localeCompare(b.label))
-  return rows.slice(0, max)
+  return Number.isFinite(max) ? rows.slice(0, max) : rows
 }

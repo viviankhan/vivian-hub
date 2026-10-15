@@ -85,5 +85,52 @@ eq('the label is the form written most', T.computeTopics([e('Work', 'grant propo
 eq('empty input is an empty list', T.computeTopics([]), [])
 eq('an entry with nothing written at all still lands somewhere', T.computeTopics([{ title: '', desc: '', mins: 30 }, { title: '', desc: '', mins: 30 }])[0].label, 'Untitled')
 
+console.log('\n— a recurring place or person never swallows the projects beside it —')
+const lib = T.computeTopics([e('Work', 'Grant proposal at the library', 60, { d: 1 }), e('Work', 'Grant proposal at the library', 60, { d: 2 }),
+  e('Work', 'MCAT CARS at the library', 60, { d: 3 }), e('Work', 'MCAT CARS at the library', 60, { d: 4 }),
+  e('Work', 'Thesis at the library', 60, { d: 5 }), e('Work', 'Thesis at the library', 60, { d: 6 }), e('Work', 'Thesis', 60, { d: 7 })])
+eq('every project keeps its row', ['Grant proposal', 'MCAT CARS', 'Thesis'].every(l => row(lib, l)), true)
+const lee = T.computeTopics([e('Work', 'Grant proposal, send to Dr. Lee', 60, { d: 1 }), e('Work', 'Grant proposal edits from Lee', 60, { d: 2 }),
+  e('Work', 'Western blot, show Lee', 60, { d: 3 }), e('Work', 'Western blot repeat for Lee', 60, { d: 4 }), e('Work', 'Lee 1:1', 60, { d: 5 })])
+eq('…a person included', [!!row(lee, 'Grant proposal'), !!row(lee, 'Western blot')], [true, true])
+eq('a two-word labelling title steps aside for its notes',
+  labels(T.computeTopics([e('Study time', 'MCAT CARS practice', 60, { d: 1 }), e('Study time', 'MCAT CARS practice', 60, { d: 2 }), e('Focus block', 'Anki review', 60, { d: 3 }), e('Focus block', 'Anki review', 60, { d: 4 })])).sort(),
+  ['Anki review', 'MCAT CARS practice'])
+eq('a labelling title whose notes split across topics steps aside',
+  labels(T.computeTopics([e('Lab', 'Western blot', 60, { d: 1 }), e('Lab', 'Western blot', 60, { d: 2 }), e('Lab', 'PCR optimization', 60, { d: 3 }), e('Lab', 'PCR optimization', 60, { d: 4 }), e('Lab', 'Mouse colony records', 60, { d: 5 }), e('Lab', 'Mouse colony records', 60, { d: 6 })])).includes('Lab'),
+  false)
+
+console.log('\n— a title that names the work stays on the row —')
+eq('"Anki" with notes about cards', labels(T.computeTopics([e('Anki', '50 new cards', 30, { d: 1 }), e('Anki', '120 cards reviewed', 30, { d: 2 }), e('Anki', 'cards on glycolysis', 30, { d: 3 })])), ['Anki: cards'])
+eq('"Thesis" with notes about pages', labels(T.computeTopics([e('Thesis', 'Wrote 2 pages of discussion', 120, { d: 1 }), e('Thesis', 'Wrote the intro pages', 120, { d: 2 }), e('Thesis', 'Edited pages 4-9', 60, { d: 3 })])), ['Thesis: pages'])
+
+console.log('\n— the longest shared stretch, not a pile of windows —')
+eq('two notes that share five words', labels(T.computeTopics([e('Work', 'Grant proposal section 2 budget tables', 90, { d: 1 }), e('Work', 'Grant proposal section 2 budget revisions', 60, { d: 2 })])), ['Grant proposal section 2 budget'])
+eq('a nine-word note that recurs is one row', T.computeTopics(Array.from({ length: 5 }, (_, i) => e('Study', 'MCAT CARS practice passages timed section review error log', 60, { d: i + 1 }))).length, 1)
+
+console.log('\n— links, contractions, clock times and accents —')
+const links = T.computeTopics([e('Work', 'Edit the draft at https://docs.google.com/document/d/abc123/edit', 60, { d: 1 }), e('Work', 'Comments on https://docs.google.com/document/d/xyz789/edit', 60, { d: 2 }),
+  e('Work', 'Grant proposal https://www.nsf.gov/pubs/2026/nsf26001/nsf26001.htm', 60, { d: 3 }), e('Work', 'Grant proposal https://www.nsf.gov/pubs/2026/nsf26002/nsf26002.htm', 60, { d: 4 })])
+eq('a pasted link is never a topic', links.some(r => /https?|www|docs|google|\.htm/i.test(r.label) && !r.fallback), false)
+eq('…and reads as its site in a one-off', links.some(r => r.label === 'Work: Comments on docs.google.com'), true)
+eq('contractions and filler verbs are never topics', labels(T.computeTopics([e('Work', "Don't forget the grant proposal budget. I'm behind on it", 60, { d: 1 }), e('Work', "Don't forget to email Dr. Lee; I'm still waiting", 60, { d: 2 }), e('Work', "I'm reviewing the grant proposal again", 60, { d: 3 })])).filter(l => !l.startsWith('Work:')), ['Grant proposal'])
+eq('a clock time cuts the phrase', labels(T.computeTopics([e('Standup 9:30', '', 15, { d: 1 }), e('Standup 9:30', '', 15, { d: 2 })])), ['Standup'])
+eq('…in a note too', T.computeTopics([e('Lab', 'Lab meeting 2:00 PM, present western blot data', 60, { d: 1 }), e('Lab', 'Lab meeting 2:00 PM, discuss western blot results', 60, { d: 2 })]).some(r => /\d/.test(r.label)), false)
+eq('accented words stay whole', labels(T.computeTopics([e('Career', 'Résumé review with mentor', 60, { d: 1 }), e('Career', 'Résumé edits, cover letter', 60, { d: 2 })])), ['Career: Résumé'])
+eq('…in any phrase', labels(T.computeTopics([e('Café', 'Café con leche con María', 30, { d: 1 }), e('Café', 'Café con leche con María', 30, { d: 2 })])), ['Café con leche con María'])
+eq('a year is not a topic', T.computeTopics([e('Taxes', 'Taxes 2026 paperwork', 60, { d: 1 }), e('Taxes', 'Taxes 2026 paperwork', 60, { d: 2 })]).some(r => /2026/.test(r.label)), false)
+
+console.log('\n— fast enough for a year —')
+{
+  let s = 11
+  const rnd = n => (s = (s * 1103515245 + 12345) % 2147483648) % n
+  const syll = ['ka', 'lo', 'mi', 'ra', 'te', 'su', 'vo', 'pe', 'ni', 'da', 'zu', 'fe', 'gro', 'bli', 'tra', 'ste']
+  const vocab = Array.from({ length: 2400 }, () => Array.from({ length: 2 + rnd(3) }, () => syll[rnd(syll.length)]).join(''))
+  const note = len => Array.from({ length: len }, (_, i) => i % 3 === 2 ? 'and' : vocab[rnd(vocab.length)]).join(' ')
+  const year = Array.from({ length: 2900 }, (_, i) => e(['Work', 'Lab', 'Study'][i % 3], note(6 + rnd(8)), 30 + rnd(60), { d: i }))
+  const t0 = Date.now(); T.computeTopics(year, { max: Infinity }); const ms = Date.now() - t0
+  eq(`2,900 varied sessions in under 2s (${ms}ms)`, ms < 2000, true)
+}
+
 console.log(`\n${pass} passed, ${fail} failed`)
 process.exit(fail ? 1 : 0)

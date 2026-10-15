@@ -1573,8 +1573,12 @@ textarea { resize: vertical; min-height: 160px; line-height: 1.6; }
 .in-arow-val small { font-size: 10.5px; opacity: .6; font-weight: 500; }
 .in-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; align-items: center; }
 .in-chips.faint { margin-top: 10px; }
-.in-chips-label { font-size: 11px; opacity: .7; }
-.in-chip { display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; font-weight: 600; padding: 4px 10px; border-radius: 999px; background: rgba(255,255,255,.14); }
+/* Each chip group's name sits on its own line, so the groups separate on a phone. */
+.in-chips-label { flex-basis: 100%; font-size: 10px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; opacity: .6; }
+.in-chip { display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; font-weight: 600; padding: 4px 10px; border-radius: 999px; background: rgba(255,255,255,.14); max-width: 100%; }
+.in-chip-text { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 22ch; }
+/* The quieter row (skills under topics) reads as quieter: outlined, lighter. */
+.in-chips.faint .in-chip { background: transparent; border: 1px solid rgba(255,255,255,.24); font-weight: 500; }
 
 /* Bars & rows */
 .in-rows { display: flex; flex-direction: column; gap: 10px; }
@@ -1584,6 +1588,10 @@ textarea { resize: vertical; min-height: 160px; line-height: 1.6; }
 .in-row-top { display: flex; align-items: center; gap: 8px; min-height: 22px; }
 .in-row-ico { display: inline-flex; width: 18px; justify-content: center; flex-shrink: 0; }
 .in-row-name { flex: 1; min-width: 0; font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* A topic's name may take two lines; the meta and value stay level with its first. */
+.in-row-top.wrap { align-items: flex-start; }
+.in-row-top.wrap .in-row-ico, .in-row-top.wrap .in-row-meta, .in-row-top.wrap .in-row-val, .in-row-top.wrap .in-chevron { margin-top: 2px; }
+.in-row-name.wrap { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; line-height: 1.3; overflow-wrap: anywhere; }
 .in-row-meta { font-size: 11px; color: var(--muted); flex-shrink: 0; display: inline-flex; gap: 6px; align-items: center; }
 .in-row-val { font-size: 12.5px; font-weight: 700; color: var(--text); flex-shrink: 0; min-width: 48px; text-align: right; font-variant-numeric: tabular-nums; }
 .in-row-detail { margin: 8px 0 2px 26px; }
