@@ -6,7 +6,8 @@
 // plus a snapshot of the user's current tasks; this asks Google Gemini to
 // return a PLAN of actions (create a task, add/check subtasks on an existing
 // one, mark a task done, reschedule). The app shows the plan for confirmation,
-// then applies it — nothing here ever writes to the database.
+// then applies it. The plan itself never touches your tasks; the only writes
+// are to `assistant_jobs`, for requests sent to be read in the background.
 //
 // The flash models are multimodal, so the same call reads the pictures: photos
 // ride along as inline_data parts next to the prompt. Either a command or at
@@ -23,6 +24,8 @@
 // Runs on Supabase Edge Functions (Deno). verify_jwt is off (see config.toml)
 // so the browser's CORS preflight isn't rejected before the function runs.
 // ─────────────────────────────────────────────────────────────
+
+import { createClient } from 'npm:@supabase/supabase-js@2'
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -112,7 +115,17 @@ const RESPONSE_SCHEMA = {
 
 type Task = { id: string; title: string; date?: string; time?: string; done?: boolean; subtasks?: { text: string; done: boolean }[] }
 
-Deno.serve(async (req) => {
+// The platform ends a request at 150s with a bare error that has no CORS
+// headers — the app can't read it and just sees "couldn't reach". Each model
+// call gets a time limit and the whole run a budget well inside that, so a
+// slow or stuck model ends in an answer the app can show.
+const BUDGET_MS = 110_000
+const PER_MODEL_MS = 60_000
+
+// Reads one request and answers with the plan. Called directly for the app's
+// direct request, and from a background job (see runJob below).
+async function plan(req: Request): Promise<Response> {
+ const startedAt = Date.now()
  try {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS })
   if (req.method !== 'POST') return json({ error: 'Method not allowed' }, 405)
@@ -313,11 +326,15 @@ ${command || fallbackCommand}
   // none work. Returns true on success (sets `resp`), false otherwise.
   const tryModels = async (models: string[]): Promise<boolean> => {
     for (const model of models) {
+      const left = BUDGET_MS - (Date.now() - startedAt)
+      if (left < 5_000) { lastStatus = 504; lastDetail = 'out of time'; return false }
       const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(GEMINI_KEY)}`
       let r: Response
       try {
-        r = await fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: reqBody })
+        r = await fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: reqBody, signal: AbortSignal.timeout(Math.min(PER_MODEL_MS, left)) })
       } catch (e) {
+        // Too slow → the next model may be quicker. Anything else is the network.
+        if ((e as Error)?.name === 'TimeoutError' || (e as Error)?.name === 'AbortError') { lastStatus = 504; lastDetail = `${model} timed out`; continue }
         hardStop = json({ error: `Couldn't reach the AI service: ${(e as Error)?.message || e}` }, 502)
         return false
       }
@@ -370,6 +387,9 @@ ${command || fallbackCommand}
   }
   if (hardStop) return hardStop
   if (!resp) {
+    if (lastStatus === 504) {
+      return json({ error: 'The AI took too long to read this — tap Try again. If it keeps happening, send fewer photos at once.', detail: lastDetail }, 504)
+    }
     if ([429, 500, 502, 503].includes(lastStatus)) {
       return json({ error: 'The free AI models are busy right now — please try again in a few seconds.', detail: lastDetail.slice(0, 300) }, 503)
     }
@@ -541,4 +561,109 @@ ${command || fallbackCommand}
   // 500, so a failure is never invisible again.
   return json({ error: `The assistant hit an unexpected error: ${(e as Error)?.message || e}`, stack: String((e as Error)?.stack || '').slice(0, 600) }, 500)
  }
+}
+
+// ── Background jobs: send it and close the app ──────────────────
+// A phone freezes a closed app, and a request that was waiting on Gemini dies
+// with it. So the app can instead file its request in `assistant_jobs`
+// (supabase_assistant_jobs.sql) as { jobId, job }: this answers at once
+// and reads the request in the background, writing the answer back to the row
+// and queuing a "ready" push. The app collects the answer whenever it's next
+// open. Asking about a job again is safe — one that's already being read or
+// answered is left alone; one that stalled is started over.
+declare const EdgeRuntime: { waitUntil(p: Promise<unknown>): void } | undefined
+const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || ''
+const STALE_MS = 4 * 60_000
+const KEEP_JOBS_MS = 3 * 24 * 60 * 60_000
+
+// deno-lint-ignore no-explicit-any
+async function startJob(req: Request, userId: string, jobId: string, filed: any): Promise<Response> {
+  if (!SERVICE_KEY) return json({ error: 'Background requests aren’t set up on the server.', status: 'unsupported' }, 501)
+  const db = createClient(SUPABASE_URL, SERVICE_KEY, { auth: { persistSession: false } })
+  // The app sends the request itself along with its id, in one upload — so
+  // once it's here it gets read, however soon the phone sleeps. Sent twice
+  // (the app didn't hear back), the first copy stands.
+  if (filed?.job && typeof filed.job === 'object') {
+    const { error } = await db.from('assistant_jobs')
+      .upsert({ id: jobId, user_id: userId, request: filed.job, notify: filed.notify || null }, { onConflict: 'id', ignoreDuplicates: true })
+    if (error) return json({ error: `Couldn’t file that request: ${error.message}`, status: /assistant_jobs/.test(error.message) ? 'unsupported' : 'failed' }, 500)
+  }
+  const { data: job, error } = await db.from('assistant_jobs')
+    .select('id, status, request, notify, started_at').eq('id', jobId).eq('user_id', userId).maybeSingle()
+  if (error) return json({ error: `Couldn’t open that request: ${error.message}` }, 500)
+  if (!job) return json({ error: 'That request has expired — tap Try again.', status: 'missing' }, 404)
+  if (job.status === 'done' || job.status === 'error') return json({ status: job.status })
+  const fresh = job.started_at && Date.now() - new Date(job.started_at).getTime() < STALE_MS
+  if (job.status === 'running' && fresh) return json({ status: 'running' }, 202)
+  if (!job.request) return json({ error: 'That request has expired — tap Try again.', status: 'missing' }, 404)
+
+  // Claim it; if another call claimed it first, leave it to that one.
+  const { data: claimed } = await db.from('assistant_jobs')
+    .update({ status: 'running', started_at: new Date().toISOString() })
+    .eq('id', jobId).eq('status', job.status).select('id')
+  if (!claimed || !claimed.length) return json({ status: 'running' }, 202)
+
+  const work = runJob(db, req, job)
+  if (typeof EdgeRuntime !== 'undefined' && EdgeRuntime?.waitUntil) { EdgeRuntime.waitUntil(work); return json({ status: 'running' }, 202) }
+  await work
+  return json({ status: 'done' })
+}
+
+// deno-lint-ignore no-explicit-any
+async function runJob(db: any, req: Request, job: any) {
+  let status = 500
+  // deno-lint-ignore no-explicit-any
+  let out: any
+  try {
+    const res = await plan(new Request(req.url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: req.headers.get('authorization') || '' },
+      body: JSON.stringify(job.request),
+    }))
+    status = res.status
+    out = await res.json().catch(() => ({ error: 'AI returned a malformed response.' }))
+  } catch (e) {
+    out = { error: `The assistant hit an unexpected error: ${(e as Error)?.message || e}` }
+  }
+  const ok = status >= 200 && status < 300
+  await db.from('assistant_jobs').update({
+    status: ok ? 'done' : 'error', result: out, http_status: status, request: null, finished_at: new Date().toISOString(),
+  }).eq('id', job.id)
+
+  // "Ready" push, through the reminders queue (send-reminders delivers it; it's
+  // nudged now so it doesn't wait for its once-a-minute run).
+  const n = job.notify || {}
+  if (n.device_id) {
+    const count = Array.isArray(out?.actions) ? out.actions.length : 0
+    const label = String(n.label || 'your upload').slice(0, 80)
+    const { error } = await db.from('scheduled_pushes').upsert({
+      device_id: n.device_id, tag: String(n.tag || `assistant:${job.id}`), at: new Date().toISOString(), sent: false,
+      title: ok && count ? '✨ Suggestions ready' : '✨ Assistant',
+      body: ok && count ? `${count} suggestion${count > 1 ? 's' : ''} for “${label}” — tap to review.` : `“${label}” needs a look — tap to open your queue.`,
+      url: n.url || null,
+    }, { onConflict: 'device_id,tag' })
+    if (!error) await fetch(`${SUPABASE_URL}/functions/v1/send-reminders`, { method: 'POST', headers: { Authorization: `Bearer ${SERVICE_KEY}` } }).catch(() => {})
+  }
+
+  // Let answers nobody came back for go after a few days.
+  await db.from('assistant_jobs').delete().lt('created_at', new Date(Date.now() - KEEP_JOBS_MS).toISOString())
+}
+
+Deno.serve(async (req) => {
+  if (req.method === 'POST') {
+    // deno-lint-ignore no-explicit-any
+    const peek: any = await req.clone().json().catch(() => null)
+    if (peek && typeof peek.jobId === 'string' && peek.jobId) {
+      try {
+        const who = await fetch(`${SUPABASE_URL}/auth/v1/user`, { headers: { apikey: ANON, Authorization: req.headers.get('authorization') || '' } })
+        if (!who.ok) return json({ error: 'Sign in first.' }, 401)
+        const user = await who.json().catch(() => null)
+        if (!user?.id) return json({ error: 'Sign in first.' }, 401)
+        return await startJob(req, user.id, peek.jobId, peek)
+      } catch (e) {
+        return json({ error: `The assistant hit an unexpected error: ${(e as Error)?.message || e}` }, 500)
+      }
+    }
+  }
+  return plan(req)
 })

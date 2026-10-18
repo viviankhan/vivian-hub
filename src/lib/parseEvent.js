@@ -224,7 +224,36 @@ export const MAX_ASSISTANT_IMAGES = 10
 // — the command is optional when at least one photo or document is attached.
 // Returns { summary, actions }. Throws an Error with a readable message on
 // failure. A valid-but-empty plan comes back as { summary, actions: [], error }.
-export async function runAssistant(command, { categories = [], tasks = [], images = [], documents = [], today = null } = {}) {
+export async function runAssistant(command, opts = {}) {
+  const { body, ctx } = buildRequest(command, opts)
+  const headers = await requestHeaders()
+  let res
+  try {
+    res = await fetch(ENDPOINT, { method: 'POST', headers, body: JSON.stringify(body) })
+  } catch {
+    throw networkError()
+  }
+  let data = null
+  try { data = await res.json() } catch { /* handled below */ }
+  return readPlan(res.status, data, ctx)
+}
+
+function networkError() {
+  // No answer at all: the phone went offline, or put the app to sleep
+  // mid-request. Tagged so the queue knows asking again is worth it.
+  const err = new Error('Couldn’t reach the AI service. Check your connection, then tap Try again.')
+  err.network = true
+  return err
+}
+
+async function requestHeaders() {
+  const headers = { 'Content-Type': 'application/json' }
+  if (SUPABASE_KEY) { headers['apikey'] = SUPABASE_KEY; headers['Authorization'] = `Bearer ${await authToken()}` }
+  return headers
+}
+
+// What gets sent, plus what reading the answer needs to know about it.
+function buildRequest(command, { categories = [], tasks = [], images = [], documents = [], today = null } = {}) {
   // A queued request answers relative to the day it was asked, not the day it ran.
   const day = /^\d{4}-\d{2}-\d{2}$/.test(String(today || '')) ? today : todayStr()
   if (!ENDPOINT) throw new Error('The AI assistant needs your Supabase URL configured.')
@@ -236,44 +265,108 @@ export async function runAssistant(command, { categories = [], tasks = [], image
     .filter(d => d && (d.data || d.text))
     .map(d => (d.data ? { name: d.name || 'document', mimeType: d.mimeType, data: d.data } : { name: d.name || 'document', text: d.text }))
   if (!String(command || '').trim() && !photos.length && !docs.length) throw new Error('Type an instruction or add a photo or document first.')
-  const headers = { 'Content-Type': 'application/json' }
-  if (SUPABASE_KEY) { headers['apikey'] = SUPABASE_KEY; headers['Authorization'] = `Bearer ${await authToken()}` }
-
-  let res
-  try {
-    res = await fetch(ENDPOINT, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({
-        command,
-        today: day,
-        categories: (categories || []).map(c => ({ id: c.id, label: c.label })),
-        tasks: (tasks || []).slice(0, 150),
-        images: photos,
-        ...(docs.length ? { documents: docs } : {}),
-      }),
-    })
-  } catch {
-    throw new Error('Couldn’t reach the AI service. Check your connection and that the parse-event function is deployed.')
+  const body = {
+    command,
+    today: day,
+    categories: (categories || []).map(c => ({ id: c.id, label: c.label })),
+    tasks: (tasks || []).slice(0, 150),
+    images: photos,
+    ...(docs.length ? { documents: docs } : {}),
   }
+  return { body, ctx: { command, day, photos: photos.length, docs: docs.length } }
+}
 
-  let data = null
-  try { data = await res.json() } catch { /* handled below */ }
-  if (!res.ok) {
-    if (res.status === 404) throw new Error('The parse-event function isn’t deployed yet (see AI_SETUP.md).')
+// Turn the function's answer (status + JSON) into { summary, actions }, or throw.
+export function readPlan(status, data, { command = '', day = todayStr(), photos = 0, docs = 0 } = {}) {
+  if (status < 200 || status >= 300) {
+    if (status === 404) throw new Error('The parse-event function isn’t deployed yet (see AI_SETUP.md).')
     // A photo the gateway rejected before the function saw it has no JSON body.
-    if (res.status === 413 && !(data && data.error)) throw new Error(docs.length
+    if (status === 413 && !(data && data.error)) throw new Error(docs
       ? 'That file is too big to send — try a smaller copy, or just the schedule pages.'
       : 'That photo is too big — try a smaller one, or fewer at once.')
-    throw new Error((data && data.error) || `AI service error (${res.status}).`)
+    throw new Error((data && data.error) || `AI service error (${status}).`)
   }
   if (!data) throw new Error('The AI service returned an unexpected response.')
   // A 200 with an error field + no actions = the model couldn't form a plan.
-  const filled = fillMissedCards(Array.isArray(data.actions) ? data.actions : [], photos.length ? data.seen : [])
+  const filled = fillMissedCards(Array.isArray(data.actions) ? data.actions : [], photos ? data.seen : [])
   if (!filled.actions.length && data.error) throw new Error(data.error)
   let actions = applyRepeatDefaults(keepAskedReminders(filled.actions, command))
   let summary = data.summary || ''
   if (filled.added) summary += ` (+${filled.added} more appointment${filled.added > 1 ? 's' : ''} found on the screenshots.)`
-  if (photos.length || docs.length) actions = flagGuessedDates(mergeDuplicateItems(actions), { today: day, command })
+  if (photos || docs) actions = flagGuessedDates(mergeDuplicateItems(actions), { today: day, command })
   return { summary, actions }
+}
+
+// ── Send it and close the app ──────────────────────────────────
+// A phone freezes a closed app, and a request still waiting on the AI dies
+// with it. So the request goes to the function as a job — { jobId, job } in a
+// single upload — and the function answers at once and does the reading on
+// the server, whatever the phone does next. The answer waits in Supabase
+// (assistant_jobs) until the app is open to collect it, and a push says it's
+// ready.
+//
+// `job.id` is the id already given to this request, if any; `job.save(id)`
+// remembers a new one before anything is sent, so a request picked up again
+// after the app was closed collects its answer instead of being asked twice.
+// Without the jobs table (supabase_assistant_jobs.sql not run yet) or with a
+// function that predates jobs, it asks directly, as before.
+const POLL_MS = 3000
+const STALE_MS = 5 * 60_000
+const sleep = ms => new Promise(r => setTimeout(r, ms))
+const missingTable = e => !!e && (e.code === '42P01' || e.code === 'PGRST205' || /assistant_jobs/.test(String(e.message || '')))
+const newJobId = () => (globalThis.crypto && crypto.randomUUID ? crypto.randomUUID()
+  : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => { const r = Math.random() * 16 | 0; return (c === 'x' ? r : (r & 3 | 8)).toString(16) }))
+
+export async function runAssistantJob(command, opts = {}, job = {}) {
+  const { body, ctx } = buildRequest(command, opts)
+  let supabase = null
+  try { ({ supabase } = await import('./storage.js')) } catch {}
+  if (!supabase) return runAssistant(command, opts)
+
+  let id = job.id || null
+  if (!id) { id = newJobId(); if (job.save) job.save(id) }
+
+  // Returns 'ok', or 'direct' when this server can't take jobs.
+  const send = async (payload) => {
+    let res
+    try { res = await fetch(ENDPOINT, { method: 'POST', headers: await requestHeaders(), body: JSON.stringify(payload) }) }
+    catch { throw networkError() }
+    const data = await res.json().catch(() => null)
+    // An older parse-event reads { jobId } as an empty request (400).
+    if (res.status === 400 && !(data && data.status)) return 'direct'
+    if (data && data.status === 'unsupported') return 'direct'
+    if (!res.ok && res.status !== 202) throw new Error((data && data.error) || `AI service error (${res.status}).`)
+    return 'ok'
+  }
+  const drop = () => { supabase.from('assistant_jobs').delete().eq('id', id).then(() => {}, () => {}) }
+
+  let sent = false, kicks = 0
+  for (;;) {
+    const { data: row, error } = await supabase.from('assistant_jobs')
+      .select('status, result, http_status, started_at').eq('id', id).maybeSingle()
+    if (error) {
+      if (missingTable(error)) return runAssistant(command, opts)
+      throw networkError()
+    }
+    if (!row) {
+      // Never arrived (or answered so long ago it was cleared): send it now.
+      if (sent) throw new Error('That request didn’t go through — tap Try again.')
+      sent = true
+      if (await send({ jobId: id, job: body, notify: job.notify || null }) === 'direct') return runAssistant(command, opts)
+      continue
+    }
+    if (row.status === 'done' || row.status === 'error') {
+      drop()
+      return readPlan(row.http_status || (row.status === 'done' ? 200 : 500), row.result, ctx)
+    }
+    // Filed but never started, or started and went quiet: nudge it (the
+    // function leaves one that's genuinely being read alone).
+    const quiet = row.status === 'queued'
+      || (row.started_at && Date.now() - new Date(row.started_at).getTime() > STALE_MS)
+    if (quiet && kicks < 3) {
+      kicks++
+      if (await send({ jobId: id }) === 'direct') return runAssistant(command, opts)
+    }
+    await sleep(POLL_MS)
+  }
 }

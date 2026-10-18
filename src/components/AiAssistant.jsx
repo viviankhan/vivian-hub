@@ -11,10 +11,11 @@
 // request is read in the background, and its suggestions wait in the queue to
 // be edited, accepted, or deleted whenever you come back to them.
 import { useEffect, useRef, useState } from 'react'
-import { runAssistant, MAX_ASSISTANT_IMAGES, REPEAT_FREQS, describeRepeat, normalizeRepeat } from '../lib/parseEvent.js'
+import { runAssistantJob, MAX_ASSISTANT_IMAGES, REPEAT_FREQS, describeRepeat, normalizeRepeat } from '../lib/parseEvent.js'
 import { compressImage, dataUrlToBase64 } from '../lib/trackers.js'
 import { readDocument, docKind, DOC_ACCEPT, MAX_ASSISTANT_DOCS } from '../lib/docText.js'
 import { defaultLeadsLabel } from '../lib/notifications.js'
+import { pushDeviceId } from '../lib/push.js'
 import { suggestGlyph, iconColorOn } from '../lib/glyphs.jsx'
 import { activeAccent } from '../lib/appearance.js'
 import { Icon } from './IconPicker.jsx'
@@ -339,12 +340,20 @@ export function useAssistantQueue() {
 }
 
 // What actually reads a queued request. Photos are kept as data URLs; the
-// base64 the AI needs is cut from them right before sending.
-export function runQueued(item, { categories = [], tasks = [] } = {}) {
-  return runAssistant(item.command.trim(), {
+// base64 the AI needs is cut from them right before sending. It goes to the
+// server as a job, so the reading carries on if the app is closed; `job.save`
+// keeps the job's id on the queued item so reopening collects that answer.
+export function runQueued(item, { categories = [], tasks = [] } = {}, { save } = {}) {
+  const device = pushDeviceId()
+  return runAssistantJob(item.command.trim(), {
     categories, tasks, today: item.today,
     images: (item.photos || []).map(p => ({ data: dataUrlToBase64(p.url), mimeType: p.mimeType || 'image/jpeg' })).filter(p => p.data),
     documents: (item.docs || []).map(d => d.data ? { name: d.name, mimeType: d.mimeType, data: d.data } : { name: d.name, text: d.text }),
+  }, {
+    id: item.jobId || null,
+    save,
+    // Same tag as the in-app "ready" notification, so it shows once.
+    notify: device ? { device_id: device, tag: 'assistant:' + item.id, url: (import.meta.env.BASE_URL || '/') + '?assistant=queue', label: itemLabel(item) } : null,
   })
 }
 

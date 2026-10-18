@@ -40,6 +40,12 @@ function deviceId() {
   return id
 }
 
+// This device's id when background push is on, so a server-side job (the AI
+// assistant reading a screenshot after the app closed) can say it's done.
+export function pushDeviceId() {
+  return backgroundPushEnabled() && pushSupported() ? deviceId() : null
+}
+
 // True where real background push can work: a service worker, the Push API, a
 // configured VAPID key, and Supabase to coordinate through.
 export function pushSupported() {
