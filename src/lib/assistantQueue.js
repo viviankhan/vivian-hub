@@ -173,7 +173,7 @@ export function enqueue(input) {
 export function updatePlan(id, plan) { return patch(id, { plan }) }
 export function markSeen(id) { const it = items.find(x => x.id === id); if (it && !it.seen) patch(id, { seen: true }) }
 export function markAllSeen() { items.filter(it => it.status === STATUS.READY && !it.seen).forEach(it => patch(it.id, { seen: true })) }
-export function retry(id) { patch(id, { status: STATUS.PENDING, error: '', plan: null, seen: false }); pump() }
+export function retry(id) { patch(id, { status: STATUS.PENDING, error: '', plan: null, seen: false, netTries: 0 }); if (wake) wake(); else pump() }
 export function removeItem(id) { setItems(items.filter(it => it.id !== id)); deleteIds([id]) }
 // Empty the queue. Requests still being read go too — clearing means clearing.
 export function clearQueue() { const ids = items.map(it => it.id); setItems([]); deleteIds(ids) }
@@ -185,6 +185,37 @@ export function clearQueue() { const ids = items.map(it => it.id); setItems([]);
 let runner = null   // { run, ctx, decorate, onReady }
 let busy = false
 
+// "Switch apps while it reads" has to survive the phone doing what phones do:
+// iOS freezes a backgrounded app and its request dies as a network error, not
+// an app that closed. Such a request goes back to pending and the queue holds
+// until the app is visible (and online) again, then asks again. A failure that
+// happened while the app was hidden doesn't count against the request; one
+// that happened in plain view gets a couple of spaced-out retries before it
+// shows as an error.
+const NETWORK_RETRIES = 2
+let holding = false
+let wake = null
+const isHidden = () => typeof document !== 'undefined' && document.visibilityState === 'hidden'
+
+function holdUntilReachable(delayMs) {
+  holding = true
+  const listeners = []
+  const on = (target, ev, fn) => { if (target && target.addEventListener) { target.addEventListener(ev, fn); listeners.push(() => target.removeEventListener(ev, fn)) } }
+  let timer = null
+  const resume = () => {
+    if (isHidden()) return
+    if (timer) clearTimeout(timer)
+    listeners.forEach(off => off())
+    wake = null
+    holding = false
+    pump()
+  }
+  wake = resume
+  if (typeof document !== 'undefined') on(document, 'visibilitychange', resume)
+  if (typeof window !== 'undefined') on(window, 'online', resume)
+  if (!isHidden()) timer = setTimeout(resume, delayMs)
+}
+
 export function startQueue({ run, ctx, decorate, onReady }) {
   runner = { run, ctx, decorate, onReady }
   loadQueue().then(pump)
@@ -192,26 +223,40 @@ export function startQueue({ run, ctx, decorate, onReady }) {
 }
 
 async function pump() {
-  if (busy || !runner || !loaded) return
+  if (busy || holding || !runner || !loaded) return
   const next = items.find(it => it.status === STATUS.PENDING)
   if (!next) return
   busy = true
   const r = runner
   patch(next.id, { status: STATUS.RUNNING, error: '' })
+  let wentHidden = isHidden()
+  const noteHidden = () => { if (isHidden()) wentHidden = true }
+  if (typeof document !== 'undefined' && document.addEventListener) document.addEventListener('visibilitychange', noteHidden)
   try {
     const plan = await r.run(next, r.ctx ? r.ctx() : {})
     // Deleted while it was being read: let the answer go.
     if (!items.some(it => it.id === next.id)) return
     const decorated = r.decorate ? r.decorate(plan) : plan
-    const done = patch(next.id, { status: STATUS.READY, plan: decorated, seen: false })
+    const done = patch(next.id, { status: STATUS.READY, plan: decorated, seen: false, netTries: 0 })
     if (done && r.onReady) { try { r.onReady(done) } catch {} }
   } catch (e) {
-    if (items.some(it => it.id === next.id)) patch(next.id, { status: STATUS.ERROR, error: (e && e.message) || 'Something went wrong.' })
+    if (!items.some(it => it.id === next.id)) return
+    const tries = next.netTries || 0
+    if (e && e.network && (wentHidden || isHidden() || tries < NETWORK_RETRIES)) {
+      const used = (wentHidden || isHidden()) ? tries : tries + 1
+      patch(next.id, { status: STATUS.PENDING, netTries: used })
+      holdUntilReachable(3000 * Math.max(1, used))
+    } else {
+      patch(next.id, { status: STATUS.ERROR, error: (e && e.message) || 'Something went wrong.' })
+    }
   } finally {
+    if (typeof document !== 'undefined' && document.removeEventListener) document.removeEventListener('visibilitychange', noteHidden)
     busy = false
     pump()
   }
 }
 
 // Test seam: reset module state between cases.
-export function __resetForTests() { items = []; loaded = true; loadPromise = Promise.resolve(items); listeners.clear(); runner = null; busy = false }
+export function __resetForTests() { items = []; loaded = true; loadPromise = Promise.resolve(items); listeners.clear(); runner = null; busy = false; holding = false; wake = null }
+// Test seam: end a network hold now instead of waiting it out.
+export function __wakeForTests() { if (wake) wake() }

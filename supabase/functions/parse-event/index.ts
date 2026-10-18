@@ -112,7 +112,15 @@ const RESPONSE_SCHEMA = {
 
 type Task = { id: string; title: string; date?: string; time?: string; done?: boolean; subtasks?: { text: string; done: boolean }[] }
 
+// The platform ends a request at 150s with a bare error that has no CORS
+// headers — the app can't read it and just sees "couldn't reach". Each model
+// call gets a time limit and the whole run a budget well inside that, so a
+// slow or stuck model ends in an answer the app can show.
+const BUDGET_MS = 110_000
+const PER_MODEL_MS = 60_000
+
 Deno.serve(async (req) => {
+ const startedAt = Date.now()
  try {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS })
   if (req.method !== 'POST') return json({ error: 'Method not allowed' }, 405)
@@ -313,11 +321,15 @@ ${command || fallbackCommand}
   // none work. Returns true on success (sets `resp`), false otherwise.
   const tryModels = async (models: string[]): Promise<boolean> => {
     for (const model of models) {
+      const left = BUDGET_MS - (Date.now() - startedAt)
+      if (left < 5_000) { lastStatus = 504; lastDetail = 'out of time'; return false }
       const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(GEMINI_KEY)}`
       let r: Response
       try {
-        r = await fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: reqBody })
+        r = await fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: reqBody, signal: AbortSignal.timeout(Math.min(PER_MODEL_MS, left)) })
       } catch (e) {
+        // Too slow → the next model may be quicker. Anything else is the network.
+        if ((e as Error)?.name === 'TimeoutError' || (e as Error)?.name === 'AbortError') { lastStatus = 504; lastDetail = `${model} timed out`; continue }
         hardStop = json({ error: `Couldn't reach the AI service: ${(e as Error)?.message || e}` }, 502)
         return false
       }
@@ -370,6 +382,9 @@ ${command || fallbackCommand}
   }
   if (hardStop) return hardStop
   if (!resp) {
+    if (lastStatus === 504) {
+      return json({ error: 'The AI took too long to read this — tap Try again. If it keeps happening, send fewer photos at once.', detail: lastDetail }, 504)
+    }
     if ([429, 500, 502, 503].includes(lastStatus)) {
       return json({ error: 'The free AI models are busy right now — please try again in a few seconds.', detail: lastDetail.slice(0, 300) }, 503)
     }

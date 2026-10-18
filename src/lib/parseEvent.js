@@ -254,7 +254,11 @@ export async function runAssistant(command, { categories = [], tasks = [], image
       }),
     })
   } catch {
-    throw new Error('Couldn’t reach the AI service. Check your connection and that the parse-event function is deployed.')
+    // No answer at all: the phone went offline, or put the app to sleep
+    // mid-request. Tagged so the queue knows asking again is worth it.
+    const err = new Error('Couldn’t reach the AI service. Check your connection, then tap Try again.')
+    err.network = true
+    throw err
   }
 
   let data = null

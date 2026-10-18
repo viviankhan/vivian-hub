@@ -91,6 +91,37 @@ console.log('\n— trimming lets old finished ones go, never waiting ones —')
 const many = [{ id: 'p', status: 'pending' }, { id: 'r1', status: 'ready' }, { id: 'r2', status: 'ready' }, { id: 'p2', status: 'pending' }]
 eq('drops the oldest finished', Q.trimItems(many, 3).map(i => i.id), ['p', 'r2', 'p2'])
 
+console.log('\n— a dropped connection (app put to sleep) is asked again, not failed —')
+Q.__resetForTests()
+let drops = 1
+const netErr = () => Object.assign(new Error('Couldn’t reach the AI service.'), { network: true })
+Q.startQueue({ run: async () => { if (drops-- > 0) throw netErr(); return { summary: '', actions: [{ kind: 'create', title: 'Meeting' }] } } })
+Q.enqueue({ command: 'screenshot' })
+await settle()
+eq('held as pending, not an error', [Q.getQueue()[0].status, Q.getQueue()[0].error], ['pending', ''])
+Q.__wakeForTests()
+await settle()
+eq('asked again and ready', Q.getQueue()[0].status, 'ready')
+
+console.log('\n— a connection that keeps failing in plain view shows as an error after its retries —')
+Q.__resetForTests()
+let runs = 0
+Q.startQueue({ run: async () => { runs++; throw netErr() } })
+const n2 = Q.enqueue({ command: 'x' })
+for (let i = 0; i < 5; i++) { await settle(); Q.__wakeForTests() }
+await settle()
+eq('tried 1 + 2 retries, then error', [runs, Q.getQueue()[0].status], [3, 'error'])
+Q.retry(n2.id)
+await settle()
+eq('Try again starts fresh', runs, 4)
+
+console.log('\n— other errors still fail straight away —')
+Q.__resetForTests()
+Q.startQueue({ run: async () => { throw new Error('The AI declined this photo.') } })
+Q.enqueue({ command: 'y' })
+await settle()
+eq('error at once', [Q.getQueue()[0].status, Q.getQueue()[0].error], ['error', 'The AI declined this photo.'])
+
 console.log('\n— labels —')
 eq('typed text', Q.itemLabel({ command: '  dentist   next tue ' }), 'dentist next tue')
 eq('photos only', Q.itemLabel({ command: '', photos: [{}, {}] }), '2 screenshots')
