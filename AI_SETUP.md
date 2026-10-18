@@ -83,6 +83,19 @@ supabase functions deploy parse-receipt
 
 See `RECEIPTS.md` for the B&B tracker.
 
+## 4. Let it read after you close the app (one SQL paste)
+
+So you can send a screenshot and close Bloom, requests are read on the server:
+the app uploads the request once, `parse-event` answers straight away and
+reads it in the background, and the answer waits in Supabase until you next
+open the app. If background reminders are on (PUSH_SETUP.md), a push
+notification tells you it's ready.
+
+Open **Supabase → SQL Editor**, paste the contents of
+`supabase_assistant_jobs.sql`, and run it. Then redeploy the function
+(`supabase functions deploy parse-event`). Until both are done, the app asks
+the function directly, the old way, and works only while it stays open.
+
 ## Notes
 
 - **Cost:** free within Gemini's free tier. If you ever hit the rate limit, the

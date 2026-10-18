@@ -173,7 +173,7 @@ export function enqueue(input) {
 export function updatePlan(id, plan) { return patch(id, { plan }) }
 export function markSeen(id) { const it = items.find(x => x.id === id); if (it && !it.seen) patch(id, { seen: true }) }
 export function markAllSeen() { items.filter(it => it.status === STATUS.READY && !it.seen).forEach(it => patch(it.id, { seen: true })) }
-export function retry(id) { patch(id, { status: STATUS.PENDING, error: '', plan: null, seen: false, netTries: 0 }); if (wake) wake(); else pump() }
+export function retry(id) { patch(id, { status: STATUS.PENDING, error: '', plan: null, seen: false, netTries: 0, jobId: null }); if (wake) wake(); else pump() }
 export function removeItem(id) { setItems(items.filter(it => it.id !== id)); deleteIds([id]) }
 // Empty the queue. Requests still being read go too — clearing means clearing.
 export function clearQueue() { const ids = items.map(it => it.id); setItems([]); deleteIds(ids) }
@@ -233,7 +233,7 @@ async function pump() {
   const noteHidden = () => { if (isHidden()) wentHidden = true }
   if (typeof document !== 'undefined' && document.addEventListener) document.addEventListener('visibilitychange', noteHidden)
   try {
-    const plan = await r.run(next, r.ctx ? r.ctx() : {})
+    const plan = await r.run(next, r.ctx ? r.ctx() : {}, { save: jobId => patch(next.id, { jobId }) })
     // Deleted while it was being read: let the answer go.
     if (!items.some(it => it.id === next.id)) return
     const decorated = r.decorate ? r.decorate(plan) : plan

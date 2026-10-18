@@ -12,3 +12,5 @@ tests/.versions.shim.mjs
 tests/.parseEvent.shim.mjs
 __pycache__/
 tests/.parseEvent.docs.shim.mjs
+tests/.parseEvent.jobs.shim.mjs
+tests/.storage.jobs.mock.mjs

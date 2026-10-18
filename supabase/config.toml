@@ -8,8 +8,8 @@ verify_jwt = false
 
 # The "paste an event" parser runs without JWT verification for the same reason
 # — the browser's CORS preflight carries no auth header. It only calls Gemini
-# with your server-side key and returns structured JSON; it never touches the
-# database.
+# with your server-side key and returns structured JSON. Its only database use
+# is the assistant_jobs table, for requests read after the app has closed.
 [functions.parse-event]
 verify_jwt = false
 
