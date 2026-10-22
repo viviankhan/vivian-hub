@@ -187,15 +187,7 @@ export function answerQuery(entries, query, categories) {
   // If the topic names a skill ("writing", "lab work"), fold that skill's own
   // keyword vocabulary into the match so entries that exercise the skill without
   // literally containing the word still count.
-  const skillId = skillForTopic(words.join(' '))
-  const matched = []
-  for (const e of entries) {
-    const hay = entryText(e, categories).toLowerCase()
-    const hayWords = hay.match(/[a-z0-9]+/g)?.map(stem) || []
-    let hit = words.some(w => hay.includes(w) || hayWords.some(hw => hw === w || (w.length >= 4 && hw.startsWith(w)) || (hw.length >= 4 && w.startsWith(hw))))
-    if (!hit && skillId) hit = inferSkills(hay).includes(skillId)
-    if (hit) matched.push(e)
-  }
+  const matched = matchEntries(entries, words, categories)
   const agg = aggregate(matched, categories)
   return {
     type: 'topic',
@@ -218,18 +210,79 @@ const SKILL_INTENT = /\bskills?\b|good at|best at|strength|strong suit|abilities
 const TIME_INTENT = /where (does|did|is).*(time|hours?|day)|spend (the )?most|most time|busiest|what do i (spend|do) most|how do i spend|time breakdown|where (do|did) i put/i
 const SUMMARY_INTENT = /summar|overview|about (me|myself)|tell me about (me|myself)|how (am|have) i (doing|been)|what have i (been )?(doing|working|up to)|recap|what did i (do|get done)/i
 
+// "When did I first / last …?" — a question about a date, not a total. It
+// reads across everything you ever logged, not just the page's window, since
+// your first day of work happened when it happened. `which` is 'first' or 'last'.
+const FIRST_INTENT = /\b(first|earliest|start(ed)?|began|begin)\b/i
+const LAST_INTENT = /\b(last|latest|most recent(ly)?|recent)\b/i
+const WHEN_INTENT = /\bwhen\b|\b(what|which) (day|date)\b|\b(first|last|latest|earliest) (day|time|date)\b|\bmost recent\b/i
+// Words that frame the date question rather than name the thing.
+const WHEN_STOP = new Set((
+  'what which when where first last latest earliest most recent recently ever day days date time times ' +
+  'start started starting begin began beginning finish finished end ended'
+).split(/\s+/).map(stem))
+
+export function whenIntent(q) {
+  if (!WHEN_INTENT.test(q)) return null
+  const first = FIRST_INTENT.test(q), last = LAST_INTENT.test(q)
+  if (first === last) return null        // neither, or both — not a when-question we can answer
+  return first ? 'first' : 'last'
+}
+
+// Entries whose text shares a topic word (or exercises the named skill).
+function matchEntries(entries, words, categories) {
+  const skillId = skillForTopic(words.join(' '))
+  return entries.filter(e => {
+    const hay = entryText(e, categories).toLowerCase()
+    const hayWords = hay.match(/[a-z0-9]+/g)?.map(stem) || []
+    const hit = words.some(w => hay.includes(w) || hayWords.some(hw => hw === w || (w.length >= 4 && hw.startsWith(w)) || (hw.length >= 4 && w.startsWith(hw))))
+    return hit || (!!skillId && inferSkills(hay).includes(skillId))
+  })
+}
+
+//   { type:'when', which, topic, date, dayEntries, sessions, firstDate, lastDate, trackedSince }
+// `date` is null when nothing ever matched. `trackedSince` is the earliest day
+// anything was logged, so the page can say when a "first" is only the first
+// Bloom knows about.
+export function answerWhen(allEntries, query, categories, which) {
+  const words = topicWords(query).filter(w => !WHEN_STOP.has(w))
+  const pool = (allEntries || []).filter(e => e && e.date)
+  const matched = (words.length ? matchEntries(pool, words, categories) : pool)
+    .slice().sort((a, b) => a.date.localeCompare(b.date))
+  const trackedSince = pool.reduce((m, e) => (!m || e.date < m ? e.date : m), '')
+  const firstDate = matched[0]?.date || null
+  const lastDate = matched[matched.length - 1]?.date || null
+  const date = which === 'first' ? firstDate : lastDate
+  return {
+    type: 'when',
+    which,
+    topic: words.join(' '),
+    date,
+    dayEntries: date ? matched.filter(e => e.date === date) : [],
+    sessions: matched.length,
+    days: new Set(matched.map(e => e.date)).size,
+    firstDate, lastDate,
+    trackedSince: trackedSince || null,
+  }
+}
+
 // Answer a free-typed question about yourself. Detects a few intents and
 // returns a typed result the Informatics page renders differently:
 //   { type:'skills'  , skills, sessions, totalMins }
 //   { type:'overview', byCategory, byTask, topics, skills, totalMins, sessions, days }
+//   { type:'when'    , ...answerWhen(...) }    ← "when did I first / last …?"
 //   { type:'topic'   , ...answerQuery(...) }   ← the classic "hours on X"
 //   `topics` (optional) — the rows computeTopics already built for these
 //   entries. Asking for one by its exact name answers with that row's own
 //   sessions, so the answer and the row it came from can never disagree.
-export function answerQuestion(entries, query, categories, { topics } = {}) {
+//   `allEntries` (optional) — every entry ever, for when-questions; defaults to `entries`.
+export function answerQuestion(entries, query, categories, { topics, allEntries } = {}) {
   const q = (query || '').trim()
   if (!q) return null
   const topic = topicWords(q).join(' ')
+
+  const which = whenIntent(q)
+  if (which) return answerWhen(allEntries || entries, q, categories, which)
 
   const named = (topics || []).find(t => t.label.toLowerCase() === q.toLowerCase())
   if (named) {

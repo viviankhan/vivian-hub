@@ -41,6 +41,9 @@ function todayStr() {
 function shortDate(date) {
   return date ? new Date(date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : ''
 }
+function longDate(date) {
+  return date ? new Date(date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' }) : ''
+}
 // "3 days ago" style label for a YYYY-MM-DD date.
 function ago(date) {
   if (!date) return ''
@@ -208,7 +211,7 @@ export default function Informatics({ commitments = [], recurringTasks = [], com
   const topics = useMemo(() => computeTopics(entries, { max: Infinity }), [entries])
   const namedTopics = topics.filter(t => !t.fallback).length
   // Asking for a topic by its exact name answers with that row's own sessions.
-  const answer = useMemo(() => asked ? answerQuestion(entries, asked, categories, { topics }) : null, [asked, entries, categories, topics])
+  const answer = useMemo(() => asked ? answerQuestion(entries, asked, categories, { topics, allEntries }) : null, [asked, entries, allEntries, categories, topics])
 
   // Momentum: the window against the same number of days before it (a week
   // against the week before, by default); and how much of the tracked time
@@ -315,7 +318,7 @@ export default function Informatics({ commitments = [], recurringTasks = [], com
       </section>
 
       {/* The answer. */}
-      {answer && ((answer.type === 'skills' ? answer.skills.length > 0 : answer.sessions > 0) ? (
+      {answer && ((answer.type === 'skills' ? answer.skills.length > 0 : answer.type === 'when' ? !!answer.date : answer.sessions > 0) ? (
         <section className="in-answer" aria-live="polite">
           <button type="button" className="in-answer-x" onClick={clearAnswer} aria-label="Dismiss answer">✕</button>
           {answer.type === 'skills' ? (() => {
@@ -368,7 +371,20 @@ export default function Informatics({ commitments = [], recurringTasks = [], com
                 <div className="in-note">Tap a skill to see everything you logged for it, with your notes. One task can count toward several skills, so the rows overlap.</div>
               </>
             )
-          })() : answer.type === 'overview' ? (
+          })() : answer.type === 'when' ? (
+            <>
+              <div className="in-kicker">{answer.which === 'first' ? 'First time' : 'Last time'}{answer.topic ? <> for “{answer.topic}”</> : null} · everything you’ve logged</div>
+              <div className="in-hero-serif">{longDate(answer.date)}</div>
+              <div className="in-answer-sub">
+                {ago(answer.date)}
+                {answer.sessions > 1 && <> · {sessions(answer.sessions)} across {answer.days} day{answer.days === 1 ? '' : 's'}{answer.which === 'first' ? <>, last {shortDate(answer.lastDate)}</> : <>, first {shortDate(answer.firstDate)}</>}</>}
+              </div>
+              {answer.which === 'first' && answer.date === answer.trackedSince && (
+                <div className="in-note">That’s also the first day Bloom has anything logged, so it may have started earlier.</div>
+              )}
+              <EntryLog entries={answer.dayEntries} dark />
+            </>
+          ) : answer.type === 'overview' ? (
             <>
               <div className="in-kicker">Where your time went · {rangeLabel}</div>
               <div className="in-hero">{answer.totalMins > 0 ? fmtHours(answer.totalMins) : sessions(answer.sessions)}</div>
@@ -428,6 +444,8 @@ export default function Informatics({ commitments = [], recurringTasks = [], com
           <button type="button" className="in-answer-x muted" onClick={clearAnswer} aria-label="Dismiss">✕</button>
           {answer.type === 'skills'
             ? <>No skills inferred {inRange}. Add descriptions or subtasks to your tasks — the more detail, the more the page can pick up.</>
+            : answer.type === 'when'
+            ? <>Nothing you’ve ever logged matches “{answer.topic}”. Try the task’s title, its area, or a word from its description.</>
             : <>No tracked time matches “{answer.topic}” {inRange}. Try an area, task or skill name, or widen the range.</>}
         </section>
       ))}
