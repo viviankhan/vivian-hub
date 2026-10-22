@@ -589,7 +589,7 @@ async function startJob(req: Request, userId: string, jobId: string, filed: any)
     if (error) return json({ error: `Couldn’t file that request: ${error.message}`, status: /assistant_jobs/.test(error.message) ? 'unsupported' : 'failed' }, 500)
   }
   const { data: job, error } = await db.from('assistant_jobs')
-    .select('id, status, request, notify, started_at').eq('id', jobId).eq('user_id', userId).maybeSingle()
+    .select('id, user_id, status, request, notify, started_at').eq('id', jobId).eq('user_id', userId).maybeSingle()
   if (error) return json({ error: `Couldn’t open that request: ${error.message}` }, 500)
   if (!job) return json({ error: 'That request has expired — tap Try again.', status: 'missing' }, 404)
   if (job.status === 'done' || job.status === 'error') return json({ status: job.status })
@@ -637,10 +637,13 @@ async function runJob(db: any, req: Request, job: any) {
     const count = Array.isArray(out?.actions) ? out.actions.length : 0
     const label = String(n.label || 'your upload').slice(0, 80)
     const { error } = await db.from('scheduled_pushes').upsert({
-      device_id: n.device_id, tag: String(n.tag || `assistant:${job.id}`), at: new Date().toISOString(), sent: false,
+      // user_id ties the push to the job's owner: the database refuses a device
+      // that isn't theirs, so a request can't notify someone else's phone.
+      device_id: n.device_id, user_id: job.user_id, tag: String(n.tag || `assistant:${job.id}`).slice(0, 120), at: new Date().toISOString(), sent: false,
       title: ok && count ? '✨ Suggestions ready' : '✨ Assistant',
       body: ok && count ? `${count} suggestion${count > 1 ? 's' : ''} for “${label}” — tap to review.` : `“${label}” needs a look — tap to open your queue.`,
-      url: n.url || null,
+      // Only a path inside Bloom — never a link out to another site.
+      url: typeof n.url === 'string' && /^\/(?!\/)/.test(n.url) ? n.url.slice(0, 300) : null,
     }, { onConflict: 'device_id,tag' })
     if (!error) await fetch(`${SUPABASE_URL}/functions/v1/send-reminders`, { method: 'POST', headers: { Authorization: `Bearer ${SERVICE_KEY}` } }).catch(() => {})
   }

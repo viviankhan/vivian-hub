@@ -106,12 +106,14 @@ Deno.serve(async (req) => {
   // expensive request, so only a signed-in Bloom user may make one.
   const who = await fetch(`${SUPABASE_URL}/auth/v1/user`, { headers: { apikey: ANON, Authorization: req.headers.get('authorization') || '' } })
   if (!who.ok) return json({ error: 'Sign in first.' }, 401)
+  const user = await who.json().catch(() => null)
+  if (!user?.id) return json({ error: 'Sign in first.' }, 401)
 
   let body: { pdf?: string; image?: string; context?: string; paperId?: string }
   try { body = await req.json() } catch { return json({ error: 'Bad JSON body' }, 400) }
   // Background mode: the PDF is already in storage and the paper row exists.
   // Answer at once and keep reading after Bloom is closed.
-  if (body.paperId) return startReading(body.paperId, req.headers.get('authorization') || '')
+  if (body.paperId) return startReading(body.paperId, user.id, req.headers.get('authorization') || '')
   // Second mode: talk through one figure image (a screenshot you attached).
   if (body.image) return describeFigure(body.image, body.context || '')
   const pdf = (body.pdf || '').trim()
@@ -298,7 +300,7 @@ async function patchPaper(id: string, fields: Record<string, unknown>) {
   })
 }
 
-async function startReading(paperId: string, auth: string) {
+async function startReading(paperId: string, userId: string, auth: string) {
   if (!SERVICE) return json({ error: 'SUPABASE_SERVICE_ROLE_KEY is missing from the function environment.' }, 503)
   // Read the row as the caller: row-level security makes sure it's theirs.
   const r = await fetch(`${SUPABASE_URL}/rest/v1/papers?id=eq.${encodeURIComponent(paperId)}&select=id,title,source_pdf`,
@@ -307,6 +309,9 @@ async function startReading(paperId: string, auth: string) {
   const row = rows[0]
   if (!row) return json({ error: 'That paper was not found.' }, 404)
   if (!row.source_pdf) return json({ error: 'That paper has no PDF to read.' }, 400)
+  // The PDF is fetched with the service key, which ignores storage policies, so
+  // make sure the row points into the caller's own folder.
+  if (row.source_pdf.split('/')[0] !== userId) return json({ error: 'That paper was not found.' }, 404)
   await patchPaper(row.id, { processing: 'reading', processing_error: null })
   const job = readInBackground(row).catch(async (e) => {
     await patchPaper(row.id, { processing: 'failed', processing_error: String((e as Error)?.message || e).slice(0, 300) })
