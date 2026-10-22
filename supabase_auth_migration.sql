@@ -39,9 +39,8 @@ begin
   if to_regclass('public.study_files')  is not null then execute 'alter table study_files  add column if not exists user_id uuid default auth.uid()'; end if;
 end $$;
 
--- Background-push tables stay DEVICE-scoped (the send-reminders function uses
--- the service role and matches on device_id), so they are intentionally left
--- shared and are NOT touched here.
+-- Background-push tables are NOT touched here: supabase_security_fixes.sql
+-- gives them an owner (run it after this file).
 
 
 -- ── STEP 2 · make kv_store keyed per (user, key) ────────────────────────────

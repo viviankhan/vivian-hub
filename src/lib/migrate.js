@@ -58,7 +58,7 @@ async function migrateCommitments() {
   const old = await dbGet('commitments')
   if (!old || old.length === 0) return
   const rows = old.map(c => commitmentChangesToDb({ ...c, createdAt: c.createdAt || new Date().toISOString() }))
-  const { error } = await supabase.from('commitments').upsert(rows, { onConflict: 'id' })
+  const { error } = await supabase.from('commitments').upsert(rows, { onConflict: 'user_id,id' })
   if (error) throw new Error(`Migrate commitments failed: ${error.message}`)
 }
 
@@ -66,7 +66,7 @@ async function migrateVacations() {
   const old = await dbGet('vacations')
   if (!old || old.length === 0) return
   const rows = old.map(v => ({ id: v.id, label: v.label, start_date: v.startDate, end_date: v.endDate }))
-  const { error } = await supabase.from('vacations').upsert(rows, { onConflict: 'id' })
+  const { error } = await supabase.from('vacations').upsert(rows, { onConflict: 'user_id,id' })
   if (error) throw new Error(`Migrate vacations failed: ${error.message}`)
 }
 
@@ -96,7 +96,7 @@ async function migrateRecurringTasks() {
   const flat = flattenLegacyRecurringTasks(old)
   if (flat.length === 0) return
   const rows = flat.map(recurringTaskToDb)
-  const { error } = await supabase.from('recurring_tasks').upsert(rows, { onConflict: 'id' })
+  const { error } = await supabase.from('recurring_tasks').upsert(rows, { onConflict: 'user_id,id' })
   if (error) throw new Error(`Migrate recurring tasks failed: ${error.message}`)
 }
 
@@ -105,7 +105,7 @@ async function migrateCompletions() {
   const merged = { ...(weekState || {}), ...(todos || {}) }
   const rows = Object.entries(merged).filter(([, v]) => v).map(([storage_key]) => ({ storage_key, done: true }))
   if (rows.length === 0) return
-  const { error } = await supabase.from('task_completions').upsert(rows, { onConflict: 'storage_key' })
+  const { error } = await supabase.from('task_completions').upsert(rows, { onConflict: 'user_id,storage_key' })
   if (error) throw new Error(`Migrate completions failed: ${error.message}`)
 }
 

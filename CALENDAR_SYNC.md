@@ -47,7 +47,7 @@ before your function even runs. The repo's `supabase/config.toml` already sets
 `verify_jwt = false` for `ics-proxy`, so a CLI deploy picks it up automatically.
 If you deployed from the **dashboard**, open the function → **Details/Settings**
 and switch **Verify JWT** (a.k.a. "Enforce JWT verification") **off**. The
-function is a read-only URL fetcher with SSRF guards, so leaving it open is safe.
+function checks the caller's session itself, so only signed-in accounts can use it.
 
 That's it — the app automatically calls `https://<your-project>.supabase.co/functions/v1/ics-proxy`.
 The function only ever fetches the calendar URL you pass it and returns the text;

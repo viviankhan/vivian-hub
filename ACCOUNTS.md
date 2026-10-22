@@ -50,7 +50,14 @@ stricter rules are live it would be hidden. To keep it:
 If this is a brand-new project with nothing to keep, skip this — leave
 `claim_email` as-is and it simply matches nothing.
 
-### 4. Everyone else just signs up
+### 4. Run the security fixes
+
+Run **`supabase_security_fixes.sql`** too (after step 3). It gives the reminder
+tables an owner like everything else, makes the `study-files` bucket private,
+and keeps a paper's PDF inside its owner's folder. Afterwards, open Bloom once
+on each phone with background reminders on so it re-registers. Safe to re-run.
+
+### 5. Everyone else just signs up
 
 Anyone else (e.g. your mom) opens the app and taps **Create an account**. They
 start with a clean, private space of their own.
@@ -60,8 +67,9 @@ start with a clean, private space of their own.
 - **Same browser, two people:** appearance/theme is remembered per device, so
   signing in as someone else may briefly show the previous look before their own
   settings load. Their actual data (tasks, hours, expenses) is always private.
-- **Background push / reminders** stay per-device, not per-account — they're tied
-  to the browser that granted notification permission.
+- **Background push / reminders** are per-device *and* per-account: each device's
+  subscription belongs to the account signed in when it was turned on, and a
+  reminder can only be queued for a device owned by the same account.
 - **Order of operations:** the login screen appears as soon as this version is
   deployed with Supabase configured. **Run the migration around the same time
   you deploy.** If you deploy *without* running it, people can still sign up, but

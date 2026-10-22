@@ -4,7 +4,8 @@
 -- ▶ ACCOUNTS: this file creates the tables with wide-open ("Allow all") policies.
 --   To turn on per-user logins and private data, run `supabase_auth_migration.sql`
 --   AFTER this file — it adds a user_id to every table and tightens each policy so
---   an account only sees its own rows. See ACCOUNTS.md.
+--   an account only sees its own rows, then `supabase_security_fixes.sql`. See
+--   ACCOUNTS.md. Re-running this file afterwards leaves those policies alone.
 
 -- ── Generic key-value store ─────────────────────────────────────
 -- Still used for settings-shaped data that's edited as one unit by one
@@ -20,7 +21,13 @@ create table if not exists kv_store (
 );
 alter table kv_store enable row level security;
 drop policy if exists "Allow all" on kv_store;
-create policy "Allow all" on kv_store for all using (true) with check (true);
+do $$ begin
+  -- Only while the table is still single-user: once accounts are on (it has a
+  -- user_id), re-running this file must not reopen it to everyone.
+  if not exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'kv_store' and column_name = 'user_id') then
+    create policy "Allow all" on kv_store for all using (true) with check (true);
+  end if;
+end $$;
 
 -- ── Commitments ──────────────────────────────────────────────────
 create table if not exists commitments (
@@ -39,7 +46,13 @@ create table if not exists commitments (
 create index if not exists idx_commitments_date on commitments (date);
 alter table commitments enable row level security;
 drop policy if exists "Allow all" on commitments;
-create policy "Allow all" on commitments for all using (true) with check (true);
+do $$ begin
+  -- Only while the table is still single-user: once accounts are on (it has a
+  -- user_id), re-running this file must not reopen it to everyone.
+  if not exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'commitments' and column_name = 'user_id') then
+    create policy "Allow all" on commitments for all using (true) with check (true);
+  end if;
+end $$;
 
 -- ── Vacations / time-off blocks ──────────────────────────────────
 create table if not exists vacations (
@@ -51,7 +64,13 @@ create table if not exists vacations (
 );
 alter table vacations enable row level security;
 drop policy if exists "Allow all" on vacations;
-create policy "Allow all" on vacations for all using (true) with check (true);
+do $$ begin
+  -- Only while the table is still single-user: once accounts are on (it has a
+  -- user_id), re-running this file must not reopen it to everyone.
+  if not exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'vacations' and column_name = 'user_id') then
+    create policy "Allow all" on vacations for all using (true) with check (true);
+  end if;
+end $$;
 
 -- ── Multi-day events (e.g. "Immunology Retreat") ─────────────────
 -- A span of days shown as a colored band on the calendar. Unlike vacations
@@ -72,7 +91,13 @@ create table if not exists events (
 create index if not exists idx_events_dates on events (start_date, end_date);
 alter table events enable row level security;
 drop policy if exists "Allow all" on events;
-create policy "Allow all" on events for all using (true) with check (true);
+do $$ begin
+  -- Only while the table is still single-user: once accounts are on (it has a
+  -- user_id), re-running this file must not reopen it to everyone.
+  if not exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'events' and column_name = 'user_id') then
+    create policy "Allow all" on events for all using (true) with check (true);
+  end if;
+end $$;
 
 -- ── Recurring task templates ─────────────────────────────────────
 create table if not exists recurring_tasks (
@@ -91,7 +116,13 @@ create table if not exists recurring_tasks (
 create index if not exists idx_recurring_tasks_days on recurring_tasks using gin (days);
 alter table recurring_tasks enable row level security;
 drop policy if exists "Allow all" on recurring_tasks;
-create policy "Allow all" on recurring_tasks for all using (true) with check (true);
+do $$ begin
+  -- Only while the table is still single-user: once accounts are on (it has a
+  -- user_id), re-running this file must not reopen it to everyone.
+  if not exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'recurring_tasks' and column_name = 'user_id') then
+    create policy "Allow all" on recurring_tasks for all using (true) with check (true);
+  end if;
+end $$;
 
 -- ── Task completion state ────────────────────────────────────────
 -- Replaces the old "todos" + "week_state" blobs, which were confirmed
@@ -104,7 +135,13 @@ create table if not exists task_completions (
 );
 alter table task_completions enable row level security;
 drop policy if exists "Allow all" on task_completions;
-create policy "Allow all" on task_completions for all using (true) with check (true);
+do $$ begin
+  -- Only while the table is still single-user: once accounts are on (it has a
+  -- user_id), re-running this file must not reopen it to everyone.
+  if not exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'task_completions' and column_name = 'user_id') then
+    create policy "Allow all" on task_completions for all using (true) with check (true);
+  end if;
+end $$;
 
 -- ── Activity log ──────────────────────────────────────────────────
 create table if not exists log_entries (
@@ -121,7 +158,13 @@ create index if not exists idx_log_entries_storage_key on log_entries (storage_k
 create index if not exists idx_log_entries_date on log_entries (date);
 alter table log_entries enable row level security;
 drop policy if exists "Allow all" on log_entries;
-create policy "Allow all" on log_entries for all using (true) with check (true);
+do $$ begin
+  -- Only while the table is still single-user: once accounts are on (it has a
+  -- user_id), re-running this file must not reopen it to everyone.
+  if not exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'log_entries' and column_name = 'user_id') then
+    create policy "Allow all" on log_entries for all using (true) with check (true);
+  end if;
+end $$;
 
 -- ── Task categories (shared, user-editable) ──────────────────────
 -- Referenced by commitments.cat and recurring_tasks.cat. Seeded once
@@ -138,7 +181,13 @@ create table if not exists categories (
 alter table categories add column if not exists icon text;
 alter table categories enable row level security;
 drop policy if exists "Allow all" on categories;
-create policy "Allow all" on categories for all using (true) with check (true);
+do $$ begin
+  -- Only while the table is still single-user: once accounts are on (it has a
+  -- user_id), re-running this file must not reopen it to everyone.
+  if not exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'categories' and column_name = 'user_id') then
+    create policy "Allow all" on categories for all using (true) with check (true);
+  end if;
+end $$;
 
 -- ── Background push: subscriptions + scheduled reminders ──────────
 -- These power reminders that arrive even when Bloom is fully closed. The app
@@ -157,7 +206,13 @@ create table if not exists push_subscriptions (
 );
 alter table push_subscriptions enable row level security;
 drop policy if exists "Allow all" on push_subscriptions;
-create policy "Allow all" on push_subscriptions for all using (true) with check (true);
+do $$ begin
+  -- Only while the table is still single-user: once accounts are on (it has a
+  -- user_id), re-running this file must not reopen it to everyone.
+  if not exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'push_subscriptions' and column_name = 'user_id') then
+    create policy "Allow all" on push_subscriptions for all using (true) with check (true);
+  end if;
+end $$;
 
 -- Concrete reminders queued for background delivery. One row per (device, tag);
 -- `at` is when it should fire, `sent` flips true once delivered. Deleting a
@@ -176,4 +231,10 @@ create table if not exists scheduled_pushes (
 create index if not exists idx_scheduled_pushes_due on scheduled_pushes (at) where sent = false;
 alter table scheduled_pushes enable row level security;
 drop policy if exists "Allow all" on scheduled_pushes;
-create policy "Allow all" on scheduled_pushes for all using (true) with check (true);
+do $$ begin
+  -- Only while the table is still single-user: once accounts are on (it has a
+  -- user_id), re-running this file must not reopen it to everyone.
+  if not exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'scheduled_pushes' and column_name = 'user_id') then
+    create policy "Allow all" on scheduled_pushes for all using (true) with check (true);
+  end if;
+end $$;

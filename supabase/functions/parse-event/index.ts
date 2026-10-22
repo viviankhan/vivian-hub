@@ -135,6 +135,8 @@ async function plan(req: Request): Promise<Response> {
   // Gemini key, so only a signed-in Bloom user may make one.
   const who = await fetch(`${SUPABASE_URL}/auth/v1/user`, { headers: { apikey: ANON, Authorization: req.headers.get('authorization') || '' } })
   if (!who.ok) return json({ error: 'Sign in first.' }, 401)
+  const caller = await who.json().catch(() => null)
+  if (!(await underQuota(caller?.id, 'assistant', dailyLimit('AI_DAILY_ASSISTANT', 30)))) return quotaError('the assistant')
 
   let body: {
     command?: string; text?: string; today?: string
@@ -576,6 +578,29 @@ const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || ''
 const STALE_MS = 4 * 60_000
 const KEEP_JOBS_MS = 3 * 24 * 60 * 60_000
 
+// Daily AI allowance per account (see use_ai_quota in supabase_security_fixes.sql).
+// Counts this call and says whether it fits; set the AI_DAILY_* secrets to
+// change a limit. Without the service key or the database function (an older
+// project), calls aren't limited, so the AI keeps working.
+async function underQuota(userId: string, kind: string, limit: number): Promise<boolean> {
+  if (!SERVICE_KEY || !userId || !(limit > 0)) return true
+  const headers: Record<string, string> = { apikey: SERVICE_KEY, 'Content-Type': 'application/json' }
+  if (SERVICE_KEY.startsWith('eyJ')) headers.Authorization = `Bearer ${SERVICE_KEY}`
+  try {
+    const r = await fetch(`${SUPABASE_URL}/rest/v1/rpc/use_ai_quota`, {
+      method: 'POST', headers, body: JSON.stringify({ p_user: userId, p_kind: kind, p_limit: limit }),
+    })
+    if (!r.ok) { console.error('[quota] check failed:', r.status, (await r.text()).slice(0, 200)); return true }
+    return (await r.json()) === true
+  } catch (e) { console.error('[quota] check failed:', e); return true }
+}
+const dailyLimit = (name: string, fallback: number) => {
+  const n = Number(Deno.env.get(name))
+  return Number.isFinite(n) && n > 0 ? n : fallback
+}
+const quotaError = (what: string) =>
+  json({ error: `You’ve reached today’s limit for ${what}. It resets at midnight (UTC).`, status: 'quota' }, 429)
+
 // deno-lint-ignore no-explicit-any
 async function startJob(req: Request, userId: string, jobId: string, filed: any): Promise<Response> {
   if (!SERVICE_KEY) return json({ error: 'Background requests aren’t set up on the server.', status: 'unsupported' }, 501)
@@ -589,7 +614,7 @@ async function startJob(req: Request, userId: string, jobId: string, filed: any)
     if (error) return json({ error: `Couldn’t file that request: ${error.message}`, status: /assistant_jobs/.test(error.message) ? 'unsupported' : 'failed' }, 500)
   }
   const { data: job, error } = await db.from('assistant_jobs')
-    .select('id, status, request, notify, started_at').eq('id', jobId).eq('user_id', userId).maybeSingle()
+    .select('id, user_id, status, request, notify, started_at').eq('id', jobId).eq('user_id', userId).maybeSingle()
   if (error) return json({ error: `Couldn’t open that request: ${error.message}` }, 500)
   if (!job) return json({ error: 'That request has expired — tap Try again.', status: 'missing' }, 404)
   if (job.status === 'done' || job.status === 'error') return json({ status: job.status })
@@ -637,10 +662,13 @@ async function runJob(db: any, req: Request, job: any) {
     const count = Array.isArray(out?.actions) ? out.actions.length : 0
     const label = String(n.label || 'your upload').slice(0, 80)
     const { error } = await db.from('scheduled_pushes').upsert({
-      device_id: n.device_id, tag: String(n.tag || `assistant:${job.id}`), at: new Date().toISOString(), sent: false,
+      // user_id ties the push to the job's owner: the database refuses a device
+      // that isn't theirs, so a request can't notify someone else's phone.
+      device_id: n.device_id, user_id: job.user_id, tag: String(n.tag || `assistant:${job.id}`).slice(0, 120), at: new Date().toISOString(), sent: false,
       title: ok && count ? '✨ Suggestions ready' : '✨ Assistant',
       body: ok && count ? `${count} suggestion${count > 1 ? 's' : ''} for “${label}” — tap to review.` : `“${label}” needs a look — tap to open your queue.`,
-      url: n.url || null,
+      // Only a path inside Bloom — never a link out to another site.
+      url: typeof n.url === 'string' && /^\/(?!\/)/.test(n.url) ? n.url.slice(0, 300) : null,
     }, { onConflict: 'device_id,tag' })
     if (!error) await fetch(`${SUPABASE_URL}/functions/v1/send-reminders`, { method: 'POST', headers: { Authorization: `Bearer ${SERVICE_KEY}` } }).catch(() => {})
   }
