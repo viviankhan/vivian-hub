@@ -85,3 +85,67 @@ begin
       check (source_pdf is null or split_part(source_pdf, '/', 1) = user_id::text);
   end if;
 end $$;
+
+
+-- ── 4 · daily AI allowance per account ──────────────────────────────────────
+-- Every AI call (assistant, receipt scan, paper reading) spends the project's
+-- Gemini key, so each account gets a daily allowance per kind of call. The
+-- server functions count a call with use_ai_quota() before making it; the
+-- limits themselves live in the functions (env vars), so a paid tier can lift
+-- them later without a migration.
+create table if not exists ai_usage (
+  user_id uuid not null references auth.users (id) on delete cascade,
+  day     date not null default current_date,
+  kind    text not null,
+  count   int  not null default 0,
+  primary key (user_id, day, kind)
+);
+alter table ai_usage enable row level security;
+drop policy if exists "Own usage: read" on ai_usage;
+create policy "Own usage: read" on ai_usage for select to authenticated using (user_id = auth.uid());
+-- No write policy: only use_ai_quota (run by the server) changes the counts.
+
+-- Count one call if the account is still under `p_limit` today; true when it
+-- was counted, false when the allowance is used up. Atomic, so two calls at
+-- once can't both squeeze past the limit.
+create or replace function use_ai_quota(p_user uuid, p_kind text, p_limit int)
+returns boolean language plpgsql security definer set search_path = public as $$
+declare n int;
+begin
+  insert into ai_usage (user_id, day, kind, count) values (p_user, current_date, p_kind, 1)
+  on conflict (user_id, day, kind) do update set count = ai_usage.count + 1
+    where ai_usage.count < p_limit
+  returning count into n;
+  return n is not null;
+end $$;
+revoke all on function use_ai_quota(uuid, text, int) from public, anon, authenticated;
+grant execute on function use_ai_quota(uuid, text, int) to service_role;
+
+-- Old counts are only history; keep a month.
+delete from ai_usage where day < current_date - 31;
+
+
+-- ── 5 · ids are per account ─────────────────────────────────────────────────
+-- These tables were keyed by id alone, and the app makes ids from the time
+-- ("c-1786245975813"). If another account already had a row with that id, a
+-- new item failed with "duplicate key" (which the offline sync tolerates, so the
+-- item was silently never saved), and a hostile account could block ids on
+-- purpose. Keying by (user_id, id) gives every account its own id space. The
+-- app inserts plainly or upserts on the primary key, so it needs no change.
+do $$
+declare t text; col text; pk text;
+begin
+  foreach t in array array['commitments','vacations','events','recurring_tasks','task_completions','log_entries'] loop
+    if to_regclass('public.' || t) is null then continue; end if;
+    col := case when t = 'task_completions' then 'storage_key' else 'id' end;
+    select conname into pk from pg_constraint where conrelid = ('public.' || t)::regclass and contype = 'p';
+    -- Already (user_id, …)? Then this ran before.
+    if pk is not null and (select count(*) from pg_constraint c, unnest(c.conkey) where c.conname = pk and c.conrelid = ('public.' || t)::regclass) = 2 then
+      continue;
+    end if;
+    execute format('delete from %I where user_id is null', t);   -- ownerless rows are invisible to everyone anyway
+    execute format('alter table %I alter column user_id set not null', t);
+    if pk is not null then execute format('alter table %I drop constraint %I', t, pk); end if;
+    execute format('alter table %I add primary key (user_id, %I)', t, col);
+  end loop;
+end $$;

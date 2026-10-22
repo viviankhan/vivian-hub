@@ -6,6 +6,8 @@ import { useEffect, useState } from 'react'
 import { signIn, signUp, sendPasswordReset, readSignedOut, clearSignedOut, lastKnownEmail } from '../lib/auth.js'
 import { subscribe, isBrowserOnline } from '../lib/offline.js'
 
+// Matches the project's Auth setting (password_min_length).
+const MIN_PASSWORD = 10
 const MODES = { in: 'Sign in', up: 'Create account', reset: 'Reset password' }
 
 export default function Auth() {
@@ -39,7 +41,10 @@ export default function Auth() {
     if (!online) { setErr('You’re offline. Connect to the internet to sign in.'); return }
     const em = email.trim()
     if (!em) { setErr('Enter your email.'); return }
-    if (mode !== 'reset' && password.length < 6) { setErr('Password must be at least 6 characters.'); return }
+    // New accounts need 10+ characters; signing in still accepts older, shorter
+    // passwords made before that rule.
+    if (mode === 'up' && password.length < MIN_PASSWORD) { setErr(`Password must be at least ${MIN_PASSWORD} characters.`); return }
+    if (mode === 'in' && !password) { setErr('Enter your password.'); return }
     setBusy(true)
     try {
       if (mode === 'in') {
@@ -102,7 +107,7 @@ export default function Auth() {
                 <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--muted)', display: 'block', marginBottom: 6 }}>Password</label>
                 <input type="password" autoComplete={mode === 'up' ? 'new-password' : 'current-password'}
                   value={password} onChange={e => setPassword(e.target.value)}
-                  placeholder={mode === 'up' ? 'At least 6 characters' : 'Your password'} style={{ ...input, marginBottom: 14 }} />
+                  placeholder={mode === 'up' ? `At least ${MIN_PASSWORD} characters` : 'Your password'} style={{ ...input, marginBottom: 14 }} />
               </>
             )}
 

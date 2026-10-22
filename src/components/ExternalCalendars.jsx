@@ -158,7 +158,7 @@ export default function ExternalCalendars({ calendars = [], statuses = {}, onAdd
           It syncs one way and read-only — Mom’s events appear here, and nothing you do in Bloom changes her calendar.
         </div>
         <div style={{ fontSize:11, color:'var(--muted)', marginTop:8, lineHeight:1.6 }}>
-          Bloom fetches through your own Supabase <b>ics-proxy</b> function when it’s reachable; if it isn’t, it falls back to a public relay so your (already-public) calendar still loads. For a fully private path, deploy ics-proxy with <b>Verify JWT OFF</b> — see CALENDAR_SYNC.md. Tap a red error for its exact reason.
+          Bloom fetches the calendar through its own server, and the link is never shared with anyone else. Tap a red error for its exact reason.
         </div>
       </div>
     </div>

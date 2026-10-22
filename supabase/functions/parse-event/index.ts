@@ -135,6 +135,8 @@ async function plan(req: Request): Promise<Response> {
   // Gemini key, so only a signed-in Bloom user may make one.
   const who = await fetch(`${SUPABASE_URL}/auth/v1/user`, { headers: { apikey: ANON, Authorization: req.headers.get('authorization') || '' } })
   if (!who.ok) return json({ error: 'Sign in first.' }, 401)
+  const caller = await who.json().catch(() => null)
+  if (!(await underQuota(caller?.id, 'assistant', dailyLimit('AI_DAILY_ASSISTANT', 30)))) return quotaError('the assistant')
 
   let body: {
     command?: string; text?: string; today?: string
@@ -575,6 +577,29 @@ declare const EdgeRuntime: { waitUntil(p: Promise<unknown>): void } | undefined
 const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || ''
 const STALE_MS = 4 * 60_000
 const KEEP_JOBS_MS = 3 * 24 * 60 * 60_000
+
+// Daily AI allowance per account (see use_ai_quota in supabase_security_fixes.sql).
+// Counts this call and says whether it fits; set the AI_DAILY_* secrets to
+// change a limit. Without the service key or the database function (an older
+// project), calls aren't limited, so the AI keeps working.
+async function underQuota(userId: string, kind: string, limit: number): Promise<boolean> {
+  if (!SERVICE_KEY || !userId || !(limit > 0)) return true
+  const headers: Record<string, string> = { apikey: SERVICE_KEY, 'Content-Type': 'application/json' }
+  if (SERVICE_KEY.startsWith('eyJ')) headers.Authorization = `Bearer ${SERVICE_KEY}`
+  try {
+    const r = await fetch(`${SUPABASE_URL}/rest/v1/rpc/use_ai_quota`, {
+      method: 'POST', headers, body: JSON.stringify({ p_user: userId, p_kind: kind, p_limit: limit }),
+    })
+    if (!r.ok) { console.error('[quota] check failed:', r.status, (await r.text()).slice(0, 200)); return true }
+    return (await r.json()) === true
+  } catch (e) { console.error('[quota] check failed:', e); return true }
+}
+const dailyLimit = (name: string, fallback: number) => {
+  const n = Number(Deno.env.get(name))
+  return Number.isFinite(n) && n > 0 ? n : fallback
+}
+const quotaError = (what: string) =>
+  json({ error: `You’ve reached today’s limit for ${what}. It resets at midnight (UTC).`, status: 'quota' }, 429)
 
 // deno-lint-ignore no-explicit-any
 async function startJob(req: Request, userId: string, jobId: string, filed: any): Promise<Response> {

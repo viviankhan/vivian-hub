@@ -10,12 +10,14 @@
 // turns each feed on or off without deleting it.
 //
 // Fetching a cross-origin .ics from the browser is usually blocked by CORS, so
-// we route through a tiny server proxy when one is configured (a Supabase Edge
-// Function by default — see supabase/functions/ics-proxy). If none is available
-// we still try a direct fetch (some feeds allow it), and either way the last
-// good result stays cached so events persist offline and between sessions.
+// we route through Bloom's own server proxy (a Supabase Edge Function — see
+// supabase/functions/ics-proxy). If that fails we still try a direct fetch
+// (some feeds allow it), and either way the last good result stays cached so
+// events persist offline and between sessions. A feed URL is a secret key to
+// someone's calendar, so it never goes to a third-party relay.
 // ─────────────────────────────────────────────────────────────
 import { parseICS } from './ical.js'
+import { supabase } from './storage.js'
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
 const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY
@@ -37,22 +39,8 @@ export function normalizeIcsUrl(url) {
   return u
 }
 
-// Public, no-auth CORS relays used as a fallback when your own Supabase proxy
-// isn't reachable/authorized. They fetch the (already-public) calendar and add
-// CORS headers. Reasonable for a calendar you've published, but they do see the
-// URL — the private Supabase proxy is preferred and tried first. Several are
-// listed because any one of them can be down or rate-limited on a given day; the
-// fetch tries each in turn until one returns the feed.
-const PUBLIC_RELAYS = [
-  (u) => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
-  (u) => `https://corsproxy.io/?url=${encodeURIComponent(u)}`,
-  (u) => `https://api.codetabs.com/v1/proxy/?quest=${encodeURIComponent(u)}`,
-  (u) => `https://thingproxy.freeboard.io/fetch/${u}`,
-  (u) => `https://cors.isomorphic-git.org/${u}`,
-]
-
-// A fetch that gives up after `ms` so one hung/unreachable relay can't stall the
-// whole chain — on timeout we move on to the next relay instead of waiting.
+// A fetch that gives up after `ms`, so a hung proxy falls through to the direct
+// fetch instead of stalling the sync.
 async function fetchWithTimeout(url, opts = {}, ms = 12000) {
   const ctrl = new AbortController()
   const timer = setTimeout(() => ctrl.abort(), ms)
@@ -61,14 +49,17 @@ async function fetchWithTimeout(url, opts = {}, ms = 12000) {
 }
 
 // Try Bloom's own Supabase Edge Function proxy. Returns .ics text, or throws
-// with a specific reason. Sends the project key the right way (apikey for the
-// new "publishable" keys; Bearer only for a real JWT) and retries with no auth,
-// which works when the function has JWT verification turned off.
+// with a specific reason. The proxy only serves signed-in accounts, so it gets
+// this session's token; the project key alone (signed out) is tried too, for a
+// proxy deployed without that check.
 async function viaSupabaseProxy(target) {
   const endpoint = `${PROXY}?url=${encodeURIComponent(target)}`
   const isJwt = typeof SUPABASE_KEY === 'string' && SUPABASE_KEY.startsWith('eyJ')
+  let token = null
+  try { token = (await supabase?.auth.getSession())?.data?.session?.access_token || null } catch {}
   const headerVariants = []
-  if (SUPABASE_KEY) headerVariants.push(isJwt ? { Authorization: `Bearer ${SUPABASE_KEY}`, apikey: SUPABASE_KEY } : { apikey: SUPABASE_KEY })
+  if (token) headerVariants.push({ Authorization: `Bearer ${token}`, ...(SUPABASE_KEY ? { apikey: SUPABASE_KEY } : {}) })
+  else if (SUPABASE_KEY) headerVariants.push(isJwt ? { Authorization: `Bearer ${SUPABASE_KEY}`, apikey: SUPABASE_KEY } : { apikey: SUPABASE_KEY })
   headerVariants.push({})
 
   let res, lastStatus = 0, lastBody = ''
@@ -88,16 +79,7 @@ async function viaSupabaseProxy(target) {
   throw new Error('proxy-no-vcalendar')
 }
 
-async function viaRelay(mk, target) {
-  const res = await fetchWithTimeout(mk(target))
-  if (!res.ok) throw new Error(`relay-${res.status}`)
-  const text = await res.text()
-  if (/BEGIN:VCALENDAR/i.test(text)) return text
-  throw new Error('relay-no-vcalendar')
-}
-
-// Fetch raw .ics text for a URL. Prefer your private Supabase proxy; if it can't
-// be reached or authorized, fall back to a public relay, then a direct fetch.
+// Fetch raw .ics text for a URL: through Bloom's own proxy, else directly.
 export async function fetchIcsText(url) {
   const target = normalizeIcsUrl(url)
   if (!/^https?:\/\//i.test(target)) throw new Error('That doesn’t look like a calendar link. Use the webcal:// or https:// URL Apple gives you.')
@@ -105,13 +87,7 @@ export async function fetchIcsText(url) {
   let proxyErr = null
   if (PROXY) {
     try { return await viaSupabaseProxy(target) }
-    catch (e) { proxyErr = e; console.warn('[Bloom] Supabase proxy failed, falling back to public relay:', e?.message) }
-  }
-
-  // Public relays (no auth) — get past CORS without your Supabase function.
-  for (const mk of PUBLIC_RELAYS) {
-    try { return await viaRelay(mk, target) }
-    catch (e) { console.warn('[Bloom] relay failed:', e?.message) }
+    catch (e) { proxyErr = e; console.warn('[Bloom] Supabase proxy failed, trying a direct fetch:', e?.message) }
   }
 
   // Last resort: a direct fetch (works only for CORS-enabled feeds).
@@ -121,8 +97,8 @@ export async function fetchIcsText(url) {
   } catch (e) { console.warn('[Bloom] direct fetch failed:', e?.message) }
 
   // Everything failed — surface the most useful reason.
-  if (proxyErr?.status === 404) throw new Error('Couldn’t load the calendar. (ics-proxy 404 — check the function name; also the public relay was unreachable.)')
-  if (proxyErr?.status === 401 || proxyErr?.status === 403) throw new Error('Couldn’t load the calendar. Your ics-proxy is auth-blocked and the public relay was also unreachable — check your connection and try ⟳.')
+  if (proxyErr?.status === 404) throw new Error('Couldn’t load the calendar. (ics-proxy 404 — check the function is deployed.)')
+  if (proxyErr?.status === 401 || proxyErr?.status === 403) throw new Error('Couldn’t load the calendar. Sign in again, then tap ⟳.')
   throw new Error('Couldn’t reach the calendar. Check it’s a public webcal/ICS link and you’re online, then tap ⟳.')
 }
 

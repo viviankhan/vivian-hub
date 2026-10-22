@@ -59,6 +59,29 @@ const ANON = Deno.env.get('SUPABASE_ANON_KEY') || ''
 const SERVICE = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || ''
 const GH_TOKEN = Deno.env.get('GH_DISPATCH_TOKEN') || ''
 const GH_REPO = Deno.env.get('GH_REPO') || 'viviankhan/vivian-hub'
+
+// Daily AI allowance per account (see use_ai_quota in supabase_security_fixes.sql).
+// Counts this call and says whether it fits; set the AI_DAILY_* secrets to
+// change a limit. Without the service key or the database function (an older
+// project), calls aren't limited, so the AI keeps working.
+async function underQuota(userId: string, kind: string, limit: number): Promise<boolean> {
+  if (!SERVICE || !userId || !(limit > 0)) return true
+  const headers: Record<string, string> = { apikey: SERVICE, 'Content-Type': 'application/json' }
+  if (SERVICE.startsWith('eyJ')) headers.Authorization = `Bearer ${SERVICE}`
+  try {
+    const r = await fetch(`${SUPABASE_URL}/rest/v1/rpc/use_ai_quota`, {
+      method: 'POST', headers, body: JSON.stringify({ p_user: userId, p_kind: kind, p_limit: limit }),
+    })
+    if (!r.ok) { console.error('[quota] check failed:', r.status, (await r.text()).slice(0, 200)); return true }
+    return (await r.json()) === true
+  } catch (e) { console.error('[quota] check failed:', e); return true }
+}
+const dailyLimit = (name: string, fallback: number) => {
+  const n = Number(Deno.env.get(name))
+  return Number.isFinite(n) && n > 0 ? n : fallback
+}
+const quotaError = (what: string) =>
+  json({ error: `You’ve reached today’s limit for ${what}. It resets at midnight (UTC).`, status: 'quota' }, 429)
 declare const EdgeRuntime: { waitUntil(p: Promise<unknown>): void } | undefined
 // Gemini's inline-data ceiling is ~20MB per request, and base64 adds a third.
 const MAX_B64 = 19_000_000
@@ -111,6 +134,11 @@ Deno.serve(async (req) => {
 
   let body: { pdf?: string; image?: string; context?: string; paperId?: string }
   try { body = await req.json() } catch { return json({ error: 'Bad JSON body' }, 400) }
+  // A whole paper is the costliest call there is, so papers get a small
+  // allowance of their own; talking through one figure is cheap.
+  if (body.image && !body.paperId) {
+    if (!(await underQuota(user.id, 'figure', dailyLimit('AI_DAILY_FIGURES', 30)))) return quotaError('figure explanations')
+  } else if (!(await underQuota(user.id, 'paper', dailyLimit('AI_DAILY_PAPERS', 5)))) return quotaError('reading papers')
   // Background mode: the PDF is already in storage and the paper row exists.
   // Answer at once and keep reading after Bloom is closed.
   if (body.paperId) return startReading(body.paperId, user.id, req.headers.get('authorization') || '')

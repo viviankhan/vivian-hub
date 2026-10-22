@@ -6,10 +6,10 @@
 // calendar server-side and hands back the raw .ics with permissive CORS.
 //
 // It only ever GETs a calendar feed and returns text; it never touches the
-// database. Deploy it alongside send-reminders:
+// database. Only signed-in accounts may use it. Deploy it alongside send-reminders:
 //     supabase functions deploy ics-proxy
-// (see CALENDAR_SYNC.md). If you deploy with JWT verification on, the app
-// already sends the anon key, so no extra config is needed.
+// (see CALENDAR_SYNC.md), with JWT verification off — the function checks the
+// caller's session itself.
 // ─────────────────────────────────────────────────────────────
 
 const CORS = {
@@ -17,6 +17,9 @@ const CORS = {
   'Access-Control-Allow-Methods': 'GET, OPTIONS',
   'Access-Control-Allow-Headers': 'authorization, apikey, content-type',
 }
+
+const SUPABASE_URL = Deno.env.get('SUPABASE_URL') || ''
+const ANON = Deno.env.get('SUPABASE_ANON_KEY') || ''
 
 // Block obvious SSRF targets — link-local, loopback, and private ranges — so
 // this can't be turned into a probe of the Supabase project's own network.
@@ -62,6 +65,11 @@ async function readCapped(res: Response, max: number): Promise<string | null> {
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS })
   if (req.method !== 'GET') return new Response('Method not allowed', { status: 405, headers: CORS })
+
+  // verify_jwt is off (for the CORS preflight), so check the caller here: only
+  // a signed-in Bloom account may fetch through this, or it's an open proxy.
+  const who = await fetch(`${SUPABASE_URL}/auth/v1/user`, { headers: { apikey: ANON, Authorization: req.headers.get('authorization') || '' } })
+  if (!who.ok) return new Response(JSON.stringify({ error: 'Sign in first.' }), { status: 401, headers: { ...CORS, 'Content-Type': 'application/json' } })
 
   const raw = new URL(req.url).searchParams.get('url')
   if (!raw) return new Response(JSON.stringify({ error: 'Missing ?url' }), { status: 400, headers: { ...CORS, 'Content-Type': 'application/json' } })
