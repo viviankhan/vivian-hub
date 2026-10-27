@@ -2206,6 +2206,13 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
   const handleAdd = (commitment, reminderMins) => {
     if (addCommitment) addCommitment(commitment)
     setItemReminders(commitment.id, reminderMins)
+    // Scheduled onto another day (the sheet's date was changed) → follow it
+    // there and reveal it, so the save doesn't look like it did nothing.
+    if (commitment.date && commitment.date !== viewDate) {
+      setViewDate(commitment.date)
+      setSpotlight(commitment.id)
+      setSpotNonce(n => n + 1)
+    }
   }
 
   // ── AI assistant ─────────────────────────────────────────────
