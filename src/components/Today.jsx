@@ -1221,7 +1221,7 @@ function WeekStrip({ viewDate, setViewDate, today, commitments, categories, done
 }
 
 // ── Main ───────────────────────────────────────────────────────
-export default function Today({ todos, weekState, syncToggle, clearCompletion, pushUndo, commitments, addCommitment, updateCommitment, deleteCommitment, moveCommitmentToThoughts, addEvent, appendLog, scheduled, categories, recurringTasks, recurringExceptions, occStarted = {}, skipRecurringOccurrence, deleteRecurringTask, addRecurringTask, updateRecurringTask, routines = [], updateRoutine, deleteRoutine, taskTemplates = [], summary, labelModel = null, externalEvents = [], externalCalendars = [], toggleCalendar, importedAdoptions = {}, adoptImportedEvent, markImportedAdopted,
+export default function Today({ todos, weekState, syncToggle, clearCompletion, pushUndo, commitments, addCommitment, updateCommitment, deleteCommitment, moveCommitmentToThoughts, addEvent, appendLog, scheduled, categories, recurringTasks, recurringExceptions, occStarted = {}, occEnded = {}, skipRecurringOccurrence, deleteRecurringTask, addRecurringTask, updateRecurringTask, routines = [], updateRoutine, deleteRoutine, taskTemplates = [], summary, labelModel = null, externalEvents = [], externalCalendars = [], toggleCalendar, importedAdoptions = {}, adoptImportedEvent, markImportedAdopted,
   wlCheckins = [], persistWlCheckins, wlEffects, persistWlEffects, wlEpisodes = [], persistWlEpisodes, wlGame, persistWlGame, wlLog = [], wlEmotions, persistWlEmotions, onOpenWellness,
   wlRules, wlAbsence = null, onResolveAbsence,
   jumpTo = null, onJumpConsumed }) {
@@ -1365,7 +1365,7 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
     .filter(t=>!deleted.includes(t.id))
     // Merge in an arrival-started timestamp (set when you reach the task's
     // location), so a located recurring task shows live progress like a one-off.
-    .map(t => { const s = occStarted[occKey(t.id, dateKey)]; return s ? { ...t, startedAt: s } : t })
+    .map(t => { const s = occStarted[occKey(t.id, dateKey)], e = occEnded[occKey(t.id, dateKey)]; return s ? { ...t, startedAt: s, ...(e ? { endedAt: e } : {}) } : t })
   // Keep done ones too — a finished task stays on the timeline, crossed off,
   // rather than vanishing.
   const todayCommitments = (commitments||[]).filter(c=>c.date===dateKey)
@@ -1386,6 +1386,21 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
   // time; a recurring block moves via the override, since its template time is
   // shared across every day.
   const blockStart = (id, baseMins) => (timeOverrides[id] != null ? timeOverrides[id] : baseMins)
+  // A located block (Work at the office) runs on where you are, not the clock:
+  // it starts when you arrived and ends when you left. Until you leave it keeps
+  // its planned length from arrival. Only stamps from this same day count.
+  const stampMins = (ts) => {
+    if (!ts) return null
+    const d = new Date(ts)
+    const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
+    return key === dateKey ? d.getHours() * 60 + d.getMinutes() : null
+  }
+  const blockWindow = (x, id, baseMins, dur) => {
+    const arrived = stampMins(x.startedAt)
+    const s = arrived ?? blockStart(id, baseMins)
+    const left = arrived != null ? stampMins(x.endedAt) : null
+    return { start: s, end: left != null && left > s ? left : s + dur }
+  }
   // An event with something scheduled inside it becomes a block for the day,
   // so what's inside nests in it (see lib/autoBlocks.js). Read off the day as
   // it stands — including any times moved for just today.
@@ -1397,11 +1412,11 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
   const isBlockLike = (x) => !!x.block || autoBlocks.has(x.id)
   const blocks = [
     ...todayCommitments.filter(c => isBlockLike(c) && c.time && c.durationMins)
-      .map(c => { const s = blockStart(c.id, hhmmToMins(c.time)); return { id:c.id, label:(c.text||'').trim(), color: c.color || catColorOf(c.cat) || '#8AA0B8', icon: c.icon || null, cat: c.cat || null, isCommitment:true, auto: autoBlocks.has(c.id), autoComplete: !!c.autoComplete, routine: c.routine || null,
-        start: s, end: s + c.durationMins } }),
+      .map(c => { const w = blockWindow(c, c.id, hhmmToMins(c.time), c.durationMins); return { id:c.id, label:(c.text||'').trim(), color: c.color || catColorOf(c.cat) || '#8AA0B8', icon: c.icon || null, cat: c.cat || null, isCommitment:true, auto: autoBlocks.has(c.id), autoComplete: !!c.autoComplete, routine: c.routine || null,
+        ...w } }),
     ...templateTodos.filter(o => isBlockLike(o) && o._time && o._dur)
-      .map(o => { const s = blockStart(o.id, hhmmToMins(o._time)); return { id:o.id, label:(o.title||o.text||'').trim(), color: o.color || catColorOf(o.cat || o.tag) || '#8AA0B8', icon: o.icon || null, cat: o.cat || o.tag || null, isCommitment:false, auto: autoBlocks.has(o.id), autoComplete: !!o.autoComplete, routine: o.routine || null,
-        start: s, end: s + o._dur } }),
+      .map(o => { const w = blockWindow(o, o.id, hhmmToMins(o._time), o._dur); return { id:o.id, label:(o.title||o.text||'').trim(), color: o.color || catColorOf(o.cat || o.tag) || '#8AA0B8', icon: o.icon || null, cat: o.cat || o.tag || null, isCommitment:false, auto: autoBlocks.has(o.id), autoComplete: !!o.autoComplete, routine: o.routine || null,
+        ...w } }),
   ]
   // Nesting: a block that sits wholly inside another's window (lunch inside a
   // study block) is filed under it, the way a task in its window is. Its parent

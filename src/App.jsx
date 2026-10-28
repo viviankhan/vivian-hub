@@ -403,6 +403,10 @@ export default function App() {
   const [occStarted, setOccStarted] = useState(() => {
     try { return JSON.parse(localStorage.getItem('bloom_occ_started') || '{}') } catch { return {} }
   })
+  // …and when you left: a located block (Work) ends when you leave its place.
+  const [occEnded, setOccEnded] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('bloom_occ_ended') || '{}') } catch { return {} }
+  })
   // Each setter mirrors the choice to the synced prefs blob (pushPrefs), so the
   // look & settings follow the user to their other devices.
   const setFont    = useCallback(v  => { setFontState(v);    setFontPref(v);    applyFont(v);   pushPrefs() }, [])
@@ -1049,7 +1053,18 @@ export default function App() {
         .map(o => ({ id: 'occ:' + occKey(o.id, today), name: o.title || o.text || 'Task', location: o.location }))
       return [...commits, ...recs]
     }
-    if (!getLocatedTasks().length) return
+    // Blocks you've arrived at end when you leave: the block's window runs from
+    // arrival to departure instead of its scheduled times.
+    const getLeavingTasks = () => {
+      const commits = commitments
+        .filter(c => { const m = commitmentMeta[c.id]; return m?.block && m.location?.autoStart && m.startedAt && !m.endedAt })
+        .map(c => ({ id: c.id, name: c.text, location: commitmentMeta[c.id].location }))
+      const recs = recurringOccurrencesForDate(recurringTasksEnriched, today, recurringExceptions)
+        .filter(o => o.block && o.location?.autoStart && occStarted[occKey(o.id, today)] && !occEnded[occKey(o.id, today)])
+        .map(o => ({ id: 'occ:' + occKey(o.id, today), name: o.title || o.text || 'Block', location: o.location }))
+      return [...commits, ...recs]
+    }
+    if (!getLocatedTasks().length && !getLeavingTasks().length) return
 
     const stop = watchArrivals(getLocatedTasks, (task) => {
       if (typeof task.id === 'string' && task.id.startsWith('occ:')) {
@@ -1071,9 +1086,30 @@ export default function App() {
         return next
       })
       notifyArrival(task.name)
-    }, { onError: (err) => console.warn('[Bloom] location arrival watch:', err && (err.message || err.code)) })
+    }, {
+      getLeaving: getLeavingTasks,
+      onLeave: (task, leftAt) => {
+        if (typeof task.id === 'string' && task.id.startsWith('occ:')) {
+          const key = task.id.slice(4)
+          setOccEnded(prev => {
+            if (prev[key]) return prev
+            const next = { ...prev, [key]: leftAt }
+            try { localStorage.setItem('bloom_occ_ended', JSON.stringify(next)) } catch {}
+            return next
+          })
+          return
+        }
+        setCommitmentMeta_(prev => {
+          if (prev[task.id]?.endedAt) return prev
+          const next = { ...prev, [task.id]: { ...(prev[task.id] || {}), endedAt: leftAt } }
+          setCommitmentMeta(next).catch(reportSaveError)
+          return next
+        })
+      },
+      onError: (err) => console.warn('[Bloom] location arrival watch:', err && (err.message || err.code)),
+    })
     return stop
-  }, [loading, commitments, commitmentMeta, recurringTasksEnriched, recurringExceptions, completions, occStarted])
+  }, [loading, commitments, commitmentMeta, recurringTasksEnriched, recurringExceptions, completions, occStarted, occEnded])
 
   // ── Persist helpers ──────────────────────────────────────────
   // Cloud write failures are surfaced instead of swallowed — otherwise a delete
@@ -1426,7 +1462,7 @@ export default function App() {
   }, [])
 
   const addCommitment = useCallback(async (c, opts = {}) => {
-    const { description, subtasks, cats, color, icon, location, startedAt, block, routine, autoComplete, recordValues, ...core } = c
+    const { description, subtasks, cats, color, icon, location, startedAt, endedAt, block, routine, autoComplete, recordValues, ...core } = c
     // Scheduling an item onto a day that's already passed means it happened —
     // land it already checked off (a real completion that counts toward
     // progress), unless it's a time block or the caller already set done.
@@ -1510,7 +1546,7 @@ export default function App() {
     markImportedAdopted(key, cid)
   }, [importedAdoptions, addCommitment, markImportedAdopted])
   const updateCommitment = useCallback(async (id, changes, opts = {}) => {
-    const { description, subtasks, cats, color, icon, location, startedAt, block, routine, autoComplete, recordValues, ...core } = changes
+    const { description, subtasks, cats, color, icon, location, startedAt, endedAt, block, routine, autoComplete, recordValues, ...core } = changes
     // Snapshot the prior values of exactly the fields being changed, so this
     // edit can be reversed later. Pure check-offs (only `done`) and pure subtask
     // check-offs (same subtask count) are skipped — they're not "edits".
@@ -2013,6 +2049,7 @@ export default function App() {
     icon: commitmentMeta[c.id]?.icon ?? null,
     location: commitmentMeta[c.id]?.location ?? null,
     startedAt: commitmentMeta[c.id]?.startedAt ?? null,
+    endedAt: commitmentMeta[c.id]?.endedAt ?? null,
     block: commitmentMeta[c.id]?.block ?? false,
     routine: commitmentMeta[c.id]?.routine ?? null,
     autoComplete: commitmentMeta[c.id]?.autoComplete ?? false,
@@ -2047,6 +2084,7 @@ export default function App() {
     recurringTasks: recurringTasksEnriched,
     recurringExceptions,
     occStarted,
+    occEnded,
     addRecurringTask: addRecurringTaskFn,
     updateRecurringTask: updateRecurringTaskFn,
     deleteRecurringTask: deleteRecurringTaskFn,
