@@ -75,6 +75,7 @@ import { isOnline } from './lib/offline.js'
 import { ensureBackgroundPush, syncScheduledPushesDebounced } from './lib/push.js'
 import { buildLabelModel, historyFromData } from './lib/predictLabel.js'
 import { geolocationSupported, watchArrivals } from './lib/geofence.js'
+import { placeHooksAvailable, fetchPlaceEvents, placeStamps } from './lib/placeHooks.js'
 import { Glyph } from './lib/glyphs.jsx'
 import Customization from './components/Customization.jsx'
 import { getFontPref, setFontPref, applyFont, getThemePref, setThemePref, applyTheme,
@@ -407,6 +408,21 @@ export default function App() {
   const [occEnded, setOccEnded] = useState(() => {
     try { return JSON.parse(localStorage.getItem('bloom_occ_ended') || '{}') } catch { return {} }
   })
+  // Arrivals/departures sent by an iPhone Shortcuts automation while Bloom was
+  // closed (see lib/placeHooks.js). They're the real times, so for any item
+  // and day they cover they win over what the open app happened to see.
+  const [placeEvents, setPlaceEvents] = useState([])
+  const placeByOcc = useMemo(() => placeStamps(placeEvents), [placeEvents])
+  const occStartedAll = useMemo(() => {
+    const out = { ...occStarted }
+    for (const [k, v] of Object.entries(placeByOcc)) out[k] = v.start
+    return out
+  }, [occStarted, placeByOcc])
+  const occEndedAll = useMemo(() => {
+    const out = { ...occEnded }
+    for (const [k, v] of Object.entries(placeByOcc)) { if (v.end) out[k] = v.end; else delete out[k] }
+    return out
+  }, [occEnded, placeByOcc])
   // Each setter mirrors the choice to the synced prefs blob (pushPrefs), so the
   // look & settings follow the user to their other devices.
   const setFont    = useCallback(v  => { setFontState(v);    setFontPref(v);    applyFont(v);   pushPrefs() }, [])
@@ -1027,6 +1043,18 @@ export default function App() {
     [commitments, recurringTaskRows],
   )
 
+  // Read the Shortcut's arrivals when the app opens and each time you come
+  // back to it, and every few minutes while it's on screen.
+  useEffect(() => {
+    if (loading || !placeHooksAvailable) return
+    let alive = true
+    const load = () => { if (document.visibilityState === 'visible') fetchPlaceEvents().then(rows => { if (alive) setPlaceEvents(rows) }) }
+    load()
+    const t = setInterval(load, 5 * 60 * 1000)
+    document.addEventListener('visibilitychange', load)
+    return () => { alive = false; clearInterval(t); document.removeEventListener('visibilitychange', load) }
+  }, [loading])
+
   // ── Location arrival auto-start ──────────────────────────────
   // Watch the device position while Bloom is open; when it reaches a task's
   // tagged location, stamp `startedAt` so the task's progress begins — no matter
@@ -1049,7 +1077,7 @@ export default function App() {
         .filter(c => !c.done && commitmentMeta[c.id]?.location?.autoStart && !commitmentMeta[c.id]?.startedAt)
         .map(c => ({ id: c.id, name: c.text, location: commitmentMeta[c.id].location }))
       const recs = recurringOccurrencesForDate(recurringTasksEnriched, today, recurringExceptions)
-        .filter(o => o.location?.autoStart && !completions[`${today}_${o.id}`] && !occStarted[occKey(o.id, today)])
+        .filter(o => o.location?.autoStart && !completions[`${today}_${o.id}`] && !occStartedAll[occKey(o.id, today)])
         .map(o => ({ id: 'occ:' + occKey(o.id, today), name: o.title || o.text || 'Task', location: o.location }))
       return [...commits, ...recs]
     }
@@ -1060,7 +1088,7 @@ export default function App() {
         .filter(c => { const m = commitmentMeta[c.id]; return m?.block && m.location?.autoStart && m.startedAt && !m.endedAt })
         .map(c => ({ id: c.id, name: c.text, location: commitmentMeta[c.id].location }))
       const recs = recurringOccurrencesForDate(recurringTasksEnriched, today, recurringExceptions)
-        .filter(o => o.block && o.location?.autoStart && occStarted[occKey(o.id, today)] && !occEnded[occKey(o.id, today)])
+        .filter(o => o.block && o.location?.autoStart && occStartedAll[occKey(o.id, today)] && !occEndedAll[occKey(o.id, today)])
         .map(o => ({ id: 'occ:' + occKey(o.id, today), name: o.title || o.text || 'Block', location: o.location }))
       return [...commits, ...recs]
     }
@@ -1109,7 +1137,7 @@ export default function App() {
       onError: (err) => console.warn('[Bloom] location arrival watch:', err && (err.message || err.code)),
     })
     return stop
-  }, [loading, commitments, commitmentMeta, recurringTasksEnriched, recurringExceptions, completions, occStarted, occEnded])
+  }, [loading, commitments, commitmentMeta, recurringTasksEnriched, recurringExceptions, completions, occStartedAll, occEndedAll])
 
   // ── Persist helpers ──────────────────────────────────────────
   // Cloud write failures are surfaced instead of swallowed — otherwise a delete
@@ -2048,8 +2076,8 @@ export default function App() {
     color: commitmentMeta[c.id]?.color ?? null,
     icon: commitmentMeta[c.id]?.icon ?? null,
     location: commitmentMeta[c.id]?.location ?? null,
-    startedAt: commitmentMeta[c.id]?.startedAt ?? null,
-    endedAt: commitmentMeta[c.id]?.endedAt ?? null,
+    startedAt: placeByOcc[`${c.id}@${c.date}`]?.start ?? commitmentMeta[c.id]?.startedAt ?? null,
+    endedAt: placeByOcc[`${c.id}@${c.date}`] ? placeByOcc[`${c.id}@${c.date}`].end : (commitmentMeta[c.id]?.endedAt ?? null),
     block: commitmentMeta[c.id]?.block ?? false,
     routine: commitmentMeta[c.id]?.routine ?? null,
     autoComplete: commitmentMeta[c.id]?.autoComplete ?? false,
@@ -2083,8 +2111,8 @@ export default function App() {
     // map, and the operations Today/Week/Calendar share so all three stay in sync.
     recurringTasks: recurringTasksEnriched,
     recurringExceptions,
-    occStarted,
-    occEnded,
+    occStarted: occStartedAll,
+    occEnded: occEndedAll,
     addRecurringTask: addRecurringTaskFn,
     updateRecurringTask: updateRecurringTaskFn,
     deleteRecurringTask: deleteRecurringTaskFn,
