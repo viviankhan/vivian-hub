@@ -60,9 +60,12 @@ Deno.serve(async () => {
 
   // Due, not-yet-sent reminders, each joined to the subscription that queued it.
   // Bounded below by the cutoff: past that, a reminder is no longer delivered.
+  // The join names its foreign key: with more than one link between the two
+  // tables, an unnamed embed is ambiguous and the whole query fails, so no
+  // reminder goes out at all (this silently stopped reminders for 11 days).
   const { data: due, error } = await supabase
     .from('scheduled_pushes')
-    .select('device_id, tag, title, body, url, push_subscriptions!inner(subscription)')
+    .select('device_id, tag, title, body, url, push_subscriptions!scheduled_pushes_device_user_fkey!inner(subscription)')
     .lte('at', nowISO)
     .gte('at', cutoffISO)
     .eq('sent', false)
