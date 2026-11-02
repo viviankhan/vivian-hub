@@ -1,0 +1,105 @@
+name: Reminder health
+
+# Checks every 30 minutes that Bloom's background reminders are actually going
+# out (see PUSH_SETUP.md). If they aren't, it opens an issue assigned to you,
+# which GitHub emails you about; when they recover, it closes that issue.
+#
+# This exists because on Oct 22, 2026 send-reminders started failing on every
+# run while the scheduler kept reporting success, and nobody knew for 11 days.
+#
+# It reads reminder_health() (supabase_reminders_hardening.sql) with the same
+# service key the narrator uses.
+
+on:
+  schedule:
+    - cron: '17,47 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: reminder-health
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - id: health
+        env:
+          SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          if [ -z "$SUPABASE_SERVICE_ROLE_KEY" ] || [ -z "$SUPABASE_URL" ]; then
+            echo "::error::SUPABASE_SERVICE_ROLE_KEY or VITE_SUPABASE_URL secret is not set; can't check reminders."
+            exit 1
+          fi
+          curl -sS --fail-with-body --max-time 30 -X POST "$SUPABASE_URL/rest/v1/rpc/reminder_health" \
+            -H "apikey: $SUPABASE_SERVICE_ROLE_KEY" \
+            -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
+            -H 'Content-Type: application/json' -d '{}' > health.json \
+            || { echo '{"unreachable": true}' > health.json; }
+          cat health.json
+          python3 - <<'EOF'
+          import json, os
+          h = json.load(open('health.json'))
+          problems = []
+          if h.get('unreachable'):
+              problems.append("Couldn't reach Supabase to check reminder health.")
+          else:
+              if not h.get('cron_active'):
+                  problems.append('The once-a-minute reminder schedule (bloom-send-reminders) is missing or paused.')
+              runs, ok, bad = h.get('runs', 0), h.get('ok_runs', 0), h.get('error_runs', 0)
+              if runs == 0:
+                  problems.append('The reminder sender has not been called in the last 30 minutes.')
+              elif ok == 0 or bad > runs / 2:
+                  problems.append(f'{bad} of the last {runs} reminder-sender runs failed.'
+                                  + (f" Latest error: `{h['last_error']}`" if h.get('last_error') else ''))
+              if h.get('stuck', 0) > 0:
+                  problems.append(f"{h['stuck']} reminder(s) are past due and still unsent.")
+              if h.get('failed_pushes', 0) >= 3:
+                  problems.append(f"{h['failed_pushes']} pushes were rejected in the last 30 minutes (often a VAPID key problem).")
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as out:
+              out.write(f"healthy={'false' if problems else 'true'}\n")
+              out.write('problems<<__END__\n' + '\n'.join(f'- {p}' for p in problems) + '\n__END__\n')
+              out.write('raw<<__END__\n' + json.dumps(h, indent=2) + '\n__END__\n')
+          EOF
+
+      - uses: actions/github-script@v7
+        env:
+          HEALTHY: ${{ steps.health.outputs.healthy }}
+          PROBLEMS: ${{ steps.health.outputs.problems }}
+          RAW: ${{ steps.health.outputs.raw }}
+        with:
+          script: |
+            const title = "Bloom reminders aren't going out"
+            const { owner, repo } = context.repo
+            const open = (await github.rest.issues.listForRepo({ owner, repo, state: 'open', per_page: 100 }))
+              .data.find(i => i.title === title && !i.pull_request)
+            const run = `${context.serverUrl}/${owner}/${repo}/actions/runs/${context.runId}`
+            if (process.env.HEALTHY === 'true') {
+              if (open) {
+                await github.rest.issues.createComment({ owner, repo, issue_number: open.number,
+                  body: `Reminders are going out again ([check](${run})). Closing.` })
+                await github.rest.issues.update({ owner, repo, issue_number: open.number, state: 'closed', state_reason: 'completed' })
+              }
+              return
+            }
+            if (open) return  // already told you; don't pile on
+            await github.rest.issues.create({
+              owner, repo, title, assignees: [owner],
+              body: [
+                'Background reminders from Bloom are not being delivered. Until this is fixed, ' +
+                'reminders only fire while Bloom is open, so put anything important in your phone calendar too.',
+                '', '**What the check found**', process.env.PROBLEMS, '',
+                '**Where to look**',
+                '- Supabase → Edge Functions → send-reminders → Logs',
+                "- SQL Editor: `select reminder_health();` and `select * from net._http_response order by created desc limit 5;`",
+                '', `<details><summary>Raw check</summary>\n\n\`\`\`json\n${process.env.RAW}\n\`\`\`\n</details>`,
+                '', `[Check run](${run}). This issue closes itself when reminders recover.`,
+              ].join('\n'),
+            })
+            core.setFailed('Reminders are not going out')

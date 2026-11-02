@@ -136,3 +136,20 @@ reminders — each one registers itself.
   each run prints a line like `{ considered, sent, gone, failed }`. `considered:
   0` means nothing was due yet; `failed` usually means a VAPID secret is
   mistyped.
+
+---
+
+## Hardening (Nov 2026)
+
+Run `supabase_reminders_hardening.sql` in the SQL Editor once (safe to re-run).
+It makes each reminder send exactly once even if two runs overlap, gives the
+scheduler 30 s to hear back from the function, and adds `reminder_health()`.
+
+Then redeploy `send-reminders` from `supabase/functions/send-reminders/index.ts`
+(it uses the new `claim_due_pushes`). **Always redeploy after changing that
+file** — a fix that sits in the repo doesn't run until it's deployed.
+
+The **Reminder health** GitHub Action checks every 30 minutes and opens an issue
+assigned to you (GitHub emails you) when reminders aren't going out; it closes
+the issue once they recover. It uses the `SUPABASE_SERVICE_ROLE_KEY` and
+`VITE_SUPABASE_URL` repo secrets. Run it by hand from the Actions tab any time.
