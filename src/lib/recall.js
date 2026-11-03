@@ -27,14 +27,24 @@ const DAY = 86400000
 
 // ── Question shape ─────────────────────────────────────────────
 
-const COMMAND_START = /^(add|make|create|schedule|put|move|reschedule|remind|set|book|mark|check|uncheck|delete|remove|plan)\b/i
-const QUESTION_START = /^(how|what|whats|what's|when|where|did|do|does|was|were|have|has|had|am|is|are|why|which|who|tell me|show me|remind me what|list|any)\b/i
+const COMMAND_START = /^(add|make|create|schedule|put|move|reschedule|remind|set|book|mark|check|uncheck|delete|remove|plan|log|record|track|please)\b/i
+const QUESTION_START = /^(how|what|whats|what's|when|where|did|do|does|was|were|have|has|had|am|is|are|why|which|who|tell me|show me|list|any)\b/i
+// Asking the assistant to *do* something, however it's phrased.
+const REQUEST = /\b(can you|could you|would you|will you|please|help me|i want you to|i need you to|reflect|log|record|add|put|schedule|enter|fill in|backfill|make (?:a|an|the|some|these|them|it)|create)\b/i
 // Is this a question about me (to answer), rather than something to plan?
+// Only text that *starts* as a question counts: "I worked 10–7… can you
+// reflect that?" ends in a question mark but is something to log.
 export function isRecallQuestion(text) {
   const t = String(text || '').trim()
-  if (!t || COMMAND_START.test(t)) return false
-  return QUESTION_START.test(t) || /\?\s*$/.test(t)
+  if (!t || COMMAND_START.test(t) || REQUEST.test(t)) return false
+  return QUESTION_START.test(t)
 }
+
+// Does the request describe things you already did ("I worked 10–9 Tuesday",
+// "I pulled late nights last week")? Tasks planned from it that are already
+// over are logged as done, so they count toward your hours.
+const PAST_SELF = /\b(?:i|we)\s+(?:\w+\s+){0,2}?(?:(?!(?:need|feed|seed|speed|proceed|exceed|succeed|bleed|breed)\b)\w+ed|went|did|had|was|were|spent|ran|took|got|met|made|ate|slept|saw|left|came|drove|wrote|read|taught|pulled|kept|sat|stood|built|began|fought|felt|led|lost|paid|sent|thought|told|won|stayed)\b/i
+export function isLogOfPast(text) { return PAST_SELF.test(String(text || '')) }
 
 // ── Words ──────────────────────────────────────────────────────
 

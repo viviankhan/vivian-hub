@@ -25,7 +25,7 @@ import {
   markAllSeen, itemLabel,
 } from '../lib/assistantQueue.js'
 import { trackingEnabled, setTracking } from '../lib/visits.js'
-import { isRecallQuestion, answerRecall } from '../lib/recall.js'
+import { isRecallQuestion, answerRecall, isLogOfPast } from '../lib/recall.js'
 import { gatherRecallData } from '../lib/recallData.js'
 import { PhotoStrip } from './PhotoAttach.jsx'
 
@@ -672,7 +672,7 @@ export default function AiAssistant({ categories = [], tasks = [], onApply, onCl
   }
 
   const accept = (item) => {
-    onApply((item.plan && item.plan.actions) || [])
+    onApply((item.plan && item.plan.actions) || [], { loggedPast: isLogOfPast(item.command) })
     removeItem(item.id)
     if (getQueue().length === 0) onClose()
   }
