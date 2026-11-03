@@ -109,6 +109,8 @@ function fmtMins(m) {
   const d = Math.floor(h / 24), rh = h % 24
   return rh ? `${d}d ${rh}h` : `${d}d`
 }
+// Totals of work read in hours ("47h 25m"), never rolled up into days.
+function fmtHours(m) { m = Math.round(m); const h = Math.floor(m / 60), r = m % 60; return h ? (r ? `${h}h ${r}m` : `${h}h`) : `${r} min` }
 function cap(s) { return s ? s[0].toUpperCase() + s.slice(1) : s }
 function clip(s, n = 220) { s = String(s || '').trim(); return s.length > n ? s.slice(0, n - 1).trimEnd() + '…' : s }
 const stripTime = (label) => String(label || '').replace(/^\d{1,2}:\d{2}\s*[AP]M\s*—\s*/i, '').trim()
@@ -319,6 +321,111 @@ function answerTopic(q, data, moments, now) {
   return { text, items: hits.slice(0, 8).map(m => itemOf(m, now)) }
 }
 
+// ── What you did: "what did I do for work last week?" ──────────
+
+// Word families, so "work" finds a label called Career or a block called Lab.
+const FAMILIES = [
+  ['work', 'job', 'career', 'office', 'workplace', 'lab', 'shift', 'clinic', 'research'],
+  ['school', 'class', 'classes', 'course', 'study', 'studying', 'homework', 'campus', 'university', 'college'],
+  ['home', 'house', 'chores', 'apartment'],
+  ['gym', 'workout', 'exercise', 'fitness', 'training'],
+]
+function family(word) {
+  const w = stem(word)
+  const f = FAMILIES.find(f => f.some(x => stem(x) === w))
+  return f ? f.map(stem) : [w]
+}
+function matchesTarget(text, targetWords) {
+  if (!targetWords.length) return false
+  const have = new Set(stems(text))
+  return targetWords.every(w => family(w).some(x => have.has(x)))
+}
+const DID_DO = /\bwhat (?:did|have|had) (?:i|we) (?:do|did|done|get done|got done|work on|worked on|accomplish|accomplished|finish|finished|spend (?:my )?time on)\b|\bwhat i (?:did|got done|worked on)\b/
+export function isDidDoQuestion(q) { return DID_DO.test(norm(q)) }
+
+const hhmmToMin = (t) => { const [h, m] = String(t || '').split(':').map(Number); return Number.isFinite(h) ? h * 60 + (m || 0) : null }
+
+// The done tasks in [from, to), each { date, title, start, mins, label, text, place, blockNames }.
+export function doneTasks(data, from, to, now) {
+  const cats = new Map((data.categories || []).map(c => [c.id, c.label || c.name || '']))
+  const out = []
+  const blocksOn = new Map()   // date → [{ name, start, end }]
+  const addBlock = (date, name, time, dur) => {
+    const st = hhmmToMin(time); if (st == null || !dur) return
+    if (!blocksOn.has(date)) blocksOn.set(date, [])
+    blocksOn.get(date).push({ name, start: st, end: st + dur })
+  }
+  const keys = []
+  for (let t = startOfDay(from); t < to; t += DAY) keys.push(keyOf(t))
+  const rec = (data.recurring || [])
+  for (const k of keys) {
+    for (const o of recurringOccurrencesForDate(rec, k, data.exceptions || {})) if (o.block) addBlock(k, o.title, o._time, o._dur)
+  }
+  for (const c of data.commitments || []) if (c.block && c.date) addBlock(c.date, c.text || '', c.time, c.durationMins)
+
+  const blockNamesAt = (date, time, mins) => {
+    const st = hhmmToMin(time); if (st == null) return []
+    const en = st + (mins || 1)
+    return (blocksOn.get(date) || []).filter(b => st < b.end && en > b.start).map(b => b.name)
+  }
+  const nowKey = keyOf(now), nowMin = new Date(now).getHours() * 60 + new Date(now).getMinutes()
+  const isOver = (date, time, mins) => date < nowKey || (date === nowKey && hhmmToMin(time) != null && hhmmToMin(time) + (mins || 0) <= nowMin)
+  const startMs = (date, time) => dateOfKey(date) + (hhmmToMin(time) ?? 12 * 60) * 60000
+
+  for (const c of data.commitments || []) {
+    if (!c || c.block || !c.done || !c.date || !keys.includes(c.date)) continue
+    const blocks = blockNamesAt(c.date, c.time, c.durationMins)
+    const at = startMs(c.date, c.time)
+    out.push({ date: c.date, at, time: c.time || '', title: c.text || '', mins: c.durationMins || 0,
+      label: (c.cats && c.cats.length ? c.cats : [c.cat]).filter(Boolean).map(id => cats.get(id) || id).join(', '),
+      text: [c.description, (data.dayNotes || {})[`${c.date}_${c.id}`]?.text].filter(Boolean).join('\n'),
+      place: (c.location && c.location.name) || placeAt(data.stays || [], at), blocks })
+  }
+  for (const k of keys) {
+    for (const o of recurringOccurrencesForDate(rec, k, data.exceptions || {})) {
+      if (o.block) continue
+      const key = `${k}_${o.id}`
+      const rec0 = (data.completions || {})[key]
+      const blocks = blockNamesAt(k, o._time, o._dur)
+      const done = rec0 === true || (rec0 === undefined && (o.autoComplete || o.routine || blocks.length || (data.medIds || {})[o.id]) && isOver(k, o._time, o._dur))
+      if (!done) continue
+      const at = startMs(k, o._time)
+      out.push({ date: k, at, time: o._time || '', title: o.title || '', mins: o._dur || 0,
+        label: cats.get(o.cat) || o.cat || '', text: (data.dayNotes || {})[key]?.text || '',
+        place: placeAt(data.stays || [], at), blocks })
+    }
+  }
+  return out.sort((a, b) => a.at - b.at)
+}
+
+function answerDidDo(q, data, now) {
+  const nq = norm(q)
+  const { scope, rest } = takeScope(nq, now)
+  const range = scope || { from: startOfDay(now) - 6 * DAY, to: startOfDay(now) + DAY, label: 'in the last 7 days' }
+  const m = rest.match(/\b(?:for|at|in|on|with)\s+(.+)$/)
+  const targetWords = m ? topicWords(m[1].replace(/^(?:the|my)\s+/, '')) : []
+  let tasks = doneTasks(data, range.from, range.to, now)
+  if (targetWords.length) {
+    tasks = tasks.filter(t => matchesTarget(`${t.title} ${t.label} ${t.text}`, targetWords)
+      || t.blocks.some(b => matchesTarget(b, targetWords))
+      || (t.place && matchesTarget(t.place, targetWords)))
+  }
+  const what = targetWords.length ? ` for ${m[1].replace(/^(?:the|my)\s+/, '')}` : ''
+  if (!tasks.length) return { text: `I don’t see anything you finished${what} ${range.label}.`, note: 'A task counts once it’s ticked off (or ticks itself off inside a time block).' }
+  const mins = tasks.reduce((n, t) => n + (t.mins || 0), 0)
+  const days = new Set(tasks.map(t => t.date)).size
+  const fmtRange = (t) => t.time ? (t.mins ? `${fmtHHMM(t.time)}–${fmtTime(t.at + t.mins * 60000)}` : fmtHHMM(t.time)) : ''
+  return {
+    text: `${cap(range.label)} you finished ${tasks.length} thing${tasks.length > 1 ? 's' : ''}${what}${mins ? `, ${fmtHours(mins)} in all` : ''}, across ${days} day${days > 1 ? 's' : ''}.`,
+    // Newest day first; within a day, in the order it happened.
+    items: [...tasks].sort((a, b) => b.date.localeCompare(a.date) || a.at - b.at).slice(0, 40).map(t => ({
+      when: cap(fmtDay(t.at, now)), title: t.title,
+      meta: [fmtRange(t), t.mins ? fmtMins(t.mins) : '', t.label, t.place].filter(Boolean).join(' · '),
+      text: t.text, photos: [],
+    })),
+  }
+}
+
 // ── The router ─────────────────────────────────────────────────
 
 const MED_WORDS = /\b(med|meds|medication|medications|medicine|pill|pills|dose|doses|prescription|refill)\b/
@@ -330,6 +437,9 @@ export function answerRecall(question, data, now = Date.now()) {
   const q = String(question || '').trim()
   const nq = norm(q)
   const moments = buildMoments(data)
+
+  // What you did ("what did I do for work last week?") → the tasks themselves.
+  if (isDidDoQuestion(q)) return answerDidDo(q, data, now)
 
   // Time at a place ("how long was I at work?").
   if (parsePlaceQuestion(q, now)) {

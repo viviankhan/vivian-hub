@@ -103,6 +103,40 @@ console.log('\n— mood, and places —')
   ok('time at a place still works', /10h 30m today/.test(h.text), h.text)
 }
 
+console.log('\n— what did I do for work last week? —')
+{
+  // Last week = Mon Oct 26 – Sun Nov 1. A Work block on weekdays, a labelled
+  // Clock In inside it, and the four late days logged as plain done tasks.
+  const wk = {
+    ...data,
+    medIds: {},
+    categories: [{ id: 'career', label: 'Career' }, { id: 'personal', label: 'Personal' }],
+    recurring: [
+      { id: 'blk', label: '08:20 — Work', days: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'], startDate: '2026-10-01', freq: 'weekly', interval: 1, block: true, durationMins: 510 },
+      { id: 'clock', label: '09:00 — Clock In', days: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'], startDate: '2026-10-01', freq: 'weekly', interval: 1, cat: 'career', durationMins: 5 },
+      { id: 'groc', label: '19:00 — Groceries', days: [], startDate: '2026-10-01', freq: 'daily', interval: 1, cat: 'personal', durationMins: 30 },
+    ],
+    completions: { '2026-10-27_groc': true },
+    commitments: [
+      { id: 'c1', text: 'Design the experiment', date: '2026-10-27', time: '10:00', durationMins: 660, done: true },
+      { id: 'c2', text: 'Make comps', date: '2026-10-28', time: '09:00', durationMins: 720, done: true },
+      { id: 'c3', text: 'Stain cells', date: '2026-10-29', time: '10:00', durationMins: 780, done: true, description: 'Antibody panel ran long' },
+      { id: 'c4', text: 'Run flow', date: '2026-10-30', time: '09:00', durationMins: 660, done: true },
+      { id: 'c5', text: 'Call mom', date: '2026-10-29', time: '22:30', durationMins: 20, done: true },
+    ],
+  }
+  ok('“what did I do…” is a question to answer', R.isRecallQuestion('What did I do for work last week?'))
+  const a = R.answerRecall('What did I do for work last week?', wk, NOW)
+  const titles = (a.items || []).map(i => i.title)
+  ok('the four late days pop up', ['Design the experiment', 'Make comps', 'Stain cells', 'Run flow'].every(t => titles.includes(t)), JSON.stringify(titles))
+  ok('Clock In counts (labelled Career, inside the Work block)', titles.filter(t => t === 'Clock In').length === 5, JSON.stringify(titles))
+  ok('a 10:30pm call and groceries do not', !titles.includes('Call mom') && !titles.includes('Groceries'), JSON.stringify(titles))
+  ok('with the total and the notes', /Last week you finished 9 things for work, 47h 25m in all, across 5 days/.test(a.text) && a.items.some(i => /Antibody panel/.test(i.text)), a.text)
+  ok('items show times and length', a.items.some(i => i.title === 'Stain cells' && /10:00 AM–11:00 PM · 13h/.test(i.meta)), JSON.stringify(a.items.find(i => i.title === 'Stain cells')))
+  const all = R.answerRecall('what did I get done last week?', wk, NOW)
+  ok('without “for work” it lists everything', (all.items || []).some(i => i.title === 'Groceries') && all.items.some(i => i.title === 'Call mom'))
+}
+
 console.log('\n— nothing found —')
 ok('says so plainly', /couldn’t find anything about “kayak”/.test(A('how did kayaking feel?').text), A('how did kayaking feel?').text)
 
