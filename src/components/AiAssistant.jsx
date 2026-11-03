@@ -795,7 +795,7 @@ export default function AiAssistant({ categories = [], tasks = [], onApply, onCl
               style={{ width:'100%', marginTop:12, padding:'14px', borderRadius:14, border:'none',
                 background:(!canPlan||preparing>0)?'#E1E1E6':'var(--forest)', color:(!canPlan||preparing>0)?'#9CA3AF':'var(--green-light)',
                 cursor:(!canPlan||preparing>0)?'default':'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:700, fontSize:15 }}>
-              {(!photos.length && !docs.length && isPlaceQuestion(command)) ? 'Ask' : 'Plan it'}
+              Plan it
             </button>
             <div style={{ fontSize:10.5, color:'var(--muted)', marginTop:10, textAlign:'center', lineHeight:1.5 }}>
               Uses a free AI model — your text, any photos or files you add, and a list of your task titles are sent to Google Gemini. Photos are shrunk on your phone first; a Word file is turned into text first. They wait in this device’s queue until you accept, delete, or clear them — never in your planner. Nothing changes until you tap Accept.
