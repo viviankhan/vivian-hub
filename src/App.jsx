@@ -75,6 +75,7 @@ import { isOnline } from './lib/offline.js'
 import { ensureBackgroundPush, syncScheduledPushesDebounced } from './lib/push.js'
 import { buildLabelModel, historyFromData } from './lib/predictLabel.js'
 import { geolocationSupported, watchArrivals } from './lib/geofence.js'
+import { startVisitTracking, setExtraPlaces } from './lib/visits.js'
 import { Glyph } from './lib/glyphs.jsx'
 import Customization from './components/Customization.jsx'
 import { getFontPref, setFontPref, applyFont, getThemePref, setThemePref, applyTheme,
@@ -1074,6 +1075,19 @@ export default function App() {
     }, { onError: (err) => console.warn('[Bloom] location arrival watch:', err && (err.message || err.code)) })
     return stop
   }, [loading, commitments, commitmentMeta, recurringTasksEnriched, recurringExceptions, completions, occStarted])
+
+  // Remember where you spend time (only while Bloom is open, only on this
+  // device) so the assistant can answer "how long was I at work?". Task places
+  // count as places too, so a stay at one is filed under its name.
+  useEffect(() => {
+    if (loading) return
+    const locs = [
+      ...Object.values(commitmentMeta || {}).map(m => m && m.location),
+      ...(recurringTasksEnriched || []).map(r => r && r.location),
+    ].filter(l => l && l.name && Number.isFinite(l.lat) && Number.isFinite(l.lng))
+    setExtraPlaces(locs)
+    startVisitTracking()
+  }, [loading, commitmentMeta, recurringTasksEnriched])
 
   // ── Persist helpers ──────────────────────────────────────────
   // Cloud write failures are surfaced instead of swallowed — otherwise a delete

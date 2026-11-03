@@ -24,6 +24,7 @@ import {
   STATUS, getQueue, subscribe, loadQueue, enqueue, updatePlan, removeItem, clearQueue, retry,
   markAllSeen, itemLabel,
 } from '../lib/assistantQueue.js'
+import { isPlaceQuestion, answerPlaceQuestion, getVisits, knownPlaces, trackingEnabled, setTracking } from '../lib/visits.js'
 
 function fmt12(t) {
   if (!t) return ''
@@ -541,6 +542,10 @@ export default function AiAssistant({ categories = [], tasks = [], onApply, onCl
   const [loadingPhotos, setLoadingPhotos] = useState(0)
   const [docs, setDocs]       = useState([])     // { id, name, kind, data?, mimeType?, text?, truncated? }
   const [loadingDocs, setLoadingDocs] = useState(0)
+  // A "how long was I at…" question is answered right here, from the visit log
+  // on this device — never queued, never sent to the AI.
+  const [answer, setAnswer]   = useState(null)   // { q, text, note?, needsTracking? }
+  const [turningOn, setTurningOn] = useState(false)
   const fileRef = useRef(null)
   const docRef = useRef(null)
 
@@ -632,8 +637,24 @@ export default function AiAssistant({ categories = [], tasks = [], onApply, onCl
 
   // File the request and clear the box for the next one. The queue does the
   // waiting, so you don't have to.
+  const askPlace = async (q) => {
+    const tracking = await trackingEnabled()
+    const a = answerPlaceQuestion(q, { stays: getVisits(), places: knownPlaces(), now: Date.now(), tracking })
+    if (a) setAnswer({ q, ...a })
+  }
+  const turnOnTracking = async () => {
+    setTurningOn(true)
+    try { await setTracking(true); if (answer) await askPlace(answer.q) }
+    catch (e) { setErr(e && e.code === 1 ? 'Location is blocked for Bloom — allow it in your browser/device settings, then try again.' : 'Couldn’t get your location just now. Try again in a moment.') }
+    finally { setTurningOn(false) }
+  }
+
   const plated = () => {
     if (!canPlan || preparing) return
+    if (!photos.length && !docs.length && isPlaceQuestion(command)) {
+      askPlace(command.trim()); setCommand(''); setErr('')
+      return
+    }
     enqueue({ command: command.trim(), photos, docs })
     setCommand(''); setPhotos([]); setDocs([]); setErr('')
     setJustQueued(true)
@@ -664,7 +685,7 @@ export default function AiAssistant({ categories = [], tasks = [], onApply, onCl
           </div>
           <div style={{ fontSize:20, fontWeight:800, color:'#17313f', marginTop:8, fontFamily:'DM Sans,sans-serif' }}>✨ Tell me what to do</div>
           <div style={{ fontSize:12.5, color:'rgba(0,0,0,.62)', marginTop:4, lineHeight:1.5 }}>
-            Add a task, paste an event, add a photo of one, attach a syllabus or agenda (PDF or Word), or give an instruction about your existing tasks. It goes into your queue — close this anytime, and review the suggestions when they’re ready.
+            Add a task, paste an event, add a photo of one, attach a syllabus or agenda (PDF or Word), give an instruction about your existing tasks, or ask how long you were somewhere (“How long have I been here?”). Requests go into your queue — close this anytime, and review the suggestions when they’re ready.
           </div>
           <div style={{ display:'flex', gap:4, marginTop:12, background:'rgba(255,255,255,.35)', borderRadius:12, padding:3 }}>
             <button type="button" style={tab(view === 'new')} onClick={() => setView('new')}>New request</button>
@@ -676,9 +697,30 @@ export default function AiAssistant({ categories = [], tasks = [], onApply, onCl
 
         <div style={{ padding:'16px 14px calc(20px + env(safe-area-inset-bottom))' }}>
           {view === 'new' ? (<>
+            {answer && (
+              <div data-testid="assistant-place-answer" style={{ background:'white', border:'1px solid var(--border)', borderRadius:14, padding:'12px 14px', marginBottom:12 }}>
+                <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', gap:8 }}>
+                  <div style={{ fontSize:11.5, color:'var(--muted)', fontStyle:'italic' }}>“{answer.q}”</div>
+                  <button type="button" onClick={() => setAnswer(null)} aria-label="Dismiss answer"
+                    style={{ border:'none', background:'transparent', color:'var(--muted)', fontSize:13, cursor:'pointer', padding:0, lineHeight:1 }}>✕</button>
+                </div>
+                <div style={{ display:'flex', gap:8, alignItems:'flex-start', marginTop:6 }}>
+                  <Icon value="glyph:pin" size={16} color="var(--teal)" />
+                  <div style={{ fontSize:14.5, color:'var(--text)', lineHeight:1.5, fontWeight:600 }}>{answer.text}</div>
+                </div>
+                {answer.note && <div style={{ fontSize:11.5, color:'var(--muted)', marginTop:8, lineHeight:1.5 }}>{answer.note}</div>}
+                {answer.needsTracking && (
+                  <button type="button" onClick={turnOnTracking} disabled={turningOn}
+                    style={{ marginTop:10, padding:'9px 14px', borderRadius:12, border:'none', background:'var(--forest)', color:'var(--green-light)', fontFamily:'DM Sans,sans-serif', fontWeight:700, fontSize:13, cursor:'pointer' }}>
+                    {turningOn ? 'Turning on…' : 'Remember where I spend time'}
+                  </button>
+                )}
+                <div style={{ fontSize:10.5, color:'var(--muted)', marginTop:8 }}>Answered on this device. Your locations aren’t sent anywhere.</div>
+              </div>
+            )}
             <div style={{ position:'relative' }}>
               <textarea value={command} onChange={e => setCommand(e.target.value)} onPaste={onPaste} autoFocus
-                placeholder={"e.g. Add the Aug 17 assignments to my Orgo task’s subtasks and check them off. Or: Dentist next Tue 3pm, bring insurance card. Or attach a syllabus below and say “just the exams and due dates”."}
+                placeholder={"e.g. Add the Aug 17 assignments to my Orgo task’s subtasks and check them off. Or: Dentist next Tue 3pm, bring insurance card. Or attach a syllabus below and say “just the exams and due dates”. Or ask: How long was I at work?"}
                 style={{ width:'100%', fontSize:14, padding:'12px 14px', borderRadius:12, border:'1px solid var(--border)', fontFamily:'DM Sans,sans-serif', outline:'none', lineHeight:1.55, resize:'vertical', minHeight:140, background:'white', color:'var(--text)', boxSizing:'border-box' }} />
               {command && (
                 <button type="button" onClick={() => { setCommand(''); setErr('') }} aria-label="Clear"
@@ -753,7 +795,7 @@ export default function AiAssistant({ categories = [], tasks = [], onApply, onCl
               style={{ width:'100%', marginTop:12, padding:'14px', borderRadius:14, border:'none',
                 background:(!canPlan||preparing>0)?'#E1E1E6':'var(--forest)', color:(!canPlan||preparing>0)?'#9CA3AF':'var(--green-light)',
                 cursor:(!canPlan||preparing>0)?'default':'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:700, fontSize:15 }}>
-              Plan it
+              {(!photos.length && !docs.length && isPlaceQuestion(command)) ? 'Ask' : 'Plan it'}
             </button>
             <div style={{ fontSize:10.5, color:'var(--muted)', marginTop:10, textAlign:'center', lineHeight:1.5 }}>
               Uses a free AI model — your text, any photos or files you add, and a list of your task titles are sent to Google Gemini. Photos are shrunk on your phone first; a Word file is turned into text first. They wait in this device’s queue until you accept, delete, or clear them — never in your planner. Nothing changes until you tap Accept.

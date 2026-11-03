@@ -30,6 +30,19 @@ dates", "only Day 2". A PDF is sent as the file itself, so Gemini reads its
 tables and even scanned pages; a Word file is turned into text in the browser
 first. Old `.doc` files can't be read — save them as `.docx` or PDF.
 
+**Or ask where your time went.** "How long was I at work?", "How long have I
+been here?", "How long was I at Roca climbing gym yesterday?", "How much time
+did I spend at the gym this week?", "When did I get to work?". These questions
+are answered on the spot, on your phone. They never go into the queue and never
+reach the AI. The answers come from **location memory** (Settings → Location →
+*Remember where I spend time*), which keeps a log of your stays while Bloom is
+open, on this device only. A stay near a saved place, a recent place, or a
+task's place gets that place's name. Anywhere else is named by a one-off
+address lookup, so a gym you never saved can still be asked about by name.
+A web app can't see your location while it's closed, so a stay runs from the
+first to the last time Bloom saw you there. Two sightings of the same place up
+to 9 hours apart, with nothing elsewhere in between, count as one stay.
+
 **No waiting around.** Tapping **Plan it** files the request in a queue and the
 assistant reads it in the background — close the sheet or leave the app. The ✨
 button shows a count when suggestions are ready (plus a notification if

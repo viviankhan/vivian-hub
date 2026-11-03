@@ -12,6 +12,7 @@ import {
   geolocationSupported, geolocationPermission, getCurrentLocation,
   getGeoStatus, onGeoStatus, searchPlaces, reverseGeocode,
 } from '../lib/geofence.js'
+import { trackingEnabled, setTracking, getVisits, VISITS_EVENT } from '../lib/visits.js'
 import { getSavedPlaces, addSavedPlace, removeSavedPlace, onSavedPlaces } from '../lib/places.js'
 import {
   pushSupported, backgroundPushEnabled, enableBackgroundPush, disableBackgroundPush,
@@ -221,6 +222,28 @@ export default function NotificationsSettings({ events, commitments, recurring =
   const [geoPerm, setGeoPerm] = useState('unknown')  // granted | denied | prompt | unknown
   const [geoStatus, setGeoStatus] = useState(() => getGeoStatus())
   const [geoBusy, setGeoBusy] = useState(false)
+  // Location memory — where you spend time, for "how long was I at work?".
+  const [memOn, setMemOn] = useState(false)
+  const [memCount, setMemCount] = useState(0)
+  const [memBusy, setMemBusy] = useState(false)
+  const [memErr, setMemErr] = useState('')
+  useEffect(() => {
+    const sync = () => { trackingEnabled().then(setMemOn).catch(() => {}); setMemCount(getVisits().length) }
+    sync()
+    window.addEventListener(VISITS_EVENT, sync)
+    return () => window.removeEventListener(VISITS_EVENT, sync)
+  }, [])
+  const toggleMemory = async () => {
+    setMemBusy(true); setMemErr('')
+    try { await setTracking(!memOn); setMemOn(!memOn); if (!memOn) setGeoPerm('granted') }
+    catch (e) { setMemErr(e && e.code === 1 ? 'Location is blocked for Bloom — allow it in your device settings first.' : 'Couldn’t get your location just now. Try again.') }
+    finally { setMemBusy(false) }
+  }
+  const clearMemory = () => {
+    if (!confirm('Forget every place Bloom has remembered you at on this device?')) return
+    try { localStorage.removeItem('bloom_visits') } catch {}
+    try { window.dispatchEvent(new Event(VISITS_EVENT)) } catch {}
+  }
   useEffect(() => {
     if (!geoOk) return
     let live = true
@@ -491,6 +514,27 @@ export default function NotificationsSettings({ events, commitments, recurring =
                 ? `${locatedCount} task${locatedCount > 1 ? 's have' : ' has'} a place set — Bloom is watching for ${locatedCount > 1 ? 'them' : 'it'} while it's open.`
                 : 'No tasks have a place yet. Add one from a task’s “Location” option to use this.'}
             </div>
+            <div style={{ borderTop:'1px solid var(--border)', marginTop:12, paddingTop:12 }}>
+              <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:12 }}>
+                <div>
+                  <div style={{ fontSize:12.5, color:'var(--text)', fontWeight:600 }}>Remember where I spend time</div>
+                  <div style={{ fontSize:11, color:'var(--muted)', marginTop:2, lineHeight:1.5 }}>
+                    So you can ask the ✨ assistant “How long was I at work?” or “How long have I been here?”. Kept only on this device.
+                  </div>
+                </div>
+                <button onClick={toggleMemory} disabled={memBusy} role="switch" aria-checked={memOn} data-testid="visit-memory-toggle"
+                  style={{ ...btn(!memOn), flexShrink:0, background: memOn ? 'white' : 'var(--forest)', color: memOn ? 'var(--teal)' : 'var(--green-light)', border: memOn ? '1px solid var(--teal)' : 'none' }}>
+                  {memBusy ? '…' : memOn ? 'On' : 'Turn on'}
+                </button>
+              </div>
+              {memErr && <div style={{ fontSize:11.5, color:'#B45309', background:'#FEF3C7', borderRadius:8, padding:'8px 10px', marginTop:8 }}>{memErr}</div>}
+              {memCount > 0 && (
+                <div style={{ fontSize:11, color:'var(--muted)', marginTop:6 }}>
+                  {memCount} visit{memCount > 1 ? 's' : ''} remembered · <button onClick={clearMemory} style={{ border:'none', background:'none', padding:0, color:'#B42318', fontSize:11, cursor:'pointer', textDecoration:'underline' }}>Forget them</button>
+                </div>
+              )}
+            </div>
+
             <div style={{ fontSize:11, color:'var(--muted)', marginTop:6, lineHeight:1.6 }}>
               Arrivals are detected only while Bloom is open (a web app can’t track location in the background), so it starts a located task the moment you open Bloom after getting there.
             </div>
