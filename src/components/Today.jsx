@@ -1300,6 +1300,10 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
     try { return JSON.parse(localStorage.getItem('vivian_timeshift_'+todayKey())||'{}') } catch { return {} }
   })
 
+  // Tell the reminders when this day's shifted times or removed tasks change,
+  // so a task pulled to 9:01 isn't still announced at its usual 9:35.
+  useEffect(() => { try { window.dispatchEvent(new Event('bloom-day-edits')) } catch {} }, [timeOverrides, deleted])
+
   // The clock. `now` moves the progress marker and re-derives current/overdue;
   // the DAY has to move with it. Left open overnight the timeline used to still
   // be showing yesterday in the morning — and worse than looking wrong, every

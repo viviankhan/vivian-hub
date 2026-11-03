@@ -953,22 +953,38 @@ export default function App() {
   // carries its date so every day's instance fires once; the leadId is the
   // template so per-item reminder overrides still apply. Completed instances
   // and skipped occurrences are dropped.
+  // Today keeps a day's shifted times and removed tasks per device
+  // (vivian_timeshift_<date>, vivian_deleted_<date>) and announces changes, so
+  // reminders follow the day as it actually is — not the series' usual time.
+  const [dayEditsVer, setDayEditsVer] = useState(0)
+  useEffect(() => {
+    const h = () => setDayEditsVer(v => v + 1)
+    window.addEventListener('bloom-day-edits', h)
+    return () => window.removeEventListener('bloom-day-edits', h)
+  }, [])
   const recurringReminderItems = useMemo(() => {
     const enriched = recurringTaskRows.map(t => ({ ...t, ...(recurringMeta[t.id] || {}) }))
+    const readDay = (k, fb) => { try { return JSON.parse(localStorage.getItem(k) || 'null') ?? fb } catch { return fb } }
     const out = []
     const base = new Date()
     for (let d = 0; d < 8; d++) {
       const day = new Date(base.getFullYear(), base.getMonth(), base.getDate() + d)
       const key = `${day.getFullYear()}-${String(day.getMonth()+1).padStart(2,'0')}-${String(day.getDate()).padStart(2,'0')}`
+      const shifts = readDay('vivian_timeshift_' + key, {})
+      const removed = new Set(readDay('vivian_deleted_' + key, []))
       for (const o of recurringOccurrencesForDate(enriched, key, recurringExceptions)) {
         if (!o._time) continue                          // only timed tasks remind
         if (o.block) continue                           // time blocks aren't tasks
         if (completions[`${key}_${o.id}`]) continue     // already done that day
-        out.push({ id: `rec:${o.id}@${key}`, leadId: o.id, date: key, time: o._time, text: o.title || o.text || 'Task' })
+        if (removed.has(o.id)) continue                 // taken off that day (or pushed to the next)
+        // Shifted on Today → remind at the shifted time.
+        const ov = shifts[o.id]
+        const time = Number.isFinite(ov) ? `${String(Math.floor(ov / 60)).padStart(2, '0')}:${String(ov % 60).padStart(2, '0')}` : o._time
+        out.push({ id: `rec:${o.id}@${key}`, leadId: o.id, date: key, time, text: o.title || o.text || 'Task' })
       }
     }
     return out
-  }, [recurringTaskRows, recurringMeta, recurringExceptions, completions])
+  }, [recurringTaskRows, recurringMeta, recurringExceptions, completions, dayEditsVer])
 
   // How many open tasks carry a place — shown in Settings so the user can see
   // whether location arrivals have anything to act on.
