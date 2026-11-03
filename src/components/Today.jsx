@@ -609,9 +609,12 @@ function BlockBand({ seg, onEdit, onAdd, onCollapse, onToggle = null, checked = 
 //  • active — now is inside it: the time counts down to what's LEFT.
 //  • past   — now is beyond it (or a past day): it becomes "Took a/an X break",
 //    muted, no Add Task (the moment has gone by with nothing scheduled).
-function GapRow({ mins, phase = 'future', remaining = mins, prevColor, nextColor, routineTint, routineOpacity = 0.5, outerTints = null, onAdd, onStartNow = null, startLabel = '' }) {
+function GapRow({ mins, phase = 'future', remaining = mins, spanMins = mins, prevColor, nextColor, routineTint, routineOpacity = 0.5, outerTints = null, onAdd, onStartNow = null, startLabel = '' }) {
   // Proportional to real clock time, on the same scale as tasks and bands.
-  const h = Math.max(18, Math.round(spanHeight(mins)))
+  // `spanMins` is the part of the break this row stands for: a running break
+  // is drawn as two rows — the stretch already gone above "now", the time
+  // left below it — so the now-line sits where the clock actually is.
+  const h = Math.max(phase === 'elapsed' ? 6 : 18, Math.round(spanHeight(spanMins)))
   const top = prevColor || '#C9C9D3'
   const bot = nextColor || top
   // The connector reads as a bridge between the two tasks: its dashes blend
@@ -621,6 +624,7 @@ function GapRow({ mins, phase = 'future', remaining = mins, prevColor, nextColor
   const dashMask = 'repeating-linear-gradient(black 0 5px, transparent 5px 11px)'
   const isPast   = phase === 'past'
   const isActive = phase === 'active'
+  const isElapsed = phase === 'elapsed'   // the gone-by top of a running break: just the line
   // While the break is running, the shown length is the time still LEFT (so it
   // ticks down); otherwise it's the whole break.
   const shownMins = isActive ? Math.max(1, remaining) : mins
@@ -643,7 +647,7 @@ function GapRow({ mins, phase = 'future', remaining = mins, prevColor, nextColor
     </button>
   )
   return (
-    <div className="today-gap" style={{ position:'relative', zIndex:0, display:'flex', gap:0, alignItems: compact?'center':'flex-start', opacity: isPast?0.6:1 }}>
+    <div className="today-gap" style={{ position:'relative', zIndex:0, display:'flex', gap:0, alignItems: compact?'center':'flex-start', opacity: (isPast || isElapsed)?0.6:1 }}>
       {/* Continue a routine's film through the gap between two same-routine
           tasks, square-edged so it butts flush against the pills above/below. */}
       <OuterFilms tints={outerTints} />
@@ -654,7 +658,7 @@ function GapRow({ mins, phase = 'future', remaining = mins, prevColor, nextColor
       <div style={{ width:52, flexShrink:0, display:'flex', justifyContent:'center' }}>
         <div style={{ width:3, minHeight:h, borderRadius:3, background:`linear-gradient(to bottom, ${top}, ${bot})`, WebkitMask:dashMask, mask:dashMask }} />
       </div>
-      {isPast ? (
+      {isElapsed ? null : isPast ? (
         <div style={{ flex:1, minWidth:0, paddingLeft:10, display:'flex', alignItems:'center', gap:7 }}>
           <span style={{ display:'flex', flexShrink:0 }}><Icon value="glyph:clock" size={15} color="#9AA6B2" /></span>
           <span style={{ fontSize:12.5, color:'var(--muted)', whiteSpace:'nowrap' }}>Took {artForMins(mins)} <b>{durLabel}</b> break</span>
@@ -2733,6 +2737,24 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
           // While the break is live, let the upcoming task be pulled forward and
           // started now — but only a real, movable, still-open timed task.
           const canStart = upcoming && upcoming._mins != null && !INFLEXIBLE_TAGS.has(upcoming.tag) && !effectiveDone(upcoming)
+          // "Now" is inside this break: draw the part already gone, then the
+          // now-line, then what's left — so the line (and the blob that rides
+          // it) sits 44 minutes above the next task, not three hours.
+          if (phase === 'active' && wantNow && !nowState.done) {
+            nowState.done = true
+            const gone = now - gapStart
+            return [
+              <GapRow key={'gap-gone-'+gapStart} mins={g} phase="elapsed" spanMins={gone}
+                prevColor={cur.color} nextColor={cur.color}
+                routineTint={tint || null} routineOpacity={tint ? BLOCK_FILM_OPACITY : 0.5} outerTints={outerTintsOf(holder)} />,
+              <NowMarker key={'now-gap-'+gapStart} now={now} bandTint={tint || null} bandOpacity={BLOCK_FILM_OPACITY} outerTints={outerTintsOf(holder)} />,
+              <GapRow key={'gap-'+cur.end+'-'+startMins} mins={g} phase={phase} remaining={remaining} spanMins={remaining}
+                prevColor={cur.color} nextColor={nextColor}
+                routineTint={tint || null} routineOpacity={tint ? BLOCK_FILM_OPACITY : 0.5} outerTints={outerTintsOf(holder)} onAdd={()=>addInGap(gapStart, gapEnd)}
+                onStartNow={canStart ? ()=>handleShiftToNow(upcoming) : null}
+                startLabel={upcoming ? (upcoming.title || stripTimePrefix(upcoming.label)) : ''} />,
+            ]
+          }
           return <GapRow key={'gap-'+cur.end+'-'+startMins} mins={g} phase={phase} remaining={remaining}
             prevColor={cur.color} nextColor={nextColor}
             routineTint={tint || null} routineOpacity={tint ? BLOCK_FILM_OPACITY : 0.5} outerTints={outerTintsOf(holder)} onAdd={()=>addInGap(gapStart, gapEnd)}
