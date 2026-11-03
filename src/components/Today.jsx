@@ -19,6 +19,10 @@ import ImportedCalendarCard from './ImportedCalendarCard.jsx'
 import { importedOn, buildImportedRows, importedKey } from '../lib/importedTasks.js'
 import { autoBlockIds } from '../lib/autoBlocks.js'
 import ColorSwatchRow from './ColorSwatchRow.jsx'
+import { MedAlerts } from './MedCare.jsx'
+import Journal from './Journal.jsx'
+import { useLifelogVersion } from './DayNote.jsx'
+import { isMedSync } from '../lib/lifelog.js'
 
 // Concentric-circle "focus" target, for the Focus Now button.
 function TargetIcon({ size = 13 }) {
@@ -1268,6 +1272,7 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
   const [addingTask,  setAddingTask]  = useState(false)
   const [addPreset,   setAddPreset]   = useState(null)  // {time, cat} when adding inside a block
   const [importRow,   setImportRow]   = useState(null)  // imported event being edited into the schedule
+  const [journalOpen, setJournalOpen] = useState(false) // 💭 thought journal sheet
   const [pasterOpen,  setPasterOpen]  = useState(false) // AI assistant sheet: false | 'new' | 'queue'
   const [aiToast,     setAiToast]     = useState(null)  // { label, count } when queued suggestions land
   const [expandedRoutines, setExpandedRoutines] = useState({})  // routineId → show its done tasks individually
@@ -1346,6 +1351,7 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
 
   const dateKey = viewDate
   const isToday = viewDate === today
+  useLifelogVersion()   // re-read once the medication list loads or changes
 
   // Per-day local collections (custom tasks, deletions, time overrides) are
   // keyed by date in localStorage — reload them whenever the viewed day
@@ -1564,6 +1570,12 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
   const isPastDay = viewDate < today
   const effectiveDone = (task) => {
     if (hasCompletionRecord(task)) return isDoneCheck(task.id, task.isCommitment)
+    // A medication counts as taken unless you un-tick it: from its time today
+    // (or all day, if it has none), and on every past day.
+    if (isMedSync(task.id)) {
+      if (isToday) return task._mins == null || now >= task._mins
+      return isPastDay
+    }
     // No record: a task auto-completes once its window has passed when it opts
     // in explicitly (task.autoComplete), belongs to a routine, or lives inside
     // a time block. The explicit flag lets tasks outside any routine do this too.
@@ -2629,6 +2641,7 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
         isDone={isImportedDone} onToggle={onToggleImported} onAdopt={onAdoptImported} onOpen={openImported}
         dayLabel={isToday ? 'today' : new Date(dateKey+'T12:00:00').toLocaleDateString('en-US',{weekday:'long',month:'short',day:'numeric'})} />
 
+      {isToday && <MedAlerts />}
       <div className={hasAnytime ? 'today-split' : undefined}>
       {/* Unscheduled tasks — top of the day on mobile, sidebar on desktop. */}
       {hasAnytime && (
@@ -2921,6 +2934,15 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
           )}
         </button>
       )}
+      {/* Thought journal, beside the ✨ button (always available — it's local). */}
+      <button onClick={()=>setJournalOpen(true)} className={`today-fab-journal${aiScheduleAvailable ? '' : ' solo'}`}
+        title="Thought journal" aria-label="Thought journal"
+        style={{position:'fixed',width:44,height:44,borderRadius:'50%',border:'none',
+          background:'linear-gradient(135deg,#F3D9A4,#E9C7D6)',color:'#3b2a17',fontSize:19,cursor:'pointer',
+          boxShadow:'0 4px 16px rgba(0,0,0,.22)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:100}}>
+        💭
+      </button>
+      {journalOpen && <Journal onClose={()=>setJournalOpen(false)} />}
       {aiToast && (
         <div className="aq-toast" role="status">
           <span>✨ {aiToast.count ? `${aiToast.count} suggestion${aiToast.count > 1 ? 's' : ''}` : 'Suggestions'} ready for “{aiToast.label}”</span>

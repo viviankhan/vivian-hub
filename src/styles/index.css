@@ -751,6 +751,9 @@ textarea { resize: vertical; min-height: 160px; line-height: 1.6; }
 /* Secondary "paste an event" button, stacked just above the + FAB. Centers
    align with the FAB so they read as one control stack. */
 .today-fab-ai { bottom: 88px; right: 28px; }
+/* 💭 journal sits beside ✨ (or in its place when the AI isn't set up). */
+.today-fab-journal { bottom: 88px; right: 80px; }
+.today-fab-journal.solo { right: 28px; }
 /* AI queue: a count of suggestions waiting, a soft ring while it's reading,
    and the "ready" toast. */
 .aq-badge {
@@ -797,6 +800,8 @@ textarea { resize: vertical; min-height: 160px; line-height: 1.6; }
   /* Lift the FAB above the bottom bar. */
   .today-fab { bottom: calc(92px + env(safe-area-inset-bottom)); right: 18px; }
   .today-fab-ai { bottom: calc(152px + env(safe-area-inset-bottom)); right: 22px; }
+  .today-fab-journal { bottom: calc(152px + env(safe-area-inset-bottom)); right: 74px; }
+  .today-fab-journal.solo { right: 22px; }
   /* Phones (portrait) get their own background choice, sized by viewport height
      so the scene reads instead of collapsing to a sliver at the bottom the way
      a width-scaled desktop scene does on a narrow screen. */
@@ -1951,6 +1956,12 @@ textarea { resize: vertical; min-height: 160px; line-height: 1.6; }
 
 /* Rail container — offset below the date header so markers ride the timeline. */
 .day-rail { position: absolute; left: 0; top: 158px; bottom: 12px; width: 54px; }
+/* When you opened Bloom: a hairline tick and its time on the rail's outer edge,
+   quiet enough to sit under the blob and every marker. */
+.rail-open { position: absolute; left: 0; width: 26px; height: 12px; margin-top: -6px; padding: 0; border: none; background: none; cursor: pointer; z-index: 6; display: flex; align-items: center; gap: 2px; }
+.rail-open-tick { width: 6px; height: 2px; border-radius: 1px; background: var(--muted); opacity: .55; flex-shrink: 0; }
+.rail-open-time { font-size: 8px; line-height: 1; color: var(--muted); opacity: .8; font-family: 'DM Sans', sans-serif; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.rail-open-tip { position: absolute; left: 30px; top: 50%; transform: translateY(-50%); z-index: 30; background: #17313f; color: #fff; font-size: 11.5px; font-family: 'DM Sans', sans-serif; padding: 6px 9px; border-radius: 9px; white-space: nowrap; box-shadow: 0 4px 14px rgba(0,0,0,.2); }
 @media (min-width: 760px) { .day-rail { top: 150px; } }
 
 /* ── "Where were you?" — the blob's absence nudge ─────────────────────

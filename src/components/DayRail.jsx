@@ -173,6 +173,7 @@ export default function DayRail({
   const [menu, setMenu] = useState(false)          // radial open
   const [sheet, setSheet] = useState(null)         // 'mood' | 'status' | 'catchup' | null
   const [moodDetail, setMoodDetail] = useState(null)   // a tapped cloud
+  const [openTip, setOpenTip] = useState(null)         // a tapped "opened at" tick
   // Timed mode: the sheets offer a time (and an end time) instead of stamping
   // "now". It is a remembered preference on today, and simply how a past day
   // works — there is no "now" back there to log against.
@@ -610,6 +611,33 @@ export default function DayRail({
             style={{ top: `${top * 100}%`, height: `${h * 100}%`, background: `linear-gradient(${col}, color-mix(in srgb, ${col} 45%, transparent))` }} />
         )
       })}
+
+      {/* When you opened Bloom — filled in passively from the presence
+          heartbeat (one visit per stretch you were here, joined across devices).
+          A small tick and its time on the rail's edge, under everything else;
+          a label that would collide with the one above is left off. */}
+      {(() => {
+        let lastPx = -Infinity
+        return getVisits()
+          .filter(([a]) => a >= dayStartMs && a < dayEndMs)
+          .map(([a, b]) => {
+            const frac = railFrac(a)
+            const px = frac * (railH || 600)
+            const showLabel = px - lastPx >= 16
+            if (showLabel) lastPx = px
+            const mins = Math.max(1, Math.round((b - a) / 60000))
+            const tip = `Opened Bloom at ${clockTime(a)} · here ${mins < 60 ? mins + ' min' : Math.floor(mins / 60) + 'h ' + (mins % 60) + 'm'}`
+            return (
+              <button key={'open' + a} className="rail-open" style={{ top: `${frac * 100}%` }}
+                title={tip} aria-label={tip} data-testid="rail-open"
+                onClick={(e) => { e.stopPropagation(); setOpenTip(openTip === a ? null : a) }}>
+                <span className="rail-open-tick" />
+                {showLabel && <span className="rail-open-time">{clockTime(a).replace(/\s?([AP])M$/, (m, x) => x.toLowerCase())}</span>}
+                {openTip === a && <span className="rail-open-tip" role="status">{tip}</span>}
+              </button>
+            )
+          })
+      })()}
 
       {/* Markers — mood clouds + status icons, fanned when they crowd. */}
       {markers.map(m => {

@@ -18,6 +18,7 @@ import { Glyph } from '../lib/glyphs.jsx'
 import Segmented, { useRememberedView } from './Segmented.jsx'
 import { useTimeframe, TimeframePicker } from './Timeframe.jsx'
 import MindBody from './WellnessInsights.jsx'
+import LifeCards from './LifeCards.jsx'
 import { computeEntries, filterByDates, aggregate, answerQuestion, fmtHours, decimalHours } from '../lib/insights.js'
 import { computeSkills, skillCoverage, skillTrend } from '../lib/skills.js'
 import { computeTopics } from '../lib/topics.js'
@@ -586,10 +587,11 @@ export default function Informatics({ commitments = [], recurringTasks = [], com
         )
       )}
 
-      {view === 'body' && (
+      {view === 'body' && (<>
         <MindBody checkins={wlCheckins} effects={effectList} episodes={wlEpisodes} log={log}
           days={days} rangeLabel={rangeLabel} phrase={inRange} series={series} summary={mood} fxRows={fxRows} />
-      )}
+        <LifeCards from={tf.from} to={tf.to} phrase={inRange} />
+      </>)}
     </div>
   )
 }

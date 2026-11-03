@@ -32,6 +32,7 @@ const PREF_KEYS = [
   'bloom_font', 'bloom_layout', 'bloom_summary', 'bloom_sound', 'bloom_effects',
   'bloom_saved_colors', 'vivian_duration_presets', 'bloom_recurring_view_filter',
   'bloom_saved_places', 'bloom_recent_places',
+  'bloom_visit_tracking',   // remember where you spend time — see visits.js (the log itself stays on-device)
   'bloom_default_alerts',   // reminder default-alert set — see notifications.js
   'bloom_task_menu',        // your own add-task sheet arrangement — see taskMenuPrefs.js
 ]

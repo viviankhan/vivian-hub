@@ -29,6 +29,8 @@ import { useDragReorder } from '../lib/reorder.js'
 import { Glyph } from '../lib/glyphs.jsx'
 import { compressImage } from '../lib/trackers.js'
 import { getTaskMenu, taskMenuRow, TASK_MENU_EVENT } from '../lib/taskMenuPrefs.js'
+import DayNote from './DayNote.jsx'
+import { isMedSync, getMedIds, setMedTask } from '../lib/lifelog.js'
 
 const DEFAULT_CATEGORIES = [{ id:'other', label:'Other', color:'#8899AA' }]
 
@@ -570,6 +572,18 @@ export default function AddItemModal({ existing = null, existingRecurring = null
   // Auto-complete: when on, the recurring task ticks itself off once its
   // window has passed — works for any task, not just those in a routine.
   const [autoComplete, setAutoComplete] = useState(!!(existing?.autoComplete ?? rec?.autoComplete))
+  // Medication: kept in its own synced list (lifelog.js) rather than on the
+  // task, and assumed taken unless un-ticked — so turning it on turns on
+  // auto-complete too.
+  const medId = existing?.id || rec?.id || null
+  const [isMed, setIsMed] = useState(() => isMedSync(medId))
+  const medTouched = useRef(false)
+  useEffect(() => {
+    if (!medId) return
+    getMedIds().then(m => { if (!medTouched.current) setIsMed(!!m[medId]) }).catch(() => {})
+  }, [medId])
+  const toggleMed = () => { medTouched.current = true; setIsMed(v => { if (!v) setAutoComplete(true); return !v }) }
+  const saveMed = (id) => { if (id && (medTouched.current || isMed)) setMedTask(id, isMed).catch(() => {}) }
 
   // Which grouped row is expanded for editing (only one open at a time). On the
   // recurring page the Repeat row opens by default so the days are right there.
@@ -803,6 +817,7 @@ export default function AddItemModal({ existing = null, existingRecurring = null
     if (canEditFuture && scope === 'future') {
       const startDate = date || occurrenceDate || localTodayStr()
       const newSeries = { ...buildRecurringTask('r-' + Date.now(), startDate) }
+      saveMed(newSeries.id)
       onSaveFuture(occurrenceDate, newSeries, useDefault ? null : reminders)
       onClose()
       return
@@ -822,6 +837,7 @@ export default function AddItemModal({ existing = null, existingRecurring = null
         ? (rec.startDate || date || localTodayStr())
         : (date || localTodayStr())
       const recurringTask = buildRecurringTask(isRecEdit ? rec.id : ('r-' + Date.now()), startDate)
+      saveMed(recurringTask.id)
       onSaveRecurring(recurringTask)
       // Converting an existing one-off into a series → remove the original
       // single task so it isn't duplicated alongside the new recurring one.
@@ -865,6 +881,7 @@ export default function AddItemModal({ existing = null, existingRecurring = null
     }
     setItemSound(commitment.id, sound)
     // null → use global defaults; otherwise this item's own lead-minute list.
+    saveMed(commitment.id)
     onSave(commitment, useDefault ? null : reminders, isEdit)
     onClose()
   }
@@ -1345,6 +1362,20 @@ export default function AddItemModal({ existing = null, existingRecurring = null
         </button>
       </div>
     ) : null,
+    // Medication — a daily med you want kept track of especially carefully.
+    med: (!!onSave || !!onSaveRecurring) ? (
+      <div style={{ display:'flex', alignItems:'center', gap:12, padding:'13px 15px' }}>
+        <IconCircle color={ROW_ACCENT}><span aria-hidden="true" style={{ fontSize:14 }}>💊</span></IconCircle>
+        <div style={{ flex:1, minWidth:0 }}>
+          <div style={{ fontSize:15, fontWeight:500, color:'var(--text)' }}>Medication</div>
+          <div style={{ fontSize:11, color:'var(--muted)', marginTop:1, lineHeight:1.35 }}>Counts as taken unless you un-tick it. Skipping asks how you’re doing, and notes like “ran out” stay on Today until you clear them.</div>
+        </div>
+        <button type="button" onClick={toggleMed} aria-pressed={isMed} data-testid="med-toggle"
+          style={{ width:46, height:27, borderRadius:14, border:'none', cursor:'pointer', padding:3, flexShrink:0, background: isMed ? 'var(--forest)' : '#CBD2DA', transition:'background .2s', display:'flex', justifyContent: isMed ? 'flex-end' : 'flex-start' }}>
+          <span style={{ width:21, height:21, borderRadius:'50%', background:'white', boxShadow:'0 1px 3px rgba(0,0,0,.28)' }} />
+        </button>
+      </div>
+    ) : null,
     // Reminders
     remind: (
       <DetailRow icon={<BellIcon />} text="Remind me" hint={remindText}
@@ -1731,6 +1762,12 @@ export default function AddItemModal({ existing = null, existingRecurring = null
             <textarea value={description} onChange={e => setDescription(e.target.value)}
               placeholder="Add notes, details, anything to remember…" rows={3}
               style={{ width:'100%', minHeight:0, fontSize:14, padding:'8px 0 2px', border:'none', background:'transparent', resize:'vertical', lineHeight:1.5, fontFamily:'DM Sans,sans-serif', outline:'none', color:'var(--text)' }} />
+            {/* This day's own note — how it went, mood, photos. A daily task
+                gets a fresh one each day; it saves as you type. */}
+            {(isRecEdit ? occurrenceDate : existing?.date) && medId && (
+              <DayNote date={isRecEdit ? occurrenceDate : existing.date} taskId={medId}
+                title={label.trim()} time={time || ''} durationMins={durationMins || null} isMed={isMed} />
+            )}
           </div>
 
           {/* ── Save ──────────────────────────────────────────── */}
