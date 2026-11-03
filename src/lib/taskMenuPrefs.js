@@ -30,6 +30,7 @@ export const TASK_MENU_ROWS = [
   { id: 'color',    label: 'Color',         hint: 'Override the label’s color.' },
   { id: 'block',    label: 'Time block',    hint: 'Make it a background band instead of a task.' },
   { id: 'autodone', label: 'Auto-complete', hint: 'Tick itself off once its time has passed.' },
+  { id: 'med',      label: 'Medication',    hint: 'Track it as a med: assumed taken unless you un-tick it.' },
   { id: 'remind',   label: 'Reminders',     hint: 'Alerts and the sound they play.' },
   { id: 'person',   label: 'Who you committed to', hint: 'The person counting on it.' },
   { id: 'location', label: 'Location',      hint: 'Where it happens, and arrival auto-start.' },
@@ -40,7 +41,7 @@ export function taskMenuRow(id) { return TASK_MENU_ROWS.find(r => r.id === id) |
 // The out-of-the-box arrangement — today's sheet, with Labels first and the
 // record fields right behind them.
 export const DEFAULT_PRIMARY = ['labels', 'record', 'date', 'time', 'repeat', 'routine', 'color']
-export const DEFAULT_MORE    = ['block', 'autodone', 'remind', 'person', 'location']
+export const DEFAULT_MORE    = ['block', 'autodone', 'med', 'remind', 'person', 'location']
 
 function clean(list, taken) {
   const out = []

@@ -76,6 +76,8 @@ import { ensureBackgroundPush, syncScheduledPushesDebounced } from './lib/push.j
 import { buildLabelModel, historyFromData } from './lib/predictLabel.js'
 import { geolocationSupported, watchArrivals } from './lib/geofence.js'
 import { startVisitTracking, setExtraPlaces } from './lib/visits.js'
+import { loadLifelog, isMedSync, setDayNote, getDayNote } from './lib/lifelog.js'
+import { MedSkipSheet, announceMedSkip } from './components/MedCare.jsx'
 import { Glyph } from './lib/glyphs.jsx'
 import Customization from './components/Customization.jsx'
 import { getFontPref, setFontPref, applyFont, getThemePref, setThemePref, applyTheme,
@@ -1087,6 +1089,7 @@ export default function App() {
     ].filter(l => l && l.name && Number.isFinite(l.lat) && Number.isFinite(l.lng))
     setExtraPlaces(locs)
     startVisitTracking()
+    loadLifelog().catch(() => {})
   }, [loading, commitmentMeta, recurringTasksEnriched])
 
   // ── Persist helpers ──────────────────────────────────────────
@@ -1962,9 +1965,21 @@ export default function App() {
     twins.forEach(k => { nextCompletions[k] = nowDone })
     setCompletions_(nextCompletions)
     try {
-      await setCompletion(storageKey, nowDone)
-      for (const k of twins) await setCompletion(k, nowDone)
+      // An explicit tap is kept even when it's an un-tick, so a task that
+      // auto-completes (a medication) stays un-ticked after a reload.
+      await setCompletion(storageKey, nowDone, { keep: true })
+      for (const k of twins) await setCompletion(k, nowDone, { keep: true })
     } catch (e) { reportSaveError(e) }
+
+    // A medication gets extra care: un-ticking it asks how you're doing (and
+    // files that as the day's note); ticking it again clears the "skipped".
+    if (isMedSync(id)) {
+      const d0 = new Date()
+      const medDate = date || commitments.find(c => c.id === id)?.date
+        || `${d0.getFullYear()}-${String(d0.getMonth()+1).padStart(2,'0')}-${String(d0.getDate()).padStart(2,'0')}`
+      if (!nowDone) announceMedSkip({ taskId: id, date: medDate, title: String(label || '').replace(/^\d{1,2}:\d{2}\s*[AP]M\s*—\s*/i, '') })
+      else getDayNote(medDate, id).then(n => { if (n?.skipped) setDayNote(medDate, id, { skipped: false }) }).catch(() => {})
+    }
 
     if (nowDone) {
       // Add log entry on check
@@ -2215,6 +2230,7 @@ export default function App() {
         effectsOn={effectsOn} setEffects={setEffects}
         admin={admin} persistArt={persistArt} />
 
+      <MedSkipSheet />
       <SearchOverlay
         open={searchOpen} onClose={() => setSearchOpen(false)}
         commitments={commitments} events={events} log={log}

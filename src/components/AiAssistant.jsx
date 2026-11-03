@@ -24,7 +24,11 @@ import {
   STATUS, getQueue, subscribe, loadQueue, enqueue, updatePlan, removeItem, clearQueue, retry,
   markAllSeen, itemLabel,
 } from '../lib/assistantQueue.js'
-import { isPlaceQuestion, answerPlaceQuestion, getVisits, knownPlaces, trackingEnabled, setTracking } from '../lib/visits.js'
+import { trackingEnabled, setTracking } from '../lib/visits.js'
+import { isRecallQuestion, answerRecall } from '../lib/recall.js'
+import { gatherRecallData } from '../lib/recallData.js'
+import { PhotoStrip } from './PhotoAttach.jsx'
+
 
 function fmt12(t) {
   if (!t) return ''
@@ -638,9 +642,13 @@ export default function AiAssistant({ categories = [], tasks = [], onApply, onCl
   // File the request and clear the box for the next one. The queue does the
   // waiting, so you don't have to.
   const askPlace = async (q) => {
-    const tracking = await trackingEnabled()
-    const a = answerPlaceQuestion(q, { stays: getVisits(), places: knownPlaces(), now: Date.now(), tracking })
-    if (a) setAnswer({ q, ...a })
+    setAnswer({ q, text: 'Looking…', pending: true })
+    try {
+      const a = answerRecall(q, await gatherRecallData(), Date.now())
+      setAnswer({ q, ...a })
+    } catch (e) {
+      setAnswer({ q, text: 'Something went wrong reading your notes. Try again in a moment.' })
+    }
   }
   const turnOnTracking = async () => {
     setTurningOn(true)
@@ -651,7 +659,9 @@ export default function AiAssistant({ categories = [], tasks = [], onApply, onCl
 
   const plated = () => {
     if (!canPlan || preparing) return
-    if (!photos.length && !docs.length && isPlaceQuestion(command)) {
+    // A question about your own life is answered right here, from what's on
+    // this device. Anything else is planned as usual.
+    if (!photos.length && !docs.length && isRecallQuestion(command)) {
       askPlace(command.trim()); setCommand(''); setErr('')
       return
     }
@@ -685,7 +695,7 @@ export default function AiAssistant({ categories = [], tasks = [], onApply, onCl
           </div>
           <div style={{ fontSize:20, fontWeight:800, color:'#17313f', marginTop:8, fontFamily:'DM Sans,sans-serif' }}>✨ Tell me what to do</div>
           <div style={{ fontSize:12.5, color:'rgba(0,0,0,.62)', marginTop:4, lineHeight:1.5 }}>
-            Add a task, paste an event, add a photo of one, attach a syllabus or agenda (PDF or Word), give an instruction about your existing tasks, or ask how long you were somewhere (“How long have I been here?”). Requests go into your queue — close this anytime, and review the suggestions when they’re ready.
+            Add a task, paste an event, add a photo of one, attach a syllabus or agenda (PDF or Word), give an instruction about your existing tasks, or ask about your days (“How did jogging feel?”, “Did I take my meds this week?”, “How long was I at work?”). Requests go into your queue — close this anytime, and review the suggestions when they’re ready.
           </div>
           <div style={{ display:'flex', gap:4, marginTop:12, background:'rgba(255,255,255,.35)', borderRadius:12, padding:3 }}>
             <button type="button" style={tab(view === 'new')} onClick={() => setView('new')}>New request</button>
@@ -705,9 +715,19 @@ export default function AiAssistant({ categories = [], tasks = [], onApply, onCl
                     style={{ border:'none', background:'transparent', color:'var(--muted)', fontSize:13, cursor:'pointer', padding:0, lineHeight:1 }}>✕</button>
                 </div>
                 <div style={{ display:'flex', gap:8, alignItems:'flex-start', marginTop:6 }}>
-                  <Icon value="glyph:pin" size={16} color="var(--teal)" />
                   <div style={{ fontSize:14.5, color:'var(--text)', lineHeight:1.5, fontWeight:600 }}>{answer.text}</div>
                 </div>
+                {answer.items?.length > 0 && (
+                  <div style={{ marginTop:10, display:'flex', flexDirection:'column', gap:8 }}>
+                    {answer.items.map((it, i) => (
+                      <div key={i} style={{ background:'#F7F6FA', borderRadius:10, padding:'8px 10px' }}>
+                        <div style={{ fontSize:11.5, color:'var(--muted)' }}><b style={{ color:'var(--text)' }}>{it.when}</b>{it.title ? ` · ${it.title}` : ''}{it.meta ? ` · ${it.meta}` : ''}</div>
+                        {it.text && <div style={{ fontSize:13.5, color:'var(--text)', lineHeight:1.5, marginTop:3, whiteSpace:'pre-wrap', wordBreak:'break-word' }}>{it.text}</div>}
+                        {it.photos?.length > 0 && <div style={{ marginTop:6 }}><PhotoStrip ids={it.photos} /></div>}
+                      </div>
+                    ))}
+                  </div>
+                )}
                 {answer.note && <div style={{ fontSize:11.5, color:'var(--muted)', marginTop:8, lineHeight:1.5 }}>{answer.note}</div>}
                 {answer.needsTracking && (
                   <button type="button" onClick={turnOnTracking} disabled={turningOn}
@@ -715,7 +735,7 @@ export default function AiAssistant({ categories = [], tasks = [], onApply, onCl
                     {turningOn ? 'Turning on…' : 'Remember where I spend time'}
                   </button>
                 )}
-                <div style={{ fontSize:10.5, color:'var(--muted)', marginTop:8 }}>Answered on this device. Your locations aren’t sent anywhere.</div>
+                <div style={{ fontSize:10.5, color:'var(--muted)', marginTop:8 }}>Answered on this device from your notes, journal, meds, moods and places. None of it is sent to the AI.</div>
               </div>
             )}
             <div style={{ position:'relative' }}>

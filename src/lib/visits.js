@@ -133,7 +133,7 @@ function addDays(t, n) { const d = new Date(t); d.setDate(d.getDate() + n); retu
 const WEEKDAYS = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday']
 
 // Pull a time range out of the question and return the rest of the text.
-function takeScope(q, now) {
+export function takeScope(q, now) {
   const today = startOfDay(now)
   const rules = [
     [/\b(?:so far )?today\b/, () => ({ from: today, to: addDays(today, 1), label: 'today' })],
