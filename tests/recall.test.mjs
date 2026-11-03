@@ -23,6 +23,13 @@ ok('how did jogging feel? is a question', R.isRecallQuestion('How did jogging fe
 ok('did I take my meds this week is a question', R.isRecallQuestion('did I take my meds this week'))
 ok('"Dentist next Tue 3pm" is not', !R.isRecallQuestion('Dentist next Tue 3pm, bring insurance card'))
 ok('"Add a task: what to buy?" is not', !R.isRecallQuestion('Add a task: what to buy for the party?'))
+ok('a backlog ending in “?” is something to log, not a question',
+  !R.isRecallQuestion('I worked from 10-7 pm , 9-11 pm, and 10-9 most days last week. Can you accurately reflect that?'))
+ok('so is a plain account of last week',
+  !R.isRecallQuestion('I pulled late nights all week last week by designing the experiment, making comps, staining cells, and running flow each of those was its own day Tues-Fri. Hours were 10-9, 9-9, 10-11, 9-8'))
+ok('“can you…” is a request', !R.isRecallQuestion('Can you add my work hours from last week?'))
+ok('those read as things already done', R.isLogOfPast('I worked from 10-7 pm last week') && R.isLogOfPast('I pulled late nights all week last week'))
+ok('a plan for later does not', !R.isLogOfPast('Dentist next Tue 3pm, bring insurance card') && !R.isLogOfPast('I need to stain cells Friday'))
 ok('stems: jogging → jog', R.stem('jogging') === 'jog' && R.stem('jogged') === 'jog' && R.stem('jogs') === 'jog')
 
 const WORK = { id: 'w', name: 'Work', lat: 47.6, lng: -122.33 }

@@ -2289,7 +2289,16 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
   useEffect(() => { if (!aiToast) return; const t = setTimeout(() => setAiToast(null), 9000); return () => clearTimeout(t) }, [aiToast])
 
   // Apply a confirmed plan of assistant actions using the ordinary task ops.
-  const applyAssistantActions = (actions) => {
+  const applyAssistantActions = (actions, { loggedPast = false } = {}) => {
+    // When you told the assistant about things you already did ("I worked
+    // 10–9 Tuesday"), a task that's already over is logged as done, so it
+    // counts toward your hours in Informatics instead of sitting overdue.
+    const isOver = (a) => {
+      if (!a.date) return false
+      const [y, m, d] = a.date.split('-').map(Number)
+      const [hh, mm] = (a.time || '23:59').split(':').map(Number)
+      return new Date(y, m - 1, d, hh, mm).getTime() + (a.durationMins || 0) * 60000 <= Date.now()
+    }
     (actions || []).forEach((a, idx) => {
       if (a.kind === 'create' && a.repeat && addRecurringTask) {
         // A repeating task (a birthday, "gym every Mon & Thu") becomes a real
@@ -2305,7 +2314,7 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
           id, text: a.title, date: a.date || null, time: a.time || null,
           durationMins: a.durationMins || null,
           cat: (a.categoryIds && a.categoryIds[0]) || null, cats: Array.isArray(a.categoryIds) ? a.categoryIds : [],
-          description: a.description || '', subtasks, done: false, person: null, prepMin: null,
+          description: a.description || '', subtasks, done: loggedPast && isOver(a), person: null, prepMin: null,
           icon: a.icon || null, color: a.color || null,
           createdAt: new Date().toISOString(),
         }
