@@ -1617,7 +1617,7 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
       // Today: done once the task's own window has passed. A past day is wholly
       // over, so every such task auto-completes (matching how it looked at the
       // end of that day). A future day: nothing has happened yet.
-      if (isToday) return now >= task._mins + (task._dur || 0)
+      if (isToday) return now >= (task._lastEnd ?? (task._mins + (task._dur || 0)))
       return isPastDay
     }
     return false
@@ -1648,8 +1648,37 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
   // time in their label.
   const taskMins = (t) => (t._time != null ? hhmmToMins(t._time) : parseTimeMins(t.label))
 
+  // A task done in pieces (9–10 and 11–1) carries its later pieces as
+  // `extraSlots`. Each piece is drawn as its own row on the timeline, but they
+  // are all the SAME task: same id, so one checkbox, one set of subtasks and one
+  // editor. `_slot` (1, 2, …) marks a later piece and `_key` keeps React's rows
+  // apart; moving a later piece moves just that piece (see setTaskStart).
+  const withExtraSlots = (c, row) => {
+    const slots = (c.time && Array.isArray(c.extraSlots)) ? c.extraSlots.filter(x => x && x.time) : []
+    if (!slots.length) return [row]
+    const total = (c.durationMins || 0) + slots.reduce((n, x) => n + (x.durationMins || 0), 0)
+    const all = [{ time:c.time, durationMins:c.durationMins || null }, ...slots]
+      .sort((a, b) => a.time.localeCompare(b.time))
+    const partNote = (i) => `Part ${i + 1} of ${all.length}${total ? ` · ${durLabel(total)} total` : ''}`
+    const idxOf = (t) => all.findIndex(x => x.time === t)
+    const _lastEnd = Math.max(...all.map(x => hhmmToMins(x.time) + (x.durationMins || 0)))
+    return [
+      { ...row, _totalDur: total, _lastEnd, note: [row.note, partNote(idxOf(c.time))].filter(Boolean).join(' · ') },
+      ...slots.map((x, i) => ({
+        ...row,
+        _key: `${c.id}@${i + 1}`, _slot: i + 1,
+        label: `${fmt12(x.time)} — ${c.text}`,
+        _time: x.time, _dur: x.durationMins || null, _totalDur: total, _lastEnd,
+        // A later piece hasn't "started" because the first one did.
+        startedAt: null,
+        note: [row.note, partNote(idxOf(x.time))].filter(Boolean).join(' · '),
+      })),
+    ]
+  }
+  const durLabel = (m) => m < 60 ? `${m}m` : (m % 60 ? `${Math.floor(m/60)}h ${m%60}m` : `${m/60}h`)
+
   const rawTasks = [
-    ...todayCommitments.filter(c=>!isBlockLike(c)).map(c=>({
+    ...todayCommitments.filter(c=>!isBlockLike(c)).flatMap(c=>withExtraSlots(c, {
       id:c.id, label:c.time?`${fmt12(c.time)} — ${c.text}`:c.text,
       title:c.text,
       note:[c.person&&`With: ${c.person}`,c.prepMin&&`Leave ${c.prepMin} min early`].filter(Boolean).join(' · '),
@@ -1685,6 +1714,9 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
     // Anything older than that is overdue, so the now-indicator never sticks to
     // a task that ended hours ago (e.g. a 7 AM task still showing "now" at 8 PM).
     const dur = task._dur ?? task.durationMins ?? 0
+    // One piece of a task done in pieces: once this piece is over but a later
+    // one is still ahead, the task is simply waiting for its next piece.
+    if (task._lastEnd != null && now < task._lastEnd && now >= task._mins + dur) return 'upcoming'
     if (dur) return (now < task._mins + dur) ? 'current' : 'overdue'
     return (now - task._mins <= 30) ? 'current' : 'overdue'
   }
@@ -1881,7 +1913,9 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
 
   // Events that became blocks still count toward the day's tally.
   const autoBlockList = blocks.filter(b => b.auto)
-  const doneCount = tasksWithStatus.filter(t=>t._status==='past').length + autoBlockList.filter(autoBlockDone).length
+  // A task done in pieces is still one task — count only its first row.
+  const countedTasks = tasksWithStatus.filter(t => !t._slot)
+  const doneCount = countedTasks.filter(t=>t._status==='past').length + autoBlockList.filter(autoBlockDone).length
   // When a task is in progress, the "now" indicator is drawn inside that task's
   // pill (see TimelineBlock), so we don't also drop a separate marker in the gap
   // after it. Only when nothing is current does the between-tasks marker show,
@@ -1892,8 +1926,8 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
   // hasn't started yet gets a "Start now" button, letting you pull it forward
   // however small the gap before it is (a rendered break card only appears for
   // 5-min-plus gaps, so short lulls would otherwise have no way to start early).
-  const nextUpcomingId = (isToday && !hasCurrent)
-    ? (renderTasks.find(t => t._mins!==null && t._mins>now && t._status==='upcoming' && !INFLEXIBLE_TAGS.has(t.tag) && !effectiveDone(t))?.id ?? null)
+  const nextUpcomingRow = (isToday && !hasCurrent)
+    ? (renderTasks.find(t => t._mins!==null && t._mins>now && t._status==='upcoming' && !INFLEXIBLE_TAGS.has(t.tag) && !effectiveDone(t)) ?? null)
     : null
   // How far through today's schedule we are (0–1), for the header progress bar:
   // elapsed span from the first task's start to the last task's end.
@@ -1910,6 +1944,24 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
       if (tasksWithStatus[j]._mins!==null) return tasksWithStatus[j]._mins-cur._mins
     }
     return null
+  }
+
+  // Move one later piece of a task done in pieces (its `_slot`) without
+  // touching the task's first time or its other pieces. Several pieces of the
+  // same task can move in one shift, so the edits pile up per task before each
+  // write. The prior pieces go onto `reverts` so Undo puts them back.
+  const slotMover = (reverts) => {
+    const pending = {}
+    return (t, mins) => {
+      const c = (commitments || []).find(x => x.id === t.id)
+      if (!c) return
+      const orig = (Array.isArray(c.extraSlots) ? c.extraSlots : []).filter(x => x && x.time)
+      if (!pending[t.id]) { pending[t.id] = orig.map(x => ({ ...x })); reverts.push({ id: t.id, changes: { extraSlots: orig } }) }
+      const i = t._slot - 1
+      if (!pending[t.id][i]) return
+      pending[t.id][i] = { ...pending[t.id][i], time: minsToHHMM(mins) }
+      updateCommitment(t.id, { extraSlots: [...pending[t.id]] })
+    }
   }
 
   // ── Shift whole day to new start ─────────────────────────────
@@ -1980,10 +2032,12 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
     const overrides = { ...timeOverrides }
     const prevOverrides = timeOverrides                 // for Undo
     const commitReverts = []                            // {id, time} for Undo
+    const moveSlot = slotMover(commitReverts)
     let shifted=0, committed=0, fixed=0
 
     const setStart = (t, mins) => {
-      if (t.isCommitment && updateCommitment) { commitReverts.push({ id: t.id, time: t._time || null }); updateCommitment(t.id, { time: minsToHHMM(mins) }) }
+      if (t._slot && updateCommitment) moveSlot(t, mins)
+      else if (t.isCommitment && updateCommitment) { commitReverts.push({ id: t.id, time: t._time || null }); updateCommitment(t.id, { time: minsToHHMM(mins) }) }
       else overrides[t.id] = mins
     }
     const sendToTomorrow = (t) => {
@@ -2008,7 +2062,7 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
         if (INFLEXIBLE_TAGS.has(t.tag)) { cursor=Math.max(cursor,t._mins+dur); return }
         if (!sel.has(t.id)) { cursor=Math.max(cursor,t._mins+dur); return }   // not chosen → leave
         if (t._mins >= cursor) { cursor=t._mins+dur; return }                 // no overlap → leave in place
-        if (cursor+dur > END_OF_DAY_MINS) { sendToTomorrow(t); return }
+        if (cursor+dur > END_OF_DAY_MINS) { if (!t._slot) sendToTomorrow(t); return }
         setStart(t, cursor); shifted++
         // A routine / block / auto-complete task's checkmark should follow its
         // NEW time, not a stale tap: drop any explicit record so it re-derives
@@ -2030,7 +2084,7 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
       pushUndo('shifted the schedule', () => {
         setTimeOverrides(prevOverrides)
         localStorage.setItem('vivian_timeshift_'+dateKey, JSON.stringify(prevOverrides))
-        commitReverts.forEach(r => updateCommitment && updateCommitment(r.id, { time: r.time }))
+        commitReverts.forEach(r => updateCommitment && updateCommitment(r.id, r.changes || { time: r.time }))
       })
     }
   }
@@ -2074,9 +2128,11 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
     const overrides = { ...timeOverrides }
     const prevOverrides = timeOverrides
     const commitReverts = []
+    const moveSlot = slotMover(commitReverts)
     let shifted = 0, committed = 0
     const setStart = (t, mins) => {
-      if (t.isCommitment && updateCommitment) { commitReverts.push({ id: t.id, time: t._time || null }); updateCommitment(t.id, { time: minsToHHMM(mins) }) }
+      if (t._slot && updateCommitment) moveSlot(t, mins)
+      else if (t.isCommitment && updateCommitment) { commitReverts.push({ id: t.id, time: t._time || null }); updateCommitment(t.id, { time: minsToHHMM(mins) }) }
       else overrides[t.id] = mins
     }
     // Timeline tasks plus blocks (e.g. "Work") — a block can ride along with the
@@ -2092,6 +2148,8 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
           // A block that ran off the end of the day just clamps at its old start
           // rather than being torn out of its series and dumped onto tomorrow.
           if (t.isBlock) return
+          // Likewise a later piece of a task done in pieces stays where it was.
+          if (t._slot) return
           // Ran off the end of the day → send it to tomorrow, like the other shifts.
           committed++
           const key = addDays(dateKey, 1)   // the day after the one being shifted
@@ -2115,7 +2173,7 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
       pushUndo('rescheduled the routine', () => {
         setTimeOverrides(prevOverrides)
         localStorage.setItem('vivian_timeshift_'+dateKey, JSON.stringify(prevOverrides))
-        commitReverts.forEach(r => updateCommitment && updateCommitment(r.id, { time: r.time }))
+        commitReverts.forEach(r => updateCommitment && updateCommitment(r.id, r.changes || { time: r.time }))
       })
     }
   }
@@ -2244,10 +2302,19 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
   // commitment, trim its duration to the time actually spent so the timeline
   // ends the block at "now" instead of its planned end. Any recorded pauses are
   // cleared so the finished pill isn't left with a trailing gap.
+  // A row's length: the task's own duration, or — for a later piece of a task
+  // done in pieces — just that piece's.
+  const setRowDur = (task, mins) => {
+    if (!task._slot) { updateCommitment(task.id, { durationMins: mins }); return }
+    const c = (commitments || []).find(x => x.id === task.id)
+    const slots = (Array.isArray(c?.extraSlots) ? c.extraSlots : []).filter(x => x && x.time)
+    if (!slots[task._slot - 1]) return
+    updateCommitment(task.id, { extraSlots: slots.map((x, i) => i === task._slot - 1 ? { ...x, durationMins: mins } : x) })
+  }
   const handleEndNow = (task, elapsedMins) => {
     if (!effectiveDone(task)) syncToggle(task.id, task.label, task.tag, task.isCommitment ? null : dateKey, true)
     if (task.isCommitment && updateCommitment && task._dur) {
-      updateCommitment(task.id, { durationMins: Math.max(1, Math.round(elapsedMins || 0)) })
+      setRowDur(task, Math.max(1, Math.round(elapsedMins || 0)))
     }
     const key = pauseKeyFor(task)
     if (focusPauses[key]) { const n = { ...focusPauses }; delete n[key]; persistFocusPauses(n) }
@@ -2262,7 +2329,7 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
   const handleExtend = (task, totalExtra) => {
     if (!task.isCommitment || !updateCommitment) return
     const base = task._dur ?? 0
-    updateCommitment(task.id, { durationMins: Math.max(1, base + totalExtra) })
+    setRowDur(task, Math.max(1, base + totalExtra))
   }
 
   // New items are real commitments dated today, so they show on the Calendar
@@ -2688,7 +2755,7 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
       <WeekStrip
         viewDate={viewDate} setViewDate={setViewDate} today={today}
         commitments={commitments} categories={categories}
-        doneCount={doneCount} total={tasksWithStatus.length + autoBlockList.length}
+        doneCount={doneCount} total={countedTasks.length + autoBlockList.length}
         dayProgress={dayProgress} isToday={isToday} centerNonce={spotNonce}
         summary={summary} todos={todos}
         recurringTasks={recurringTasks} recurringExceptions={recurringExceptions} />
@@ -2887,7 +2954,7 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
               const tEnd = (task._time && task._dur) ? hhmmToMins(task._time)+task._dur : task._mins
               advance(tEnd, r?.tint || null, 'rt-'+task.routine)
               return [...before, rtGap, (
-                <div key={task.id} data-task-row={task.id} className={spotlight===task.id ? 'task-spotlight' : undefined}>
+                <div key={task._key||task.id} data-task-row={task.id} className={spotlight===task.id ? 'task-spotlight' : undefined}>
                   {header}
                   <TimelineBlock
                     task={task} categories={categories} status={task._status} now={now}
@@ -2951,7 +3018,7 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
             const emitNow = wantNow && !nowState.done && i===nowInsertIdx
             if (emitNow) nowState.done = true
             return [...before, (
-              <div key={task.id} data-task-row={task.id} className={spotlight===task.id ? 'task-spotlight' : undefined}>
+              <div key={task._key||task.id} data-task-row={task.id} className={spotlight===task.id ? 'task-spotlight' : undefined}>
                 {emitNow&&<NowMarker now={now} bandTint={(myBand && (joinHead || prevSameRoutine)) ? myTint : null} bandOpacity={inBlockId ? BLOCK_FILM_OPACITY : 0.5} outerTints={myOuter}/>}
                 {gapEl}
                 {routineHead}
@@ -2969,7 +3036,7 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
                   elapsed={isToday && task._mins!==null && task._mins<=now}
                   dateKey={dateKey}
                   pauseData={focusPauses[`${dateKey}:${task.id}`] || null}
-                  offerStartNow={task.id===nextUpcomingId}
+                  offerStartNow={!!nextUpcomingRow && (task._key||task.id)===(nextUpcomingRow._key||nextUpcomingRow.id)}
                   onToggle={()=>syncToggle(task.id,task.label,task.tag,task.isCommitment?null:dateKey, !effectiveDone(task))}
                   onManage={()=>setManaging(task)}
                   onOpen={()=>openTask(task)}

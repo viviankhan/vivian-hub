@@ -475,6 +475,14 @@ export default function AddItemModal({ existing = null, existingRecurring = null
   // user-editable and stored per-device.
   const [manualDur, setManualDur] = useState(existing?.durationMins ?? rec?.durationMins ?? presetDur ?? null)
   const [durText, setDurText]     = useState('')
+  // More time frames on the same day — the same task done in pieces (9–10 and
+  // 11–1). The Start/End above is the first piece; each extra one is its own
+  // start/end pair, and the task shows on the timeline once per piece while
+  // staying one task (one checkbox, one set of subtasks).
+  const [extraSlots, setExtraSlots] = useState(() =>
+    (Array.isArray(existing?.extraSlots) ? existing.extraSlots : [])
+      .filter(x => x && x.time)
+      .map((x, i) => ({ key: 'sl-' + i, start: x.time, end: x.durationMins ? addMinutes(x.time, x.durationMins) : '' })))
   const [presets, setPresets]     = useState(() => getDurationPresets())
   const [editingPresets, setEditingPresets] = useState(false)
   const [newPreset, setNewPreset] = useState('')
@@ -673,7 +681,35 @@ export default function AddItemModal({ existing = null, existingRecurring = null
   // (used by the Commitments tab). Today/Calendar preset or lock the date.
   // A weekly repeat needs at least one weekday chosen.
   const repeatInvalid = repeatFreq === 'weekly' && repeatDays.length === 0
-  const canSave = !!label.trim() && !endInvalid && !repeatInvalid
+  // Extra time frames only apply to a one-off task with a start time (a series
+  // keeps a single time per occurrence).
+  const slotsAllowed = !!onSave && !repeatOn && !!time
+  const slotInvalid = (sl) => !!(sl.start && sl.end && !diffMinutes(sl.start, sl.end))
+  const anySlotInvalid = slotsAllowed && extraSlots.some(slotInvalid)
+  const addSlot = () => setExtraSlots(prev => {
+    // Start the new piece right after the latest one ends, with the same length.
+    const len = durationMins || 60
+    const lastEnd = [endTime || time, ...prev.map(x => x.end || x.start)].filter(Boolean).sort().pop() || time
+    const start = addMinutes(lastEnd, 0)
+    return [...prev, { key: 'sl-' + Date.now(), start, end: addMinutes(start, len) }]
+  })
+  const updateSlot = (key, field, v) => setExtraSlots(prev => prev.map(x => {
+    if (x.key !== key) return x
+    if (field === 'start') {
+      // Moving a piece's start keeps its length, like the main Start field.
+      const len = diffMinutes(x.start, x.end)
+      return { ...x, start: v, end: (v && len) ? addMinutes(v, len) : x.end }
+    }
+    return { ...x, end: v }
+  }))
+  const removeSlot = (key) => setExtraSlots(prev => prev.filter(x => x.key !== key))
+  // What gets saved: valid pieces only, earliest first, as { time, durationMins }.
+  const savedSlots = () => slotsAllowed
+    ? extraSlots.filter(x => x.start && !slotInvalid(x))
+        .map(x => ({ time: x.start, durationMins: diffMinutes(x.start, x.end) || null }))
+        .sort((a, b) => a.time.localeCompare(b.time))
+    : []
+  const canSave = !!label.trim() && !endInvalid && !repeatInvalid && !anySlotInvalid
 
   // Quick-set / manual: record the length. When there's a start time we also
   // fill the end from it; with no start we just remember the duration.
@@ -898,6 +934,7 @@ export default function AddItemModal({ existing = null, existingRecurring = null
       // for its day, and tick itself off once its window passes.
       routine: routine || null,
       autoComplete,
+      extraSlots: savedSlots(),
     }
     setItemSound(commitment.id, sound)
     // null → use global defaults; otherwise this item's own lead-minute list.
@@ -1104,7 +1141,7 @@ export default function AddItemModal({ existing = null, existingRecurring = null
     // Time
     time: (
       <DetailRow icon={<ClockIcon />}
-        text={time ? `${fmt12(time)}${endTime && durationMins ? ' – '+fmt12(endTime) : ''}` : (durationMins ? `${prettyDur(durationMins)} · no start time` : 'Add a time')}
+        text={time ? [`${fmt12(time)}${endTime && durationMins ? ' – '+fmt12(endTime) : ''}`, ...(slotsAllowed ? extraSlots.filter(x => x.start).map(x => `${fmt12(x.start)}${x.end && !slotInvalid(x) ? ' – '+fmt12(x.end) : ''}`) : [])].join(', ') : (durationMins ? `${prettyDur(durationMins)} · no start time` : 'Add a time')}
         textMuted={!time && !durationMins}
         open={expanded==='time'} onClick={() => toggleRow('time')}>
         <div style={{ display:'flex', gap:8, marginBottom:8 }}>
@@ -1133,6 +1170,30 @@ export default function AddItemModal({ existing = null, existingRecurring = null
             <TimeField value={endTime} onChange={setEndTime} style={{ ...inp, borderColor: endInvalid ? '#DC2626' : 'var(--border)' }} />
           </div>
         </div>
+        {/* More time frames — the same task, done again later in the day. */}
+        {slotsAllowed && extraSlots.map((sl, i) => (
+          <div key={sl.key} data-extra-slot style={{ display:'flex', gap:8, marginBottom:8, alignItems:'flex-end' }}>
+            <div style={{ flex:1, minWidth:0 }}>
+              <div style={fieldLabel}>Start {i + 2}</div>
+              <TimeField value={sl.start} onChange={v => updateSlot(sl.key, 'start', v)} style={inp} />
+            </div>
+            <div style={{ flex:1, minWidth:0 }}>
+              <div style={fieldLabel}>End {i + 2}</div>
+              <TimeField value={sl.end} onChange={v => updateSlot(sl.key, 'end', v)} style={{ ...inp, borderColor: slotInvalid(sl) ? '#DC2626' : 'var(--border)' }} />
+            </div>
+            <button type="button" onClick={() => removeSlot(sl.key)} aria-label={`Remove time ${i + 2}`} title="Remove this time"
+              style={{ flexShrink:0, width:34, height:40, border:'none', background:'none', cursor:'pointer', color:'var(--muted)', fontSize:16 }}>✕</button>
+          </div>
+        ))}
+        {slotsAllowed && extraSlots.some(slotInvalid) && (
+          <div style={{ fontSize:11, color:'#DC2626', marginBottom:8 }}>Each end time must be after its start time.</div>
+        )}
+        {slotsAllowed && (
+          <button type="button" onClick={addSlot}
+            style={{ marginBottom:12, fontSize:11.5, padding:'6px 12px', borderRadius:16, cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:700, border:'1px dashed var(--border)', background:'white', color:'var(--teal)' }}>
+            + Add another time
+          </button>
+        )}
         {/* Duration presets + a manual entry. Presets fill the length (and
             the end time, when a start is set); the field takes anything
             like "90", "1h30", "45 min". Both work with or without a start. */}
@@ -1185,7 +1246,7 @@ export default function AddItemModal({ existing = null, existingRecurring = null
         )}
         <div style={{ fontSize:11, color: endInvalid ? '#DC2626' : 'var(--muted)', marginTop:8 }}>
           {endInvalid ? 'End time must be after the start time.'
-            : durationMins ? `${prettyDur(durationMins)} long${!time ? ' · add a start time to place it on the timeline' : ''}`
+            : durationMins ? `${prettyDur(durationMins)} long${!time ? ' · add a start time to place it on the timeline' : ''}${savedSlots().length ? ` · ${prettyDur(durationMins + savedSlots().reduce((n, x) => n + (x.durationMins || 0), 0))} across all times` : ''}`
             : 'Tap a preset or type a length. Add a start time to also set the end.'}
         </div>
       </DetailRow>
