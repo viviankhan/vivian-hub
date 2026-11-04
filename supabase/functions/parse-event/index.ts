@@ -192,7 +192,9 @@ async function plan(req: Request): Promise<Response> {
   const taskList = tasks.length
     ? tasks.map(t => {
         const subs = (t.subtasks || []).map(s => `${s.done ? '[x]' : '[ ]'} ${s.text}`).join('; ')
-        return `- id "${t.id}": "${t.title}"${t.date ? ` (${t.date}${t.time ? ' ' + t.time : ''})` : ''}${t.done ? ' [DONE]' : ''}${subs ? ` — subtasks: ${subs}` : ''}`
+        // The weekday is spelled out so "the Thursday coffee" matches without date math.
+        const wd = /^\d{4}-\d{2}-\d{2}$/.test(t.date || '') ? ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][new Date(t.date + 'T12:00:00Z').getUTCDay()] + ' ' : ''
+        return `- id "${t.id}": "${t.title}"${t.date ? ` (${wd}${t.date}${t.time ? ' ' + t.time : ''})` : ''}${t.done ? ' [DONE]' : ''}${subs ? ` — subtasks: ${subs}` : ''}`
       }).join('\n')
     : '(the user has no existing tasks)'
 
@@ -211,6 +213,7 @@ ${images.length > 1 ? `- The ${images.length} photos were sent TOGETHER because 
 - A single-day meeting, class, or appointment is a create with its time and durationMins (default 60 minutes for a seminar or meeting when no end is shown). Use event only for something covering more than one day.
 - Several separate items in one image (a list of assignments, a week of classes, a page of due dates) means one action for each. If the user names an existing task the items belong to, use addSubtasks on that task instead.
 - Ignore phone status bars, app chrome, toolbars, buttons, and navigation — they are not the task.
+- A text or email that MOVES, cancels, or changes a plan the user already has ("something came up tomorrow, could we do Friday at 10 instead?", "pushing our call to 3") is about an EXISTING task, not a new one. Find it in THE USER'S CURRENT TASKS — by the day and time it was on, the person, or the kind of thing ("coffee", "call") — and reschedule it to the new date and time both sides settled on (the last agreed time in the thread wins). Never also create a copy at the new time.
 - APPOINTMENT LISTS (a patient portal like MyChart or the Mayo Clinic app, a booking app, a list of upcoming visits): every appointment card is its own create action — never merge two cards, and never stop after the first few.
   - People scroll and screenshot as they go, so the screenshots OVERLAP: the same card appears on two or three of them, often cut off at the top or bottom, or blurred behind a floating header or tab bar. Make exactly ONE action per distinct appointment. The same date AND the same time is the same appointment, wherever it appears; combine what each copy shows.
   - Two cards on the same day at DIFFERENT times are two different appointments — keep both, even when their titles match. Example: "Wed, Oct 7 · Arrive by 1:45 PM · OBG Procedure" and "Wed, Oct 7 · Arrive by 2:15 PM · OBG Procedure" are TWO actions.
@@ -281,6 +284,7 @@ Each action object is one of these shapes. COPY the shape and fill in EVERY fiel
 Rules:
 - ALWAYS return at least one action whenever the instruction describes anything to schedule, add, or change. Never return an empty "actions" array in that case — the summary alone is not enough; the app can only act on the actions.
 - To act on an existing task, find the best match in the list by name and use its exact id. If nothing matches what the user names, prefer a create action or leave it out — do not guess a random id.
+- "Move", "switch", "push", "change", "reschedule", or "instead" about something the user already has means reschedule — never create. Match it by its current day and time as well as its name: "the Thursday coffee" is the coffee-like task on the coming Thursday, even if its title names a café ("Coffee at Bravo") rather than the person. Keep its title; only the date/time change. If a request clearly means moving something and no task fits, still don't add a new one silently — create it, and say in the summary that you couldn't find the original to move, so the user can delete it themselves.
 - Choosing create vs event: if it happens on ONE day, use create (a task). If it covers MORE THAN ONE day, or reads as a trip / vacation / absence / stretch of days, use event and set date=start, endDate=end. Resolve durations like "6 weeks" into an actual endDate from today. When only a start is given for a clearly multi-day thing and no end is stated, make a sensible endDate rather than collapsing it to one day.
 - On every create and event, "dateFrom" is the exact words in the instruction or photo that gave you the date ("Sat Oct 12", "tomorrow", "9/9"). If nothing stated a date, dateFrom is "" and so is date.
 - Every date MUST be a literal YYYY-MM-DD string (e.g. "2026-08-14"), never words like "August 14th".
