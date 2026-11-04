@@ -1239,7 +1239,7 @@ function WeekStrip({ viewDate, setViewDate, today, commitments, categories, done
 }
 
 // ── Main ───────────────────────────────────────────────────────
-export default function Today({ todos, weekState, syncToggle, clearCompletion, pushUndo, commitments, addCommitment, updateCommitment, deleteCommitment, moveCommitmentToThoughts, addEvent, appendLog, scheduled, categories, recurringTasks, recurringExceptions, occStarted = {}, occEnded = {}, skipRecurringOccurrence, deleteRecurringTask, addRecurringTask, updateRecurringTask, routines = [], updateRoutine, deleteRoutine, taskTemplates = [], summary, labelModel = null, externalEvents = [], externalCalendars = [], toggleCalendar, importedAdoptions = {}, adoptImportedEvent, markImportedAdopted,
+export default function Today({ todos, weekState, syncToggle, clearCompletion, pushUndo, commitments, addCommitment, updateCommitment, deleteCommitment, moveCommitmentToThoughts, addEvent, appendLog, scheduled, categories, recurringTasks, recurringExceptions, occStarted = {}, occEnded = {}, occExact = {}, skipRecurringOccurrence, deleteRecurringTask, addRecurringTask, updateRecurringTask, routines = [], updateRoutine, deleteRoutine, taskTemplates = [], summary, labelModel = null, externalEvents = [], externalCalendars = [], toggleCalendar, importedAdoptions = {}, adoptImportedEvent, markImportedAdopted,
   wlCheckins = [], persistWlCheckins, wlEffects, persistWlEffects, wlEpisodes = [], persistWlEpisodes, wlGame, persistWlGame, wlLog = [], wlEmotions, persistWlEmotions, onOpenWellness,
   wlRules, wlAbsence = null, onResolveAbsence,
   jumpTo = null, onJumpConsumed }) {
@@ -1389,7 +1389,7 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
     .filter(t=>!deleted.includes(t.id))
     // Merge in an arrival-started timestamp (set when you reach the task's
     // location), so a located recurring task shows live progress like a one-off.
-    .map(t => { const s = occStarted[occKey(t.id, dateKey)], e = occEnded[occKey(t.id, dateKey)]; return s ? { ...t, startedAt: s, ...(e ? { endedAt: e } : {}) } : t })
+    .map(t => { const s = occStarted[occKey(t.id, dateKey)], e = occEnded[occKey(t.id, dateKey)]; return s ? { ...t, startedAt: s, startExact: !!occExact[occKey(t.id, dateKey)], ...(e ? { endedAt: e } : {}) } : t })
   // Keep done ones too — a finished task stays on the timeline, crossed off,
   // rather than vanishing.
   const todayCommitments = (commitments||[]).filter(c=>c.date===dateKey)
@@ -1419,9 +1419,14 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
     const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
     return key === dateKey ? d.getHours() * 60 + d.getMinutes() : null
   }
+  // The open app's first sighting isn't an arrival: opening Bloom at 2pm after
+  // a morning at work only says you were there by then. So a sighting moves
+  // the block earlier (you got in early) but never later; a Shortcut's
+  // arrival (startExact) is the real time and is used as is.
   const blockWindow = (x, id, baseMins, dur) => {
     const arrived = stampMins(x.startedAt)
-    const s = arrived ?? blockStart(id, baseMins)
+    const planned = blockStart(id, baseMins)
+    const s = arrived == null ? planned : (x.startExact || arrived < planned) ? arrived : planned
     const left = arrived != null ? stampMins(x.endedAt) : null
     return { start: s, end: left != null && left > s ? left : s + dur }
   }
