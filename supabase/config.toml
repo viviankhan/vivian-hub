@@ -30,3 +30,9 @@ verify_jwt = false
 # itself (see its source), so the preflight can pass without a JWT.
 [functions.narrate-now]
 verify_jwt = false
+
+# Arrive/leave links for iPhone Shortcuts automations. A Shortcut can't sign
+# in, so the link's private key (place_hook_keys) says whose it is; the
+# function only ever adds one place_events row.
+[functions.place-hook]
+verify_jwt = false

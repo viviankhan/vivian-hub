@@ -132,6 +132,11 @@ export function radiusLabel(radius) {
   return radius >= 1000 ? `${(radius / 1000).toString().replace(/\.0$/, '')} km` : `${radius} m`
 }
 
+// How far past a place's radius counts as having left it, and how recently you
+// must have been seen inside for a fix outside to be read as leaving just now.
+const LEAVE_MARGIN_M = 100
+const LEAVE_FRESH_MS = 15 * 60 * 1000
+
 // Watch the device position and fire `onArrive(task)` once per task the moment
 // the device is within that task's radius. `getTasks()` returns the current
 // list of { id, location:{lat,lng,radius} } to watch — it's called on each
@@ -139,10 +144,16 @@ export function radiusLabel(radius) {
 //
 // `options.onError(err)` receives geolocation failures (permission denied, no
 // fix) that were previously swallowed — so the UI can tell the user why arrival
-// auto-start isn't working. Remaining options pass through to watchPosition.
-// Returns a stop() function.
+// auto-start isn't working.
+//
+// `options.getLeaving()` / `options.onLeave(task, leftAt)` do the same for
+// departures: tasks you've arrived at that should end when you go (a Work
+// block). A departure only counts when it's seen live — a fix inside the place
+// within LEAVE_FRESH_MS of the first fix outside — so opening the app at home
+// hours later doesn't end work at that moment. Remaining options pass through
+// to watchPosition. Returns a stop() function.
 export function watchArrivals(getTasks, onArrive, options = {}) {
-  const { onError, ...geoOpts } = options
+  const { onError, getLeaving, onLeave, ...geoOpts } = options
   if (!geolocationSupported()) {
     const err = new Error('Location not supported on this device.')
     emitGeoStatus({ state: 'error', message: err.message })
@@ -150,6 +161,8 @@ export function watchArrivals(getTasks, onArrive, options = {}) {
     return () => {}
   }
   const arrived = new Set()   // task ids we've already fired for this session
+  const insideAt = new Map()  // leaving-watch task id → last fix seen inside
+  const left = new Set()
   let watchId = null
 
   emitGeoStatus({ state: 'watching' })
@@ -169,6 +182,24 @@ export function watchArrivals(getTasks, onArrive, options = {}) {
       if (distanceMeters(here, { lat, lng }) <= radius + slack) {
         arrived.add(t.id)
         try { onArrive(t) } catch {}
+      }
+    }
+    if (!onLeave) return
+    const now = Date.now()
+    for (const t of (getLeaving?.() || [])) {
+      if (!t || !t.location || left.has(t.id)) continue
+      const { lat, lng } = t.location
+      if (typeof lat !== 'number' || typeof lng !== 'number') continue
+      const d = distanceMeters(here, { lat, lng })
+      const radius = t.location.radius || DEFAULT_RADIUS_M
+      if (d <= radius + slack) { insideAt.set(t.id, now); continue }
+      // Out past the edge by a margin, so GPS wander at the door isn't a
+      // departure — and only if we watched you be there moments ago.
+      if (d > radius + slack + LEAVE_MARGIN_M) {
+        const seen = insideAt.get(t.id)
+        if (seen == null || now - seen > LEAVE_FRESH_MS) continue
+        left.add(t.id)
+        try { onLeave(t, now) } catch {}
       }
     }
   }
