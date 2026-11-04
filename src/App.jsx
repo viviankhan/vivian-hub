@@ -1459,7 +1459,7 @@ export default function App() {
   }, [])
 
   const addCommitment = useCallback(async (c, opts = {}) => {
-    const { description, subtasks, cats, color, icon, location, startedAt, block, routine, autoComplete, recordValues, ...core } = c
+    const { description, subtasks, cats, color, icon, location, startedAt, block, routine, autoComplete, recordValues, extraSlots, ...core } = c
     // Scheduling an item onto a day that's already passed means it happened —
     // land it already checked off (a real completion that counts toward
     // progress), unless it's a time block or the caller already set done.
@@ -1482,8 +1482,11 @@ export default function App() {
       if (!opts.silent) recordChange({ kind: 'add', entity: 'task', label: 'Added “' + (created.text || 'task') + '”', inverse: { op: 'delete', entity: 'task', id: created.id } })
       const hasCats = Array.isArray(cats) && cats.length > 1
       const hasRecord = recordValues && Object.keys(recordValues).length > 0
-      const extra = { ...(hasCats ? { cats } : {}), ...(color ? { color } : {}), ...(icon ? { icon } : {}), ...(location ? { location } : {}), ...(startedAt ? { startedAt } : {}), ...(block ? { block: true } : {}), ...(routine ? { routine } : {}), ...(autoComplete ? { autoComplete: true } : {}), ...(hasRecord ? { recordValues } : {}) }
-      if ((description && description.trim()) || (subtasks && subtasks.length) || hasCats || color || icon || location || startedAt || block || routine || autoComplete || hasRecord) {
+      // More time slots on the same day — the task was worked on in pieces
+      // (e.g. 9–10 and 11–1). The row's own time is the first slot.
+      const hasSlots = Array.isArray(extraSlots) && extraSlots.length > 0
+      const extra = { ...(hasCats ? { cats } : {}), ...(color ? { color } : {}), ...(icon ? { icon } : {}), ...(location ? { location } : {}), ...(startedAt ? { startedAt } : {}), ...(block ? { block: true } : {}), ...(routine ? { routine } : {}), ...(autoComplete ? { autoComplete: true } : {}), ...(hasRecord ? { recordValues } : {}), ...(hasSlots ? { extraSlots } : {}) }
+      if ((description && description.trim()) || (subtasks && subtasks.length) || hasCats || color || icon || location || startedAt || block || routine || autoComplete || hasRecord || hasSlots) {
         setCommitmentMeta_(prev => {
           const next = { ...prev, [created.id]: { description: description || '', subtasks: subtasks || [], ...extra } }
           setCommitmentMeta(next).catch(reportSaveError)
@@ -1543,7 +1546,7 @@ export default function App() {
     markImportedAdopted(key, cid)
   }, [importedAdoptions, addCommitment, markImportedAdopted])
   const updateCommitment = useCallback(async (id, changes, opts = {}) => {
-    const { description, subtasks, cats, color, icon, location, startedAt, block, routine, autoComplete, recordValues, ...core } = changes
+    const { description, subtasks, cats, color, icon, location, startedAt, block, routine, autoComplete, recordValues, extraSlots, ...core } = changes
     // Snapshot the prior values of exactly the fields being changed, so this
     // edit can be reversed later. Pure check-offs (only `done`) and pure subtask
     // check-offs (same subtask count) are skipped — they're not "edits".
@@ -1558,13 +1561,15 @@ export default function App() {
     if (color !== undefined)      before.color = beforeMeta.color ?? ''
     if (icon !== undefined)       before.icon = beforeMeta.icon ?? ''
     if (location !== undefined)   before.location = beforeMeta.location ?? ''
+    if (extraSlots !== undefined) before.extraSlots = Array.isArray(beforeMeta.extraSlots) ? beforeMeta.extraSlots : []
     const subLen = Array.isArray(subtasks) ? subtasks.length : null
     const beforeSubLen = Array.isArray(beforeMeta.subtasks) ? beforeMeta.subtasks.length : 0
     const meaningful =
       coreKeys.some(k => k !== 'done') ||
       (description !== undefined && (beforeMeta.description || '') !== (description || '')) ||
       (subLen !== null && subLen !== beforeSubLen) ||
-      cats !== undefined || color !== undefined || icon !== undefined || location !== undefined
+      cats !== undefined || color !== undefined || icon !== undefined || location !== undefined ||
+      (extraSlots !== undefined && JSON.stringify(beforeMeta.extraSlots || []) !== JSON.stringify(extraSlots || []))
     try {
       if (Object.keys(core).length) {
         const updated = await dbUpdateCommitment(id, core)
@@ -1572,7 +1577,7 @@ export default function App() {
         // changed fields, so swapping the whole row in would blank the rest.
         setCommitments_(prev => prev.map(c => c.id===id ? { ...c, ...updated } : c))
       }
-      if (description !== undefined || subtasks !== undefined || cats !== undefined || color !== undefined || icon !== undefined || location !== undefined || startedAt !== undefined || block !== undefined || routine !== undefined || autoComplete !== undefined || recordValues !== undefined) {
+      if (description !== undefined || subtasks !== undefined || cats !== undefined || color !== undefined || icon !== undefined || location !== undefined || startedAt !== undefined || block !== undefined || routine !== undefined || autoComplete !== undefined || recordValues !== undefined || extraSlots !== undefined) {
         setCommitmentMeta_(prev => {
           const merged = { ...(prev[id] || {}) }
           if (description !== undefined) merged.description = description
@@ -1612,6 +1617,10 @@ export default function App() {
           if (recordValues !== undefined) {
             if (recordValues && Object.keys(recordValues).length) merged.recordValues = recordValues
             else delete merged.recordValues
+          }
+          if (extraSlots !== undefined) {
+            if (Array.isArray(extraSlots) && extraSlots.length) merged.extraSlots = extraSlots
+            else delete merged.extraSlots
           }
           const next = { ...prev, [id]: merged }
           setCommitmentMeta(next).catch(reportSaveError)
@@ -2062,6 +2071,7 @@ export default function App() {
     routine: commitmentMeta[c.id]?.routine ?? null,
     autoComplete: commitmentMeta[c.id]?.autoComplete ?? false,
     recordValues: commitmentMeta[c.id]?.recordValues ?? null,
+    extraSlots: commitmentMeta[c.id]?.extraSlots ?? [],
   }))
 
   const sharedProps = {
