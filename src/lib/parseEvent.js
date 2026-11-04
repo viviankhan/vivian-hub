@@ -252,6 +252,30 @@ async function requestHeaders() {
   return headers
 }
 
+// The assistant can only see 150 of your tasks, so which 150 matters. They
+// used to go in database order, oldest first: with 271 tasks, this week's
+// "Coffee at Bravo" was #232 and never sent, so "switch the Thursday coffee to
+// Friday" had nothing to reschedule and added a second coffee instead. Send the
+// ones a request is likely to be about: undone tasks from the last week on,
+// soonest first; then everything else, most recent first.
+export const MAX_ASSISTANT_TASKS = 150
+export function pickAssistantTasks(tasks, today = todayStr(), max = MAX_ASSISTANT_TASKS) {
+  const list = (tasks || []).filter(Boolean)
+  if (list.length <= max) return list
+  const [y, m, d] = String(today).split('-').map(Number)
+  const weekAgo = new Date(Date.UTC(y, m - 1, d - 7)).toISOString().slice(0, 10)
+  const key = t => `${t.date || ''} ${t.time || ''}`
+  const upcoming = [], undated = [], rest = []
+  for (const t of list) {
+    if (!t.date) (t.done ? rest : undated).push(t)
+    else if (!t.done && t.date >= weekAgo) upcoming.push(t)
+    else rest.push(t)
+  }
+  upcoming.sort((a, b) => key(a).localeCompare(key(b)))
+  rest.sort((a, b) => key(b).localeCompare(key(a)))
+  return [...upcoming, ...undated, ...rest].slice(0, max)
+}
+
 // What gets sent, plus what reading the answer needs to know about it.
 function buildRequest(command, { categories = [], tasks = [], images = [], documents = [], today = null } = {}) {
   // A queued request answers relative to the day it was asked, not the day it ran.
@@ -269,7 +293,7 @@ function buildRequest(command, { categories = [], tasks = [], images = [], docum
     command,
     today: day,
     categories: (categories || []).map(c => ({ id: c.id, label: c.label })),
-    tasks: (tasks || []).slice(0, 150),
+    tasks: pickAssistantTasks(tasks, day),
     images: photos,
     ...(docs.length ? { documents: docs } : {}),
   }
