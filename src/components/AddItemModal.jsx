@@ -172,6 +172,24 @@ function ordinal(n) {
   return n + (s[(v - 20) % 10] || s[v] || s[0])
 }
 
+// The add button names the day it will land on, so adding to another day is
+// never a surprise: "Add to today", "Add to tomorrow", a weekday this week
+// ("Add to Friday"), a date later this month ("Add to the 18th"), month/day in
+// another month ("Add to 12/3"), and month/day/year in another year.
+function addToDayLabel(dateStr) {
+  if (!dateStr) return null
+  const d = new Date(dateStr + 'T12:00:00')
+  if (isNaN(d)) return null
+  const t = new Date(localTodayStr() + 'T12:00:00')
+  const diff = Math.round((d - t) / 86400000)
+  if (diff === 0) return 'Add to today'
+  if (diff === 1) return 'Add to tomorrow'
+  if (d.getFullYear() !== t.getFullYear()) return `Add to ${d.getMonth()+1}/${d.getDate()}/${d.getFullYear()}`
+  if (d.getMonth() !== t.getMonth()) return `Add to ${d.getMonth()+1}/${d.getDate()}`
+  if (diff > 1 && diff < 7) return `Add to ${d.toLocaleDateString('en-US', { weekday:'long' })}`
+  return `Add to the ${ordinal(d.getDate())}`
+}
+
 // Short relative label for the date row ("Today", "Tomorrow", weekday).
 function relativeDay(dateStr) {
   if (!dateStr) return null
@@ -1779,7 +1797,7 @@ export default function AddItemModal({ existing = null, existingRecurring = null
               way a per-day start/end change actually sticks. */}
           <button onClick={() => canEditOccurrence ? setScopePrompt(true) : submit()} disabled={!canSave}
             style={{ width:'100%', padding:'14px', borderRadius:14, border:'none', background: canSave ? headerColor : '#E1E1E6', color: canSave ? 'white' : '#9CA3AF', cursor: canSave ? 'pointer' : 'default', fontFamily:'DM Sans,sans-serif', fontWeight:700, fontSize:15, letterSpacing:.3 }}>
-            {(isEdit || isRecEdit) ? 'Save changes' : (block ? 'Add time block' : (repeatOn ? 'Add recurring task' : title))}
+            {(isEdit || isRecEdit) ? 'Save changes' : (block ? 'Add time block' : (repeatOn ? 'Add recurring task' : (addToDayLabel(date) || title)))}
           </button>
         </div>
       </div>
