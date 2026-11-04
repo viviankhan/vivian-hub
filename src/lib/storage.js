@@ -596,10 +596,13 @@ export async function dbSet(key, value) {
 // todos[k] || weekState[k]). A row existing means done; toggling one
 // item's checkbox is one row write, never a whole-map overwrite.
 // The raw completion write — shared by setCompletion and by outbox replay.
-async function cloudCompletionSet(storageKey, done) {
-  if (done) {
+// `keep` stores an explicit "not done" row instead of deleting: an
+// auto-completing task (a medication, a routine step) you un-ticked has to
+// stay un-ticked after a reload, and only a stored false can say so.
+async function cloudCompletionSet(storageKey, done, keep = false) {
+  if (done || keep) {
     const { error } = await supabase.from('task_completions')
-      .upsert({ storage_key: storageKey, done: true, updated_at: new Date().toISOString() })
+      .upsert({ storage_key: storageKey, done: !!done, updated_at: new Date().toISOString() })
     if (error) throw failed(`Failed to save completion for "${storageKey}"`, error)
   } else {
     const { error } = await supabase.from('task_completions').delete().eq('storage_key', storageKey)
@@ -615,14 +618,14 @@ export async function getCompletions() {
         const { data, error } = await supabase.from('task_completions').select('storage_key, done')
         if (error) throw error
         const out = {}
-        ;(data || []).forEach(r => { if (r.done) out[r.storage_key] = true })
+        ;(data || []).forEach(r => { out[r.storage_key] = !!r.done })
         return out
       },
     })
   }
   return (await lsGet('completions')) ?? {}
 }
-export async function setCompletion(storageKey, done) {
+export async function setCompletion(storageKey, done, { keep = false } = {}) {
   if (observing()) {
     const cur = USE_SUPABASE ? await cacheRead(mirrorKey('completions')) : await lsGet('completions')
     if (cur && typeof cur === 'object' && !!cur[storageKey] !== !!done) {
@@ -635,16 +638,16 @@ export async function setCompletion(storageKey, done) {
     // whether or not the write lands.
     const cur = await cacheRead(mirrorKey('completions'))
     const map = (cur && typeof cur === 'object') ? { ...cur } : {}
-    if (done) map[storageKey] = true; else delete map[storageKey]
+    if (done) map[storageKey] = true; else if (keep) map[storageKey] = false; else delete map[storageKey]
     await cacheWrite(mirrorKey('completions'), map)
     await cloudWrite(
-      { table: 'task_completions', op: 'set', id: storageKey, row: { storageKey, done: !!done } },
-      () => cloudCompletionSet(storageKey, done),
+      { table: 'task_completions', op: 'set', id: storageKey, row: { storageKey, done: !!done, keep: !!keep } },
+      () => cloudCompletionSet(storageKey, done, keep),
     )
     return
   }
   const all = (await lsGet('completions')) ?? {}
-  if (done) all[storageKey] = true; else delete all[storageKey]
+  if (done) all[storageKey] = true; else if (keep) all[storageKey] = false; else delete all[storageKey]
   await lsSet('completions', all)
 }
 
@@ -1834,7 +1837,7 @@ if (USE_SUPABASE) registerReplay(async op => {
       return
     }
     case 'task_completions':
-      return cloudCompletionSet(op.row.storageKey, op.row.done)
+      return cloudCompletionSet(op.row.storageKey, op.row.done, !!op.row.keep)
 
     case 'log_entries':
       if (op.op === 'insert') return tolerate([DUPLICATE_KEY], () => cloudLogInsert(op.row))

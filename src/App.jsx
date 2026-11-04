@@ -76,6 +76,9 @@ import { ensureBackgroundPush, syncScheduledPushesDebounced } from './lib/push.j
 import { buildLabelModel, historyFromData } from './lib/predictLabel.js'
 import { geolocationSupported, watchArrivals } from './lib/geofence.js'
 import { placeHooksAvailable, fetchPlaceEvents, placeStamps } from './lib/placeHooks.js'
+import { startVisitTracking, setExtraPlaces } from './lib/visits.js'
+import { loadLifelog, isMedSync, setDayNote, getDayNote } from './lib/lifelog.js'
+import { MedSkipSheet, announceMedSkip } from './components/MedCare.jsx'
 import { Glyph } from './lib/glyphs.jsx'
 import Customization from './components/Customization.jsx'
 import { getFontPref, setFontPref, applyFont, getThemePref, setThemePref, applyTheme,
@@ -970,22 +973,38 @@ export default function App() {
   // carries its date so every day's instance fires once; the leadId is the
   // template so per-item reminder overrides still apply. Completed instances
   // and skipped occurrences are dropped.
+  // Today keeps a day's shifted times and removed tasks per device
+  // (vivian_timeshift_<date>, vivian_deleted_<date>) and announces changes, so
+  // reminders follow the day as it actually is — not the series' usual time.
+  const [dayEditsVer, setDayEditsVer] = useState(0)
+  useEffect(() => {
+    const h = () => setDayEditsVer(v => v + 1)
+    window.addEventListener('bloom-day-edits', h)
+    return () => window.removeEventListener('bloom-day-edits', h)
+  }, [])
   const recurringReminderItems = useMemo(() => {
     const enriched = recurringTaskRows.map(t => ({ ...t, ...(recurringMeta[t.id] || {}) }))
+    const readDay = (k, fb) => { try { return JSON.parse(localStorage.getItem(k) || 'null') ?? fb } catch { return fb } }
     const out = []
     const base = new Date()
     for (let d = 0; d < 8; d++) {
       const day = new Date(base.getFullYear(), base.getMonth(), base.getDate() + d)
       const key = `${day.getFullYear()}-${String(day.getMonth()+1).padStart(2,'0')}-${String(day.getDate()).padStart(2,'0')}`
+      const shifts = readDay('vivian_timeshift_' + key, {})
+      const removed = new Set(readDay('vivian_deleted_' + key, []))
       for (const o of recurringOccurrencesForDate(enriched, key, recurringExceptions)) {
         if (!o._time) continue                          // only timed tasks remind
         if (o.block) continue                           // time blocks aren't tasks
         if (completions[`${key}_${o.id}`]) continue     // already done that day
-        out.push({ id: `rec:${o.id}@${key}`, leadId: o.id, date: key, time: o._time, text: o.title || o.text || 'Task' })
+        if (removed.has(o.id)) continue                 // taken off that day (or pushed to the next)
+        // Shifted on Today → remind at the shifted time.
+        const ov = shifts[o.id]
+        const time = Number.isFinite(ov) ? `${String(Math.floor(ov / 60)).padStart(2, '0')}:${String(ov % 60).padStart(2, '0')}` : o._time
+        out.push({ id: `rec:${o.id}@${key}`, leadId: o.id, date: key, time, text: o.title || o.text || 'Task' })
       }
     }
     return out
-  }, [recurringTaskRows, recurringMeta, recurringExceptions, completions])
+  }, [recurringTaskRows, recurringMeta, recurringExceptions, completions, dayEditsVer])
 
   // How many open tasks carry a place — shown in Settings so the user can see
   // whether location arrivals have anything to act on.
@@ -1138,6 +1157,20 @@ export default function App() {
     })
     return stop
   }, [loading, commitments, commitmentMeta, recurringTasksEnriched, recurringExceptions, completions, occStartedAll, occEndedAll])
+
+  // Remember where you spend time (only while Bloom is open, only on this
+  // device) so the assistant can answer "how long was I at work?". Task places
+  // count as places too, so a stay at one is filed under its name.
+  useEffect(() => {
+    if (loading) return
+    const locs = [
+      ...Object.values(commitmentMeta || {}).map(m => m && m.location),
+      ...(recurringTasksEnriched || []).map(r => r && r.location),
+    ].filter(l => l && l.name && Number.isFinite(l.lat) && Number.isFinite(l.lng))
+    setExtraPlaces(locs)
+    startVisitTracking()
+    loadLifelog().catch(() => {})
+  }, [loading, commitmentMeta, recurringTasksEnriched])
 
   // ── Persist helpers ──────────────────────────────────────────
   // Cloud write failures are surfaced instead of swallowed — otherwise a delete
@@ -2012,9 +2045,21 @@ export default function App() {
     twins.forEach(k => { nextCompletions[k] = nowDone })
     setCompletions_(nextCompletions)
     try {
-      await setCompletion(storageKey, nowDone)
-      for (const k of twins) await setCompletion(k, nowDone)
+      // An explicit tap is kept even when it's an un-tick, so a task that
+      // auto-completes (a medication) stays un-ticked after a reload.
+      await setCompletion(storageKey, nowDone, { keep: true })
+      for (const k of twins) await setCompletion(k, nowDone, { keep: true })
     } catch (e) { reportSaveError(e) }
+
+    // A medication gets extra care: un-ticking it asks how you're doing (and
+    // files that as the day's note); ticking it again clears the "skipped".
+    if (isMedSync(id)) {
+      const d0 = new Date()
+      const medDate = date || commitments.find(c => c.id === id)?.date
+        || `${d0.getFullYear()}-${String(d0.getMonth()+1).padStart(2,'0')}-${String(d0.getDate()).padStart(2,'0')}`
+      if (!nowDone) announceMedSkip({ taskId: id, date: medDate, title: String(label || '').replace(/^\d{1,2}:\d{2}\s*[AP]M\s*—\s*/i, '') })
+      else getDayNote(medDate, id).then(n => { if (n?.skipped) setDayNote(medDate, id, { skipped: false }) }).catch(() => {})
+    }
 
     if (nowDone) {
       // Add log entry on check
@@ -2267,6 +2312,7 @@ export default function App() {
         effectsOn={effectsOn} setEffects={setEffects}
         admin={admin} persistArt={persistArt} />
 
+      <MedSkipSheet />
       <SearchOverlay
         open={searchOpen} onClose={() => setSearchOpen(false)}
         commitments={commitments} events={events} log={log}

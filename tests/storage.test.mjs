@@ -220,5 +220,12 @@ eq('everything made during the outage went up', mock.state.tables.commitments.fi
 eq('including the note', mock.state.tables.kv_store.find(r => r.key === 'notes').value, 'written during the outage')
 eq('and the queue is empty', off.pendingCount(), 0)
 
+console.log('\n— an explicit un-tick is kept, a cleared record is not —')
+await S.setCompletion('2026-11-03_med', false, { keep: true })
+eq('the un-tick is stored as done:false', mock.state.tables.task_completions.find(r => r.storage_key === '2026-11-03_med')?.done, false)
+eq('and read back as a record', (await S.getCompletions())['2026-11-03_med'], false)
+await S.setCompletion('2026-11-03_med', false)
+eq('clearing drops the record entirely', '2026-11-03_med' in (await S.getCompletions()), false)
+
 console.log(`\n${pass} passed, ${fail} failed`)
 process.exit(fail ? 1 : 0)

@@ -58,15 +58,16 @@ Deno.serve(async () => {
   const nowISO = new Date(now).toISOString()
   const cutoffISO = new Date(now - LATE_GRACE_MS).toISOString()
 
-  // Due, not-yet-sent reminders, each joined to the subscription that queued it.
-  // Bounded below by the cutoff: past that, a reminder is no longer delivered.
-  const { data: due, error } = await supabase
-    .from('scheduled_pushes')
-    .select('device_id, tag, title, body, url, push_subscriptions!inner(subscription)')
-    .lte('at', nowISO)
-    .gte('at', cutoffISO)
-    .eq('sent', false)
-    .limit(500)
+  // Claim the due, not-yet-sent reminders, each with the subscription of the
+  // device that queued it. claim_due_pushes (supabase_reminders_hardening.sql)
+  // marks them sent in the same statement that picks them and skips rows
+  // another run holds, so two overlapping runs can never send one reminder
+  // twice. Bounded below by the cutoff: past that, a reminder isn't delivered.
+  const { data: due, error } = await supabase.rpc('claim_due_pushes', {
+    p_now: nowISO,
+    p_cutoff: cutoffISO,
+    p_limit: 500,
+  })
 
   if (error) return json({ error: error.message }, 500)
 
@@ -74,7 +75,7 @@ Deno.serve(async () => {
   const errors: unknown[] = []
   for (const row of due ?? []) {
     // deno-lint-ignore no-explicit-any
-    const sub = (row as any).push_subscriptions?.subscription
+    const sub = (row as any).subscription
     if (!sub) continue
     try {
       await webpush.sendNotification(
@@ -82,13 +83,11 @@ Deno.serve(async () => {
         JSON.stringify({ title: row.title, body: row.body, url: row.url, tag: row.tag }),
         { TTL: PUSH_TTL_SECONDS },
       )
-      await supabase.from('scheduled_pushes')
-        .update({ sent: true }).eq('device_id', row.device_id).eq('tag', row.tag)
       sent++
     } catch (e) {
       // 404/410 = the browser dropped this subscription; delete it (cascades to
       // its queued pushes) so we stop trying. Anything else is likely transient
-      // — leave the row unsent and it retries on the next run.
+      // — the row goes back to unsent and the next run retries it.
       // deno-lint-ignore no-explicit-any
       const err = e as any
       const code = err?.statusCode
@@ -96,6 +95,9 @@ Deno.serve(async () => {
         await supabase.from('push_subscriptions').delete().eq('device_id', row.device_id)
         gone++
       } else {
+        // Hand it back unsent so the next run retries it (until the cutoff).
+        await supabase.from('scheduled_pushes')
+          .update({ sent: false }).eq('device_id', row.device_id).eq('tag', row.tag)
         failed++
         console.error('[send-reminders] push failed:', code, err?.body, err?.message)
         if (errors.length < 3) {

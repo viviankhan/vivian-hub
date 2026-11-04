@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo, useLayoutEffect } from 'react'
 import { createPortal } from 'react-dom'
-import { recurringOccurrencesForDate, taskSegments, occKey, recurringActiveOn } from '../lib/occurrences.js'
+import { recurringOccurrencesForDate, taskSegments, occKey, recurringActiveOn, splitTimePrefix } from '../lib/occurrences.js'
 import { findSlots } from '../lib/scheduler.js'
 import { Icon } from './IconPicker.jsx'
 import { iconColorOn, suggestGlyph } from '../lib/glyphs.jsx'
@@ -19,6 +19,10 @@ import ImportedCalendarCard from './ImportedCalendarCard.jsx'
 import { importedOn, buildImportedRows, importedKey } from '../lib/importedTasks.js'
 import { autoBlockIds } from '../lib/autoBlocks.js'
 import ColorSwatchRow from './ColorSwatchRow.jsx'
+import { MedAlerts } from './MedCare.jsx'
+import Journal from './Journal.jsx'
+import { useLifelogVersion } from './DayNote.jsx'
+import { isMedSync } from '../lib/lifelog.js'
 
 // Concentric-circle "focus" target, for the Focus Now button.
 function TargetIcon({ size = 13 }) {
@@ -106,8 +110,18 @@ function minsToHHMM(m) {
 }
 function shiftLabelTime(label, newMins) {
   const newTime = fmtTimeLabel(newMins)
-  // Replace leading time pattern like "9:50 AM — " or "~9:50 AM — "
-  return label.replace(/~?\d{1,2}:\d{2}\s*(?:AM|PM)\s*(?:—\s*)?/i, newTime + ' — ')
+  // Replace the leading time — "9:50 AM — ", "~9:50 AM — ", or a 24-hour
+  // "09:50 — " (how many stored templates are written). Missing the 24-hour
+  // form meant a day-moved repeating task opened its editor at the series'
+  // time instead of the time the timeline was showing.
+  return label.replace(/^~?\s*\d{1,2}:\d{2}\s*(?:AM|PM)?\s*(?:[—–-]\s*)?/i, newTime + ' — ')
+}
+// Start minutes from a label's leading time, in either 12- or 24-hour form.
+function labelStartMins(label) {
+  const t = splitTimePrefix(label || '').time
+  if (!t) return null
+  const [h, m] = t.split(':').map(Number)
+  return h * 60 + m
 }
 
 // ── Manage modal with smart scheduling ────────────────────────
@@ -605,9 +619,12 @@ function BlockBand({ seg, onEdit, onAdd, onCollapse, onToggle = null, checked = 
 //  • active — now is inside it: the time counts down to what's LEFT.
 //  • past   — now is beyond it (or a past day): it becomes "Took a/an X break",
 //    muted, no Add Task (the moment has gone by with nothing scheduled).
-function GapRow({ mins, phase = 'future', remaining = mins, prevColor, nextColor, routineTint, routineOpacity = 0.5, outerTints = null, onAdd, onStartNow = null, startLabel = '' }) {
+function GapRow({ mins, phase = 'future', remaining = mins, spanMins = mins, prevColor, nextColor, routineTint, routineOpacity = 0.5, outerTints = null, onAdd, onStartNow = null, startLabel = '' }) {
   // Proportional to real clock time, on the same scale as tasks and bands.
-  const h = Math.max(18, Math.round(spanHeight(mins)))
+  // `spanMins` is the part of the break this row stands for: a running break
+  // is drawn as two rows — the stretch already gone above "now", the time
+  // left below it — so the now-line sits where the clock actually is.
+  const h = Math.max(phase === 'elapsed' ? 6 : 18, Math.round(spanHeight(spanMins)))
   const top = prevColor || '#C9C9D3'
   const bot = nextColor || top
   // The connector reads as a bridge between the two tasks: its dashes blend
@@ -617,6 +634,7 @@ function GapRow({ mins, phase = 'future', remaining = mins, prevColor, nextColor
   const dashMask = 'repeating-linear-gradient(black 0 5px, transparent 5px 11px)'
   const isPast   = phase === 'past'
   const isActive = phase === 'active'
+  const isElapsed = phase === 'elapsed'   // the gone-by top of a running break: just the line
   // While the break is running, the shown length is the time still LEFT (so it
   // ticks down); otherwise it's the whole break.
   const shownMins = isActive ? Math.max(1, remaining) : mins
@@ -639,7 +657,7 @@ function GapRow({ mins, phase = 'future', remaining = mins, prevColor, nextColor
     </button>
   )
   return (
-    <div className="today-gap" style={{ position:'relative', zIndex:0, display:'flex', gap:0, alignItems: compact?'center':'flex-start', opacity: isPast?0.6:1 }}>
+    <div className="today-gap" style={{ position:'relative', zIndex:0, display:'flex', gap:0, alignItems: compact?'center':'flex-start', opacity: (isPast || isElapsed)?0.6:1 }}>
       {/* Continue a routine's film through the gap between two same-routine
           tasks, square-edged so it butts flush against the pills above/below. */}
       <OuterFilms tints={outerTints} />
@@ -650,7 +668,7 @@ function GapRow({ mins, phase = 'future', remaining = mins, prevColor, nextColor
       <div style={{ width:52, flexShrink:0, display:'flex', justifyContent:'center' }}>
         <div style={{ width:3, minHeight:h, borderRadius:3, background:`linear-gradient(to bottom, ${top}, ${bot})`, WebkitMask:dashMask, mask:dashMask }} />
       </div>
-      {isPast ? (
+      {isElapsed ? null : isPast ? (
         <div style={{ flex:1, minWidth:0, paddingLeft:10, display:'flex', alignItems:'center', gap:7 }}>
           <span style={{ display:'flex', flexShrink:0 }}><Icon value="glyph:clock" size={15} color="#9AA6B2" /></span>
           <span style={{ fontSize:12.5, color:'var(--muted)', whiteSpace:'nowrap' }}>Took {artForMins(mins)} <b>{durLabel}</b> break</span>
@@ -1268,6 +1286,7 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
   const [addingTask,  setAddingTask]  = useState(false)
   const [addPreset,   setAddPreset]   = useState(null)  // {time, cat} when adding inside a block
   const [importRow,   setImportRow]   = useState(null)  // imported event being edited into the schedule
+  const [journalOpen, setJournalOpen] = useState(false) // 💭 thought journal sheet
   const [pasterOpen,  setPasterOpen]  = useState(false) // AI assistant sheet: false | 'new' | 'queue'
   const [aiToast,     setAiToast]     = useState(null)  // { label, count } when queued suggestions land
   const [expandedRoutines, setExpandedRoutines] = useState({})  // routineId → show its done tasks individually
@@ -1294,6 +1313,10 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
   const [timeOverrides, setTimeOverrides] = useState(()=>{
     try { return JSON.parse(localStorage.getItem('vivian_timeshift_'+todayKey())||'{}') } catch { return {} }
   })
+
+  // Tell the reminders when this day's shifted times or removed tasks change,
+  // so a task pulled to 9:01 isn't still announced at its usual 9:35.
+  useEffect(() => { try { window.dispatchEvent(new Event('bloom-day-edits')) } catch {} }, [timeOverrides, deleted])
 
   // The clock. `now` moves the progress marker and re-derives current/overdue;
   // the DAY has to move with it. Left open overnight the timeline used to still
@@ -1346,6 +1369,7 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
 
   const dateKey = viewDate
   const isToday = viewDate === today
+  useLifelogVersion()   // re-read once the medication list loads or changes
 
   // Per-day local collections (custom tasks, deletions, time overrides) are
   // keyed by date in localStorage — reload them whenever the viewed day
@@ -1579,6 +1603,12 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
   const isPastDay = viewDate < today
   const effectiveDone = (task) => {
     if (hasCompletionRecord(task)) return isDoneCheck(task.id, task.isCommitment)
+    // A medication counts as taken unless you un-tick it: from its time today
+    // (or all day, if it has none), and on every past day.
+    if (isMedSync(task.id)) {
+      if (isToday) return task._mins == null || now >= task._mins
+      return isPastDay
+    }
     // No record: a task auto-completes once its window has passed when it opts
     // in explicitly (task.autoComplete), belongs to a routine, or lives inside
     // a time block. The explicit flag lets tasks outside any routine do this too.
@@ -2169,6 +2199,26 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
     })
   }
 
+  // Forget a task's day-only time move on `fromDate` and every later day, so a
+  // series-wide time edit isn't hidden behind an older one-day nudge. Past days
+  // keep theirs — they're history.
+  const clearOverrideFrom = (id, fromDate) => {
+    try {
+      for (let i = localStorage.length - 1; i >= 0; i--) {
+        const k = localStorage.key(i)
+        if (!k || !k.startsWith('vivian_timeshift_') || k.slice(17) < fromDate) continue
+        const m = JSON.parse(localStorage.getItem(k) || '{}')
+        if (m[id] === undefined) continue
+        delete m[id]
+        localStorage.setItem(k, JSON.stringify(m))
+      }
+    } catch {}
+    if (timeOverrides[id] !== undefined) {
+      const next = { ...timeOverrides }; delete next[id]
+      setTimeOverrides(next)
+    }
+  }
+
   // ── Pause & resume (Focus mode) ──────────────────────────────
   // Pausing no longer splits the task or reschedules a remainder — the task
   // keeps its place on the timeline. We just record the wall-clock span it was
@@ -2292,7 +2342,16 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
   useEffect(() => { if (!aiToast) return; const t = setTimeout(() => setAiToast(null), 9000); return () => clearTimeout(t) }, [aiToast])
 
   // Apply a confirmed plan of assistant actions using the ordinary task ops.
-  const applyAssistantActions = (actions) => {
+  const applyAssistantActions = (actions, { loggedPast = false } = {}) => {
+    // When you told the assistant about things you already did ("I worked
+    // 10–9 Tuesday"), a task that's already over is logged as done, so it
+    // counts toward your hours in Informatics instead of sitting overdue.
+    const isOver = (a) => {
+      if (!a.date) return false
+      const [y, m, d] = a.date.split('-').map(Number)
+      const [hh, mm] = (a.time || '23:59').split(':').map(Number)
+      return new Date(y, m - 1, d, hh, mm).getTime() + (a.durationMins || 0) * 60000 <= Date.now()
+    }
     (actions || []).forEach((a, idx) => {
       if (a.kind === 'create' && a.repeat && addRecurringTask) {
         // A repeating task (a birthday, "gym every Mon & Thu") becomes a real
@@ -2308,7 +2367,7 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
           id, text: a.title, date: a.date || null, time: a.time || null,
           durationMins: a.durationMins || null,
           cat: (a.categoryIds && a.categoryIds[0]) || null, cats: Array.isArray(a.categoryIds) ? a.categoryIds : [],
-          description: a.description || '', subtasks, done: false, person: null, prepMin: null,
+          description: a.description || '', subtasks, done: loggedPast && isOver(a), person: null, prepMin: null,
           icon: a.icon || null, color: a.color || null,
           createdAt: new Date().toISOString(),
         }
@@ -2644,6 +2703,7 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
         isDone={isImportedDone} onToggle={onToggleImported} onAdopt={onAdoptImported} onOpen={openImported}
         dayLabel={isToday ? 'today' : new Date(dateKey+'T12:00:00').toLocaleDateString('en-US',{weekday:'long',month:'short',day:'numeric'})} />
 
+      {isToday && <MedAlerts />}
       <div className={hasAnytime ? 'today-split' : undefined}>
       {/* Unscheduled tasks — top of the day on mobile, sidebar on desktop. */}
       {hasAnytime && (
@@ -2722,6 +2782,24 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
           // While the break is live, let the upcoming task be pulled forward and
           // started now — but only a real, movable, still-open timed task.
           const canStart = upcoming && upcoming._mins != null && !INFLEXIBLE_TAGS.has(upcoming.tag) && !effectiveDone(upcoming)
+          // "Now" is inside this break: draw the part already gone, then the
+          // now-line, then what's left — so the line (and the blob that rides
+          // it) sits 44 minutes above the next task, not three hours.
+          if (phase === 'active' && wantNow && !nowState.done) {
+            nowState.done = true
+            const gone = now - gapStart
+            return [
+              <GapRow key={'gap-gone-'+gapStart} mins={g} phase="elapsed" spanMins={gone}
+                prevColor={cur.color} nextColor={cur.color}
+                routineTint={tint || null} routineOpacity={tint ? BLOCK_FILM_OPACITY : 0.5} outerTints={outerTintsOf(holder)} />,
+              <NowMarker key={'now-gap-'+gapStart} now={now} bandTint={tint || null} bandOpacity={BLOCK_FILM_OPACITY} outerTints={outerTintsOf(holder)} />,
+              <GapRow key={'gap-'+cur.end+'-'+startMins} mins={g} phase={phase} remaining={remaining} spanMins={remaining}
+                prevColor={cur.color} nextColor={nextColor}
+                routineTint={tint || null} routineOpacity={tint ? BLOCK_FILM_OPACITY : 0.5} outerTints={outerTintsOf(holder)} onAdd={()=>addInGap(gapStart, gapEnd)}
+                onStartNow={canStart ? ()=>handleShiftToNow(upcoming) : null}
+                startLabel={upcoming ? (upcoming.title || stripTimePrefix(upcoming.label)) : ''} />,
+            ]
+          }
           return <GapRow key={'gap-'+cur.end+'-'+startMins} mins={g} phase={phase} remaining={remaining}
             prevColor={cur.color} nextColor={nextColor}
             routineTint={tint || null} routineOpacity={tint ? BLOCK_FILM_OPACITY : 0.5} outerTints={outerTintsOf(holder)} onAdd={()=>addInGap(gapStart, gapEnd)}
@@ -2936,6 +3014,15 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
           )}
         </button>
       )}
+      {/* Thought journal, beside the ✨ button (always available — it's local). */}
+      <button onClick={()=>setJournalOpen(true)} className={`today-fab-journal${aiScheduleAvailable ? '' : ' solo'}`}
+        title="Thought journal" aria-label="Thought journal"
+        style={{position:'fixed',width:44,height:44,borderRadius:'50%',border:'none',
+          background:'linear-gradient(135deg,#F3D9A4,#E9C7D6)',color:'#3b2a17',fontSize:19,cursor:'pointer',
+          boxShadow:'0 4px 16px rgba(0,0,0,.22)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:100}}>
+        💭
+      </button>
+      {journalOpen && <Journal onClose={()=>setJournalOpen(false)} />}
       {aiToast && (
         <div className="aq-toast" role="status">
           <span>✨ {aiToast.count ? `${aiToast.count} suggestion${aiToast.count > 1 ? 's' : ''}` : 'Suggestions'} ready for “{aiToast.label}”</span>
@@ -3031,7 +3118,25 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
           setEditingRec(null); setEditingRecDate(null)
           maybePromptShift(newSeries.id, parseTimeMins(newSeries.label))
         }}
-        onSaveRecurring={t=>{ const pivotId=t.id; updateRecurringTask&&updateRecurringTask(t.id,t); setEditingRec(null); setEditingRecDate(null); maybePromptShift(pivotId, parseTimeMins(t.label)) }}
+        onSaveRecurring={t=>{
+          const pivotId=t.id
+          // The editor opened showing this day's moved time (if it had one).
+          // "Apply to all events" must still change what you see today:
+          //  • time edited → the new series time wins, so drop the day-only
+          //    move from this day onward (it used to keep masking the edit, so
+          //    the task looked like it wouldn't change);
+          //  • time untouched → keep the day's move, and don't let its moved
+          //    time leak into every other day of the series.
+          const ov = timeOverrides[pivotId]
+          let saved = t
+          if (ov !== undefined) {
+            const tmpl = (recurringTasks||[]).find(x=>x.id===pivotId)
+            if (labelStartMins(t.label) !== ov) clearOverrideFrom(pivotId, dateKey)
+            else if (tmpl && labelStartMins(tmpl.label) !== null) saved = { ...t, label: shiftLabelTime(t.label, labelStartMins(tmpl.label)) }
+          }
+          updateRecurringTask&&updateRecurringTask(saved.id,saved); setEditingRec(null); setEditingRecDate(null)
+          if (labelStartMins(t.label) !== ov) maybePromptShift(pivotId, labelStartMins(t.label))
+        }}
         onDeleteOccurrence={date=>{ skipRecurringOccurrence&&skipRecurringOccurrence(editingRec.id, date); setEditingRec(null); setEditingRecDate(null) }}
         onDeleteFuture={date=>{
           // End the series the day before this occurrence — today onward drops

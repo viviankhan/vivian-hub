@@ -30,6 +30,42 @@ dates", "only Day 2". A PDF is sent as the file itself, so Gemini reads its
 tables and even scanned pages; a Word file is turned into text in the browser
 first. Old `.doc` files can't be read — save them as `.docx` or PDF.
 
+**Or ask about your days.** Questions are answered on the spot, on your phone,
+from what Bloom already has. They never go into the queue and never reach the
+AI:
+
+- *"How did jogging feel?"* shows the notes, moods and photos you left on
+  jogging, with when it was, how long it took, and where you were.
+- *"Did I take my meds this week?"* or *"When did I run out of Lexapro?"*
+  shows the days each medication was skipped, how you were doing, and what you
+  wrote.
+- *"When did I last have a migraine?"* reads your conditions log.
+- *"How was my mood at work?"* or *"What did I write at work today?"* use the
+  moods and notes you logged while you were there.
+- *"How long was I at work?"* or *"How long have I been here?"* use location
+  memory (below).
+
+Where the answers come from:
+
+- **How did it go?** When you open a task, its sheet has a note for that day,
+  under the task's own notes. It has text, a mood, and photos, and it saves as
+  you type. A daily task gets a fresh note every day.
+- **Medication.** Open the task, go to More options, and turn on Medication.
+  A med counts as taken unless you un-tick it. Un-ticking asks how you're
+  doing and whether there's anything to note. A note like "ran out" or "need a
+  refill" stays pinned at the top of Today until you tap Handled.
+- **💭 Thought journal**, next to ✨ on Today. Each thought is stamped with the
+  time and the place you were, and can have a mood and photos. Thoughts also
+  show in Informatics → Mind & body, along with your meds and where your time
+  went.
+- **Location memory** (Settings → Location → *Remember where I spend time*)
+  keeps a log of your stays while Bloom is open, on this device only. A stay
+  near a saved place, a recent place, or a task's place gets that place's
+  name. Anywhere else is named by a one-off address lookup. A web app can't see
+  your location while it's closed, so a stay runs from the first to the last
+  time Bloom saw you there. Two sightings of the same place up to 9 hours
+  apart, with nothing elsewhere in between, count as one stay.
+
 **No waiting around.** Tapping **Plan it** files the request in a queue and the
 assistant reads it in the background — close the sheet or leave the app. The ✨
 button shows a count when suggestions are ready (plus a notification if

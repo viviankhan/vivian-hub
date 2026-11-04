@@ -53,6 +53,12 @@ begin
   end if;
 end $$;
 
+-- The original device-only link is now redundant, and leaving two links between
+-- these tables makes send-reminders' join ambiguous: every run fails and no
+-- reminder is delivered. The (device_id, user_id) key above already cascades.
+alter table scheduled_pushes drop constraint if exists scheduled_pushes_device_id_fkey;
+notify pgrst, 'reload schema';
+
 do $$
 declare t text;
 begin
