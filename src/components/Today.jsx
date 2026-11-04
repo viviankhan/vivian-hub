@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo, useLayoutEffect } from 'react'
 import { createPortal } from 'react-dom'
-import { recurringOccurrencesForDate, taskSegments, occKey, recurringActiveOn } from '../lib/occurrences.js'
+import { recurringOccurrencesForDate, taskSegments, occKey, recurringActiveOn, splitTimePrefix } from '../lib/occurrences.js'
 import { findSlots } from '../lib/scheduler.js'
 import { Icon } from './IconPicker.jsx'
 import { iconColorOn, suggestGlyph } from '../lib/glyphs.jsx'
@@ -110,8 +110,18 @@ function minsToHHMM(m) {
 }
 function shiftLabelTime(label, newMins) {
   const newTime = fmtTimeLabel(newMins)
-  // Replace leading time pattern like "9:50 AM — " or "~9:50 AM — "
-  return label.replace(/~?\d{1,2}:\d{2}\s*(?:AM|PM)\s*(?:—\s*)?/i, newTime + ' — ')
+  // Replace the leading time — "9:50 AM — ", "~9:50 AM — ", or a 24-hour
+  // "09:50 — " (how many stored templates are written). Missing the 24-hour
+  // form meant a day-moved repeating task opened its editor at the series'
+  // time instead of the time the timeline was showing.
+  return label.replace(/^~?\s*\d{1,2}:\d{2}\s*(?:AM|PM)?\s*(?:[—–-]\s*)?/i, newTime + ' — ')
+}
+// Start minutes from a label's leading time, in either 12- or 24-hour form.
+function labelStartMins(label) {
+  const t = splitTimePrefix(label || '').time
+  if (!t) return null
+  const [h, m] = t.split(':').map(Number)
+  return h * 60 + m
 }
 
 // ── Manage modal with smart scheduling ────────────────────────
@@ -2174,6 +2184,26 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
     })
   }
 
+  // Forget a task's day-only time move on `fromDate` and every later day, so a
+  // series-wide time edit isn't hidden behind an older one-day nudge. Past days
+  // keep theirs — they're history.
+  const clearOverrideFrom = (id, fromDate) => {
+    try {
+      for (let i = localStorage.length - 1; i >= 0; i--) {
+        const k = localStorage.key(i)
+        if (!k || !k.startsWith('vivian_timeshift_') || k.slice(17) < fromDate) continue
+        const m = JSON.parse(localStorage.getItem(k) || '{}')
+        if (m[id] === undefined) continue
+        delete m[id]
+        localStorage.setItem(k, JSON.stringify(m))
+      }
+    } catch {}
+    if (timeOverrides[id] !== undefined) {
+      const next = { ...timeOverrides }; delete next[id]
+      setTimeOverrides(next)
+    }
+  }
+
   // ── Pause & resume (Focus mode) ──────────────────────────────
   // Pausing no longer splits the task or reschedules a remainder — the task
   // keeps its place on the timeline. We just record the wall-clock span it was
@@ -3073,7 +3103,25 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
           setEditingRec(null); setEditingRecDate(null)
           maybePromptShift(newSeries.id, parseTimeMins(newSeries.label))
         }}
-        onSaveRecurring={t=>{ const pivotId=t.id; updateRecurringTask&&updateRecurringTask(t.id,t); setEditingRec(null); setEditingRecDate(null); maybePromptShift(pivotId, parseTimeMins(t.label)) }}
+        onSaveRecurring={t=>{
+          const pivotId=t.id
+          // The editor opened showing this day's moved time (if it had one).
+          // "Apply to all events" must still change what you see today:
+          //  • time edited → the new series time wins, so drop the day-only
+          //    move from this day onward (it used to keep masking the edit, so
+          //    the task looked like it wouldn't change);
+          //  • time untouched → keep the day's move, and don't let its moved
+          //    time leak into every other day of the series.
+          const ov = timeOverrides[pivotId]
+          let saved = t
+          if (ov !== undefined) {
+            const tmpl = (recurringTasks||[]).find(x=>x.id===pivotId)
+            if (labelStartMins(t.label) !== ov) clearOverrideFrom(pivotId, dateKey)
+            else if (tmpl && labelStartMins(tmpl.label) !== null) saved = { ...t, label: shiftLabelTime(t.label, labelStartMins(tmpl.label)) }
+          }
+          updateRecurringTask&&updateRecurringTask(saved.id,saved); setEditingRec(null); setEditingRecDate(null)
+          if (labelStartMins(t.label) !== ov) maybePromptShift(pivotId, labelStartMins(t.label))
+        }}
         onDeleteOccurrence={date=>{ skipRecurringOccurrence&&skipRecurringOccurrence(editingRec.id, date); setEditingRec(null); setEditingRecDate(null) }}
         onDeleteFuture={date=>{
           // End the series the day before this occurrence — today onward drops
