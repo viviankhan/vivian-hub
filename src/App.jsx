@@ -2132,6 +2132,7 @@ export default function App() {
     location: commitmentMeta[c.id]?.location ?? null,
     startedAt: placeByOcc[`${c.id}@${c.date}`]?.start ?? commitmentMeta[c.id]?.startedAt ?? null,
     endedAt: placeByOcc[`${c.id}@${c.date}`] ? placeByOcc[`${c.id}@${c.date}`].end : (commitmentMeta[c.id]?.endedAt ?? null),
+    startExact: !!placeByOcc[`${c.id}@${c.date}`],
     block: commitmentMeta[c.id]?.block ?? false,
     routine: commitmentMeta[c.id]?.routine ?? null,
     autoComplete: commitmentMeta[c.id]?.autoComplete ?? false,
@@ -2168,6 +2169,9 @@ export default function App() {
     recurringExceptions,
     occStarted: occStartedAll,
     occEnded: occEndedAll,
+    // Which of those came from the Shortcut (a real arrival) rather than the
+    // first time the open app happened to see you there.
+    occExact: placeByOcc,
     addRecurringTask: addRecurringTaskFn,
     updateRecurringTask: updateRecurringTaskFn,
     deleteRecurringTask: deleteRecurringTaskFn,
