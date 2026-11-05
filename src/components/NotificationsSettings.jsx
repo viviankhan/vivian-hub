@@ -14,6 +14,9 @@ import {
 } from '../lib/geofence.js'
 import { trackingEnabled, setTracking, getVisits, VISITS_EVENT } from '../lib/visits.js'
 import { getSavedPlaces, addSavedPlace, removeSavedPlace, onSavedPlaces } from '../lib/places.js'
+import { placeHooksAvailable } from '../lib/placeHooks.js'
+import PlaceHookSetup from './PlaceHookSetup.jsx'
+import { pushPrefs } from '../lib/prefs.js'
 import {
   pushSupported, backgroundPushEnabled, enableBackgroundPush, disableBackgroundPush,
 } from '../lib/push.js'
@@ -85,7 +88,7 @@ function SavedPlaces() {
     } finally { setBusy(false) }
   }
   const pick = (p) => { setDraft({ name: p.name || '', lat: p.lat, lng: p.lng }); setQuery(''); setResults([]) }
-  const save = () => { if (draft) { addSavedPlace({ name: draft.name, lat: draft.lat, lng: draft.lng }); setDraft(null); setQuery(''); setResults([]); setErr('') } }
+  const save = () => { if (draft) { addSavedPlace({ name: draft.name, lat: draft.lat, lng: draft.lng }); pushPrefs(); setDraft(null); setQuery(''); setResults([]); setErr('') } }
   const cancel = () => { setDraft(null); setQuery(''); setResults([]); setErr('') }
 
   const chip = { fontSize:11.5, padding:'6px 11px', borderRadius:16, cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:600 }
@@ -109,7 +112,7 @@ function SavedPlaces() {
                 <div style={{ fontSize:14, color:'var(--text)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{p.name || 'Unnamed place'}</div>
                 <div style={{ fontSize:10.5, color:'var(--muted)' }}>{p.lat.toFixed(4)}, {p.lng.toFixed(4)}</div>
               </div>
-              <button onClick={() => removeSavedPlace(p.id)} aria-label={`Remove ${p.name || 'place'}`}
+              <button onClick={() => { removeSavedPlace(p.id); pushPrefs() }} aria-label={`Remove ${p.name || 'place'}`}
                 style={{ border:'none', background:'none', cursor:'pointer', color:'#B4BEC8', fontSize:17, lineHeight:1, padding:'0 4px' }}>✕</button>
             </div>
           ))}
@@ -544,6 +547,7 @@ export default function NotificationsSettings({ events, commitments, recurring =
 
       {/* ── Saved places ──────────────────────────────────── */}
       <SavedPlaces />
+      {placeHooksAvailable && <div style={{ ...card, paddingTop:2 }}><PlaceHookSetup /></div>}
 
       {/* ── What you'll get ───────────────────────────────── */}
       <div style={{ ...card, marginBottom:0 }}>

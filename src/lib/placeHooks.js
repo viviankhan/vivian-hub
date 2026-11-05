@@ -1,12 +1,13 @@
 // src/lib/placeHooks.js
 // ─────────────────────────────────────────────────────────────
-// Arrive / leave links for iPhone Shortcuts automations.
+// Check-ins from iPhone Shortcuts automations.
 //
 // Bloom can only see your location while it's open. A Shortcuts automation
-// ("When I arrive at Guggenheim → open this link") runs in the background, so
-// a located time block can start when you really got there and end when you
-// really left. Each link carries your private key and the item's id; the
-// place-hook function turns a visit into a place_events row (see
+// ("When I leave Heritage Manor → run Bloom check-in") runs in the background,
+// so Bloom can know where you were all day and when a located block really
+// started and ended. The check-in link carries your private key and the
+// phone's location (the older per-item arrive/leave links carry an item id);
+// the place-hook function turns each into a place_events row (see
 // supabase_place_hooks.sql), and Bloom reads those rows here.
 // ─────────────────────────────────────────────────────────────
 import { supabase, supabaseUrl } from './storage.js'
@@ -35,19 +36,26 @@ export async function getPlaceHookKey({ fresh = false } = {}) {
   return key
 }
 
+// The one link every automation uses, through the "Bloom check-in" shortcut.
+// LAT and LNG are placeholders the shortcut swaps for Current Location's
+// Latitude and Longitude.
+export function checkinUrl(key) {
+  return `${supabaseUrl}/functions/v1/place-hook?k=${encodeURIComponent(key)}&lat=LAT&lng=LNG`
+}
+
 export function placeHookUrl(key, taskId, kind) {
   const q = new URLSearchParams({ k: key, t: taskId, e: kind })
   return `${supabaseUrl}/functions/v1/place-hook?${q}`
 }
 
-// The last few days of arrivals and departures, oldest first.
-export async function fetchPlaceEvents(days = 3) {
+// The last couple of weeks of check-ins, arrivals and departures, oldest first.
+export async function fetchPlaceEvents(days = 14) {
   if (!supabase) return []
   const since = new Date(Date.now() - days * 86400000).toISOString()
   const { data, error } = await supabase.from('place_events')
-    .select('task_id, kind, at').gte('at', since).order('at', { ascending: true })
+    .select('task_id, kind, lat, lng, at').gte('at', since).order('at', { ascending: true })
   if (error) { console.warn('[Bloom] place events:', error.message); return [] }
   return data || []
 }
 
-export { placeStamps } from './placeStamps.js'
+export { placeStamps, checkinStops, locatedStamps } from './placeStamps.js'

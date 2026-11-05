@@ -75,8 +75,9 @@ import { isOnline } from './lib/offline.js'
 import { ensureBackgroundPush, syncScheduledPushesDebounced } from './lib/push.js'
 import { buildLabelModel, historyFromData } from './lib/predictLabel.js'
 import { geolocationSupported, watchArrivals } from './lib/geofence.js'
-import { placeHooksAvailable, fetchPlaceEvents, placeStamps } from './lib/placeHooks.js'
-import { startVisitTracking, setExtraPlaces } from './lib/visits.js'
+import { placeHooksAvailable, fetchPlaceEvents, placeStamps, checkinStops, locatedStamps } from './lib/placeHooks.js'
+import { getSavedPlaces, getRecentPlaces, onSavedPlaces } from './lib/places.js'
+import { startVisitTracking, setExtraPlaces, setCheckinStops } from './lib/visits.js'
 import { loadLifelog, isMedSync, setDayNote, getDayNote } from './lib/lifelog.js'
 import { MedSkipSheet, announceMedSkip } from './components/MedCare.jsx'
 import { Glyph } from './lib/glyphs.jsx'
@@ -411,21 +412,12 @@ export default function App() {
   const [occEnded, setOccEnded] = useState(() => {
     try { return JSON.parse(localStorage.getItem('bloom_occ_ended') || '{}') } catch { return {} }
   })
-  // Arrivals/departures sent by an iPhone Shortcuts automation while Bloom was
-  // closed (see lib/placeHooks.js). They're the real times, so for any item
-  // and day they cover they win over what the open app happened to see.
+  // Check-ins and arrivals/departures sent by iPhone Shortcuts automations
+  // while Bloom was closed (see lib/placeHooks.js). The places they're matched
+  // to are your saved and recent places plus the ones tasks are tagged with.
   const [placeEvents, setPlaceEvents] = useState([])
-  const placeByOcc = useMemo(() => placeStamps(placeEvents), [placeEvents])
-  const occStartedAll = useMemo(() => {
-    const out = { ...occStarted }
-    for (const [k, v] of Object.entries(placeByOcc)) out[k] = v.start
-    return out
-  }, [occStarted, placeByOcc])
-  const occEndedAll = useMemo(() => {
-    const out = { ...occEnded }
-    for (const [k, v] of Object.entries(placeByOcc)) { if (v.end) out[k] = v.end; else delete out[k] }
-    return out
-  }, [occEnded, placeByOcc])
+  const [placeList, setPlaceList] = useState(() => [...getSavedPlaces(), ...getRecentPlaces()])
+  useEffect(() => onSavedPlaces(() => setPlaceList([...getSavedPlaces(), ...getRecentPlaces()])), [])
   // Each setter mirrors the choice to the synced prefs blob (pushPrefs), so the
   // look & settings follow the user to their other devices.
   const setFont    = useCallback(v  => { setFontState(v);    setFontPref(v);    applyFont(v);   pushPrefs() }, [])
@@ -967,6 +959,36 @@ export default function App() {
   // Rows enriched with their recurrence rule (freq/interval/monthDay) from the
   // meta blob — this is what Today/Week/Calendar compute occurrences from.
   const recurringTasksEnriched = recurringTaskRows.map(t => ({ ...t, ...(recurringMeta[t.id] || {}) }))
+
+  // Where you were each day, from the check-ins, and each located item's
+  // start/end from them. These are the real times, so for any item and day
+  // they cover they win over what the open app happened to see. An item opts
+  // in the same way as for the open app: Start on arrival.
+  const placeStops = useMemo(() => {
+    const taskPlaces = [
+      ...Object.values(commitmentMeta || {}).map(m => m && m.location),
+      ...recurringTaskRows.map(r => recurringMeta[r.id]?.location),
+    ].filter(l => l && l.name && Number.isFinite(l.lat) && Number.isFinite(l.lng))
+    return checkinStops(placeEvents, [...placeList, ...taskPlaces])
+  }, [placeEvents, placeList, commitmentMeta, recurringTaskRows, recurringMeta])
+  const placeByOcc = useMemo(() => {
+    const located = [
+      ...Object.entries(commitmentMeta || {}).filter(([, m]) => m?.location?.autoStart).map(([id, m]) => ({ id, location: m.location })),
+      ...recurringTaskRows.filter(r => recurringMeta[r.id]?.location?.autoStart).map(r => ({ id: r.id, location: recurringMeta[r.id].location })),
+    ]
+    return { ...placeStamps(placeEvents), ...locatedStamps(placeStops, located) }
+  }, [placeEvents, placeStops, commitmentMeta, recurringTaskRows, recurringMeta])
+  useEffect(() => { setCheckinStops(placeStops) }, [placeStops])
+  const occStartedAll = useMemo(() => {
+    const out = { ...occStarted }
+    for (const [k, v] of Object.entries(placeByOcc)) out[k] = v.start
+    return out
+  }, [occStarted, placeByOcc])
+  const occEndedAll = useMemo(() => {
+    const out = { ...occEnded }
+    for (const [k, v] of Object.entries(placeByOcc)) { if (v.end) out[k] = v.end; else delete out[k] }
+    return out
+  }, [occEnded, placeByOcc])
 
   // Expand the next week of timed recurring occurrences into reminder items so
   // notifications fire for them too (commitments/events already do). Each id
@@ -2172,6 +2194,7 @@ export default function App() {
     // Which of those came from the Shortcut (a real arrival) rather than the
     // first time the open app happened to see you there.
     occExact: placeByOcc,
+    placeStops,
     addRecurringTask: addRecurringTaskFn,
     updateRecurringTask: updateRecurringTaskFn,
     deleteRecurringTask: deleteRecurringTaskFn,

@@ -45,3 +45,15 @@ create policy "Own events: delete" on place_events for delete to authenticated u
 
 -- Only the last couple of months matter to the timeline.
 delete from place_events where at < now() - interval '62 days';
+
+-- ── Check-ins: one link for every automation ────────────────────────────
+-- A "Bloom check-in" shortcut sends where the phone is (lat/lng) instead of an
+-- item id, so every automation can run the same shortcut. Bloom matches each
+-- check-in to your places and builds the day from them (lib/placeStamps.js).
+alter table place_events add column if not exists lat double precision;
+alter table place_events add column if not exists lng double precision;
+alter table place_events alter column task_id drop not null;
+alter table place_events drop constraint if exists place_events_kind_check;
+alter table place_events add constraint place_events_kind_check check (
+  (kind in ('arrive', 'leave') and task_id is not null)
+  or (kind = 'ping' and lat between -90 and 90 and lng between -180 and 180));
