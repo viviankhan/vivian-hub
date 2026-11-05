@@ -314,8 +314,26 @@ export function answerPlaceQuestion(text, { stays, places, now, tracking = true 
 
 // ── Browser: the log and the tracker ───────────────────────────
 
-export function getVisits() {
+function ownVisits() {
   try { return cleanStays(JSON.parse(localStorage.getItem(LOG_KEY) || '[]')) } catch { return [] }
+}
+// Stops from the iPhone check-ins (lib/placeStamps.js checkinStops) — the real
+// arrival and departure times, so where they cover a stretch they replace what
+// the open app saw. Only named stops; a check-in on the bus isn't a visit.
+let checkinStays = []
+export function setCheckinStops(stops) {
+  const now = Date.now()
+  checkinStays = (stops || []).filter(s => s && s.key).map(s => ({
+    id: 'c' + s.start, placeId: s.key, name: s.name, lat: s.lat, lng: s.lng,
+    start: s.start, end: s.end ?? now, fixes: 2, checkin: true,
+  }))
+  try { window.dispatchEvent(new Event(VISITS_EVENT)) } catch {}
+}
+export function getVisits() {
+  const own = ownVisits()
+  if (!checkinStays.length) return own
+  const free = own.filter(o => !checkinStays.some(c => o.start < c.end && o.end > c.start))
+  return [...checkinStays, ...free].sort((a, b) => a.start - b.start)
 }
 function saveVisits(list) {
   try { localStorage.setItem(LOG_KEY, JSON.stringify(list)) } catch {}
@@ -361,7 +379,7 @@ export async function setTracking(on) {
 const tracker = { watchId: null, started: false, lastWrite: 0, naming: new Set() }
 
 function fileFix(fix, t) {
-  const before = getVisits()
+  const before = ownVisits()
   const after = recordFix(before, fix, knownPlaces(), t)
   const last = after[after.length - 1]
   const changedStay = !before.length || before[before.length - 1].id !== last?.id
@@ -376,7 +394,7 @@ async function nameStay(stay) {
   tracker.naming.add(stay.id)
   const name = await reverseGeocode(stay.lat, stay.lng)
   if (!name) { tracker.naming.delete(stay.id); return }
-  const list = getVisits().map(s => (s.id === stay.id && !s.name) ? { ...s, name } : s)
+  const list = ownVisits().map(s => (s.id === stay.id && !s.name) ? { ...s, name } : s)
   saveVisits(list)
 }
 

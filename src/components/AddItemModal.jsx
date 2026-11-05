@@ -1655,9 +1655,8 @@ export default function AddItemModal({ existing = null, existingRecurring = null
                 <span style={{ width:21, height:21, borderRadius:'50%', background:'white', boxShadow:'0 1px 3px rgba(0,0,0,.28)' }} />
               </button>
             </div>
-            {/* Saved items only — the links need the item's id. */}
-            {location.autoStart && placeHooksAvailable && (rec?.id || existing?.id) && (
-              <PlaceHookSetup taskId={rec?.id || existing.id} placeName={location.name} />
+            {location.autoStart && placeHooksAvailable && (
+              <PlaceHookSetup />
             )}
             <button onClick={clearLocation}
               style={{ marginTop:12, fontSize:11, padding:'5px 12px', borderRadius:16, cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:600, border:'1px solid var(--border)', background:'white', color:'var(--muted)' }}>
