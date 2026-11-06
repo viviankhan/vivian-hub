@@ -1232,7 +1232,10 @@ export default function App() {
   // place is informative by default (it just shows where the task happens);
   // arrival auto-start is a per-task toggle set in the add sheet.
   useEffect(() => {
-    if (loading || !geolocationSupported()) return
+    // Wait for the iPhone check-ins: they already say when you got to work
+    // this morning. Watching before they load, the open app sees you at work,
+    // finds no arrival yet, and announces "Started: Work" hours late.
+    if (loading || !geolocationSupported() || !placeEventsRead) return
     const dd = new Date()
     const today = `${dd.getFullYear()}-${String(dd.getMonth()+1).padStart(2,'0')}-${String(dd.getDate()).padStart(2,'0')}`
     // Current set of not-done, located, not-yet-started items whose location
@@ -1305,7 +1308,7 @@ export default function App() {
       onError: (err) => console.warn('[Bloom] location arrival watch:', err && (err.message || err.code)),
     })
     return stop
-  }, [loading, commitments, commitmentMeta, recurringTasksEnriched, recurringExceptions, completions, occStartedAll, occEndedAll])
+  }, [loading, placeEventsRead, commitments, commitmentMeta, recurringTasksEnriched, recurringExceptions, completions, occStartedAll, occEndedAll])
 
   // Remember where you spend time (only while Bloom is open, only on this
   // device) so the assistant can answer "how long was I at work?". Task places
