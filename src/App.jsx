@@ -1662,7 +1662,7 @@ export default function App() {
   }, [])
 
   const addCommitment = useCallback(async (c, opts = {}) => {
-    const { description, subtasks, cats, color, icon, location, startedAt, endedAt, block, routine, autoComplete, recordValues, extraSlots, ...core } = c
+    const { description, subtasks, cats, color, icon, location, startedAt, endedAt, block, routine, autoComplete, recordValues, extraSlots, startExact: _shownExact, ...core } = c   // startExact: display-only (commitmentsView), never stored
     // Scheduling an item onto a day that's already passed means it happened —
     // land it already checked off (a real completion that counts toward
     // progress), unless it's a time block or the caller already set done.
@@ -1749,7 +1749,7 @@ export default function App() {
     markImportedAdopted(key, cid)
   }, [importedAdoptions, addCommitment, markImportedAdopted])
   const updateCommitment = useCallback(async (id, changes, opts = {}) => {
-    const { description, subtasks, cats, color, icon, location, startedAt, endedAt, block, routine, autoComplete, recordValues, extraSlots, ...core } = changes
+    const { description, subtasks, cats, color, icon, location, startedAt, endedAt, block, routine, autoComplete, recordValues, extraSlots, startExact: _shownExact, ...core } = changes   // startExact: display-only, never stored
     // Snapshot the prior values of exactly the fields being changed, so this
     // edit can be reversed later. Pure check-offs (only `done`) and pure subtask
     // check-offs (same subtask count) are skipped — they're not "edits".
