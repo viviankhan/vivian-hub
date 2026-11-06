@@ -10,7 +10,10 @@
 import { lookupPlaceName } from './placeLookup.js'
 
 export const PLACE_NAMES_EVENT = 'bloom-place-names'
-const KEY = 'bloom_geo_names_v2'   // v2: building / lot / complex names, not roads
+const KEY = 'bloom_geo_names_v3'   // v3: a failed lookup is retried, not remembered as "no name"
+// A spot OpenStreetMap had nothing for (or couldn't be reached about) is asked
+// again after this long — a dropped connection mustn't leave it unnamed forever.
+const RETRY_MS = 10 * 60 * 1000
 const spot = (lat, lng) => `${lat.toFixed(4)},${lng.toFixed(4)}`
 
 let cache = null
@@ -31,7 +34,7 @@ async function pump() {
     let name = ''
     try { name = await lookupPlaceName(lat, lng) } catch {}
     const c = read()
-    c[k] = name || ''   // remember misses too, so a spot isn't asked about again
+    c[k] = name || { miss: Date.now() }
     try { localStorage.setItem(KEY, JSON.stringify(c)) } catch {}
     pending.delete(k)
     try { window.dispatchEvent(new Event(PLACE_NAMES_EVENT)) } catch {}
@@ -40,12 +43,21 @@ async function pump() {
   running = false
 }
 
+// A link that opens the spot in Maps, so a place with no name can still be
+// looked up (Apple Maps on iPhone; it falls back to the web elsewhere).
+export function mapsUrl(lat, lng, label = '') {
+  const q = encodeURIComponent(label || `${lat.toFixed(5)},${lng.toFixed(5)}`)
+  return `https://maps.apple.com/?ll=${lat.toFixed(6)},${lng.toFixed(6)}&q=${q}`
+}
+
 // The spot's name if known; otherwise '' (and it's looked up in the background).
 export function spotName(lat, lng) {
   if (!Number.isFinite(lat) || !Number.isFinite(lng)) return ''
   const k = spot(lat, lng)
   const c = read()
-  if (k in c) return c[k] || ''
-  if (!pending.has(k)) { pending.add(k); queue.push({ lat, lng, k }); pump() }
+  const v = c[k]
+  if (typeof v === 'string' && v) return v
+  const fresh = v && typeof v === 'object' && Date.now() - (v.miss || 0) < RETRY_MS
+  if (!fresh && !pending.has(k)) { pending.add(k); queue.push({ lat, lng, k }); pump() }
   return ''
 }

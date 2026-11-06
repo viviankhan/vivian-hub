@@ -46,6 +46,14 @@ eq('a restaurant next to you', P.nameFromOverpass([city, way({ amenity: 'restaur
 eq('a restaurant down the street is not where you are', P.nameFromOverpass([city, way({ amenity: 'restaurant', name: 'Far Away Cafe' }, 44.0230, -92.4671)], pt), '')
 eq('only the city: no name', P.nameFromOverpass([city], pt), '')
 
+console.log('\n— is Nominatim enough? —')
+eq('the college campus: yes', P.isStrongNominatim({ category: 'amenity', type: 'college', name: 'Mayo Clinic College of Medicine and Science', address: { road: '2nd Avenue Southwest' } }), true)
+eq('Mayo College name from the 10:47 check-in', P.nameFromNominatim({ category: 'amenity', type: 'college', name: 'Mayo College', address: { amenity: 'Mayo College', road: '3rd Street Southwest' } }), 'Mayo College')
+eq('the apartment complex: yes', P.isStrongNominatim({ category: 'building', type: 'apartments', name: '', address: { residential: 'Heritage Manor Apartments' } }), true)
+eq('a bare house number: ask Overpass', P.isStrongNominatim({ category: 'place', type: 'house', name: '', address: { house_number: '296', road: '3rd Street Southwest' } }), false)
+eq('a nameless lot: ask Overpass', P.isStrongNominatim({ category: 'amenity', type: 'parking', name: '', address: { road: 'W Frontage Rd' } }), false)
+eq('a road: ask Overpass', P.isStrongNominatim({ category: 'highway', type: 'tertiary', name: 'West Frontage Road Northwest' }), false)
+
 console.log('\n— roads —')
 eq('short road', P.shortRoad('18 1/2 Avenue Northwest'), '18 1/2 Ave NW')
 eq('query asks for areas and neighbours', /is_in\(44\.020400,-92\.467100\)/.test(P.overpassQuery(44.0204, -92.4671)), true)

@@ -25,7 +25,7 @@
 import { useState } from 'react'
 import { addSavedPlace } from '../lib/places.js'
 import { pushPrefs } from '../lib/prefs.js'
-import { spotName } from '../lib/placeNames.js'
+import { spotName, mapsUrl } from '../lib/placeNames.js'
 import { dayPath } from '../lib/dayPath.js'
 
 const dayBounds = (dateKey) => {
@@ -55,7 +55,9 @@ const smallBtn = (primary) => ({
 
 // extras (today only): { now: { label, since, seen, live } | null, plans, suggestions, onAcceptSuggestion, onDismissSuggestion }
 export default function PlacesDay({ stops = [], dateKey, extras = null }) {
-  const [open, setOpen] = useState(true)
+  // Folded to one line unless you open it (remembered on this device).
+  const [open, setOpen_] = useState(() => { try { return localStorage.getItem('bloom_places_open') === '1' } catch { return false } })
+  const setOpen = (f) => setOpen_(o => { const n = typeof f === 'function' ? f(o) : f; try { localStorage.setItem('bloom_places_open', n ? '1' : '0') } catch {} return n })
   const [naming, setNaming] = useState(null)   // row being named
   const [name, setName] = useState('')
   const [from, to] = dayBounds(dateKey)
@@ -76,23 +78,22 @@ export default function PlacesDay({ stops = [], dateKey, extras = null }) {
 
   return (
     <section className="places-day" data-testid="places-day"
-      style={{ margin: '10px 0 12px', padding: '13px 14px', borderRadius: 16, background: 'var(--card, white)', border: '1px solid var(--border)', boxShadow: '0 4px 14px rgba(60,72,88,.05)' }}>
-      <button type="button" onClick={() => setOpen(o => !o)} aria-expanded={open}
-        style={{ display: 'flex', alignItems: 'center', width: '100%', gap: 8, padding: 0, border: 'none', background: 'none', cursor: 'pointer', fontFamily: 'DM Sans,sans-serif' }}>
-        <span style={{ ...kicker, flex: 1, textAlign: 'left' }}>📍 {extras ? 'Where you are' : 'Where you were'}</span>
-        <span style={{ fontSize: 9, color: 'var(--muted)' }}>{open ? '▲' : '▼'}</span>
+      style={{ margin: '10px 0 12px', padding: open ? '12px 14px 13px' : '10px 14px', borderRadius: 16, background: 'var(--card, white)', border: '1px solid var(--border)', boxShadow: '0 4px 14px rgba(60,72,88,.05)' }}>
+      {/* One line: where you are (today) or how many places (another day).
+          Tap to unfold the day's path and plans. */}
+      <button type="button" onClick={() => setOpen(o => !o)} aria-expanded={open} data-testid="location-now"
+        style={{ display: 'flex', alignItems: 'center', width: '100%', gap: 8, padding: 0, border: 'none', background: 'none', cursor: 'pointer', fontFamily: 'DM Sans,sans-serif', textAlign: 'left' }}>
+        <span aria-hidden="true" style={{ fontSize: 14, flexShrink: 0 }}>📍</span>
+        <span style={{ flex: 1, minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', fontSize: 14 }}>
+          {extras ? (here
+            ? <><b style={{ fontWeight: 650, color: 'var(--text)' }}>{here.live ? here.label : `Last seen at ${here.label}`}</b>
+                <span style={{ color: 'var(--muted)', fontSize: 12.5 }}> · {here.live ? `since ${clock(here.since)}` : clock(here.seen)}</span></>
+            : <span style={{ color: 'var(--muted)' }}>No check-ins yet today</span>)
+            : <><b style={{ fontWeight: 650, color: 'var(--text)' }}>Where you were</b>
+                <span style={{ color: 'var(--muted)', fontSize: 12.5 }}> · {rows.filter(r => r.kind === 'stay').length} place{rows.filter(r => r.kind === 'stay').length === 1 ? '' : 's'}</span></>}
+        </span>
+        <span style={{ fontSize: 10, color: 'var(--muted)', flexShrink: 0, transform: open ? 'rotate(180deg)' : 'none', transition: 'transform .2s' }}>▾</span>
       </button>
-
-      {extras && (
-        <div data-testid="location-now" style={{ marginTop: 6 }}>
-          {here ? (<>
-            <div style={{ fontSize: 19, fontWeight: 700, color: 'var(--text)', lineHeight: 1.25 }}>{here.live ? here.label : `Last seen at ${here.label}`}</div>
-            <div style={{ fontSize: 12.5, color: 'var(--muted)', marginTop: 2 }}>
-              {here.live ? `since ${clock(here.since)} · ${dur((now - here.since) / 60000)}` : clock(here.seen)}
-            </div>
-          </>) : <div style={{ fontSize: 13.5, color: 'var(--muted)' }}>No check-ins yet today</div>}
-        </div>
-      )}
 
       {open && rows.length > 0 && (
         <ol style={{ listStyle: 'none', margin: '12px 0 0', padding: 0 }} data-testid="day-path">
@@ -126,6 +127,10 @@ export default function PlacesDay({ stops = [], dateKey, extras = null }) {
                   <span style={{ display: 'block', fontSize: 11.5, color: 'var(--muted)', marginTop: 1, lineHeight: 1.4 }}>
                     {when}{travel && r.via.length > 0 ? ` · via ${r.via.join(', ')}` : ''}
                     {r.ongoing && <b style={{ color: 'var(--forest)', fontWeight: 700 }}> · here now</b>}
+                    {!travel && !r.named && Number.isFinite(r.lat) && (
+                      <> · <a href={mapsUrl(r.lat, r.lng, r.auto ? r.label : '')} target="_blank" rel="noopener noreferrer" data-testid="spot-map"
+                        style={{ color: 'var(--teal)', fontWeight: 600, textDecoration: 'none' }}>Map ↗</a></>
+                    )}
                   </span>
                 </span>
               </li>
