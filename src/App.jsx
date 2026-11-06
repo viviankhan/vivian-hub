@@ -1374,8 +1374,10 @@ export default function App() {
       // Repeat rule extras (freq/interval/monthDay/durationMins) + routine group
       // aren't table columns — stash them in the synced recurring_meta blob
       // keyed by row id.
-      const { freq, interval, monthDay, durationMins, routine, icon, color, block, location, autoComplete } = task
-      if ((freq && freq !== 'weekly') || (interval && interval > 1) || monthDay || durationMins || routine || icon || color || block || location || autoComplete) {
+      const { freq, interval, monthDay, durationMins, routine, icon, color, block, location, autoComplete, subtasks } = task
+    // A repeating task's checklist (template items: id, text, optional weekdays).
+    const checklist = Array.isArray(subtasks) ? subtasks.filter(x => x && (x.text || '').trim()).map(({ id, text, days }) => ({ id: id || 'st-' + Math.random().toString(36).slice(2, 8), text, ...(Array.isArray(days) && days.length ? { days } : {}) })) : undefined
+      if ((freq && freq !== 'weekly') || (interval && interval > 1) || monthDay || durationMins || routine || icon || color || block || location || autoComplete || checklist?.length) {
         setRecurringMeta_(prev => {
           const next = { ...prev, [created.id]: {
             ...(freq ? { freq } : {}),
@@ -1388,6 +1390,7 @@ export default function App() {
             ...(block ? { block: true } : {}),
             ...(location ? { location } : {}),
             ...(autoComplete ? { autoComplete: true } : {}),
+            ...(checklist?.length ? { subtasks: checklist } : {}),
           } }
           setRecurringMeta(next).catch(reportSaveError)
           return next
@@ -1403,7 +1406,9 @@ export default function App() {
     // Keep the rule extras (freq/interval/monthDay/durationMins) + routine group
     // in sync with the edit — set them when present, clear them when it's back
     // to plain weekly with no duration and no routine.
-    const { freq, interval, monthDay, durationMins, routine, icon, color, block, location, autoComplete } = task
+    const { freq, interval, monthDay, durationMins, routine, icon, color, block, location, autoComplete, subtasks } = task
+    // A repeating task's checklist (template items: id, text, optional weekdays).
+    const checklist = Array.isArray(subtasks) ? subtasks.filter(x => x && (x.text || '').trim()).map(({ id, text, days }) => ({ id: id || 'st-' + Math.random().toString(36).slice(2, 8), text, ...(Array.isArray(days) && days.length ? { days } : {}) })) : undefined
     const extra = {
       ...(freq && freq !== 'weekly' ? { freq } : {}),
       ...(interval && interval > 1 ? { interval } : {}),
@@ -1417,6 +1422,15 @@ export default function App() {
       ...(autoComplete ? { autoComplete: true } : {}),
     }
     setRecurringMeta_(prev => {
+      // Keep the checklist when this save didn't carry one. An editor opened
+      // on one day only sees that day's items, so items limited to other
+      // weekdays (methotrexate on Fridays) and each item's weekdays are kept.
+      const had = Array.isArray(prev[id]?.subtasks) ? prev[id].subtasks : []
+      const keep = checklist === undefined ? had : [
+        ...checklist.map(c => { const p = had.find(h => h.id === c.id); return { ...c, ...(c.days ? {} : p?.days ? { days: p.days } : {}) } }),
+        ...had.filter(h => h.days?.length && !checklist.some(c => c.id === h.id)),
+      ]
+      if (keep && keep.length) extra.subtasks = keep
       const has = id in prev
       if (!Object.keys(extra).length && !has) return prev
       const next = { ...prev }

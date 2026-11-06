@@ -842,7 +842,8 @@ function AnytimeCard({ tasks, categories, isDoneOf, onToggle, onOpen, onManage, 
 }
 
 function TimelineBlock({ task, categories, status, now, prevColor, nextColor, routineTint, tintOpacity = 0.5, outerTints = null, filmTop = true, filmBottom = true, bandLabel = null, bandIcon = null, onBandLabel = null, onBandCollapse = null, bandMenu = [], isDone, elapsed, dateKey, pauseData = null, offerStartNow = false, onToggle, onManage, onShiftToNow, onOpen, onFocus, onToggleSub }) {
-  const [subOpen, setSubOpen] = useState(false)
+  // A repeating task's checklist (meds) starts open: its boxes are the point.
+  const [subOpen, setSubOpen] = useState(() => !!task?.isRecurring && (task?.subCount || 0) > 0)
   const catFound = (categories || []).find(x => x.id === task.tag)
   const catColor = catFound?.color || TAG_COLORS[task.tag] || '#9CA3AF'
   const color    = task.color || catColor
@@ -1361,6 +1362,12 @@ export default function Today({ locationSlot = null, placesExtras = null, todos,
     // Merge in an arrival-started timestamp (set when you reach the task's
     // location), so a located recurring task shows live progress like a one-off.
     .map(t => { const s = occStarted[occKey(t.id, dateKey)], e = occEnded[occKey(t.id, dateKey)]; return s ? { ...t, startedAt: s, startExact: !!occExact[occKey(t.id, dateKey)], ...(e ? { endedAt: e } : {}) } : t })
+    // A repeating task's checklist, ticked per day ('date_id~sub' completions).
+    .map(t => {
+      if (!t.subtasks?.length) return t
+      const subtasks = t.subtasks.map(s => ({ ...s, done: !!(todos || {})[`${dateKey}_${t.id}~${s.id}`] }))
+      return { ...t, subtasks, subCount: subtasks.length, subDone: subtasks.filter(s => s.done).length }
+    })
   // Keep done ones too — a finished task stays on the timeline, crossed off,
   // rather than vanishing.
   const todayCommitments = (commitments||[]).filter(c=>c.date===dateKey)
@@ -2472,6 +2479,18 @@ export default function Today({ locationSlot = null, placesExtras = null, todos,
   // Check a subtask off right on the timeline (commitments only). Writes back
   // the whole subtasks array; App auto-completes the parent when all are done.
   const toggleSubtask = (task, subId) => {
+    // A repeating task's checklist item is ticked for this day only; ticking
+    // the last one ticks the task (unticking one leaves the task as it is).
+    if (!task.isCommitment && syncToggle) {
+      const sub = (task.subtasks || []).find(s => s.id === subId)
+      if (!sub) return
+      const next = !sub.done
+      syncToggle(`${task.id}~${subId}`, sub.text, task.tag, dateKey, next, { quiet: true })
+      if (next && task.subtasks.every(s => s.id === subId || s.done) && !effectiveDone(task)) {
+        syncToggle(task.id, task.title || task.label, task.tag, dateKey, true)
+      }
+      return
+    }
     if (!task.isCommitment || !updateCommitment) return
     const subs = (Array.isArray(task.subtasks) ? task.subtasks : []).map(s => s.id === subId ? { ...s, done: !s.done } : s)
     updateCommitment(task.id, { subtasks: subs })
