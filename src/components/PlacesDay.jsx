@@ -7,6 +7,7 @@
 import { useState } from 'react'
 import { addSavedPlace } from '../lib/places.js'
 import { pushPrefs } from '../lib/prefs.js'
+import { spotName } from '../lib/placeNames.js'
 
 const dayBounds = (dateKey) => {
   const [y, m, d] = dateKey.split('-').map(Number)
@@ -60,7 +61,7 @@ export default function PlacesDay({ stops = [], dateKey }) {
                     ? <span style={{ fontWeight:600, color:'var(--text)' }}>{s.name.split(',')[0]}</span>
                     : <button type="button" onClick={() => { setNaming(s); setName('') }}
                         style={{ padding:0, border:'none', background:'none', cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontSize:13, color:'var(--teal)', textDecoration:'underline' }}>
-                        Somewhere else · name it
+                        {spotName(s.lat, s.lng) || 'Somewhere else'} · name it
                       </button>}
                   {here && <span style={{ marginLeft:6, fontSize:11, color:'var(--forest)' }}>· here now</span>}
                 </span>

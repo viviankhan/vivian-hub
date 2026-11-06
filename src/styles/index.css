@@ -1958,7 +1958,10 @@ textarea { resize: vertical; min-height: 160px; line-height: 1.6; }
 .rail-mood-trail { left: 18px; width: 4px; z-index: 7; opacity: .8; cursor: default; pointer-events: none; }
 
 /* Rail container — offset below the date header so markers ride the timeline. */
-.day-rail { position: absolute; left: 0; top: 158px; bottom: 12px; width: 54px; }
+.day-rail { position: absolute; left: 0; top: 158px; bottom: 12px; width: 54px; pointer-events: none; }
+/* The rail's strip lets taps through to the cards under it; its own marks and
+   the blob still take them. */
+.day-rail > * { pointer-events: auto; }
 /* When you opened Bloom: a hairline tick and its time on the rail's outer edge,
    quiet enough to sit under the blob and every marker. */
 .rail-open { position: absolute; left: 0; width: 26px; height: 12px; margin-top: -6px; padding: 0; border: none; background: none; cursor: pointer; z-index: 6; display: flex; align-items: center; gap: 2px; }
