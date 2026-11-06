@@ -1,21 +1,16 @@
 // src/components/LifeCards.jsx
 // ─────────────────────────────────────────────────────────────
-// Informatics → Mind & body: the medications, journal and places cards. They
+// Informatics → Mind & body: the medications and journal cards. They
 // cover the same date range as the rest of the page.
 // ─────────────────────────────────────────────────────────────
 import { useEffect, useState } from 'react'
 import { gatherRecallData } from '../lib/recallData.js'
-import { medAdherence, placeTotals } from '../lib/recall.js'
+import { medAdherence } from '../lib/recall.js'
 import { moodMeta } from '../lib/wellness.js'
 import { useLifelogVersion } from './DayNote.jsx'
 import { fmtStamp } from './Journal.jsx'
 
 const toMs = (key, endOfDay = false) => { const [y, m, d] = key.split('-').map(Number); return new Date(y, m - 1, d + (endOfDay ? 1 : 0)).getTime() }
-function fmtHM(mins) {
-  const m = Math.round(mins); if (m < 60) return `${m}m`
-  const h = Math.floor(m / 60), r = m % 60
-  return r ? `${h}h ${r}m` : `${h}h`
-}
 const shortDay = (key) => new Date(key + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
 
 export default function LifeCards({ from, to, phrase }) {
@@ -26,8 +21,6 @@ export default function LifeCards({ from, to, phrase }) {
   const a = toMs(from), b = toMs(to, true), now = Date.now()
   const meds = medAdherence(data, a, b, now).filter(m => m.due)
   const journal = (data.journal || []).filter(j => { const t = Date.parse(j.at); return t >= a && t < b })
-  const places = placeTotals(data.stays || [], a, b, now).slice(0, 6)
-  const maxPlace = Math.max(1, ...places.map(p => p.mins))
 
   return (
     <>
@@ -42,13 +35,27 @@ export default function LifeCards({ from, to, phrase }) {
           <div key={m.id} style={{ padding: '6px 0' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 14 }}>
               <b>💊 {m.title}</b>
-              <span style={{ color: m.skipped.length ? '#B45309' : '#2F6B4F', fontWeight: 600 }}>{m.due - m.skipped.length}/{m.due} days</span>
+              <span style={{ color: m.taken < m.due ? '#B45309' : '#2F6B4F', fontWeight: 600 }}>{m.taken}/{m.due} taken</span>
+            </div>
+            <div style={{ height: 6, borderRadius: 3, background: 'var(--border)', marginTop: 5, display: 'flex', overflow: 'hidden' }}>
+              <div style={{ width: `${(m.taken / Math.max(1, m.due)) * 100}%`, background: '#2F6B4F' }} />
+              <div style={{ width: `${(m.skipped.length / Math.max(1, m.due)) * 100}%`, background: '#D97706' }} />
             </div>
             {m.skipped.map(s => (
               <div key={s.date} style={{ fontSize: 12.5, color: 'var(--muted)', marginTop: 4, lineHeight: 1.45 }}>
                 Skipped {shortDay(s.date)}{s.mood ? ` · mood ${moodMeta(s.mood).label}` : ''}{s.text ? ` — “${s.text}”` : ''}
               </div>
             ))}
+            {m.late.map(l => (
+              <div key={l.date} style={{ fontSize: 12.5, color: 'var(--muted)', marginTop: 4 }}>
+                Taken late {shortDay(l.date)}, at {new Date(l.at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
+              </div>
+            ))}
+            {m.unanswered.length > 0 && (
+              <div style={{ fontSize: 12.5, color: 'var(--muted)', marginTop: 4 }}>
+                Not answered: {m.unanswered.map(shortDay).join(', ')}
+              </div>
+            )}
           </div>
         ))}
       </section>
@@ -68,24 +75,6 @@ export default function LifeCards({ from, to, phrase }) {
         ))}
       </section>
 
-      {places.length > 0 && (
-        <section className="in-card" data-testid="life-places">
-          <div className="in-card-head">
-            <h3 className="serif">Where your time went</h3>
-            <span className="in-card-meta">while Bloom was open</span>
-          </div>
-          {places.map(p => (
-            <div key={p.name} style={{ padding: '5px 0' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13.5 }}>
-                <span>{p.name}</span><span style={{ fontWeight: 600 }}>{fmtHM(p.mins)}</span>
-              </div>
-              <div style={{ height: 6, borderRadius: 3, background: 'var(--border)', marginTop: 4 }}>
-                <div style={{ width: `${(p.mins / maxPlace) * 100}%`, height: '100%', borderRadius: 3, background: 'var(--teal)' }} />
-              </div>
-            </div>
-          ))}
-        </section>
-      )}
     </>
   )
 }

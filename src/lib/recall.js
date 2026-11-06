@@ -18,7 +18,7 @@
 //
 // Pure: hand it the data (see gatherRecallData in AiAssistant) and `now`.
 // ─────────────────────────────────────────────────────────────
-import { recurringOccurrencesForDate } from './occurrences.js'
+import { recurringOccurrencesForDate, splitTimePrefix } from './occurrences.js'
 import { parsePlaceQuestion, answerPlaceQuestion, staysFor, nameScore, takeScope } from './visits.js'
 import { medAlerts, isMedAlert } from './lifelogPure.js'
 
@@ -113,7 +113,8 @@ function fmtMins(m) {
 function fmtHours(m) { m = Math.round(m); const h = Math.floor(m / 60), r = m % 60; return h ? (r ? `${h}h ${r}m` : `${h}h`) : `${r} min` }
 function cap(s) { return s ? s[0].toUpperCase() + s.slice(1) : s }
 function clip(s, n = 220) { s = String(s || '').trim(); return s.length > n ? s.slice(0, n - 1).trimEnd() + '…' : s }
-const stripTime = (label) => String(label || '').replace(/^\d{1,2}:\d{2}\s*[AP]M\s*—\s*/i, '').trim()
+// "8:00 AM — Lexapro" and "08:00 — Lexapro" both read as "Lexapro".
+const stripTime = (label) => splitTimePrefix(String(label || '')).title
 
 // ── Moments: everything with a time ────────────────────────────
 
@@ -181,22 +182,29 @@ function medTasks(data) {
   return out
 }
 
-// Per med: { title, due, skipped: [{date, mood, text}] } over [from, to) (ms).
+// Per med over [from, to) (ms): { title, due, taken, skipped: [{date, mood,
+// text, late}], unanswered: [date] }. A dose counts as taken only when it was
+// ticked (or answered "yes" / "taking it now"); skipped when un-ticked or
+// answered "skip"; a past day with neither is unanswered. Today's dose with no
+// answer yet is still open, so it isn't counted either way.
 export function medAdherence(data, from, to, now) {
   const todayKey = keyOf(now)
   return medTasks(data).map(m => {
-    const skipped = [], dueDays = []
+    const skipped = [], unanswered = [], late = []
+    let due = 0, taken = 0
     for (let t = startOfDay(from); t < to; t += DAY) {
       const k = keyOf(t)
       if (k > todayKey) break
-      const due = m.rec ? recurringOccurrencesForDate([m.rec], k, data.exceptions || {}).length > 0 : m.date === k
-      if (!due) continue
-      dueDays.push(k)
+      const isDue = m.rec ? recurringOccurrencesForDate([m.rec], k, data.exceptions || {}).length > 0 : m.date === k
+      if (!isDue) continue
       const key = `${k}_${m.id}`
+      const done = (data.completions || {})[key]
       const note = (data.dayNotes || {})[key]
-      if ((data.completions || {})[key] === false || note?.skipped) skipped.push({ date: k, mood: note?.mood || null, text: note?.text || '' })
+      if (done === false || note?.skipped) { due++; skipped.push({ date: k, mood: note?.mood || null, text: note?.text || '' }) }
+      else if (done) { due++; taken++; if (note?.takenAt) late.push({ date: k, at: note.takenAt }) }
+      else if (k < todayKey) { due++; unanswered.push(k) }
     }
-    return { id: m.id, title: m.title, due: dueDays.length, skipped }
+    return { id: m.id, title: m.title, due, taken, skipped, unanswered, late }
   })
 }
 
@@ -222,11 +230,14 @@ function answerMeds(q, data, now) {
   const rows = medAdherence({ ...data, medIds: Object.fromEntries(pick.map(m => [m.id, true])) }, range.from, range.to, now)
   const lines = rows.map(r => {
     if (!r.due) return `${r.title}: not scheduled ${range.label}.`
-    if (!r.skipped.length) return `${r.title}: taken every day ${range.label} (${r.due} of ${r.due}).`
-    return `${r.title}: taken ${r.due - r.skipped.length} of ${r.due} day${r.due === 1 ? '' : 's'} ${range.label}; skipped ${r.skipped.map(s => fmtDay(dateOfKey(s.date), now)).join(', ')}.`
+    if (r.taken === r.due) return `${r.title}: taken every day ${range.label} (${r.due} of ${r.due}).`
+    const parts = [`${r.title}: taken ${r.taken} of ${r.due} day${r.due === 1 ? '' : 's'} ${range.label}`]
+    if (r.skipped.length) parts.push(`skipped ${r.skipped.map(s => fmtDay(dateOfKey(s.date), now)).join(', ')}`)
+    if (r.unanswered.length) parts.push(`not answered ${r.unanswered.map(k => fmtDay(dateOfKey(k), now)).join(', ')}`)
+    return parts.join('; ') + '.'
   })
   const items = rows.flatMap(r => r.skipped.map(s => ({ when: cap(fmtDay(dateOfKey(s.date), now)), title: `Skipped ${r.title}`, meta: s.mood ? `mood: ${MOOD_LABEL[s.mood]}` : 'no mood noted', text: s.text, photos: [] })))
-  return { text: lines.join(' '), items, note: 'A med counts as taken unless you un-ticked it that day.' }
+  return { text: lines.join(' '), items, note: 'A dose counts as taken when you ticked it or answered “yes” when Bloom asked.' }
 }
 
 // ── Conditions ─────────────────────────────────────────────────

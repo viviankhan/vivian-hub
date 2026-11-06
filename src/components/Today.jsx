@@ -1609,12 +1609,10 @@ export default function Today({ todos, weekState, syncToggle, clearCompletion, p
   const isPastDay = viewDate < today
   const effectiveDone = (task) => {
     if (hasCompletionRecord(task)) return isDoneCheck(task.id, task.isCommitment)
-    // A medication counts as taken unless you un-tick it: from its time today
-    // (or all day, if it has none), and on every past day.
-    if (isMedSync(task.id)) {
-      if (isToday) return task._mins == null || now >= task._mins
-      return isPastDay
-    }
+    // A medication is never assumed taken: it's ticked when you tick it, or
+    // when you answer "yes" / "taking it now" to Bloom's "Did you take it?"
+    // (lib/medCheck.js). Until then it stays open.
+    if (isMedSync(task.id)) return false
     // No record: a task auto-completes once its window has passed when it opts
     // in explicitly (task.autoComplete), belongs to a routine, or lives inside
     // a time block. The explicit flag lets tasks outside any routine do this too.

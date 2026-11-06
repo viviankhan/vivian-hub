@@ -42,6 +42,7 @@ globalThis.clearTimeout = () => {}
 const src = readFileSync(resolve(REPO, 'src/lib/notifications.js'), 'utf8')
   .replace('import.meta.env.BASE_URL', JSON.stringify('/'))
   .replace("from './sounds.js'", `from ${JSON.stringify(resolve(REPO, 'src/lib/sounds.js'))}`)
+  .replace("from './medCheck.js'", `from ${JSON.stringify(resolve(REPO, 'src/lib/medCheck.js'))}`)
 const shimPath = resolve(here, '.notifications.shim.mjs')
 writeFileSync(shimPath, src)
 const N = await import(shimPath)
@@ -149,6 +150,19 @@ const queued = N.buildScheduledPushes([], [task()], [])
 ok('the end alert is queued for its moment', queued.some(q => q.tag === 't1:end' && new Date(q.at).getTime() === at(14, 0)))
 NOW = at(16, 23)
 ok('and nothing past is queued at all', N.buildScheduledPushes([], [task()], []).length === 0)
+
+// A med with no answer gets "Did you take it?" 30 min after its time; once
+// answered (App stops flagging it) the follow-up is gone.
+console.log('\n— did you take your meds? —')
+reset()
+NOW = at(7, 0)
+const med = (medCheck) => ({ id: 'rec:r-med@D', leadId: 'r-med', date: DAY, time: '08:00', text: 'Morning meds', medCheck })
+const mq = N.buildScheduledPushes([], [], [med(true)])
+const check = mq.find(q => q.tag === 'rec:r-med@D:medcheck')
+ok('a follow-up is queued for 30 min after the dose', !!check && new Date(check.at).getTime() === at(8, 30))
+ok('it asks the question', check && check.title === '💊 Did you take Morning meds?')
+ok('answered: no follow-up', !N.buildScheduledPushes([], [], [med(false)]).some(q => q.tag.endsWith(':medcheck')))
+ok('ordinary tasks get none', !N.buildScheduledPushes([], [], [{ ...med(undefined), id: 'rec:r-x@D', leadId: 'r-x' }]).some(q => q.tag.endsWith(':medcheck')))
 
 unlinkSync(shimPath)
 console.log(`\n${pass} passed, ${fail} failed`)

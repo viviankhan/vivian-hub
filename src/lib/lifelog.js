@@ -46,6 +46,7 @@ async function load(name) {
     loading[name] = dbGet(KEYS[name]).then(v => {
       const ok = name === 'journal' ? Array.isArray(v) : (v && typeof v === 'object' && !Array.isArray(v))
       state[name] = ok ? v : EMPTY[name]()
+      emit()   // anything that read the empty default (which tasks are meds) re-reads
       return state[name]
     }).catch(() => (state[name] = EMPTY[name]())).finally(() => { loading[name] = null })
   }
@@ -95,7 +96,7 @@ export async function setDayNote(date, taskId, patch, meta = {}) {
   const next = { ...prev, ...patch, taskId, date, updatedAt: now }
   if (!prev.at) { next.at = now; const p = placeNow(); if (p) next.place = p }
   for (const k of ['title', 'time', 'durationMins']) if (meta[k] != null && meta[k] !== '') next[k] = meta[k]
-  const empty = !(next.text || '').trim() && !(next.photos || []).length && !next.mood && !next.skipped
+  const empty = !(next.text || '').trim() && !(next.photos || []).length && !next.mood && !next.skipped && !next.takenAt
   const copy = { ...all }
   if (empty) delete copy[key]; else copy[key] = next
   await save('dayNotes', copy)

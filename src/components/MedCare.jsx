@@ -93,3 +93,51 @@ export function MedAlerts() {
     </div>
   )
 }
+
+// <MedCheckSheet> — a dose whose time has passed with no answer: "Did you take
+// it?" Yes ticks it. No offers "Take it now" (ticked, with the time you took
+// it) or "Skip it" (marked skipped). "Ask me later" waits an hour. One dose
+// at a time, oldest first (see lib/medCheck.js).
+const clock12 = (ms) => new Date(ms).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+export function MedCheckSheet({ pending = [], onAnswer, onLater }) {
+  const dose = pending[0]
+  const [step, setStep] = useState('ask')      // 'ask' | 'no'
+  const doseKey = dose ? `${dose.date}_${dose.id}` : ''
+  useEffect(() => { setStep('ask') }, [doseKey])
+  if (!dose) return null
+  const when = dose.time
+    ? `${dose.yesterday ? 'Yesterday' : 'Today'} at ${clock12(dose.dueMs)}`
+    : dose.yesterday ? 'Yesterday' : 'Today'
+  const btn = (primary) => ({
+    width: '100%', padding: '13px', borderRadius: 14, fontFamily: 'DM Sans,sans-serif', fontWeight: 700, fontSize: 15, cursor: 'pointer',
+    border: primary ? 'none' : '1px solid var(--border)',
+    background: primary ? 'var(--forest)' : 'white', color: primary ? 'var(--green-light)' : 'var(--text)',
+  })
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(20,28,38,.45)', zIndex: 705, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
+      <div data-testid="med-check-sheet" role="dialog" aria-label="Did you take your meds?"
+        style={{ background: '#F7F6FA', borderRadius: '22px 22px 0 0', width: '100%', maxWidth: 480, padding: '18px 16px calc(20px + env(safe-area-inset-bottom))', boxShadow: '0 -10px 44px rgba(20,40,60,.28)' }}>
+        <div style={{ fontSize: 11, letterSpacing: 1.3, textTransform: 'uppercase', color: 'var(--muted)', fontWeight: 700 }}>
+          💊 {dose.title || 'Your meds'} · {when}{pending.length > 1 ? ` · 1 of ${pending.length}` : ''}
+        </div>
+        {step === 'ask' ? (<>
+          <div style={{ fontSize: 20, fontWeight: 800, color: 'var(--text)', margin: '6px 0 14px', fontFamily: 'DM Sans,sans-serif' }}>Did you take {dose.yesterday ? 'it' : 'your meds'}?</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <button type="button" data-testid="med-took" style={btn(true)} onClick={() => onAnswer(dose, 'took')}>Yes, I took {dose.yesterday ? 'it' : 'them'}</button>
+            <button type="button" data-testid="med-not" style={btn(false)} onClick={() => setStep('no')}>No, I didn’t</button>
+          </div>
+        </>) : (<>
+          <div style={{ fontSize: 20, fontWeight: 800, color: 'var(--text)', margin: '6px 0 14px', fontFamily: 'DM Sans,sans-serif' }}>
+            {dose.yesterday ? 'Take it now, or mark it skipped?' : 'Take them now?'}
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <button type="button" data-testid="med-now" style={btn(true)} onClick={() => onAnswer(dose, 'now')}>Taking {dose.yesterday ? 'it' : 'them'} now</button>
+            <button type="button" data-testid="med-skip" style={btn(false)} onClick={() => onAnswer(dose, 'skip')}>Skip {dose.yesterday ? 'that dose' : 'meds'}</button>
+          </div>
+        </>)}
+        <button type="button" data-testid="med-later" onClick={() => onLater(dose)}
+          style={{ display: 'block', margin: '12px auto 0', border: 'none', background: 'none', color: 'var(--muted)', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'DM Sans,sans-serif' }}>Ask me later</button>
+      </div>
+    </div>
+  )
+}
