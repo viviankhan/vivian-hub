@@ -94,3 +94,17 @@ begin
     end if;
   end loop;
 end $$;
+
+
+-- ── 4 · keep the scheduler's own logs small ─────────────────────────────────
+-- pg_cron keeps a row for every run forever (130k rows, 82 MB by Nov 2026),
+-- and pg_net's response log had piled up 87k dead rows (107 MB) that
+-- autovacuum never reclaimed. Together they were 90% of the database the night
+-- it stopped answering (Nov 6, 2026; fixed by a restart). Trim the history
+-- nightly and compact both tables once.
+delete from cron.job_run_details where end_time < now() - interval '7 days';
+select cron.schedule('bloom-cleanup-cron-history', '23 9 * * *',
+  $$delete from cron.job_run_details where end_time < now() - interval '7 days'$$);
+-- Run these two on their own (VACUUM can't run inside a transaction block):
+--   vacuum full net._http_response;
+--   vacuum full cron.job_run_details;
