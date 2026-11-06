@@ -416,9 +416,10 @@ const nestRight = (outer) => (outer?.length || 0) * NEST_INSET
 
 // The little round icon that marks a band — a time block or a routine. Tapping
 // it opens that container for editing.
-function BandIcon({ icon, color, onEdit, title = 'Edit time block' }) {
+function BandIcon({ icon, color, onEdit, title = 'Edit time block', menu = null, name = '' }) {
   return (
-    <button type="button" onClick={e=>{ e.stopPropagation(); onEdit && onEdit() }} title={title} aria-label={title}
+    <button type="button" onClick={e=>{ e.stopPropagation(); bandTap(menu, name, onEdit) }} title={title}
+      aria-label={menu && menu.length && name ? `${name} — more actions` : title} aria-haspopup={menu && menu.length ? 'menu' : undefined}
       style={{ width:30, height:30, flexShrink:0, borderRadius:'50%', border:'none', background:'rgba(255,255,255,.72)', cursor:onEdit?'pointer':'default', padding:0, display:'flex', alignItems:'center', justifyContent:'center' }}>
       <Icon value={icon || 'glyph:clock'} size={16} color={color} />
     </button>
@@ -435,92 +436,55 @@ function BandChevron({ collapsed, onClick }) {
     </button>
   )
 }
-// The ⋯ on a band — the container's OWN actions, so a time block or a routine
-// can be edited or deleted from every band it draws, not just from the sheet
-// its icon happens to open. Items marked `confirm` ask a second time before
-// they fire, since the things they remove (a whole series, a routine group)
-// can't be taken back.
-//
-// The popover goes in a PORTAL, not inline. Every band row pins its film with
-// `zIndex:0`, and that makes the row a stacking context — an inline popover is
-// trapped inside it, so the next row (or the block band below) paints straight
-// over the menu and swallows the taps meant for it. Fixed to the viewport off
-// document.body, it can't be buried by anything.
-function BandMenu({ items = [], name = '' }) {
-  const [open, setOpen] = useState(false)
-  const [armed, setArmed] = useState(null)   // index of the item awaiting its confirm tap
-  const [pos, setPos] = useState(null)       // viewport coords, recomputed while open
-  const btnRef = useRef(null)
-  const popRef = useRef(null)
-  const count = items.length
+// A band's own actions (edit, clear from today, delete…) — a time block's or a
+// routine's. Tapping the band's icon or name opens them as a sheet from the
+// bottom, in Bloom's own look (no ⋯ dropdown). "Edit" comes first, so editing
+// is still one tap away. Items marked `confirm` ask a second time before they
+// fire, since what they remove (a whole series, a routine group) can't be
+// taken back.
+let openBandActions = null
+function bandTap(menu, name, onEdit) {
+  if (menu && menu.length && openBandActions) openBandActions(name, menu)
+  else if (onEdit) onEdit()
+}
+function BandActionsHost() {
+  const [sheet, setSheet] = useState(null)   // { name, items }
+  const [armed, setArmed] = useState(null)   // index awaiting its confirm tap
   useEffect(() => {
-    if (!open) return
-    // Hang the menu off the button's right edge, flipping above it when there
-    // isn't room below (a band near the bottom of the day).
-    const place = () => {
-      const r = btnRef.current?.getBoundingClientRect()
-      if (!r) return
-      const h = count * 44 + 12
-      const below = r.bottom + 6
-      setPos({
-        top: (below + h > window.innerHeight - 8 && r.top - 6 - h > 8) ? (r.top - 6 - h) : below,
-        right: Math.max(8, window.innerWidth - r.right),
-      })
-    }
-    place()
-    const away = (e) => {
-      if (btnRef.current?.contains(e.target) || popRef.current?.contains(e.target)) return
-      setOpen(false); setArmed(null)
-    }
-    const key = (e) => { if (e.key === 'Escape') { setOpen(false); setArmed(null) } }
-    document.addEventListener('mousedown', away)
+    openBandActions = (name, items) => { setArmed(null); setSheet({ name, items }) }
+    const key = (e) => { if (e.key === 'Escape') { setSheet(null); setArmed(null) } }
     document.addEventListener('keydown', key)
-    window.addEventListener('resize', place)
-    window.addEventListener('scroll', place, true)
-    return () => {
-      document.removeEventListener('mousedown', away)
-      document.removeEventListener('keydown', key)
-      window.removeEventListener('resize', place)
-      window.removeEventListener('scroll', place, true)
-    }
-  }, [open, count])
-  if (!count) return null
-  const title = name ? `${name} — more actions` : 'More actions'
-  return (
-    <span onClick={e=>e.stopPropagation()} style={{ flexShrink:0, display:'inline-flex' }}>
-      <button ref={btnRef} type="button" onClick={e=>{ e.stopPropagation(); setArmed(null); setOpen(o=>!o) }}
-        title={title} aria-label={title} aria-haspopup="menu" aria-expanded={open}
-        style={{ width:30, height:30, flexShrink:0, borderRadius:'50%', border:'none', background:'rgba(255,255,255,.72)', cursor:'pointer', padding:0,
-          display:'flex', alignItems:'center', justifyContent:'center', color:'#39434F', fontSize:16, fontWeight:800, lineHeight:1, fontFamily:'DM Sans,sans-serif' }}>···</button>
-      {open && pos && createPortal(
-        // A portal still bubbles events up the REACT tree, so the click has to
-        // be stopped here too or it reaches the band underneath all the same.
-        <div ref={popRef} role="menu" onClick={e=>e.stopPropagation()}
-          style={{ position:'fixed', top:pos.top, right:pos.right, zIndex:500, minWidth:198, maxWidth:290, background:'white', border:'1px solid var(--border)',
-            borderRadius:12, boxShadow:'0 12px 34px rgba(26,58,78,.20)', padding:5, textAlign:'left' }}>
-          {items.map((it, i) => {
+    return () => { openBandActions = null; document.removeEventListener('keydown', key) }
+  }, [])
+  if (!sheet) return null
+  const close = () => { setSheet(null); setArmed(null) }
+  return createPortal(
+    <div onClick={close} style={{ position:'fixed', inset:0, background:'rgba(20,28,38,.40)', zIndex:650, display:'flex', alignItems:'flex-end', justifyContent:'center' }}>
+      <div role="menu" data-testid="band-actions" onClick={e=>e.stopPropagation()}
+        style={{ background:'#F7F6FA', borderRadius:'22px 22px 0 0', width:'100%', maxWidth:480, padding:'16px 14px calc(16px + env(safe-area-inset-bottom))', boxShadow:'0 -10px 44px rgba(20,40,60,.28)' }}>
+        {sheet.name && <div style={{ fontSize:11, letterSpacing:1.3, textTransform:'uppercase', color:'var(--muted)', fontWeight:700, margin:'2px 4px 10px' }}>{sheet.name}</div>}
+        <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
+          {sheet.items.map((it, i) => {
             const isArmed = armed === i
             return (
               <button key={it.label} role="menuitem" type="button"
-                onClick={e=>{
-                  e.stopPropagation()
+                onClick={()=>{
                   if (it.confirm && !isArmed) { setArmed(i); return }
-                  setOpen(false); setArmed(null); it.onClick()
+                  close(); it.onClick()
                 }}
-                style={{ display:'block', width:'100%', textAlign:'left', padding:'9px 11px', borderRadius:8, border:'none', cursor:'pointer',
-                  fontFamily:'DM Sans,sans-serif', fontSize:13, fontWeight:600, lineHeight:1.35,
-                  whiteSpace: isArmed ? 'normal' : 'nowrap',
-                  background: isArmed ? '#FEF2F2' : 'transparent', color: it.danger ? '#B91C1C' : 'var(--text)' }}>
-                {/* Armed, the row says what it is about to do rather than a bare
-                    "confirm" — the whole point of the second tap is that you can
-                    read the consequence before you commit to it. */}
+                style={{ width:'100%', textAlign:'left', padding:'13px 14px', borderRadius:14, cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontSize:14.5, fontWeight:600, lineHeight:1.35,
+                  border: isArmed ? '1px solid #F5C2C2' : '1px solid var(--border)', background: isArmed ? '#FEF2F2' : 'white', color: it.danger ? '#B91C1C' : 'var(--text)' }}>
+                {/* Armed, the row says what it is about to do — the point of the
+                    second tap is reading the consequence before committing. */}
                 {isArmed ? `${it.confirm} — tap again` : it.label}
               </button>
             )
           })}
-        </div>, document.body)}
-    </span>
-  )
+        </div>
+        <button type="button" onClick={close}
+          style={{ display:'block', margin:'10px auto 0', border:'none', background:'none', color:'var(--muted)', fontSize:14, fontWeight:600, cursor:'pointer', fontFamily:'DM Sans,sans-serif', padding:'6px 12px' }}>Cancel</button>
+      </div>
+    </div>, document.body)
 }
 
 // A time block reads as a light "folder" for a slice of the day. Tapping the
@@ -548,7 +512,7 @@ function BlockBand({ seg, onEdit, onAdd, onCollapse, onToggle = null, checked = 
     return (
       <div style={{ position:'relative', minHeight:54, margin: seg.outer?.length ? 0 : '4px 0', padding: seg.outer?.length ? '4px 0' : 0, opacity: done?.7:1 }}>
         <OuterFilms tints={seg.outer} />
-        <div style={{ position:'absolute', top: seg.outer?.length ? 4 : 0, bottom: seg.outer?.length ? 4 : 0, left:nestLeft(seg.outer), right:nestRight(seg.outer), background:seg.color, opacity: done?BLOCK_FILM_OPACITY*0.6:BLOCK_FILM_OPACITY, zIndex:-1, borderRadius:16 }} />
+        <div style={{ position:'absolute', top: seg.outer?.length ? 4 : 0, bottom: seg.outer?.length ? 4 : 0, left:nestLeft(seg.outer), right:nestRight(seg.outer), background:seg.color, opacity: (seg.opacity ?? BLOCK_FILM_OPACITY) * (done ? 0.6 : 1), zIndex:-1, borderRadius:16 }} />
         <div style={{ position:'absolute', top:0, bottom:0, left:76.5, width:3, borderRadius:3, background:seg.color, opacity:.5, zIndex:-1 }} />
         <div style={{ position:'relative', display:'flex', alignItems:'center', minHeight:54 }}>
           {/* Spine spacer — the block's start time isn't repeated here; its full
@@ -556,13 +520,12 @@ function BlockBand({ seg, onEdit, onAdd, onCollapse, onToggle = null, checked = 
           <div style={{ width:52, flexShrink:0 }} />
           <div onClick={onCollapse} title="Expand time block"
             style={{ flex:1, minWidth:0, paddingLeft:11, paddingRight:8, display:'flex', alignItems:'center', gap:9, cursor:'pointer', minHeight:54 }}>
-            <BandIcon icon={seg.icon} color={seg.color} onEdit={onEdit} />
+            <BandIcon icon={seg.icon} color={seg.color} onEdit={onEdit} menu={menu} name={seg.label} />
             <span style={{ fontSize:12, fontWeight:800, letterSpacing:.7, textTransform:'uppercase', color:'#39434F', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis', maxWidth:'40%', textDecoration: done?'line-through':'none' }}>{label}</span>
             {done && <span style={{ flexShrink:0, display:'inline-flex', color:'#5C8A5C' }}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5"/></svg></span>}
             <span style={{ fontSize:11, color:'var(--muted)', flexShrink:1, minWidth:0, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{done?'done · ':''}{rangeLabel(seg.start, seg.end)}{seg.count>0?` · ${seg.count} inside`:''}</span>
             <span style={{ marginLeft:'auto', flexShrink:0, display:'flex', alignItems:'center', gap:6 }}>
               {onToggle && <BandCheck checked={checked} color={seg.color} onToggle={onToggle} />}
-              <BandMenu items={menu} name={seg.label} />
               <BandChevron collapsed onClick={onCollapse} />
             </span>
           </div>
@@ -577,7 +540,7 @@ function BlockBand({ seg, onEdit, onAdd, onCollapse, onToggle = null, checked = 
     <div onClick={onAdd} title="Add a task in this block"
       style={{ position:'relative', minHeight:h, cursor:'pointer' }}>
       <OuterFilms tints={seg.outer} />
-      <div style={{ position:'absolute', top: seg.roundTop?6:0, bottom: seg.roundBottom?6:0, left:nestLeft(seg.outer), right:nestRight(seg.outer), background:seg.color, opacity:BLOCK_FILM_OPACITY, zIndex:-1,
+      <div style={{ position:'absolute', top: seg.roundTop?6:0, bottom: seg.roundBottom?6:0, left:nestLeft(seg.outer), right:nestRight(seg.outer), background:seg.color, opacity:seg.opacity ?? BLOCK_FILM_OPACITY, zIndex:-1,
         borderTopLeftRadius:seg.roundTop?16:0, borderTopRightRadius:seg.roundTop?16:0, borderBottomLeftRadius:seg.roundBottom?16:0, borderBottomRightRadius:seg.roundBottom?16:0 }} />
       {/* The timeline spine continues straight through the block as one solid
           line (the icon sits on it like a node), so the day reads unbroken —
@@ -588,8 +551,8 @@ function BlockBand({ seg, onEdit, onAdd, onCollapse, onToggle = null, checked = 
             (its range beside the label), so a gutter time here would be redundant. */}
         <div style={{ width:52, flexShrink:0 }} />
         {(seg.label || seg.showMenu) && (
-          <div style={{ paddingTop:9, paddingLeft:11, paddingRight:8, flex:1, minWidth:0, display:'flex', alignItems:'center', gap:8 }}>
-            {seg.label && <BandIcon icon={seg.icon} color={seg.color} onEdit={onEdit} />}
+          <div style={{ paddingTop:9, paddingLeft:11, paddingRight:8, flex:1, minWidth:0, display:'flex', alignItems:'center', gap:8, flexWrap:'wrap' }}>
+            {seg.label && <BandIcon icon={seg.icon} color={seg.color} onEdit={onEdit} menu={menu} name={seg.label} />}
             {seg.label && <span style={{ fontSize:10, fontWeight:800, letterSpacing:.9, textTransform:'uppercase', color:'#39434F', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis', flexShrink:0, textDecoration:(onToggle && checked)?'line-through':'none' }}>{label}</span>}
             {/* The block's full window, so you can read its end time without
                 collapsing it. */}
@@ -598,9 +561,15 @@ function BlockBand({ seg, onEdit, onAdd, onCollapse, onToggle = null, checked = 
             )}
             <span style={{ marginLeft:'auto', marginRight:nestRight(seg.outer), flexShrink:0, display:'flex', alignItems:'center', gap:6 }}>
               {onToggle && seg.label && <BandCheck checked={checked} color={seg.color} onToggle={onToggle} />}
-              <BandMenu items={menu} name={seg.label} />
               {onCollapse && <BandChevron collapsed={false} onClick={onCollapse} />}
             </span>
+            {/* Another block shares part of this one's time (not nested): say so,
+                on its own line, so the darker film has a reason you can read. */}
+            {seg.label && seg.overlaps?.length > 0 && (
+              <span data-testid="block-overlap" style={{ flexBasis:'100%', paddingLeft:38, marginTop:-4, fontSize:11, fontWeight:700, color:'#8A4B0F', lineHeight:1.35 }}>
+                Overlaps {seg.overlaps.join(', ')}
+              </span>
+            )}
           </div>
         )}
       </div>
@@ -732,11 +701,15 @@ function RoutineCollapseRow({ routine, count, expanded, onToggle, menu = [] }) {
       <div style={{ position:'absolute', top:6, bottom:6, left:44, right:0, background:tint, opacity:.4, borderRadius:16, zIndex:-1 }} />
       <div style={{ width:52, flexShrink:0 }} />
       <div style={{ width:52, flexShrink:0, display:'flex', justifyContent:'center', alignItems:'center' }}>
-        <div style={{ width:34, height:34, borderRadius:'50%', background:tint, display:'flex', alignItems:'center', justifyContent:'center' }}>
+        {/* The routine's icon opens its actions (the same sheet a band's icon
+            opens); the row beside it expands and collapses. */}
+        <button type="button" onClick={e=>{ e.stopPropagation(); bandTap(menu, routine?.name, null) }}
+          aria-label={menu.length ? `${routine?.name || 'Routine'} — more actions` : undefined} aria-haspopup={menu.length ? 'menu' : undefined}
+          disabled={!menu.length}
+          style={{ width:34, height:34, borderRadius:'50%', background:tint, display:'flex', alignItems:'center', justifyContent:'center', border:'none', padding:0, cursor: menu.length ? 'pointer' : 'default' }}>
           <Icon value={routineGlyph(routine)} size={17} color="#5A5560" />
-        </div>
+        </button>
       </div>
-      {/* The ⋯ sits OUTSIDE the expand button — a button can't nest inside one. */}
       <div style={{ flex:1, minWidth:0, display:'flex', alignItems:'center', gap:8, padding:'10px 10px' }}>
         <button onClick={onToggle}
           style={{ flex:1, minWidth:0, textAlign:'left', border:'none', background:'transparent', cursor:'pointer', padding:0, display:'flex', alignItems:'center', gap:8, fontFamily:'DM Sans,sans-serif' }}>
@@ -744,7 +717,6 @@ function RoutineCollapseRow({ routine, count, expanded, onToggle, menu = [] }) {
           <span style={{ fontSize:12, color:'var(--muted)', flexShrink:0 }}>{count} done</span>
           <span style={{ marginLeft:'auto', fontSize:11, color:'var(--muted)', transform:expanded?'rotate(180deg)':'none', transition:'transform .2s', flexShrink:0 }}>▾</span>
         </button>
-        <BandMenu items={menu} name={routine?.name} />
       </div>
     </div>
   )
@@ -767,12 +739,11 @@ function RoutineBandHead({ routine, onEdit, menu = [], film = true }) {
       <div style={{ position:'relative', display:'flex' }}>
         <div style={{ width:52, flexShrink:0 }} />
         <div style={{ paddingTop:9, paddingBottom:2, paddingLeft:11, paddingRight:8, flex:1, minWidth:0, display:'flex', alignItems:'center', gap:8 }}>
-          <BandIcon icon={routineGlyph(routine)} color="#5A5560" onEdit={onEdit} title="Edit routine" />
-          <button type="button" onClick={onEdit || undefined} title={onEdit ? 'Edit routine' : undefined}
+          <BandIcon icon={routineGlyph(routine)} color="#5A5560" onEdit={onEdit} title="Edit routine" menu={menu} name={routine?.name} />
+          <button type="button" onClick={(onEdit || menu.length) ? (e => { e.stopPropagation(); bandTap(menu, routine?.name, onEdit) }) : undefined} title={onEdit ? 'Edit routine' : undefined}
             style={{ fontSize:10, fontWeight:800, letterSpacing:.9, textTransform:'uppercase', color:'#39434F', background:'none', padding:0, border:'none',
               fontFamily:'DM Sans,sans-serif', cursor:onEdit?'pointer':'default', pointerEvents:onEdit?'auto':'none',
               whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis', minWidth:0 }}>{name}</button>
-          <span style={{ marginLeft:'auto', flexShrink:0 }}><BandMenu items={menu} name={routine?.name} /></span>
         </div>
       </div>
     </div>
@@ -933,13 +904,12 @@ function TimelineBlock({ task, categories, status, now, prevColor, nextColor, ro
           auto-complete on their own. */}
       {routineTint && bandLabel && (
         <div style={{ position:'absolute', top:9, left:52, right:8, zIndex:1, display:'flex', alignItems:'center', gap:7 }}>
-          <BandIcon icon={bandIcon} color={routineTint} onEdit={onBandLabel} />
-          <button type="button" onClick={onBandLabel || undefined} title={onBandLabel ? 'Edit time block' : undefined}
+          <BandIcon icon={bandIcon} color={routineTint} onEdit={onBandLabel} menu={bandMenu} name={bandLabel} />
+          <button type="button" onClick={(onBandLabel || bandMenu.length) ? (e => { e.stopPropagation(); bandTap(bandMenu, bandLabel, onBandLabel) }) : undefined} title={onBandLabel ? 'Edit time block' : undefined}
             style={{ fontSize:10, fontWeight:800, letterSpacing:.9, textTransform:'uppercase',
               color:'#39434F', background:'none', padding:0, border:'none', fontFamily:'DM Sans,sans-serif',
               cursor: onBandLabel ? 'pointer' : 'default', pointerEvents: onBandLabel ? 'auto' : 'none', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{(bandLabel||'').toUpperCase()}</button>
           <span style={{ marginLeft:'auto', flexShrink:0, display:'flex', alignItems:'center', gap:6 }}>
-            <BandMenu items={bandMenu} name={bandLabel} />
             {onBandCollapse && <BandChevron collapsed={false} onClick={onBandCollapse} />}
           </span>
         </div>
@@ -1488,6 +1458,19 @@ export default function Today({ locationSlot = null, todos, weekState, syncToggl
   // A block and everything it's nested in — whether `ancestorId` is `b` or holds it.
   const withinBlock = (b, ancestorId) => !!b && (b.id === ancestorId || ancestorsOf(b).some(a => a.id === ancestorId))
   const outerTintsOf = (b) => b ? ancestorsOf(b).map(a => a.color) : null
+  // Blocks that overlap without one holding the other (Work 8:30–5 and Work
+  // 9:10–5:40) would otherwise hide each other: only one film is drawn per
+  // row. So a stretch covered by more than one block draws its film darker,
+  // one step per extra block, and each band says what it overlaps. (Nested
+  // blocks already stack their films, so they don't count twice.)
+  const relatedBlocks = (a, b) => a === b || withinBlock(a, b.id) || withinBlock(b, a.id)
+  const overlapsWith = (b) => blocks.filter(o => !relatedBlocks(o, b) && o.start < b.end && o.end > b.start)
+  const filmOpacity = (start, end, holder) => {
+    const e = end != null && end > start ? end : start + 1
+    const others = blocks.filter(o => o.start < e && o.end > start && !(holder ? relatedBlocks(o, holder) : false)).length
+    const extra = holder ? others : Math.max(0, others - 1)
+    return BLOCK_FILM_OPACITY + 0.2 * extra
+  }
   // Blocks recast as shiftable candidates, shaped like timeline tasks so the
   // shift chooser can list them and applyTimeShift can move them alongside tasks.
   const blockShiftItems = () => blocks.map(b => ({
@@ -1750,6 +1733,8 @@ export default function Today({ locationSlot = null, todos, weekState, syncToggl
     if (hiddenByCollapse(b)) continue
     const outer = outerTintsOf(b)
     const depth = outer.length
+    const overlaps = overlapsWith(b).map(o => `${o.label || 'block'} ${rangeLabel(o.start, o.end)}`)
+    const segFilm = (a, z) => filmOpacity(a, z, b)
     const inside = tasksWithStatus
       .filter(t => t._mins != null && t._mins >= b.start && t._mins < b.end)
       .sort((x,y) => x._mins - y._mins)
@@ -1760,11 +1745,11 @@ export default function Today({ locationSlot = null, todos, weekState, syncToggl
     // inner tasks (which get filtered out of the render list below).
     if (isBlockCollapsed(b)) {
       collapsedBlockIds.add(b.id)
-      blockSegments.push({ id:b.id+':collapsed', bid:b.id, depth, outer, collapsed:true, start:b.start, end:b.end, color:b.color, label:b.label, icon:b.icon, count:inside.length + kids.length, done:blockPastWindow(b), roundTop:true, roundBottom:true })
+      blockSegments.push({ id:b.id+':collapsed', bid:b.id, depth, outer, overlaps, opacity:segFilm(b.start, b.end), collapsed:true, start:b.start, end:b.end, color:b.color, label:b.label, icon:b.icon, count:inside.length + kids.length, done:blockPastWindow(b), roundTop:true, roundBottom:true })
       continue
     }
     if (!inside.length && !kids.length) {
-      blockSegments.push({ id:b.id+':full', bid:b.id, depth, outer, start:b.start, end:b.end, color:b.color, label:b.label, icon:b.icon, blockStart:b.start, blockEnd:b.end, roundTop:true, roundBottom:true })
+      blockSegments.push({ id:b.id+':full', bid:b.id, depth, outer, overlaps, opacity:segFilm(b.start, b.end), start:b.start, end:b.end, color:b.color, label:b.label, icon:b.icon, blockStart:b.start, blockEnd:b.end, roundTop:true, roundBottom:true })
       blockHeadIds.add(b.id)
       continue
     }
@@ -1776,11 +1761,11 @@ export default function Today({ locationSlot = null, todos, weekState, syncToggl
     const kidFirst = kids.some(k => k.start === firstMins)
     const kidLast  = kids.some(k => k.end === lastEnd)
     if (b.start < firstMins || kidFirst || b.auto) {
-      blockSegments.push({ id:b.id+':head', bid:b.id, depth, outer, lead: b.start >= firstMins, start:b.start, end:Math.max(b.start, firstMins), color:b.color, label:b.label, icon:b.icon, blockStart:b.start, blockEnd:b.end, roundTop:true, roundBottom:false })
+      blockSegments.push({ id:b.id+':head', bid:b.id, depth, outer, overlaps, opacity:segFilm(b.start, Math.max(b.start, firstMins)), lead: b.start >= firstMins, start:b.start, end:Math.max(b.start, firstMins), color:b.color, label:b.label, icon:b.icon, blockStart:b.start, blockEnd:b.end, roundTop:true, roundBottom:false })
       blockHeadIds.add(b.id)
     }
     if (lastEnd < b.end || kidLast) {
-      blockSegments.push({ id:b.id+':tail', bid:b.id, depth, outer, start:Math.min(lastEnd, b.end), end:b.end, color:b.color, label:null, showMenu:true, roundTop:false, roundBottom:true })
+      blockSegments.push({ id:b.id+':tail', bid:b.id, depth, outer, opacity:segFilm(Math.min(lastEnd, b.end), b.end), start:Math.min(lastEnd, b.end), end:b.end, color:b.color, label:null, showMenu:true, roundTop:false, roundBottom:true })
       blockTailIds.add(b.id)
     }
   }
@@ -2774,6 +2759,7 @@ export default function Today({ locationSlot = null, todos, weekState, syncToggl
         isDone={isImportedDone} onToggle={onToggleImported} onAdopt={onAdoptImported} onOpen={openImported}
         dayLabel={isToday ? 'today' : new Date(dateKey+'T12:00:00').toLocaleDateString('en-US',{weekday:'long',month:'short',day:'numeric'})} />
 
+      <BandActionsHost />
       {isToday && <MedAlerts />}
       {isToday && locationSlot}
       <PlacesDay stops={placeStops} dateKey={dateKey} />
@@ -2864,18 +2850,18 @@ export default function Today({ locationSlot = null, todos, weekState, syncToggl
             return [
               <GapRow key={'gap-gone-'+gapStart} mins={g} phase="elapsed" spanMins={gone}
                 prevColor={cur.color} nextColor={cur.color}
-                routineTint={tint || null} routineOpacity={tint ? BLOCK_FILM_OPACITY : 0.5} outerTints={outerTintsOf(holder)} />,
-              <NowMarker key={'now-gap-'+gapStart} now={now} bandTint={tint || null} bandOpacity={BLOCK_FILM_OPACITY} outerTints={outerTintsOf(holder)} />,
+                routineTint={tint || null} routineOpacity={tint ? filmOpacity(gapStart, gapEnd, holder) : 0.5} outerTints={outerTintsOf(holder)} />,
+              <NowMarker key={'now-gap-'+gapStart} now={now} bandTint={tint || null} bandOpacity={tint ? filmOpacity(gapStart, gapEnd, holder) : BLOCK_FILM_OPACITY} outerTints={outerTintsOf(holder)} />,
               <GapRow key={'gap-'+cur.end+'-'+startMins} mins={g} phase={phase} remaining={remaining} spanMins={remaining}
                 prevColor={cur.color} nextColor={nextColor}
-                routineTint={tint || null} routineOpacity={tint ? BLOCK_FILM_OPACITY : 0.5} outerTints={outerTintsOf(holder)} onAdd={()=>addInGap(gapStart, gapEnd)}
+                routineTint={tint || null} routineOpacity={tint ? filmOpacity(gapStart, gapEnd, holder) : 0.5} outerTints={outerTintsOf(holder)} onAdd={()=>addInGap(gapStart, gapEnd)}
                 onStartNow={canStart ? ()=>handleShiftToNow(upcoming) : null}
                 startLabel={upcoming ? (upcoming.title || stripTimePrefix(upcoming.label)) : ''} />,
             ]
           }
           return <GapRow key={'gap-'+cur.end+'-'+startMins} mins={g} phase={phase} remaining={remaining}
             prevColor={cur.color} nextColor={nextColor}
-            routineTint={tint || null} routineOpacity={tint ? BLOCK_FILM_OPACITY : 0.5} outerTints={outerTintsOf(holder)} onAdd={()=>addInGap(gapStart, gapEnd)}
+            routineTint={tint || null} routineOpacity={tint ? filmOpacity(gapStart, gapEnd, holder) : 0.5} outerTints={outerTintsOf(holder)} onAdd={()=>addInGap(gapStart, gapEnd)}
             onStartNow={canStart ? ()=>handleShiftToNow(upcoming) : null}
             startLabel={upcoming ? (upcoming.title || stripTimePrefix(upcoming.label)) : ''} />
         }
@@ -2903,7 +2889,7 @@ export default function Today({ locationSlot = null, todos, weekState, syncToggl
             nowState.done = true
             out.push(
               bb({ ...s, id:s.id+':nt', end:now, roundBottom:false }, true),
-              <NowMarker key={'now-'+s.id} now={now} bandTint={s.color} bandOpacity={BLOCK_FILM_OPACITY} outerTints={s.outer} />,
+              <NowMarker key={'now-'+s.id} now={now} bandTint={s.color} bandOpacity={s.opacity ?? BLOCK_FILM_OPACITY} outerTints={s.outer} />,
               bb({ ...s, id:s.id+':nb', start:now, roundTop:false, label:null }, false),
             )
           } else {
@@ -3025,12 +3011,12 @@ export default function Today({ locationSlot = null, todos, weekState, syncToggl
             if (emitNow) nowState.done = true
             return [...before, (
               <div key={task._key||task.id} data-task-row={task.id} className={spotlight===task.id ? 'task-spotlight' : undefined}>
-                {emitNow&&<NowMarker now={now} bandTint={(myBand && (joinHead || prevSameRoutine)) ? myTint : null} bandOpacity={inBlockId ? BLOCK_FILM_OPACITY : 0.5} outerTints={myOuter}/>}
+                {emitNow&&<NowMarker now={now} bandTint={(myBand && (joinHead || prevSameRoutine)) ? myTint : null} bandOpacity={inBlockId ? filmOpacity(task._mins, tEnd, blockById(inBlockId)) : 0.5} outerTints={myOuter}/>}
                 {gapEl}
                 {routineHead}
                 <TimelineBlock
                   task={task} categories={categories} status={task._status} now={now}
-                  routineTint={myTint} tintOpacity={inBlockId ? BLOCK_FILM_OPACITY : 0.5} outerTints={myOuter}
+                  routineTint={myTint} tintOpacity={inBlockId ? filmOpacity(task._mins, tEnd, blockById(inBlockId)) : 0.5} outerTints={myOuter}
                   filmTop={!prevSameRoutine && !joinHead && !routineIsBand} filmBottom={!nextSameRoutine && !joinTail}
                   bandLabel={(isFirstInBand && !joinHead) ? (myBand?.label || null) : null}
                   bandIcon={inBlockBand?.icon || null}
