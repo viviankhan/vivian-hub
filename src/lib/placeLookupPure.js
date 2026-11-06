@@ -106,3 +106,15 @@ export function overpassQuery(lat, lng) {
   const p = `${lat.toFixed(6)},${lng.toFixed(6)}`
   return `[out:json][timeout:12];is_in(${p})->.a;area.a;out tags;(nwr(around:40,${p})[name][!highway];way(around:30,${p})[amenity=parking];);out tags center 25;`
 }
+
+// Is Nominatim's answer a real place (a business, a building, a campus, an
+// apartment complex), or just a street / house number / nameless lot that
+// Overpass might name better?
+export function isStrongNominatim(r) {
+  if (!r || r.error) return false
+  const cat = r.category || r.class || '', type = r.type || ''
+  if (cat === 'amenity' && type === 'parking') return !!(r.name || (r.extratags || {}).operator)
+  if (r.name && !['highway', 'place', 'boundary'].includes(cat)) return true
+  const a = r.address || {}
+  return ['amenity', 'shop', 'office', 'leisure', 'tourism', 'healthcare', 'residential'].some(k => typeof a[k] === 'string' && a[k] && a[k] !== 'yes')
+}
