@@ -128,6 +128,8 @@ export function recursDaily(task) {
 // shape is a superset of what Today/Calendar already read from their rows
 // (label, text, title, tag, cat, note, _time), plus flags so each view can
 // tell a recurring instance apart from a real commitment.
+const WEEKDAYS = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday']
+
 export function recurringOccurrence(task, dateStr) {
   const rawLabel = task.label != null ? task.label : (task.text || '')
   const { time, title } = splitTimePrefix(rawLabel)
@@ -159,6 +161,12 @@ export function recurringOccurrence(task, dateStr) {
     // An arrival location carried from the template, so a repeating task can
     // auto-start on arrival just like a one-off.
     location: task.location || null,
+    // A checklist on a repeating task (meds: one checkbox per med). An item can
+    // be limited to some weekdays (methotrexate on Fridays). Whether each is
+    // ticked on a given day is read by the caller (completions 'date_id~sub').
+    subtasks: (Array.isArray(task.subtasks) ? task.subtasks : [])
+      .filter(s => s && s.id && (!Array.isArray(s.days) || !s.days.length || s.days.includes(WEEKDAYS[noon(dateStr).getDay()])))
+      .map(s => ({ id: s.id, text: s.text || '' })),
     _time: time,
     _dur: task.durationMins || null,
   }
