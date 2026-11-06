@@ -77,10 +77,14 @@ import { buildLabelModel, historyFromData } from './lib/predictLabel.js'
 import { geolocationSupported, watchArrivals } from './lib/geofence.js'
 import { placeHooksAvailable, fetchPlaceEvents, placeStamps, checkinStops, locatedStamps } from './lib/placeHooks.js'
 import { getSavedPlaces, getRecentPlaces, onSavedPlaces } from './lib/places.js'
-import { startVisitTracking, setExtraPlaces, setCheckinStops } from './lib/visits.js'
+import { startVisitTracking, setExtraPlaces, setCheckinStops, getVisits, VISITS_EVENT } from './lib/visits.js'
 import { loadLifelog, isMedSync, setDayNote, getDayNote } from './lib/lifelog.js'
 import { MedSkipSheet, MedCheckSheet, announceMedSkip } from './components/MedCare.jsx'
 import { pendingMedChecks, dayKey } from './lib/medCheck.js'
+import { reviewLocatedTasks, lineUp, suggestTaskPlaces, DEFAULT_TASK_MINS } from './lib/locationCheck.js'
+import { loadInbox, inboxSnapshot, addToInbox, removeFromInbox, decide, INBOX_EVENT } from './lib/inbox.js'
+import { spotName, PLACE_NAMES_EVENT } from './lib/placeNames.js'
+import { LocationCard, InboxCard, DidYouDoSheet } from './components/LocationPanel.jsx'
 import { useLifelogVersion } from './components/DayNote.jsx'
 import { Glyph } from './lib/glyphs.jsx'
 import Customization from './components/Customization.jsx'
@@ -418,6 +422,7 @@ export default function App() {
   // while Bloom was closed (see lib/placeHooks.js). The places they're matched
   // to are your saved and recent places plus the ones tasks are tagged with.
   const [placeEvents, setPlaceEvents] = useState([])
+  const [placeEventsRead, setPlaceEventsRead] = useState(!placeHooksAvailable)
   const [placeList, setPlaceList] = useState(() => [...getSavedPlaces(), ...getRecentPlaces()])
   useEffect(() => onSavedPlaces(() => setPlaceList([...getSavedPlaces(), ...getRecentPlaces()])), [])
   // Each setter mirrors the choice to the synced prefs blob (pushPrefs), so the
@@ -1059,6 +1064,87 @@ export default function App() {
     return pendingMedChecks({ doses, answered: (date, id) => `${date}_${id}` in completions, snoozed: medSnooze, now: medNow })
   }, [loading, recurringTaskRows, recurringMeta, recurringExceptions, completions, medSnooze, medNow, lifelogVer])
 
+  // ── Where you are vs. what you planned ───────────────────────
+  // Tasks with a place are checked against your check-ins and what the open
+  // app saw (lib/locationCheck.js). Seen somewhere else → the inbox. Not seen
+  // anywhere → "Did you do it?". See components/LocationPanel.jsx.
+  const [inboxVer, setInboxVer] = useState(0)
+  const [geoVer, setGeoVer] = useState(0)
+  useEffect(() => {
+    const bumpInbox = () => setInboxVer(v => v + 1), bumpGeo = () => setGeoVer(v => v + 1)
+    window.addEventListener(INBOX_EVENT, bumpInbox)
+    window.addEventListener(PLACE_NAMES_EVENT, bumpGeo)
+    window.addEventListener(VISITS_EVENT, bumpGeo)
+    loadInbox().catch(() => {})
+    return () => { window.removeEventListener(INBOX_EVENT, bumpInbox); window.removeEventListener(PLACE_NAMES_EVENT, bumpGeo); window.removeEventListener(VISITS_EVENT, bumpGeo) }
+  }, [])
+  const inbox = useMemo(() => inboxSnapshot(), [inboxVer])   // eslint-disable-line react-hooks/exhaustive-deps
+  const locEvidence = useMemo(() => {
+    const named = (s) => s.key ? s : { ...s, name: spotName(s.lat, s.lng) }
+    const stops = placeStops.map(named)
+    const points = placeEvents.filter(e => e.kind === 'ping' && Number.isFinite(e.lat) && Number.isFinite(e.lng)).map(e => {
+      const at = Date.parse(e.at)
+      const s = stops.find(x => at >= x.start && at < (x.end ?? Infinity))
+      return { lat: e.lat, lng: e.lng, at, name: s?.name || '' }
+    })
+    const stays = getVisits().filter(v => !v.checkin).map(v => ({ ...v, name: v.name || spotName(v.lat, v.lng) }))
+    return { stops, points, stays }
+  }, [placeStops, placeEvents, geoVer])   // eslint-disable-line react-hooks/exhaustive-deps
+  // Located tasks on a day: one-offs with a place and a time, and repeating
+  // occurrences with a place and a time. Time blocks aren't tasks.
+  const locatedTasksOn = useCallback((date) => {
+    const at = (time) => { const [y, m, d] = date.split('-').map(Number); const [h, mi] = time.split(':').map(Number); return new Date(y, m - 1, d, h, mi).getTime() }
+    const out = []
+    for (const c of commitments) {
+      const m = commitmentMeta[c.id] || {}
+      if (c.date !== date || !c.time || !m.location?.lat || m.block) continue
+      const startMs = at(c.time)
+      out.push({ key: `${date}_${c.id}`, id: c.id, kind: 'commitment', date, time: c.time, title: c.text || 'Task', cat: c.cat || '', place: m.location,
+        startMs, endMs: startMs + (c.durationMins || DEFAULT_TASK_MINS) * 60000, done: !!c.done })
+    }
+    for (const o of recurringOccurrencesForDate(recurringTasksEnriched, date, recurringExceptions)) {
+      if (!o._time || !o.location?.lat || o.block) continue
+      const startMs = at(o._time)
+      out.push({ key: `${date}_${o.id}`, id: o.id, kind: 'recurring', date, time: o._time, title: o.title || o.text || 'Task', cat: o.cat || '', place: o.location,
+        startMs, endMs: startMs + (o._dur || DEFAULT_TASK_MINS) * 60000, done: !!completions[`${date}_${o.id}`] })
+    }
+    return out
+  }, [commitments, commitmentMeta, recurringTasksEnriched, recurringExceptions, completions])   // eslint-disable-line react-hooks/exhaustive-deps
+  const locReview = useMemo(() => {
+    if (loading || !placeEventsRead) return []
+    const tasks = [dayKey(medNow - 86400000), dayKey(medNow)].flatMap(locatedTasksOn)
+    return reviewLocatedTasks(tasks, locEvidence, { now: medNow, decided: k => k in inbox.decided })
+  }, [loading, placeEventsRead, locatedTasksOn, locEvidence, medNow, inbox])
+  const [askSnooze, setAskSnooze] = useState({})
+  const pendingAsks = locReview.filter(t => t.action === 'ask' && !(askSnooze[t.key] > medNow))
+  const todayLined = useMemo(() => lineUp(locatedTasksOn(dayKey(medNow)), locEvidence, medNow), [locatedTasksOn, locEvidence, medNow])
+  const locationNow = useMemo(() => {
+    const short = (n) => String(n || '').split(',')[0].trim()
+    const stop = [...locEvidence.stops].sort((a, b) => a.start - b.start).at(-1)
+    const stay = [...locEvidence.stays].sort((a, b) => a.end - b.end).at(-1)
+    const fromStop = stop && { label: stop.key ? short(stop.name) : (stop.name || 'an unnamed spot'), since: stop.start, live: stop.end == null, seen: stop.end ?? stop.start }
+    const fromStay = stay && { label: short(stay.name) || 'an unnamed spot', since: stay.start, live: medNow - stay.end < 15 * 60000, seen: stay.end }
+    const best = [fromStop, fromStay].filter(Boolean).sort((a, b) => b.seen - a.seen)[0]
+    return best && medNow - best.seen < 3 * 86400000 ? best : null
+  }, [locEvidence, medNow])
+  const [suggestNo, setSuggestNo] = useState(() => { try { return JSON.parse(localStorage.getItem('bloom_place_suggest_no') || '{}') } catch { return {} } })
+  const placeSuggestions = useMemo(() => {
+    if (loading) return []
+    const places = placeList.filter(p => p && (p.name || '').trim() && Number.isFinite(p.lat))
+    if (!places.length) return []
+    const occ = []
+    for (let d = 1; d <= 21; d++) {
+      const date = dayKey(medNow - d * 86400000)
+      for (const o of recurringOccurrencesForDate(recurringTasksEnriched, date, recurringExceptions)) {
+        if (o.location || o.block || !o._time || suggestNo[o.id]) continue
+        const [y, m, dd] = date.split('-').map(Number), [h, mi] = o._time.split(':').map(Number)
+        const startMs = new Date(y, m - 1, dd, h, mi).getTime()
+        occ.push({ taskId: o.id, title: o.title || o.text || 'Task', startMs, endMs: startMs + (o._dur || DEFAULT_TASK_MINS) * 60000 })
+      }
+    }
+    return suggestTaskPlaces(occ, places, locEvidence, { now: medNow })
+  }, [loading, placeList, recurringTasksEnriched, recurringExceptions, suggestNo, locEvidence, medNow])   // eslint-disable-line react-hooks/exhaustive-deps
+
   // How many open tasks carry a place — shown in Settings so the user can see
   // whether location arrivals have anything to act on.
   const locatedTaskCount = useMemo(
@@ -1120,7 +1206,7 @@ export default function App() {
   useEffect(() => {
     if (loading || !placeHooksAvailable) return
     let alive = true
-    const load = () => { if (document.visibilityState === 'visible') fetchPlaceEvents().then(rows => { if (alive) setPlaceEvents(rows) }) }
+    const load = () => { if (document.visibilityState === 'visible') fetchPlaceEvents().then(rows => { if (alive) { setPlaceEvents(rows); setPlaceEventsRead(true) } }) }
     load()
     const t = setInterval(load, 5 * 60 * 1000)
     document.addEventListener('visibilitychange', load)
@@ -1352,7 +1438,7 @@ export default function App() {
   // cloud-synced and every view reads it, skipping on Today/Week/Calendar hides
   // that occurrence everywhere. Unskip restores it. Also drops any completion
   // that was recorded for the now-hidden instance so it can't linger.
-  const skipRecurringOccurrence = useCallback((recurringId, date) => {
+  const skipRecurringOccurrence = useCallback((recurringId, date, opts = {}) => {
     const key = occKey(recurringId, date)
     setRecurringExceptions_(prev => {
       if (prev[key]) return prev
@@ -1360,7 +1446,7 @@ export default function App() {
       setRecurringExceptions(next).catch(reportSaveError)
       return next
     })
-    pushUndo('removed a repeating task for the day', () => unskipRecurringOccurrence(recurringId, date))
+    if (!opts.silent) pushUndo('removed a repeating task for the day', () => unskipRecurringOccurrence(recurringId, date))
     // Clear a stale completion for the hidden instance (storage key is date_id).
     const compKey = `${date}_${recurringId}`
     setCompletions_(prev => {
@@ -2160,6 +2246,68 @@ export default function App() {
     syncToggle(dose.id, dose.title, dose.cat, dose.date, true)
     if (answer === 'now') setDayNote(dose.date, dose.id, { takenAt: new Date().toISOString(), skipped: false }, { title: dose.title }).catch(() => {})
   }, [syncToggle])
+  // ── The inbox (located tasks that didn't happen there) ───────
+  const fmt12 = (hhmm) => { if (!hhmm) return ''; const [h, m] = hhmm.split(':').map(Number); return new Date(2000, 0, 1, h, m).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) }
+  const moveToInbox = useCallback(async (t, reason) => {
+    await addToInbox({ key: t.key, kind: t.kind, taskId: t.id, date: t.date, time: t.time, time12: fmt12(t.time), title: t.title, cat: t.cat,
+      place: t.place, seen: t.seen ? { name: t.seen.name || '' } : null, reason })
+    // Quietly: the inbox itself is the way back, not an undo toast.
+    if (t.kind === 'recurring') skipRecurringOccurrence(t.id, t.date, { silent: true })
+    else updateCommitment(t.id, { date: null, time: null }, { silent: true })
+  }, [skipRecurringOccurrence, updateCommitment])   // eslint-disable-line react-hooks/exhaustive-deps
+  const movingRef = useRef(new Set())
+  useEffect(() => {
+    for (const t of locReview) {
+      if (t.action !== 'inbox' || movingRef.current.has(t.key)) continue
+      movingRef.current.add(t.key)
+      moveToInbox(t, 'elsewhere').catch(() => movingRef.current.delete(t.key))
+    }
+  }, [locReview, moveToInbox])
+  const didDo = useCallback((t) => {
+    syncToggle(t.id, t.title, t.cat, t.kind === 'recurring' ? t.date : null, true)
+    decide(t.key, 'done').catch(() => {})
+  }, [syncToggle])
+  const didNotDo = useCallback((t) => { moveToInbox(t, 'said-no').catch(() => {}) }, [moveToInbox])
+  const askLater = useCallback((t) => setAskSnooze(prev => ({ ...prev, [t.key]: Date.now() + 60 * 60000 })), [])
+  const inboxToday = useCallback((i) => {
+    const today = dayKey(Date.now())
+    if (i.kind === 'commitment') updateCommitment(i.taskId, { date: today, time: null })
+    else addCommitment({ id: 'c-ib-' + Date.now().toString(36), text: i.title, date: today, time: null, cat: i.cat || '', done: false, location: i.place, createdAt: new Date().toISOString() })
+    removeFromInbox(i.id).catch(() => {})
+  }, [updateCommitment, addCommitment])
+  const inboxDone = useCallback((i) => {
+    if (i.kind === 'commitment') {
+      updateCommitment(i.taskId, { date: i.date, time: i.time || null })
+      syncToggle(i.taskId, i.title, i.cat, null, true)
+    } else {
+      unskipRecurringOccurrence(i.taskId, i.date)
+      syncToggle(i.taskId, i.title, i.cat, i.date, true)
+    }
+    removeFromInbox(i.id, 'done').catch(() => {})
+  }, [updateCommitment, syncToggle, unskipRecurringOccurrence])
+  const inboxRemove = useCallback((i) => { removeFromInbox(i.id).catch(() => {}) }, [])
+  // A suggested place: yes gives the repeating task that place (in its meta);
+  // no stops suggesting it.
+  const acceptPlaceSuggestion = useCallback(async (sg) => {
+    // From now on: yesterday's and today's earlier occurrences aren't reviewed
+    // (recorded first, so the new place can't trigger a question about them).
+    const now = Date.now()
+    await decide([dayKey(now - 86400000), dayKey(now)].map(date => `${date}_${sg.taskId}`), 'kept').catch(() => {})
+    const { name, lat, lng, radius } = sg.place
+    setRecurringMeta_(prev => {
+      const next = { ...prev, [sg.taskId]: { ...(prev[sg.taskId] || {}), location: { name, lat, lng, radius: radius || null, autoStart: false } } }
+      setRecurringMeta(next).catch(reportSaveError)
+      return next
+    })
+  }, [])
+  const dismissPlaceSuggestion = useCallback((sg) => {
+    setSuggestNo(prev => {
+      const next = { ...prev, [sg.taskId]: true }
+      try { localStorage.setItem('bloom_place_suggest_no', JSON.stringify(next)) } catch {}
+      return next
+    })
+  }, [])
+
   const laterMedCheck = useCallback((dose) => {
     setMedSnooze(prev => {
       const now = Date.now()
@@ -2331,6 +2479,10 @@ export default function App() {
 
       <main className="content">
         {tab==='today'       && <Today       {...sharedProps} appendLog={appendLog} scheduled={scheduled} deleteCommitment={deleteCommitment}
+          locationSlot={<>
+            <InboxCard items={inbox.items} onToday={inboxToday} onDone={inboxDone} onRemove={inboxRemove} />
+            <LocationCard now={locationNow} tasks={todayLined} suggestions={placeSuggestions} onAcceptSuggestion={acceptPlaceSuggestion} onDismissSuggestion={dismissPlaceSuggestion} />
+          </>}
           wlCheckins={wlCheckins} persistWlCheckins={persistWlCheckins}
           wlEffects={wlEffects} persistWlEffects={persistWlEffects}
           wlEpisodes={wlEpisodes} persistWlEpisodes={persistWlEpisodes}
@@ -2404,6 +2556,7 @@ export default function App() {
 
       <MedSkipSheet />
       <MedCheckSheet pending={pendingMeds} onAnswer={answerMedCheck} onLater={laterMedCheck} />
+      {!pendingMeds.length && <DidYouDoSheet pending={pendingAsks} onYes={didDo} onNo={didNotDo} onLater={askLater} />}
       <SearchOverlay
         open={searchOpen} onClose={() => setSearchOpen(false)}
         commitments={commitments} events={events} log={log}
