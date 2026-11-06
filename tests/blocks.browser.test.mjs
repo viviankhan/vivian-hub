@@ -64,9 +64,9 @@ const seed = async (build) => {
   await page.waitForTimeout(250)
 }
 const store = (key) => page.evaluate(k => JSON.parse(localStorage.getItem('vivian_' + k) || 'null'), key)
-// The band's ⋯ — labelled with the container's own name.
+// The band's actions open from its icon — labelled with the container's own name.
 const bandMenu = (name) => page.locator(`button[aria-label="${name} — more actions"]`)
-// Open it and wait for the portalled popover to be measured and painted.
+// Open them and wait for the sheet.
 const openMenu = async (name) => {
   await bandMenu(name).click()
   await page.waitForSelector('[role="menuitem"]', { timeout: 3000 })
@@ -101,7 +101,7 @@ await seed(today => ({
   recurring_tasks_v2: [], recurring_meta: {}, recurring_exceptions: {}, completions: {},
 }))
 eq('its band is on the timeline', (await bandLabels()).includes('WORK'), true)
-eq('and the band carries a ⋯', await bandMenu('Work').count(), 1)
+eq('and the band offers its actions', await bandMenu('Work').count(), 1)
 
 await openMenu('Work')
 eq('which offers the block’s own edit + removal', await menuItems(), ['Edit block', 'Remove from today'])
@@ -167,7 +167,7 @@ const withRoutine = today => ({
 })
 await seed(withRoutine)
 eq('the routine names its own band', (await bandLabels()).includes('DEEP WORK'), true)
-eq('and the band carries a ⋯', await bandMenu('Deep work').count(), 1)
+eq('and the band offers its actions', await bandMenu('Deep work').count(), 1)
 await openMenu('Deep work')
 eq('which leads with clearing it off THIS day', await menuItems(),
    ['Clear from today — 2 tasks', 'Edit routine', 'Delete the routine group…'])
@@ -259,7 +259,7 @@ const holiday = today => ({
   collapsed_blocks: { 'c-workblk': false },
 })
 await seed(holiday)
-eq('the block and the routine each get their own ⋯', await page.$$eval(
+eq('the block and the routine each offer their own actions', await page.$$eval(
   'button[aria-label$="more actions"]', bs => bs.map(b => b.getAttribute('aria-label')).sort()),
   ['Work routine — more actions', 'Work — more actions'])
 
@@ -333,7 +333,7 @@ await page.waitForTimeout(250)
 const labels = await bandLabels()
 eq('both blocks are on the timeline', ['STUDY', 'LUNCH'].every(l => labels.includes(l)), true)
 eq('the outer block is labelled before the inner one', labels.indexOf('STUDY') < labels.indexOf('LUNCH'), true)
-eq('each keeps its own ⋯', await page.$$eval('button[aria-label$="more actions"]',
+eq('each keeps its own actions', await page.$$eval('button[aria-label$="more actions"]',
   bs => [...new Set(bs.map(b => b.getAttribute('aria-label')))].sort()), ['Lunch — more actions', 'Study — more actions'])
 eq('the task inside lunch is on the day', await page.evaluate(() => document.body.innerText.includes('Read chapter 4')), true)
 // The task inside lunch sits on BOTH films: study's full-bleed, lunch's inset.
@@ -403,6 +403,25 @@ eq('no add sheet opened behind the tap', await sheetOpen(), false)
 await studyCheck().click()
 await page.waitForTimeout(300)
 eq('and it unticks again', await studyCheck().getAttribute('aria-pressed'), 'false')
+
+// ── Two blocks that overlap without nesting ────────────────────
+// Work 8:30–5 and Work 9:10–5:40 (one left behind by an edit): each band says
+// what it overlaps, and the shared stretch draws its film darker.
+console.log('\n— overlapping blocks —')
+await seed(today => ({
+  commitments: [
+    { id:'c-w1', text:'Work', date:today, time:'08:30', durationMins:510, cat:'', done:false },
+    { id:'c-w2', text:'Work', date:today, time:'09:10', durationMins:510, cat:'', done:false },
+  ],
+  commitment_meta: { 'c-w1': { block:true, color:'#D9C7EE' }, 'c-w2': { block:true, color:'#D9C7EE' } },
+  recurring_tasks_v2: [], recurring_meta: {}, recurring_exceptions: {}, completions: {},
+  collapsed_blocks: { 'c-w1': false, 'c-w2': false },
+}))
+const notes = await page.$$eval('[data-testid="block-overlap"]', ns => ns.map(n => n.textContent.trim()))
+eq('each band names the block it overlaps', notes, ['Overlaps Work 9:10 AM – 5:40 PM', 'Overlaps Work 8:30 AM – 5:00 PM'])
+eq('their films are darker than a lone block’s', await page.evaluate(() =>
+  [...document.querySelectorAll('div')].some(d => d.style.zIndex === '-1' && Math.abs(parseFloat(d.style.opacity) - 0.36) < 0.001)), true)
+eq('no ⋯ buttons on the bands', await page.$$eval('button', bs => bs.filter(b => b.textContent.trim() === '···').length), 0)
 
 eq('no uncaught errors', errors, [])
 
