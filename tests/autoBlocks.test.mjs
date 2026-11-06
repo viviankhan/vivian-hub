@@ -39,6 +39,10 @@ eq('a routine step inside an event does not make it a block',
   ids([ev('dance', 1310, 80), { ...ev('sleep', 1350, 0), inRoutine:true }]), [])
 eq('a routine step never becomes a block itself',
   ids([{ ...ev('walk', 1110, 30), inRoutine:true }, ev('call', 1115, 5)]), [])
+eq('a 15-minute task never holds one (check email + clock in at 9:30)',
+  ids([ev('email', 570, 15), ev('clock', 570, 5)]), [])
+eq('a 30-minute one can',
+  ids([ev('call', 570, 30), ev('note', 580, 5)]), ['call'])
 eq('untimed items are ignored',
   ids([ev('a', 540, 60), { id:'b', start:null, dur:0 }]), [])
 

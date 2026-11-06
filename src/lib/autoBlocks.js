@@ -19,12 +19,17 @@
 // Returns the ids of the plain events (not already blocks) that wholly contain
 // a strictly shorter event. Two events of the same length never swallow each
 // other; one that only partly overlaps another is left alone.
+// The shortest event that can hold another one.
+export const MIN_CONTAINER_MINS = 30
+
 export function autoBlockIds(items) {
   const timed = (items || []).filter(x => x && x.id != null && Number.isFinite(x.start) && !x.inRoutine)
   const out = new Set()
   for (const c of timed) {
     const cDur = c.dur || 0
-    if (c.block || cDur <= 0) continue
+    // A quick task (check email, 15 min) never becomes a container: something
+    // at the same time is just next to it, not inside it.
+    if (c.block || cDur < MIN_CONTAINER_MINS) continue
     const cEnd = c.start + cDur
     const holds = timed.some(x => {
       if (x.id === c.id) return false
