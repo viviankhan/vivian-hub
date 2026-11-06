@@ -1240,7 +1240,7 @@ function WeekStrip({ viewDate, setViewDate, today, commitments, categories, done
 }
 
 // ── Main ───────────────────────────────────────────────────────
-export default function Today({ locationSlot = null, todos, weekState, syncToggle, clearCompletion, pushUndo, commitments, addCommitment, updateCommitment, deleteCommitment, moveCommitmentToThoughts, addEvent, appendLog, scheduled, categories, recurringTasks, recurringExceptions, occStarted = {}, occEnded = {}, occExact = {}, placeStops = [], skipRecurringOccurrence, deleteRecurringTask, addRecurringTask, updateRecurringTask, routines = [], updateRoutine, deleteRoutine, taskTemplates = [], summary, labelModel = null, externalEvents = [], externalCalendars = [], toggleCalendar, importedAdoptions = {}, adoptImportedEvent, markImportedAdopted,
+export default function Today({ locationSlot = null, placesExtras = null, todos, weekState, syncToggle, clearCompletion, pushUndo, commitments, addCommitment, updateCommitment, deleteCommitment, moveCommitmentToThoughts, addEvent, appendLog, scheduled, categories, recurringTasks, recurringExceptions, occStarted = {}, occEnded = {}, occExact = {}, placeStops = [], skipRecurringOccurrence, deleteRecurringTask, addRecurringTask, updateRecurringTask, routines = [], updateRoutine, deleteRoutine, taskTemplates = [], summary, labelModel = null, externalEvents = [], externalCalendars = [], toggleCalendar, importedAdoptions = {}, adoptImportedEvent, markImportedAdopted,
   wlCheckins = [], persistWlCheckins, wlEffects, persistWlEffects, wlEpisodes = [], persistWlEpisodes, wlGame, persistWlGame, wlLog = [], wlEmotions, persistWlEmotions, onOpenWellness,
   wlRules, wlAbsence = null, onResolveAbsence,
   jumpTo = null, onJumpConsumed }) {
@@ -2776,7 +2776,7 @@ export default function Today({ locationSlot = null, todos, weekState, syncToggl
 
       {isToday && <MedAlerts />}
       {isToday && locationSlot}
-      <PlacesDay stops={placeStops} dateKey={dateKey} />
+      <PlacesDay stops={placeStops} dateKey={dateKey} extras={isToday ? placesExtras : null} />
       <div className={hasAnytime ? 'today-split' : undefined}>
       {/* Unscheduled tasks — top of the day on mobile, sidebar on desktop. */}
       {hasAnytime && (

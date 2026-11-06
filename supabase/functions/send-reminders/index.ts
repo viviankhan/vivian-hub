@@ -71,18 +71,29 @@ Deno.serve(async () => {
 
   if (error) return json({ error: error.message }, 500)
 
-  let sent = 0, gone = 0, failed = 0
+  let sent = 0, gone = 0, failed = 0, notThere = 0
   const errors: unknown[] = []
   for (const row of due ?? []) {
     // deno-lint-ignore no-explicit-any
     const sub = (row as any).subscription
     if (!sub) continue
+    // The time-based half of an arrival reminder ("at 8 PM if I'm already
+    // home") goes out only if your latest check-in is at the place; otherwise
+    // its 'arrive' twin keeps waiting for you to get there (place-hook).
+    // deno-lint-ignore no-explicit-any
+    const r = row as any
+    if (r.place) {
+      const { data: there } = await supabase.rpc('bloom_user_at', { p_user: r.user_id, p_place: r.place })
+      if (!there) { notThere++; continue }
+    }
     try {
       await webpush.sendNotification(
         sub,
         JSON.stringify({ title: row.title, body: row.body, url: row.url, tag: row.tag }),
         { TTL: PUSH_TTL_SECONDS },
       )
+      // Sent: its arrival twin won't fire as well.
+      if (r.grp) await supabase.from('scheduled_pushes').update({ sent: true }).eq('device_id', r.device_id).eq('grp', r.grp)
       sent++
     } catch (e) {
       // 404/410 = the browser dropped this subscription; delete it (cascades to
@@ -118,11 +129,14 @@ Deno.serve(async () => {
   // device that re-queues the same tag doesn't resurrect it.
   const { count: missed } = await supabase.from('scheduled_pushes')
     .update({ sent: true }, { count: 'exact' })
-    .eq('sent', false).lt('at', cutoffISO)
+    .eq('sent', false).neq('kind', 'arrive').lt('at', cutoffISO)
+  // An arrival reminder waits until its `until` (the end of its day).
+  await supabase.from('scheduled_pushes').update({ sent: true })
+    .eq('sent', false).eq('kind', 'arrive').lt('until', nowISO)
 
   // Keep the table small: drop anything older than a day (delivered or missed).
   const dayAgo = new Date(now - 24 * 60 * 60 * 1000).toISOString()
   await supabase.from('scheduled_pushes').delete().lt('at', dayAgo)
 
-  return json({ ok: true, considered: (due ?? []).length, sent, gone, failed, missed: missed ?? 0, errors })
+  return json({ ok: true, considered: (due ?? []).length, sent, gone, failed, notThere, missed: missed ?? 0, errors })
 })

@@ -1,15 +1,16 @@
 // src/lib/placeNames.js
 // ─────────────────────────────────────────────────────────────
-// A name for a spot you haven't named: "Near 3033 41st St NW". Looked up once
-// per spot (about 10 m) from OpenStreetMap (geofence.js reverseGeocode),
+// A name for a spot you haven't named: "Heritage Manor Apartments", "Mayo
+// Clinic parking", "Five Guys". Looked up once per spot (about 10 m) from
+// OpenStreetMap (lib/placeLookup.js),
 // remembered on this device, and asked for at most once a second — the
 // geocoder's fair-use limit. Until the answer comes back a spot has no name;
 // PLACE_NAMES_EVENT fires when one arrives so screens can redraw.
 // ─────────────────────────────────────────────────────────────
-import { reverseGeocode } from './geofence.js'
+import { lookupPlaceName } from './placeLookup.js'
 
 export const PLACE_NAMES_EVENT = 'bloom-place-names'
-const KEY = 'bloom_geo_names'
+const KEY = 'bloom_geo_names_v2'   // v2: building / lot / complex names, not roads
 const spot = (lat, lng) => `${lat.toFixed(4)},${lng.toFixed(4)}`
 
 let cache = null
@@ -28,13 +29,13 @@ async function pump() {
   while (queue.length) {
     const { lat, lng, k } = queue.shift()
     let name = ''
-    try { name = await reverseGeocode(lat, lng) } catch {}
+    try { name = await lookupPlaceName(lat, lng) } catch {}
     const c = read()
     c[k] = name || ''   // remember misses too, so a spot isn't asked about again
     try { localStorage.setItem(KEY, JSON.stringify(c)) } catch {}
     pending.delete(k)
     try { window.dispatchEvent(new Event(PLACE_NAMES_EVENT)) } catch {}
-    await new Promise(r => setTimeout(r, 1100))
+    await new Promise(r => setTimeout(r, 1200))
   }
   running = false
 }
@@ -44,7 +45,7 @@ export function spotName(lat, lng) {
   if (!Number.isFinite(lat) || !Number.isFinite(lng)) return ''
   const k = spot(lat, lng)
   const c = read()
-  if (k in c) return c[k] ? `Near ${c[k].split(',')[0]}` : ''
+  if (k in c) return c[k] || ''
   if (!pending.has(k)) { pending.add(k); queue.push({ lat, lng, k }); pump() }
   return ''
 }

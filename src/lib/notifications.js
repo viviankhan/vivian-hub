@@ -431,6 +431,20 @@ function buildReminders(events = [], commitments = [], recurring = []) {
     if (!r || !r.date || !r.time) continue
     const startMs = toEpoch(r.date, r.time)
     if (startMs == null) continue
+    // "Remind me when I get there, or at its time if I'm already there": no
+    // lead alerts. Two linked entries for the cloud queue instead — one at its
+    // time that only goes out if you're at the place, one that waits for you
+    // to arrive there (from `notBefore` to the end of the day). Whichever fires
+    // first retires the other (send-reminders / place-hook, by `grp`).
+    if (r.arrive?.place) {
+      const placeName = String(r.arrive.place.name || 'there').split(',')[0].trim()
+      const from = toEpoch(r.date, r.arrive.notBefore || r.time) ?? startMs
+      const until = toEpoch(r.date, '23:59') + 59 * 1000
+      const place = { lat: r.arrive.place.lat, lng: r.arrive.place.lng, radius: r.arrive.place.radius || null, name: placeName }
+      out.push({ id: `${r.id}:at`, trigger: true, kind: 'time', name: r.text || 'Task', body: `You're at ${placeName}.`, at: startMs, until: null, place, grp: r.id, url: BASE })
+      out.push({ id: `${r.id}:arrive`, trigger: true, kind: 'arrive', name: r.text || 'Task', body: `You just got to ${placeName}.`, at: Math.min(from, startMs), until, place, grp: r.id, url: BASE })
+      continue
+    }
     push({ id: r.id, leadId: r.leadId }, startMs, r.text || 'Task', `${dateLabel(r.date)} at ${fmt12(r.time)}`, r.durationMins)
     // A med with no answer yet: "Did you take it?" a little after its time.
     // Answering in Bloom drops it (App only flags unanswered doses).
@@ -463,9 +477,15 @@ export function buildScheduledPushes(events, commitments, recurring = []) {
     .map(r => ({
       tag: r.id,
       at: new Date(r.at).toISOString(),
-      title: headingFor(r, r.at),
+      title: r.trigger ? r.name : headingFor(r, r.at),
       body: r.body || '',
       url: r.url || BASE,
+      // An arrival reminder (see buildReminders): its kind, the place it
+      // waits for, how long it waits, and the pair it belongs to.
+      kind: r.trigger ? r.kind : 'time',
+      until: r.until ? new Date(r.until).toISOString() : null,
+      place: r.trigger ? r.place : null,
+      grp: r.trigger ? r.grp : null,
     }))
 }
 
@@ -499,7 +519,9 @@ export function syncReminders(events, commitments, recurring = []) {
     return
   }
 
-  const reminders = buildReminders(events, commitments, recurring)
+  // Arrival reminders depend on where you are, which only the cloud hears
+  // about (place-hook); the app doesn't fire them on the clock.
+  const reminders = buildReminders(events, commitments, recurring).filter(r => !r.trigger)
   const fired = loadFired()
   const now = Date.now()
   let firedChanged = false

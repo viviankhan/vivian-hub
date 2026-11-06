@@ -2,10 +2,7 @@
 // ─────────────────────────────────────────────────────────────
 // Where you are, and whether it lines up with the day (lib/locationCheck.js):
 //
-//   • <LocationCard> — "At Mayo Clinic · since 9:02", then today's tasks that
-//     have a place, each marked: you were there / you were at Home / not yet /
-//     upcoming / not sure. Below that, places Bloom thinks a task belongs to,
-//     for you to confirm.
+//   (Where you are and today's plans with a place live in PlacesDay.jsx.)
 //   • <InboxCard> — tasks that needed a place and didn't happen there: do it
 //     today, it's done, or remove it.
 //   • <DidYouDoSheet> — a located task Bloom couldn't place you for: did you
@@ -23,66 +20,12 @@ const dayWord = (date) => {
 }
 const short = (n) => String(n || '').split(',')[0].trim()
 
-const STATUS = {
-  there:     { icon: '✓', color: '#2F6B4F', bg: '#E7F3EC', text: () => 'You were there' },
-  elsewhere: { icon: '!', color: '#9A4B0B', bg: '#FDEFD9', text: (t) => t.seen?.name ? `You were at ${short(t.seen.name)}` : 'You were somewhere else' },
-  now:       { icon: '…', color: '#6B5B12', bg: '#FBF5D8', text: () => 'Not there yet' },
-  upcoming:  { icon: '·', color: 'var(--muted)', bg: 'transparent', text: () => 'Upcoming' },
-  unknown:   { icon: '?', color: 'var(--muted)', bg: '#F1EFF4', text: () => 'Not sure — no check-in' },
-}
-
 const card = { background: '#fff', border: '1px solid var(--border)', borderRadius: 16, padding: '12px 14px', margin: '0 0 12px', boxShadow: '0 4px 14px rgba(60,72,88,.05)' }
 const head = { fontSize: 10.5, fontWeight: 700, letterSpacing: 1, textTransform: 'uppercase', color: 'var(--muted)' }
 const smallBtn = (primary) => ({
   padding: '6px 11px', borderRadius: 12, fontSize: 12.5, fontWeight: 700, cursor: 'pointer', fontFamily: 'DM Sans,sans-serif',
   border: primary ? 'none' : '1px solid var(--border)', background: primary ? 'var(--forest)' : 'white', color: primary ? 'var(--green-light)' : 'var(--text)',
 })
-
-// now: { label, since, live } | null
-export function LocationCard({ now, tasks = [], suggestions = [], onAcceptSuggestion, onDismissSuggestion }) {
-  if (!now && !tasks.length && !suggestions.length) return null
-  return (
-    <section style={card} data-testid="location-card">
-      <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
-        <span style={head}>📍 Location</span>
-      </div>
-      <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--text)', marginTop: 4 }} data-testid="location-now">
-        {now ? <>{now.live ? 'At' : 'Last seen at'} {now.label}<span style={{ fontWeight: 500, color: 'var(--muted)', fontSize: 13 }}> · {now.live ? `since ${clock(now.since)}` : clock(now.seen)}</span></>
-          : <span style={{ color: 'var(--muted)', fontWeight: 500, fontSize: 14 }}>No check-ins yet today</span>}
-      </div>
-      {tasks.length > 0 && (
-        <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 6 }}>
-          {tasks.map(t => {
-            const s = STATUS[t.status] || STATUS.unknown
-            return (
-              <div key={t.key} data-testid="located-task" data-status={t.status} style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-                <span style={{ fontSize: 12, color: 'var(--muted)', width: 58, flexShrink: 0 }}>{clock(t.startMs)}</span>
-                <span style={{ flex: 1, minWidth: 0 }}>
-                  <span style={{ display: 'block', fontSize: 13.5, fontWeight: 600, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.title}</span>
-                  <span style={{ display: 'block', fontSize: 11.5, color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>at {short(t.place.name) || 'its place'}</span>
-                </span>
-                <span style={{ fontSize: 11.5, fontWeight: 700, color: s.color, background: s.bg, borderRadius: 10, padding: '3px 8px', flexShrink: 0, maxWidth: '45%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {s.icon} {s.text(t)}
-                </span>
-              </div>
-            )
-          })}
-        </div>
-      )}
-      {suggestions.slice(0, 2).map(sg => (
-        <div key={sg.taskId} data-testid="place-suggestion" style={{ marginTop: 10, padding: '9px 10px', borderRadius: 12, background: '#F4F1F8' }}>
-          <div style={{ fontSize: 13, color: 'var(--text)', lineHeight: 1.45 }}>
-            <b>{sg.title}</b> {sg.why === 'history' ? `happened at ${short(sg.place.name)} the last ${sg.times} times.` : `sounds like it happens at ${short(sg.place.name)}.`} Give it that place?
-          </div>
-          <div style={{ display: 'flex', gap: 6, marginTop: 7 }}>
-            <button type="button" style={smallBtn(true)} onClick={() => onAcceptSuggestion(sg)}>Add place</button>
-            <button type="button" style={smallBtn(false)} onClick={() => onDismissSuggestion(sg)}>No</button>
-          </div>
-        </div>
-      ))}
-    </section>
-  )
-}
 
 export function InboxCard({ items = [], onToday, onDone, onRemove }) {
   if (!items.length) return null

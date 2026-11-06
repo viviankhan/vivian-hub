@@ -12,6 +12,8 @@
 // is already open when you walk in.
 // ─────────────────────────────────────────────────────────────
 
+import { lookupPlaceName } from './placeLookup.js'
+
 export function geolocationSupported() {
   return typeof navigator !== 'undefined' && 'geolocation' in navigator
 }
@@ -92,14 +94,7 @@ function shortPlaceName(r) {
 // location" can suggest a name ("Gym, Brooklyn") instead of leaving it blank.
 // Best-effort: returns '' on no match or network/permission trouble.
 export async function reverseGeocode(lat, lng) {
-  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return ''
-  try {
-    const url = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&addressdetails=1&zoom=18&lat=${lat}&lon=${lng}`
-    const res = await fetch(url, { headers: { 'Accept': 'application/json' } })
-    if (!res.ok) return ''
-    const data = await res.json()
-    return data ? shortPlaceName(data) : ''
-  } catch { return '' }
+  return lookupPlaceName(lat, lng)
 }
 
 // Great-circle distance between two lat/lng points, in meters (haversine).
