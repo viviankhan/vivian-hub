@@ -77,7 +77,6 @@ ok('no → it joins the inbox', (await page.getByTestId('inbox-item').count()) =
 ok('the sheet is gone', !(await sheet.isVisible()))
 
 console.log('\n— location status —')
-const card = page.getByTestId('location-card')
 ok('shows where you were last seen', /Home/.test(await page.getByTestId('location-now').innerText()), await page.getByTestId('location-now').innerText().catch(() => ''))
 await page.screenshot({ path: process.env.SHOT_DIR ? process.env.SHOT_DIR + '/location-today.png' : '/dev/null' }).catch(() => {})
 

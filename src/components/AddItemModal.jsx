@@ -764,18 +764,21 @@ export default function AddItemModal({ existing = null, existingRecurring = null
   // Adopt a saved / recent / searched place wholesale (its name + coords, and
   // its radius if it pinned one — otherwise keep the current radius choice).
   const pickPlace = (p) => {
-    setLocation(prev => ({ name: p.name || '', lat: p.lat, lng: p.lng, radius: p.radius ?? prev?.radius, autoStart: prev?.autoStart }))
+    setLocation(prev => ({ name: p.name || '', lat: p.lat, lng: p.lng, radius: p.radius ?? prev?.radius, autoStart: prev?.autoStart, remindOnArrival: prev?.remindOnArrival, notBefore: prev?.notBefore }))
     setLocQuery(''); setLocResults([]); setLocErr('')
   }
   const setLocName   = (name) => setLocation(prev => ({ ...(prev || {}), name }))
   const setLocRadius = (radius) => { setLocation(prev => prev ? { ...prev, radius: radius || undefined } : prev); setRadiusMenuOpen(false) }
   const setLocAutoStart = (on) => setLocation(prev => prev ? { ...prev, autoStart: on } : prev)
+  const setLocRemind = (on) => setLocation(prev => prev ? { ...prev, remindOnArrival: on } : prev)
+  const setLocNotBefore = (t) => setLocation(prev => prev ? { ...prev, notBefore: t || null } : prev)
   const clearLocation = () => { setLocation(null); setLocErr(''); setRadiusMenuOpen(false) }
   const locHasCoords = !!(location && typeof location.lat === 'number' && typeof location.lng === 'number')
   // The location object as persisted on a task: an explicit radius only when one
   // was chosen (absent = vicinity), plus the arrival auto-start opt-in.
   const buildLocation = () => locHasCoords
-    ? { name: (location.name || '').trim(), lat: location.lat, lng: location.lng, radius: location.radius || null, autoStart: !!location.autoStart }
+    ? { name: (location.name || '').trim(), lat: location.lat, lng: location.lng, radius: location.radius || null, autoStart: !!location.autoStart,
+        ...(location.remindOnArrival ? { remindOnArrival: true, notBefore: location.notBefore || null } : {}) }
     : null
 
   const toggleLead = (val) => {
@@ -1566,7 +1569,7 @@ export default function AddItemModal({ existing = null, existingRecurring = null
     location: ((!!onSave || !!onSaveRecurring) && geolocationSupported()) ? (
         <DetailRow icon={<PinIcon />}
           text={locHasCoords ? (location.name?.trim() || 'Location set') : 'Add a location'} textMuted={!locHasCoords}
-          hint={locHasCoords ? (location.autoStart ? 'Auto-start' : 'Set') : null} open={expanded==='location'} onClick={() => toggleRow('location')}>
+          hint={locHasCoords ? (location.remindOnArrival ? 'Remind on arrival' : location.autoStart ? 'Auto-start' : 'Set') : null} open={expanded==='location'} onClick={() => toggleRow('location')}>
           <div style={{ fontSize:11.5, color:'var(--muted)', lineHeight:1.5, marginBottom:10 }}>
             Tag where this happens. It's just a note by default — turn on auto-start below to have Bloom begin the task's progress the moment you arrive, no matter the time it's set for.
           </div>
@@ -1655,7 +1658,26 @@ export default function AddItemModal({ existing = null, existingRecurring = null
                 <span style={{ width:21, height:21, borderRadius:'50%', background:'white', boxShadow:'0 1px 3px rgba(0,0,0,.28)' }} />
               </button>
             </div>
-            {location.autoStart && placeHooksAvailable && (
+            {/* Remind on arrival — "when I get home, or at 8 PM if I'm already
+                home". Delivered from the cloud when an iPhone check-in arrives. */}
+            <div style={{ display:'flex', alignItems:'center', gap:12, marginTop:14, paddingTop:14, borderTop:'1px solid #F1EDF2' }}>
+              <div style={{ flex:1, minWidth:0 }}>
+                <div style={{ fontSize:13.5, fontWeight:500, color:'var(--text)' }}>Remind me when I get here</div>
+                <div style={{ fontSize:11, color:'var(--muted)', marginTop:1, lineHeight:1.35 }}>Instead of the usual alerts: a reminder when you arrive, or at its time if you’re already here. Needs iPhone check-ins.</div>
+              </div>
+              <button type="button" data-testid="remind-on-arrival" onClick={() => setLocRemind(!location.remindOnArrival)} aria-pressed={!!location.remindOnArrival}
+                style={{ width:46, height:27, borderRadius:14, border:'none', cursor:'pointer', padding:3, flexShrink:0, background: location.remindOnArrival ? 'var(--forest)' : '#CBD2DA', transition:'background .2s', display:'flex', justifyContent: location.remindOnArrival ? 'flex-end' : 'flex-start' }}>
+                <span style={{ width:21, height:21, borderRadius:'50%', background:'white', boxShadow:'0 1px 3px rgba(0,0,0,.28)' }} />
+              </button>
+            </div>
+            {location.remindOnArrival && (
+              <label style={{ display:'flex', alignItems:'center', gap:10, marginTop:10, fontSize:12.5, color:'var(--text)' }}>
+                <span style={{ flex:1 }}>Not before <span style={{ color:'var(--muted)' }}>(blank = its time)</span></span>
+                <input type="time" value={location.notBefore || ''} onChange={e => setLocNotBefore(e.target.value)}
+                  style={{ padding:'6px 8px', borderRadius:10, border:'1px solid var(--border)', fontSize:13, fontFamily:'DM Sans,sans-serif' }} />
+              </label>
+            )}
+            {(location.autoStart || location.remindOnArrival) && placeHooksAvailable && (
               <PlaceHookSetup />
             )}
             <button onClick={clearLocation}

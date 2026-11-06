@@ -18,8 +18,51 @@
 //     supabase functions deploy place-hook
 // ─────────────────────────────────────────────────────────────
 
+import webpush from 'npm:web-push@3.6.7'
+
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') || ''
 const SERVICE = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || ''
+
+// Arrival reminders ("remind me when I get home") go out from here, the moment
+// the check-in that satisfies them comes in — same push identity as
+// send-reminders.
+const normKey = (k?: string | null) =>
+  (k || '').trim().replace(/\s+/g, '').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+const VAPID_PUBLIC = normKey(Deno.env.get('VAPID_PUBLIC_KEY')) ||
+  'BOzhhdVPYiXuL08Y1WB6y09vKPfoL5PymZNL9ijlMKzVZJgyG4hmpCYFxcnnIS71mO9sInzMs3LBKad6YaBbwgc'
+const VAPID_PRIVATE = normKey(Deno.env.get('VAPID_PRIVATE_KEY'))
+let pushReady = false
+try { webpush.setVapidDetails(Deno.env.get('VAPID_SUBJECT') || 'mailto:reminders@bloom.app', VAPID_PUBLIC, VAPID_PRIVATE); pushReady = !!VAPID_PRIVATE } catch { pushReady = false }
+
+// Send whatever arrival reminders this check-in satisfies. Never lets a push
+// problem fail the check-in itself.
+async function sendArrivals(userId: string, lat: number, lng: number): Promise<number> {
+  if (!pushReady) return 0
+  try {
+    const res = await db('rpc/claim_arrival_pushes', {
+      method: 'POST',
+      body: JSON.stringify({ p_user: userId, p_lat: lat, p_lng: lng, p_now: new Date().toISOString() }),
+    })
+    if (!res.ok) return 0
+    const rows = await res.json()
+    let sent = 0
+    for (const r of rows || []) {
+      try {
+        await webpush.sendNotification(r.subscription, JSON.stringify({ title: r.title, body: r.body, url: r.url, tag: r.tag }), { TTL: 600 })
+        sent++
+      } catch (e) {
+        // deno-lint-ignore no-explicit-any
+        const code = (e as any)?.statusCode
+        if (code === 404 || code === 410) await db(`push_subscriptions?device_id=eq.${encodeURIComponent(r.device_id)}`, { method: 'DELETE' })
+        else console.error('[place-hook] arrival push failed:', code, (e as Error)?.message)
+      }
+    }
+    return sent
+  } catch (e) {
+    console.error('[place-hook] arrivals:', (e as Error)?.message)
+    return 0
+  }
+}
 
 // Plain text back, so the Shortcut's result reads as a sentence if you look.
 const say = (text: string, status = 200) =>
@@ -74,7 +117,8 @@ Deno.serve(async (req) => {
       body: JSON.stringify({ user_id: owner.user_id, kind: 'ping', lat, lng }),
     })
     if (!put.ok) return say('Bloom could not save that.', 502)
-    return say('Bloom: checked in.')
+    const reminded = await sendArrivals(owner.user_id, lat!, lng!)
+    return say(reminded ? `Bloom: checked in. ${reminded === 1 ? 'A reminder is' : `${reminded} reminders are`} on the way.` : 'Bloom: checked in.')
   }
 
   const last = await db(`place_events?user_id=eq.${owner.user_id}&task_id=eq.${encodeURIComponent(task)}&select=kind,at&order=at.desc&limit=1`)

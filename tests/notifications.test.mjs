@@ -164,6 +164,26 @@ ok('it asks the question', check && check.title === '💊 Did you take Morning m
 ok('answered: no follow-up', !N.buildScheduledPushes([], [], [med(false)]).some(q => q.tag.endsWith(':medcheck')))
 ok('ordinary tasks get none', !N.buildScheduledPushes([], [], [{ ...med(undefined), id: 'rec:r-x@D', leadId: 'r-x' }]).some(q => q.tag.endsWith(':medcheck')))
 
+// "Remind me when I get home, or at 8 PM if I'm already home": no lead alerts,
+// two linked rows for the cloud — one at 8 PM that needs you home, one that
+// waits for you to get home until the day ends.
+console.log('\n— reminded on arrival —')
+reset()
+NOW = at(7, 0)
+const HOME = { name: 'Home, Rochester', lat: 44.0488, lng: -92.4927, radius: null }
+const mtx = (extra = {}) => ({ id: 'rec:r-mtx@D', leadId: 'r-mtx', date: DAY, time: '20:00', text: 'Methotrexate', arrive: { place: HOME, notBefore: null }, ...extra })
+const aq = N.buildScheduledPushes([], [], [mtx()])
+const atRow = aq.find(q => q.tag === 'rec:r-mtx@D:at'), arrRow = aq.find(q => q.tag === 'rec:r-mtx@D:arrive')
+ok('no 15/5-minute alerts', !aq.some(q => /in \d+ min|starting now/.test(q.title)))
+ok('a row at 8 PM that needs you home', atRow && atRow.kind === 'time' && new Date(atRow.at).getTime() === at(20, 0) && atRow.place?.lat === 44.0488)
+ok('a row waiting for you to get home, from 8 PM to midnight', arrRow && arrRow.kind === 'arrive' && new Date(arrRow.at).getTime() === at(20, 0) && new Date(arrRow.until).getTime() === at(23, 59) + 59000)
+ok('the two are a pair', atRow && arrRow && atRow.grp === arrRow.grp && atRow.grp === 'rec:r-mtx@D')
+ok('they say where', arrRow && arrRow.title === 'Methotrexate' && arrRow.body === 'You just got to Home.')
+NOW = at(4, 0)
+const clock = N.buildScheduledPushes([], [], [mtx({ id: 'rec:r-clock@D', text: 'Clock In', time: '09:30', arrive: { place: { name: 'Guggenheim Building', lat: 44.0207, lng: -92.4669 }, notBefore: '05:00' } })])
+ok('"not before" opens the wait earlier (clock in on arrival at 8:30)', new Date(clock.find(q => q.kind === 'arrive').at).getTime() === at(5, 0))
+ok('ordinary rows say they are time rows', N.buildScheduledPushes([], [task({ time: '13:30' })], []).every(q => q.kind === 'time' && q.place === null))
+
 unlinkSync(shimPath)
 console.log(`\n${pass} passed, ${fail} failed`)
 process.exit(fail ? 1 : 0)

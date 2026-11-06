@@ -84,7 +84,7 @@ import { pendingMedChecks, dayKey } from './lib/medCheck.js'
 import { reviewLocatedTasks, lineUp, suggestTaskPlaces, DEFAULT_TASK_MINS } from './lib/locationCheck.js'
 import { loadInbox, inboxSnapshot, addToInbox, removeFromInbox, decide, INBOX_EVENT } from './lib/inbox.js'
 import { spotName, PLACE_NAMES_EVENT } from './lib/placeNames.js'
-import { LocationCard, InboxCard, DidYouDoSheet } from './components/LocationPanel.jsx'
+import { InboxCard, DidYouDoSheet } from './components/LocationPanel.jsx'
 import { useLifelogVersion } from './components/DayNote.jsx'
 import { Glyph } from './lib/glyphs.jsx'
 import Customization from './components/Customization.jsx'
@@ -1032,8 +1032,14 @@ export default function App() {
         const time = Number.isFinite(ov) ? `${String(Math.floor(ov / 60)).padStart(2, '0')}:${String(ov % 60).padStart(2, '0')}` : o._time
         // A med with no answer yet also gets "Did you take it?" a little after
         // its time (lib/medCheck.js); answering drops it from the queue.
-        const medCheck = isMedSync(o.id) && !(`${key}_${o.id}` in completions)
-        out.push({ id: `rec:${o.id}@${key}`, leadId: o.id, date: key, time, text: o.title || o.text || 'Task', medCheck })
+        // "Remind me when I get there" (set on the task's place): reminded on
+        // arrival, or at its time if already there — see buildReminders.
+        const arrive = o.location?.remindOnArrival && Number.isFinite(o.location.lat)
+          ? { place: o.location, notBefore: o.location.notBefore || null } : null
+        // An arrival-reminded med isn't followed up at a fixed time: when it's
+        // due depends on when you got there.
+        const medCheck = !arrive && isMedSync(o.id) && !(`${key}_${o.id}` in completions)
+        out.push({ id: `rec:${o.id}@${key}`, leadId: o.id, date: key, time, text: o.title || o.text || 'Task', medCheck, arrive })
       }
     }
     return out
@@ -1058,7 +1064,9 @@ export default function App() {
     for (const date of [dayKey(medNow - 86400000), dayKey(medNow)]) {
       for (const o of recurringOccurrencesForDate(enriched, date, recurringExceptions)) {
         if (o.block || !isMedSync(o.id)) continue
-        doses.push({ id: o.id, title: o.title || o.text || 'Meds', date, time: o._time || null, cat: o.cat })
+        // A dose reminded on arrival has no fixed moment to follow up on, so an
+        // unanswered one is asked about the next day.
+        doses.push({ id: o.id, title: o.title || o.text || 'Meds', date, time: o.location?.remindOnArrival ? null : (o._time || null), cat: o.cat })
       }
     }
     return pendingMedChecks({ doses, answered: (date, id) => `${date}_${id}` in completions, snoozed: medSnooze, now: medNow })
@@ -1105,8 +1113,10 @@ export default function App() {
     for (const o of recurringOccurrencesForDate(recurringTasksEnriched, date, recurringExceptions)) {
       if (!o._time || !o.location?.lat || o.block) continue
       const startMs = at(o._time)
+      // One reminded on arrival can happen whenever you get there that day.
+      const endMs = o.location.remindOnArrival ? at('23:59') + 59000 : startMs + (o._dur || DEFAULT_TASK_MINS) * 60000
       out.push({ key: `${date}_${o.id}`, id: o.id, kind: 'recurring', date, time: o._time, title: o.title || o.text || 'Task', cat: o.cat || '', place: o.location,
-        startMs, endMs: startMs + (o._dur || DEFAULT_TASK_MINS) * 60000, done: !!completions[`${date}_${o.id}`] })
+        startMs, endMs, done: !!completions[`${date}_${o.id}`] })
     }
     return out
   }, [commitments, commitmentMeta, recurringTasksEnriched, recurringExceptions, completions])   // eslint-disable-line react-hooks/exhaustive-deps
@@ -2479,10 +2489,8 @@ export default function App() {
 
       <main className="content">
         {tab==='today'       && <Today       {...sharedProps} appendLog={appendLog} scheduled={scheduled} deleteCommitment={deleteCommitment}
-          locationSlot={<>
-            <InboxCard items={inbox.items} onToday={inboxToday} onDone={inboxDone} onRemove={inboxRemove} />
-            <LocationCard now={locationNow} tasks={todayLined} suggestions={placeSuggestions} onAcceptSuggestion={acceptPlaceSuggestion} onDismissSuggestion={dismissPlaceSuggestion} />
-          </>}
+          locationSlot={<InboxCard items={inbox.items} onToday={inboxToday} onDone={inboxDone} onRemove={inboxRemove} />}
+          placesExtras={{ now: locationNow, plans: todayLined, suggestions: placeSuggestions, onAcceptSuggestion: acceptPlaceSuggestion, onDismissSuggestion: dismissPlaceSuggestion }}
           wlCheckins={wlCheckins} persistWlCheckins={persistWlCheckins}
           wlEffects={wlEffects} persistWlEffects={persistWlEffects}
           wlEpisodes={wlEpisodes} persistWlEpisodes={persistWlEpisodes}
