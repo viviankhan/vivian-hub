@@ -40,7 +40,10 @@ const data = {
     { id: 'jog', label: '7:00 AM — Jog', days: [], startDate: '2026-10-01', freq: 'daily', interval: 1 },
   ],
   commitments: [],
-  completions: { '2026-11-01_med1': false },
+  completions: {
+    '2026-10-28_med1': true, '2026-10-29_med1': true, '2026-10-30_med1': true, '2026-10-31_med1': true,
+    '2026-11-01_med1': false, '2026-11-02_med1': true, '2026-11-03_med1': true,
+  },
   dayNotes: {
     '2026-11-01_med1': { taskId: 'med1', date: '2026-11-01', title: 'Lexapro', skipped: true, mood: 2, text: 'Ran out of Lexapro, pharmacy closed', at: iso(2026, 11, 1, 9), updatedAt: iso(2026, 11, 1, 9) },
     '2026-11-02_jog': { taskId: 'jog', date: '2026-11-02', title: 'Jog', time: '07:00', durationMins: 40, text: 'Legs felt heavy but the lake was beautiful', mood: 4, photos: ['wp-1'], at: iso(2026, 11, 2, 7, 45), place: 'Green Lake' },
@@ -77,6 +80,13 @@ console.log('\n— medications —')
   ok('this week starts Monday, so Sunday’s skip is last week', /taken every day this week/.test(A('Did I take my meds this week?').text), A('Did I take my meds this week?').text)
   const a = A('Did I take my meds?')
   ok('counts the skipped day', /Lexapro: taken 6 of 7 days in the last 7 days; skipped Sunday/.test(a.text), a.text)
+  {
+    const { '2026-11-02_med1': _, ...rest } = data.completions
+    const u = R.answerRecall('Did I take my meds?', { ...data, completions: rest }, NOW)
+    ok('an unanswered day is not counted as taken', /taken 5 of 7 days.*skipped Sunday.*not answered yesterday/.test(u.text), u.text)
+    const t = R.answerRecall('Did I take my meds today?', { ...data, completions: { ...data.completions, '2026-11-03_med1': undefined } }, NOW)
+    ok('today, not answered yet, is still open', !/not answered/.test(t.text), t.text)
+  }
   ok('lists the skip with its mood', a.items?.some(i => /Skipped Lexapro/.test(i.title) && /Low/.test(i.meta)), JSON.stringify(a.items))
   const r = A('when did I run out of Lexapro?')
   ok('ran out → the note', /Ran out of Lexapro/.test(r.text) || r.items?.some(i => /Ran out/.test(i.text)), r.text)

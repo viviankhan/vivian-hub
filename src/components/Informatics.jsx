@@ -19,6 +19,7 @@ import Segmented, { useRememberedView } from './Segmented.jsx'
 import { useTimeframe, TimeframePicker } from './Timeframe.jsx'
 import MindBody from './WellnessInsights.jsx'
 import LifeCards from './LifeCards.jsx'
+import PlacesInsights, { usePlaceInsights, fmtHM } from './PlacesInsights.jsx'
 import { computeEntries, filterByDates, aggregate, answerQuestion, fmtHours, decimalHours } from '../lib/insights.js'
 import { computeSkills, skillCoverage, skillTrend } from '../lib/skills.js'
 import { computeTopics } from '../lib/topics.js'
@@ -30,6 +31,7 @@ import {
 const VIEWS = [
   { id: 'time',   label: 'Time',        glyph: 'clock' },
   { id: 'skills', label: 'Skills',      glyph: 'target' },
+  { id: 'places', label: 'Places',      glyph: 'pin' },
   { id: 'body',   label: 'Mind & body', glyph: 'pulse' },
 ]
 const DUR_CHIPS = [15, 30, 45, 60, 90, 120]
@@ -70,11 +72,11 @@ function Bar({ frac, color }) {
 }
 
 // One headline number. Tapping a tile opens the view it summarizes.
-function StatTile({ label, value, sub, delta, good, swatch, onClick }) {
+function StatTile({ label, value, sub, delta, good, swatch, onClick, wide = false }) {
   const dir = delta == null || Math.abs(delta) < 0.05 ? null : delta > 0 ? 'up' : 'down'
   const tone = dir == null ? 'flat' : (dir === 'up') === (good !== false) ? 'good' : 'watch'
   return (
-    <button type="button" className="in-tile" onClick={onClick}>
+    <button type="button" className={`in-tile${wide ? ' in-tile-wide' : ''}`} onClick={onClick}>
       <span className="in-tile-label">{label}</span>
       <span className="in-tile-value">
         {swatch && <span className="in-tile-swatch" style={{ background: swatch }} />}
@@ -185,7 +187,7 @@ function LogTimeCard({ categories, onSave, onClose }) {
 }
 
 // ── The tab ────────────────────────────────────────────────────
-export default function Informatics({ commitments = [], recurringTasks = [], completions = {}, log = [], categories = [], timeLogs = [], addTimeLog, deleteTimeLog, wlCheckins = [], wlEffects, wlEpisodes = [] }) {
+export default function Informatics({ commitments = [], recurringTasks = [], completions = {}, log = [], categories = [], timeLogs = [], addTimeLog, deleteTimeLog, wlCheckins = [], wlEffects, wlEpisodes = [], placeStops = [] }) {
   const tf = useTimeframe()
   const [view, setView] = useRememberedView('bloom_insights_view', 'time', VIEWS.map(v => v.id))
   const [query, setQuery] = useState('')
@@ -235,6 +237,9 @@ export default function Informatics({ commitments = [], recurringTasks = [], com
     .map(r => ({ ...r, fx: effectList.find(f => f.id === r.effectId) }))
     .filter(r => r.fx).sort((a, b) => b.mins - a.mins), [fxTotals, effectList])
   const fxMins = fxRows.reduce((a, r) => a + r.mins, 0)
+
+  // ── Places (the same window) ──────────────────────────────────
+  const placeData = usePlaceInsights({ placeStops, checkins: wlCheckins, fromKey: tf.from, toKey: tf.to })
 
   const hasHours = agg.totalMins > 0
   const totalSessions = entries.length
@@ -295,6 +300,10 @@ export default function Informatics({ commitments = [], recurringTasks = [], com
         <StatTile label="Conditions" onClick={() => setView('body')}
           value={fxRows.length ? fmtDuration(fxMins) : '—'}
           sub={fxRows.length ? `${fxRows[0].fx.name} most${fxRows.length > 1 ? ` · ${fxRows.length} tracked` : ''}` : 'None running ' + inRange} />
+        <StatTile wide label="Most time at" onClick={() => setView('places')}
+            value={placeData.top ? placeData.top.name : placeData.totalMins ? 'Somewhere else' : '—'}
+            sub={placeData.top ? `${fmtHM(placeData.top.mins)} · ${placeData.places.filter(p => !p.elsewhere).length} place${placeData.places.filter(p => !p.elsewhere).length === 1 ? '' : 's'} ${inRange}`
+              : placeData.totalMins ? `${fmtHM(placeData.totalMins)} at places you haven’t named` : 'No check-ins ' + inRange} />
       </div>
 
       {/* Ask about yourself. */}
@@ -586,6 +595,8 @@ export default function Informatics({ commitments = [], recurringTasks = [], com
           </>
         )
       )}
+
+      {view === 'places' && <PlacesInsights data={placeData} phrase={inRange} />}
 
       {view === 'body' && (<>
         <MindBody checkins={wlCheckins} effects={effectList} episodes={wlEpisodes} log={log}

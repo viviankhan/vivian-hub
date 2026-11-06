@@ -1471,6 +1471,8 @@ textarea { resize: vertical; min-height: 160px; line-height: 1.6; }
   cursor: pointer; white-space: nowrap; min-width: 0; transition: background .15s, color .15s, box-shadow .15s; }
 .seg-btn:hover { color: var(--text); }
 .seg-btn.on { background: #fff; color: var(--forest); box-shadow: 0 2px 8px rgba(60,72,88,.12); }
+/* Insights has four views: on a phone, drop the icons so all four labels fit. */
+@media (max-width: 520px) { .in-views .seg-btn { padding: 6px 4px; gap: 0; } .in-views .seg-btn > :not(span) { display: none !important; } }
 .seg-badge { font-size: 10px; font-weight: 800; background: var(--teal); color: #fff; border-radius: 999px; padding: 1px 6px; line-height: 1.4; }
 
 /* ── Timeframe picker (Insights · Wellness) ───────────────────── */
@@ -1502,6 +1504,7 @@ textarea { resize: vertical; min-height: 160px; line-height: 1.6; }
 
 /* Headline tiles — each opens the view it summarizes */
 .in-tiles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.in-tile-wide { grid-column: 1 / -1; }
 .in-tile { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; text-align: left; padding: 13px 14px 12px; min-width: 0;
   background: #fff; border: 1px solid var(--border); border-radius: 16px; font-family: inherit; color: var(--text); cursor: pointer;
   box-shadow: 0 4px 18px rgba(60,72,88,.05); transition: transform .12s, box-shadow .12s; }

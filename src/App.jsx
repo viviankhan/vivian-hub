@@ -79,7 +79,9 @@ import { placeHooksAvailable, fetchPlaceEvents, placeStamps, checkinStops, locat
 import { getSavedPlaces, getRecentPlaces, onSavedPlaces } from './lib/places.js'
 import { startVisitTracking, setExtraPlaces, setCheckinStops } from './lib/visits.js'
 import { loadLifelog, isMedSync, setDayNote, getDayNote } from './lib/lifelog.js'
-import { MedSkipSheet, announceMedSkip } from './components/MedCare.jsx'
+import { MedSkipSheet, MedCheckSheet, announceMedSkip } from './components/MedCare.jsx'
+import { pendingMedChecks, dayKey } from './lib/medCheck.js'
+import { useLifelogVersion } from './components/DayNote.jsx'
 import { Glyph } from './lib/glyphs.jsx'
 import Customization from './components/Customization.jsx'
 import { getFontPref, setFontPref, applyFont, getThemePref, setThemePref, applyTheme,
@@ -998,6 +1000,7 @@ export default function App() {
   // Today keeps a day's shifted times and removed tasks per device
   // (vivian_timeshift_<date>, vivian_deleted_<date>) and announces changes, so
   // reminders follow the day as it actually is — not the series' usual time.
+  const lifelogVer = useLifelogVersion()   // the medication list loads or changes
   const [dayEditsVer, setDayEditsVer] = useState(0)
   useEffect(() => {
     const h = () => setDayEditsVer(v => v + 1)
@@ -1022,11 +1025,39 @@ export default function App() {
         // Shifted on Today → remind at the shifted time.
         const ov = shifts[o.id]
         const time = Number.isFinite(ov) ? `${String(Math.floor(ov / 60)).padStart(2, '0')}:${String(ov % 60).padStart(2, '0')}` : o._time
-        out.push({ id: `rec:${o.id}@${key}`, leadId: o.id, date: key, time, text: o.title || o.text || 'Task' })
+        // A med with no answer yet also gets "Did you take it?" a little after
+        // its time (lib/medCheck.js); answering drops it from the queue.
+        const medCheck = isMedSync(o.id) && !(`${key}_${o.id}` in completions)
+        out.push({ id: `rec:${o.id}@${key}`, leadId: o.id, date: key, time, text: o.title || o.text || 'Task', medCheck })
       }
     }
     return out
-  }, [recurringTaskRows, recurringMeta, recurringExceptions, completions, dayEditsVer])
+  }, [recurringTaskRows, recurringMeta, recurringExceptions, completions, dayEditsVer, lifelogVer])
+
+  // ── "Did you take your meds?" ────────────────────────────────
+  // Yesterday's and today's doses with no answer yet, once their time (plus a
+  // little grace) has gone by. Answering ticks or skips the dose; "Ask me
+  // later" waits an hour. See lib/medCheck.js.
+  const [medNow, setMedNow] = useState(() => Date.now())
+  useEffect(() => {
+    const tick = () => setMedNow(Date.now())
+    const t = setInterval(tick, 60000)
+    document.addEventListener('visibilitychange', tick)
+    return () => { clearInterval(t); document.removeEventListener('visibilitychange', tick) }
+  }, [])
+  const [medSnooze, setMedSnooze] = useState(() => { try { return JSON.parse(localStorage.getItem('bloom_med_snooze') || '{}') } catch { return {} } })
+  const pendingMeds = useMemo(() => {
+    if (loading) return []
+    const enriched = recurringTaskRows.map(t => ({ ...t, ...(recurringMeta[t.id] || {}) }))
+    const doses = []
+    for (const date of [dayKey(medNow - 86400000), dayKey(medNow)]) {
+      for (const o of recurringOccurrencesForDate(enriched, date, recurringExceptions)) {
+        if (o.block || !isMedSync(o.id)) continue
+        doses.push({ id: o.id, title: o.title || o.text || 'Meds', date, time: o._time || null, cat: o.cat })
+      }
+    }
+    return pendingMedChecks({ doses, answered: (date, id) => `${date}_${id}` in completions, snoozed: medSnooze, now: medNow })
+  }, [loading, recurringTaskRows, recurringMeta, recurringExceptions, completions, medSnooze, medNow, lifelogVer])
 
   // How many open tasks carry a place — shown in Settings so the user can see
   // whether location arrivals have anything to act on.
@@ -2042,7 +2073,7 @@ export default function App() {
   const persistArt         = useCallback(map  => { setArtOverrides(map).catch(reportSaveError) }, [])
 
   // ── Unified toggle ───────────────────────────────────────────
-  const syncToggle = useCallback(async (id, label, tag, date, explicitNext) => {
+  const syncToggle = useCallback(async (id, label, tag, date, explicitNext, opts = {}) => {
     const storageKey = date ? `${date}_${id}` : id
     const isCommitment = commitments.some(c => c.id===id)
     const currentDone = isCommitment
@@ -2088,8 +2119,8 @@ export default function App() {
       const d0 = new Date()
       const medDate = date || commitments.find(c => c.id === id)?.date
         || `${d0.getFullYear()}-${String(d0.getMonth()+1).padStart(2,'0')}-${String(d0.getDate()).padStart(2,'0')}`
-      if (!nowDone) announceMedSkip({ taskId: id, date: medDate, title: String(label || '').replace(/^\d{1,2}:\d{2}\s*[AP]M\s*—\s*/i, '') })
-      else getDayNote(medDate, id).then(n => { if (n?.skipped) setDayNote(medDate, id, { skipped: false }) }).catch(() => {})
+      if (!nowDone && !opts.quiet) announceMedSkip({ taskId: id, date: medDate, title: String(label || '').replace(/^\d{1,2}:\d{2}\s*[AP]M\s*—\s*/i, '') })
+      else if (nowDone) getDayNote(medDate, id).then(n => { if (n?.skipped) setDayNote(medDate, id, { skipped: false }) }).catch(() => {})
     }
 
     if (nowDone) {
@@ -2116,6 +2147,28 @@ export default function App() {
       deleteLogEntry(label, storageKey).catch(reportSaveError)
     }
   }, [completions, commitments, importedAdoptions])
+
+  // Answers from "Did you take your meds?" (MedCheckSheet). "took" ticks the
+  // dose; "now" ticks it and notes when you took it; "skip" marks it skipped
+  // (quietly — you already said so, no follow-up sheet).
+  const answerMedCheck = useCallback((dose, answer) => {
+    if (answer === 'skip') {
+      syncToggle(dose.id, dose.title, dose.cat, dose.date, false, { quiet: true })
+      setDayNote(dose.date, dose.id, { skipped: true }, { title: dose.title }).catch(() => {})
+      return
+    }
+    syncToggle(dose.id, dose.title, dose.cat, dose.date, true)
+    if (answer === 'now') setDayNote(dose.date, dose.id, { takenAt: new Date().toISOString(), skipped: false }, { title: dose.title }).catch(() => {})
+  }, [syncToggle])
+  const laterMedCheck = useCallback((dose) => {
+    setMedSnooze(prev => {
+      const now = Date.now()
+      const next = Object.fromEntries(Object.entries(prev).filter(([, until]) => until > now))
+      next[`${dose.date}_${dose.id}`] = now + 60 * 60000
+      try { localStorage.setItem('bloom_med_snooze', JSON.stringify(next)) } catch {}
+      return next
+    })
+  }, [])
 
   // Drop a task's stored completion record entirely (as opposed to syncToggle,
   // which records an explicit true/false). With no record, a routine / block /
@@ -2312,7 +2365,7 @@ export default function App() {
           emotionPrefs={wlEmotions} persistEmotionPrefs={persistWlEmotions}
           rules={wlRules} persistRules={persistWlRules}
           log={log} onOpenInsights={() => setTab('informatics')} />}
-        {tab==='informatics' && <Informatics commitments={commitmentsView} recurringTasks={recurringTasksEnriched} completions={completions} log={log} categories={categories} timeLogs={timeLogs} addTimeLog={addTimeLog} deleteTimeLog={deleteTimeLog} wlCheckins={wlCheckins} wlEffects={wlEffects} wlEpisodes={wlEpisodes} />}
+        {tab==='informatics' && <Informatics commitments={commitmentsView} recurringTasks={recurringTasksEnriched} completions={completions} log={log} categories={categories} timeLogs={timeLogs} addTimeLog={addTimeLog} deleteTimeLog={deleteTimeLog} wlCheckins={wlCheckins} wlEffects={wlEffects} wlEpisodes={wlEpisodes} placeStops={placeStops} />}
         {tab==='records'     && <Insights
           folders={trackerFolders} people={trackerPeople} entries={trackerEntries}
           addFolder={addTrackerFolder} updateFolder={updateTrackerFolder} deleteFolder={deleteTrackerFolder}
@@ -2350,6 +2403,7 @@ export default function App() {
         admin={admin} persistArt={persistArt} />
 
       <MedSkipSheet />
+      <MedCheckSheet pending={pendingMeds} onAnswer={answerMedCheck} onLater={laterMedCheck} />
       <SearchOverlay
         open={searchOpen} onClose={() => setSearchOpen(false)}
         commitments={commitments} events={events} log={log}

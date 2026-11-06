@@ -31,6 +31,7 @@ const SETTINGS_KEY = 'vivian_notif_settings'
 const BASE = import.meta.env.BASE_URL || '/'
 
 import { playSound } from './sounds.js'
+import { MED_CHECK_GRACE_MIN } from './medCheck.js'
 
 // The lead times a user can choose from, in minutes before an item starts.
 // Editable in Settings → Reminders; the chosen set is stored per-device.
@@ -431,6 +432,18 @@ function buildReminders(events = [], commitments = [], recurring = []) {
     const startMs = toEpoch(r.date, r.time)
     if (startMs == null) continue
     push({ id: r.id, leadId: r.leadId }, startMs, r.text || 'Task', `${dateLabel(r.date)} at ${fmt12(r.time)}`, r.durationMins)
+    // A med with no answer yet: "Did you take it?" a little after its time.
+    // Answering in Bloom drops it (App only flags unanswered doses).
+    if (r.medCheck) {
+      out.push({
+        id: `${r.id}:medcheck`,
+        name: `💊 Did you take ${r.text || 'your meds'}?`,
+        kind: 'medcheck',
+        body: 'Tap to answer in Bloom.',
+        at: startMs + MED_CHECK_GRACE_MIN * 60 * 1000,
+        startMs, leadKey: 'medcheck', url: BASE,
+      })
+    }
   }
 
   return out
@@ -468,7 +481,8 @@ export function buildScheduledPushes(events, commitments, recurring = []) {
 // now" would be announcing something that finished long ago, which is precisely
 // the reminder arriving at a time nobody asked to be reminded at.
 function stillWorthFiring(reminder, now) {
-  if (reminder.kind === 'end') return now - reminder.at <= LATE_GRACE_MS
+  // Like an end alert, "Did you take it?" is about a moment that has come.
+  if (reminder.kind === 'end' || reminder.kind === 'medcheck') return now - reminder.at <= LATE_GRACE_MS
   return reminder.startMs > now
 }
 
@@ -555,6 +569,7 @@ export function syncReminders(events, commitments, recurring = []) {
 function headingFor(reminder, atMs = Date.now()) {
   // End-of-task alert reads as the task finishing right now.
   if (reminder.kind === 'end') return `${reminder.name} finishing now`
+  if (reminder.kind === 'medcheck') return reminder.name
   if (!reminder.startMs) return reminder.name || '🌸 Bloom'
   const mins = Math.round((reminder.startMs - atMs) / 60000)
   // At (or past) the start — the start alert reads as the task starting now.
