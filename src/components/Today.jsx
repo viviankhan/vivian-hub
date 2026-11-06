@@ -7,6 +7,7 @@ import { iconColorOn, suggestGlyph } from '../lib/glyphs.jsx'
 import { bloomBurst } from '../lib/bloom.js'
 import AddItemModal from './AddItemModal.jsx'
 import PlacesDay from './PlacesDay.jsx'
+import { findSameEvent } from '../lib/sameEvent.js'
 import AiAssistant, { useAssistantQueue, runQueued, decoratePlan } from './AiAssistant.jsx'
 import { startQueue, unseenCount, workingCount, readyCount, itemLabel } from '../lib/assistantQueue.js'
 import DayRail from './DayRail.jsx'
@@ -2423,6 +2424,17 @@ export default function Today({ locationSlot = null, placesExtras = null, todos,
         addRecurringTask(recurringFromTask(a, a.repeat, { id, today: todayKey() }))
         if (Array.isArray(a.reminders) && a.reminders.length) setItemReminders(id, a.reminders)
       } else if (a.kind === 'create') {
+        // Already on the day under another name (a calendar screenshot of an
+        // appointment Bloom has): fill in the one that's there instead of
+        // adding the same visit twice. See lib/sameEvent.js.
+        const twin = findSameEvent({ title: a.title, date: a.date, time: a.time, durationMins: a.durationMins }, commitments)
+        if (twin && updateCommitment) {
+          const extra = [a.description, (a.title || '').trim() && a.title.trim() !== (twin.text || '').trim() ? `Also listed as “${a.title.trim()}”.` : '']
+            .filter(Boolean).filter(t => !(twin.description || '').includes(t))
+          if (extra.length) updateCommitment(twin.id, { description: [twin.description, ...extra].filter(Boolean).join('\n') })
+          if (Array.isArray(a.reminders) && a.reminders.length) setItemReminders(twin.id, a.reminders)
+          return
+        }
         const base = Date.now() + idx
         const id = 'c-' + base + '-' + Math.random().toString(36).slice(2, 6)
         const subtasks = (a.subtasks || []).map((s, i) => ({ id: 'st-' + base + '-' + i, text: s.text, done: !!s.done }))
