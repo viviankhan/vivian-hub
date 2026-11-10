@@ -1132,8 +1132,8 @@ export default function App() {
     const short = (n) => String(n || '').split(',')[0].trim()
     const stop = [...locEvidence.stops].sort((a, b) => a.start - b.start).at(-1)
     const stay = [...locEvidence.stays].sort((a, b) => a.end - b.end).at(-1)
-    const fromStop = stop && { label: stop.key ? short(stop.name) : (stop.name || 'an unnamed spot'), since: stop.start, live: stop.end == null, seen: stop.end ?? stop.start }
-    const fromStay = stay && { label: short(stay.name) || 'an unnamed spot', since: stay.start, live: medNow - stay.end < 15 * 60000, seen: stay.end }
+    const fromStop = stop && { label: stop.key ? short(stop.name) : (stop.name || 'an unnamed spot'), since: stop.start, live: stop.end == null, seen: stop.end ?? stop.start, lat: stop.lat, lng: stop.lng }
+    const fromStay = stay && { label: short(stay.name) || 'an unnamed spot', since: stay.start, live: medNow - stay.end < 15 * 60000, seen: stay.end, lat: stay.lat, lng: stay.lng }
     const best = [fromStop, fromStay].filter(Boolean).sort((a, b) => b.seen - a.seen)[0]
     return best && medNow - best.seen < 3 * 86400000 ? best : null
   }, [locEvidence, medNow])
