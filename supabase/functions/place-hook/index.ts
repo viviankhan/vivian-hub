@@ -45,8 +45,19 @@ async function sendArrivals(userId: string, lat: number, lng: number): Promise<n
     })
     if (!res.ok) return 0
     const rows = await res.json()
+    // Several things waiting for the same arrival (walk the dog, shower, bed,
+    // meds — all "when I get home") go out as ONE notification per device,
+    // not a burst: "You're home: Walk Prince · Shower · Sleep Tight".
+    // deno-lint-ignore no-explicit-any
+    const byDevice = new Map<string, any[]>()
+    for (const r of rows || []) byDevice.set(r.device_id, [...(byDevice.get(r.device_id) || []), r])
+    const messages = [...byDevice.values()].map(list => {
+      if (list.length === 1) return list[0]
+      const place = (String(list[0].body || '').match(/got to (.+?)\.?$/) || [])[1] || 'there'
+      return { ...list[0], title: `You're at ${place}`, body: list.map(r => r.title).join(' · '), tag: `arrive:${list[0].tag}` }
+    })
     let sent = 0
-    for (const r of rows || []) {
+    for (const r of messages) {
       try {
         await webpush.sendNotification(r.subscription, JSON.stringify({ title: r.title, body: r.body, url: r.url, tag: r.tag }), { TTL: 600 })
         sent++
