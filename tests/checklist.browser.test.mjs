@@ -62,6 +62,37 @@ console.log('\n— Thursday —')
   await ctx.close()
 }
 
+console.log('\n— "when I get home", still at work at 9:30 PM —')
+async function evening(where) {
+  const ctx = await browser.newContext({ viewport:{ width:430, height:900 }, serviceWorkers: 'block' })
+  const page = await ctx.newPage()
+  await page.clock.install({ time: new Date(2026, 10, 9, 21, 30) })
+  await page.goto(`http://localhost:4202${BASE}`, { waitUntil:'networkidle' })
+  await page.evaluate((where) => {
+    const set = (k, v) => localStorage.setItem('vivian_' + k, JSON.stringify(v))
+    const HOME = { name:'Home', lat:44.0485681637716, lng:-92.49244473870289, radius:100 }
+    const WORK = { name:'Guggenheim Building', lat:44.0207422, lng:-92.4668928 }
+    set('commitments', []); set('commitment_meta', {}); set('recurring_exceptions', {}); set('completions', {})
+    set('recurring_tasks_v2', [{ id:'r-meds', label:'20:00 — Take meds', days:[], startDate:'2026-11-01' }])
+    set('recurring_meta', { 'r-meds': { freq:'daily', icon:'glyph:capsule', location: { ...HOME, autoStart:false, remindOnArrival:true, notBefore:null } } })
+    const at = where === 'work' ? WORK : HOME
+    const t = (h, m = 0) => new Date(2026, 10, 9, h, m).getTime()
+    localStorage.setItem('bloom_visits', JSON.stringify([{ id:'v', ...at, start:t(9, 6), end:t(21, 29), fixes:9 }]))
+  }, where)
+  await page.reload({ waitUntil:'networkidle' }); await page.waitForTimeout(1200)
+  const text = await page.evaluate(() => document.body.innerText)
+  await ctx.close()
+  return text
+}
+{
+  const work = await evening('work')
+  ok('not overdue while you are at work', work.includes('Take meds') && !/OVERDUE/.test(work), work.slice(0, 400))
+  ok('it says it is waiting for home', /When you.re at Home/i.test(work))
+  ok('and offers no "start now"', !/Start now/.test(work))
+  const home = await evening('home')
+  ok('home and still not taken: overdue', /OVERDUE/.test(home) && !/When you.re at Home/i.test(home))
+}
+
 console.log(`\n${pass} passed, ${fail} failed`)
 await browser.close(); server.close()
 process.exit(fail ? 1 : 0)

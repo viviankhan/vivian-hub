@@ -8,6 +8,7 @@ import { bloomBurst } from '../lib/bloom.js'
 import AddItemModal from './AddItemModal.jsx'
 import PlacesDay from './PlacesDay.jsx'
 import { findSameEvent } from '../lib/sameEvent.js'
+import { atPlace } from '../lib/locationCheck.js'
 import AiAssistant, { useAssistantQueue, runQueued, decoratePlan } from './AiAssistant.jsx'
 import { startQueue, unseenCount, workingCount, readyCount, itemLabel } from '../lib/assistantQueue.js'
 import DayRail from './DayRail.jsx'
@@ -962,6 +963,11 @@ function TimelineBlock({ task, categories, status, now, prevColor, nextColor, ro
               {timeLine}
               {task.isRecurring && <Icon value="glyph:repeat" size={12} color={isCurrent?'var(--teal)':'#9AA6B2'} />}
               {isOverdue && <span style={{ fontSize:10, color:'#EF4444', fontWeight:700 }}>OVERDUE</span>}
+              {status==='waiting' && !isDone && (
+                <span data-testid="waiting-for-place" style={{ fontSize:10, color:'#8A6A3A', fontWeight:700, letterSpacing:.3, textTransform:'uppercase', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>
+                  When you’re at {String(task.location?.name || 'its place').split(',')[0]}
+                </span>
+              )}
             </div>
           )}
           <div style={{ display:'flex', alignItems:'flex-start', gap:10 }}>
@@ -1703,6 +1709,10 @@ export default function Today({ locationSlot = null, placesExtras = null, todos,
     if (!isToday) return task._mins===null ? 'anytime' : 'upcoming'
     if (task._mins===null) return 'anytime'
     if (task._mins>now) return 'upcoming'
+    // "When I get home, or at 8 if I'm already home": past its time while
+    // you're somewhere else, it's waiting for you to get there — not overdue.
+    const here = placesExtras?.now
+    if (task.location?.remindOnArrival && here && Number.isFinite(here.lat) && !atPlace(here, task.location)) return 'waiting'
     // It's started and isn't done. "Current" means now is genuinely inside its
     // window — for a timed task that's [start, start+duration]; a task with no
     // duration only counts as current for a short grace period after its start.
