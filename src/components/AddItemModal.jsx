@@ -427,7 +427,10 @@ export default function AddItemModal({ existing = null, existingRecurring = null
   }
   const [description, setDescription] = useState(existing?.description ?? rec?.note ?? presetDescription ?? '')
   const [subtasks, setSubtasks]   = useState(() =>
-    Array.isArray(existing?.subtasks) ? existing.subtasks
+    // A repeating task's checklist is its template (meds, each maybe limited
+    // to some weekdays); it's ticked per day on Today, not here.
+    rec && Array.isArray(rec.subtasks) ? rec.subtasks.map(s => ({ id: s.id, text: s.text || '', days: Array.isArray(s.days) && s.days.length ? s.days : null, done: false }))
+    : Array.isArray(existing?.subtasks) ? existing.subtasks
     : Array.isArray(presetSubtasks) ? presetSubtasks.map((t, i) => ({ id: 'st-' + Date.now() + '-' + i, text: (typeof t === 'string' ? t : (t?.text || '')).trim(), done: false })).filter(s => s.text)
     : [])
   const [newSub, setNewSub]       = useState('')
@@ -538,6 +541,15 @@ export default function AddItemModal({ existing = null, existingRecurring = null
   const toggleSub = (id) => setSubtasks(prev => prev.map(s => s.id === id ? { ...s, done: !s.done } : s))
   const editSub   = (id, text) => setSubtasks(prev => prev.map(s => s.id === id ? { ...s, text } : s))
   const removeSub = (id) => setSubtasks(prev => prev.filter(s => s.id !== id))
+  // Which checklist item's weekday picker is open (a repeating task's items
+  // can be limited to some days — methotrexate on Fridays).
+  const [daysFor, setDaysFor] = useState(null)
+  const setSubDays = (id, day) => setSubtasks(prev => prev.map(s => {
+    if (s.id !== id) return s
+    const cur = s.days || []
+    const next = cur.includes(day) ? cur.filter(d => d !== day) : [...cur, day]
+    return { ...s, days: next.length ? next : null }
+  }))
   // Reorder a subtask up/down (dir -1 / +1). Swap-with-neighbour keeps it simple
   // and works the same on touch and desktop — no drag library needed.
   const moveSub   = (id, dir) => setSubtasks(prev => {
@@ -828,6 +840,11 @@ export default function AddItemModal({ existing = null, existingRecurring = null
       startDate,
       endDate: repeatEnd || null,
       autoComplete,
+      // The checklist, as a template: each item's text and the weekdays it
+      // shows on (none = every day). `subtasksComplete` tells App this is the
+      // whole list, so a removed item really goes.
+      subtasks: subtasks.filter(s => (s.text || '').trim()).map(({ id, text, days }) => ({ id, text: text.trim(), ...(days && days.length ? { days } : {}) })),
+      subtasksComplete: true,
     }
   }
 
@@ -969,7 +986,11 @@ export default function AddItemModal({ existing = null, existingRecurring = null
   const card = { background:'white', borderRadius:16, boxShadow:'0 1px 4px rgba(60,72,88,.06)', marginBottom:16, overflow:'hidden' }
   // Spell out the actual lead times so the row tells you when you'll be
   // reminded — "1 day & 1 hour before" — instead of an opaque "Default".
-  const baseRemind = useDefault
+  // A task reminded on arrival doesn't use lead alerts at all — say what it does.
+  const arrivalPlace = location?.remindOnArrival && locHasCoords ? String(location.name || 'its place').split(',')[0] : null
+  const baseRemind = arrivalPlace
+    ? `When you get to ${arrivalPlace}, or at its time if you’re there`
+    : useDefault
     ? defaultLeadsLabel()
     : (reminders.length ? leadsPhrase(reminders, ', ') : 'No alerts')
   const soundLabel = (SOUNDS.find(s => s.id === sound) || {}).label || 'Chime'
@@ -1452,7 +1473,7 @@ export default function AddItemModal({ existing = null, existingRecurring = null
         <IconCircle color={ROW_ACCENT}><span aria-hidden="true" style={{ fontSize:14 }}>💊</span></IconCircle>
         <div style={{ flex:1, minWidth:0 }}>
           <div style={{ fontSize:15, fontWeight:500, color:'var(--text)' }}>Medication</div>
-          <div style={{ fontSize:11, color:'var(--muted)', marginTop:1, lineHeight:1.35 }}>Counts as taken unless you un-tick it. Skipping asks how you’re doing, and notes like “ran out” stay on Today until you clear them.</div>
+          <div style={{ fontSize:11, color:'var(--muted)', marginTop:1, lineHeight:1.35 }}>Not ticked a little after its time, Bloom asks “Did you take it?”. Skipping asks how you’re doing, and notes like “ran out” stay on Today until you clear them. List each med as a checklist item below.</div>
         </div>
         <button type="button" onClick={toggleMed} aria-pressed={isMed} data-testid="med-toggle"
           style={{ width:46, height:27, borderRadius:14, border:'none', cursor:'pointer', padding:3, flexShrink:0, background: isMed ? 'var(--forest)' : '#CBD2DA', transition:'background .2s', display:'flex', justifyContent: isMed ? 'flex-end' : 'flex-start' }}>
@@ -1836,7 +1857,8 @@ export default function AddItemModal({ existing = null, existingRecurring = null
           {/* ── Subtasks + notes ──────────────────────────────── */}
           <div style={{ ...card, padding:'6px 15px 14px' }}>
             {subtasks.map((s, i) => (
-              <div key={s.id} style={{ display:'flex', alignItems:'center', gap:8, padding:'8px 0', borderBottom:'1px solid #F1EDF2' }}>
+              <Fragment key={s.id}>
+              <div style={{ display:'flex', alignItems:'center', gap:8, padding:'8px 0', borderBottom:'1px solid #F1EDF2' }}>
                 <div onClick={() => toggleSub(s.id)}
                   style={{ width:20, height:20, borderRadius:6, flexShrink:0, cursor:'pointer', border: s.done ? 'none' : '2px solid #CDD3DA', background: s.done ? ROW_ACCENT : 'transparent', display:'flex', alignItems:'center', justifyContent:'center' }}>
                   {s.done && <span style={{ color:'white', fontSize:12, fontWeight:700 }}>✓</span>}
@@ -1852,12 +1874,34 @@ export default function AddItemModal({ existing = null, existingRecurring = null
                       style={{ background:'none', border:'none', cursor: i === subtasks.length - 1 ? 'default' : 'pointer', color: i === subtasks.length - 1 ? '#E2E4E9' : '#AEB6C0', fontSize:10, padding:'0 3px', lineHeight:1 }}>▼</button>
                   </span>
                 )}
+                {repeatOn && (
+                  <button type="button" data-testid="sub-days" onClick={() => setDaysFor(daysFor === s.id ? null : s.id)}
+                    style={{ flexShrink:0, fontSize:11, fontWeight:700, padding:'3px 8px', borderRadius:10, border:'1px solid var(--border)', background: s.days?.length ? '#F1FBF5' : 'white', color: s.days?.length ? 'var(--forest)' : 'var(--muted)', cursor:'pointer', fontFamily:'DM Sans,sans-serif' }}>
+                    {s.days?.length ? WEEKDAY_ORDER.filter(d => s.days.includes(d)).map(d => d.slice(0, 3)[0].toUpperCase() + d.slice(1, 3)).join(' ') : 'Every day'}
+                  </button>
+                )}
                 <button onClick={() => removeSub(s.id)} aria-label="Remove subtask" style={{ background:'none', border:'none', cursor:'pointer', color:'#CBD0D8', fontSize:16, padding:'0 2px', flexShrink:0 }}>✕</button>
               </div>
+              {repeatOn && daysFor === s.id && (
+                <div style={{ display:'flex', gap:5, flexWrap:'wrap', padding:'6px 0 8px 28px' }} data-testid="sub-day-picker">
+                  {WEEKDAY_ORDER.map(d => {
+                    const on = (s.days || []).includes(d)
+                    return (
+                      <button key={d} type="button" aria-pressed={on} onClick={() => setSubDays(s.id, d)}
+                        style={{ width:34, height:30, borderRadius:9, fontSize:11.5, fontWeight:700, cursor:'pointer', fontFamily:'DM Sans,sans-serif',
+                          border: on ? 'none' : '1px solid var(--border)', background: on ? 'var(--forest)' : 'white', color: on ? 'var(--green-light)' : 'var(--text)' }}>
+                        {d.slice(0, 2)[0].toUpperCase() + d.slice(1, 2)}
+                      </button>
+                    )
+                  })}
+                  <span style={{ fontSize:11, color:'var(--muted)', alignSelf:'center', marginLeft:4 }}>none = every day</span>
+                </div>
+              )}
+              </Fragment>
             ))}
             <div style={{ display:'flex', alignItems:'center', gap:10, padding:'9px 0 6px' }}>
               <div style={{ width:20, height:20, borderRadius:6, flexShrink:0, border:'2px solid #DBDFE5' }} />
-              <input value={newSub} onChange={e => setNewSub(e.target.value)} placeholder="Add subtask"
+              <input value={newSub} onChange={e => setNewSub(e.target.value)} placeholder={isMed ? 'Add a med' : 'Add subtask'}
                 onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addSub() } }}
                 style={{ flex:1, minWidth:0, fontSize:14, padding:'2px 0', border:'none', background:'transparent', fontFamily:'DM Sans,sans-serif', outline:'none', color:'var(--text)' }} />
               {newSub.trim() && (
