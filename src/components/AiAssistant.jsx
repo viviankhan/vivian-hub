@@ -15,6 +15,7 @@ import { runAssistantJob, MAX_ASSISTANT_IMAGES, REPEAT_FREQS, describeRepeat, no
 import { compressImage, dataUrlToBase64 } from '../lib/trackers.js'
 import { readDocument, docKind, DOC_ACCEPT, MAX_ASSISTANT_DOCS } from '../lib/docText.js'
 import { defaultLeadsLabel } from '../lib/notifications.js'
+import { normalizePlan } from '../lib/assistantDetails.js'
 import { pushDeviceId } from '../lib/push.js'
 import { suggestGlyph, iconColorOn } from '../lib/glyphs.jsx'
 import { activeAccent } from '../lib/appearance.js'
@@ -63,6 +64,7 @@ function headline(a, titleOf) {
     const tag = allDone ? ' (checked off)' : someDone ? ' (some checked)' : ''
     return `Add ${a.subtasks.length} subtask${a.subtasks.length > 1 ? 's' : ''} to “${t}”${tag}`
   }
+  if (a.kind === 'addDetails') return `Add details to “${t}”`
   if (a.kind === 'setDone')    return `Mark “${t}” ${a.done ? 'complete' : 'not complete'}`
   if (a.kind === 'reschedule') return `Reschedule “${t}”`
   if (a.kind === 'repeat')     return `Make “${t}” repeat`
@@ -163,6 +165,7 @@ function ActionEditor({ action, categories, onSave, onCancel }) {
       if (d.allDay === false && d.startTime && d.endTime && d.endTime <= d.startTime && (!out.endDate || out.endDate === d.startDate)) out.endTime = null
     }
     if (Array.isArray(d.subtasks)) out.subtasks = d.subtasks.filter(s => (s.text || '').trim()).map(s => ({ ...s, text: s.text.trim() }))
+    if (Array.isArray(d.details)) out.details = d.details.map(x => String(x).trim()).filter(Boolean)
     out.reminders = [...new Set(d.reminders)].sort((a, b) => a - b)
     onSave(out)
   }
@@ -262,6 +265,12 @@ function ActionEditor({ action, categories, onSave, onCancel }) {
         </div>
       )}
 
+      {d.kind === 'addDetails' && (
+        <Field label="Details to add to its notes" style={{ marginTop:10 }}>
+          <textarea value={(d.details || []).join('\n')} onChange={e => set('details', e.target.value.split('\n'))} rows={5}
+            style={{ ...field, resize:'vertical', lineHeight:1.45 }} />
+        </Field>
+      )}
       {d.kind === 'create' && (
         <Field label="Notes" style={{ marginTop:10 }}>
           <textarea value={d.description || ''} onChange={e => set('description', e.target.value)} rows={3}
@@ -329,6 +338,7 @@ export function guessIcon(a) {
 }
 export function decoratePlan(plan) {
   if (!plan) return plan
+  plan = normalizePlan(plan)   // details (where, how to join, who) go in notes, not subtasks
   const actions = (plan.actions || []).map(a => (a && a.kind === 'create') ? { ...a, icon: guessIcon(a) || '' } : a)
   return { ...plan, actions }
 }
@@ -424,6 +434,11 @@ function ActionCard({ a, categories, titleOf, onEdit, onRemove }) {
       )}
       {a.description && (
         <div style={{ marginTop:8, fontSize:12.5, color:'var(--muted)', lineHeight:1.5, whiteSpace:'pre-wrap', overflowWrap:'anywhere' }}>{a.description}</div>
+      )}
+      {a.kind === 'addDetails' && Array.isArray(a.details) && a.details.length > 0 && (
+        <div data-testid="assistant-details" style={{ marginTop:8, fontSize:12.5, color:'var(--muted)', lineHeight:1.5, whiteSpace:'pre-wrap', overflowWrap:'anywhere' }}>
+          {a.details.join('\n')}
+        </div>
       )}
       {Array.isArray(a.subtasks) && a.subtasks.length > 0 && (
         <div style={{ marginTop:8, display:'flex', flexDirection:'column', gap:4 }}>

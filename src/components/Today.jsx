@@ -2485,6 +2485,12 @@ export default function Today({ locationSlot = null, placesExtras = null, todos,
         const base = Date.now() + idx
         const added = (a.subtasks || []).map((s, i) => ({ id: 'st-' + base + '-' + i + '-' + Math.random().toString(36).slice(2, 5), text: s.text, done: !!s.done }))
         updateCommitment(a.taskId, { subtasks: [...existing, ...added] })
+      } else if (a.kind === 'addDetails') {
+        // Where, how to join, who's speaking: appended to the task's notes.
+        const c = (commitments || []).find(x => x.id === a.taskId)
+        if (!c || !updateCommitment) return
+        const add = (a.details || []).map(x => String(x).trim()).filter(x => x && !(c.description || '').includes(x))
+        if (add.length) updateCommitment(a.taskId, { description: [c.description, ...add].filter(Boolean).join('\n') })
       } else if (a.kind === 'setDone') {
         const c = (commitments || []).find(x => x.id === a.taskId)
         if (c && syncToggle) syncToggle(a.taskId, c.text, c.cat, null, !!a.done)
