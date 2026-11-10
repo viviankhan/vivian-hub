@@ -75,8 +75,8 @@ const RESPONSE_SCHEMA = {
       items: {
         type: 'object',
         properties: {
-          kind:         { type: 'string', enum: ['create', 'event', 'addSubtasks', 'setDone', 'reschedule', 'repeat'], description: 'Which action.' },
-          taskId:       { type: 'string', description: 'For addSubtasks/setDone/reschedule: the id of an existing task from the provided list. Never invent one.' },
+          kind:         { type: 'string', enum: ['create', 'event', 'addSubtasks', 'addDetails', 'setDone', 'reschedule', 'repeat'], description: 'Which action.' },
+          taskId:       { type: 'string', description: 'For addSubtasks/addDetails/setDone/reschedule: the id of an existing task from the provided list. Never invent one.' },
           title:        { type: 'string', description: 'For create/event: the new task or event name.' },
           date:         { type: 'string', description: 'YYYY-MM-DD (create/reschedule), or for an event the START date, or "".' },
           time:         { type: 'string', description: 'HH:MM 24h (create/reschedule), or "".' },
@@ -90,9 +90,10 @@ const RESPONSE_SCHEMA = {
           icon:         { type: 'string', description: 'For create: one or two plain words naming a simple pictogram that fits it ("tooth", "dumbbell", "book", "flask", "plane", "cake"). Else "".' },
           subtasks: {
             type: 'array',
-            description: 'For create/addSubtasks: the subtask items.',
+            description: 'For create/addSubtasks: steps the user DOES and ticks off ("read chapter 4", "call to confirm"). Never where/when/who/links/IDs — those are details.',
             items: { type: 'object', properties: { text: { type: 'string' }, done: { type: 'boolean' } }, required: ['text'] },
           },
+          details:      { type: 'array', items: { type: 'string' }, description: 'For addDetails: lines to add to an existing task\'s notes — location, how to join (links, meeting IDs, passcodes), presenter, host, contact.' },
           reminders:    { type: 'array', items: { type: 'integer' }, description: 'For create: reminder lead minutes before start, ONLY when the user asked for specific reminders; else [] (their own defaults apply).' },
           done:         { type: 'boolean', description: 'For setDone: true to complete, false to un-complete.' },
           repeat: {
@@ -276,6 +277,8 @@ Each action object is one of these shapes. COPY the shape and fill in EVERY fiel
   {"kind":"repeat","taskId":"<existing id>","repeat":{"freq":"yearly","interval":1,"days":[],"endDate":""}}
 - addSubtasks — add subtasks to an EXISTING task (use a taskId from the list above):
   {"kind":"addSubtasks","taskId":"<existing id>","subtasks":[{"text":"read chapter 4","done":true}]}
+- addDetails — add details to an EXISTING task's notes (where, how to join, who's presenting/hosting, IDs, passcodes, contact):
+  {"kind":"addDetails","taskId":"<existing id>","details":["In person: IERB Auditorium","Teams: https://…; Meeting ID 223 086; Passcode 5Jv9","Presenter: James Han, Ph.D.","Host: Dr. Kita"]}
 - setDone — mark an existing task complete/incomplete:
   {"kind":"setDone","taskId":"<existing id>","done":true}
 - reschedule — change an existing task's date/time:
@@ -290,6 +293,7 @@ Rules:
 - Every date MUST be a literal YYYY-MM-DD string (e.g. "2026-08-14"), never words like "August 14th".
 - The instruction may describe SEVERAL things at once — produce one action for each. Two people/plans mentioned means (at least) two actions.
 - Anything that recurs gets a "repeat" object — never create it as a one-off and never make separate copies for each date. Leave "repeat" out only for something that happens once.
+- Subtasks are steps the user does and ticks off. Details about an event — location/room, a video link, meeting ID, passcode, presenter, speaker, host, contact — are NEVER subtasks: put them in "description" on a create, or use addDetails for an existing task.
 - Only use information present or clearly implied. Never fabricate specifics.
 - "reminders" is ALWAYS [] unless the user's instruction asks for specific reminders ("remind me 2 hours before"). An empty list means the user's own default reminders from their settings apply — never choose reminders for them.
 - Write "summary" as one plain-language sentence a person can confirm at a glance.
@@ -510,6 +514,10 @@ ${command || fallbackCommand}
       const subs = cleanSubs(a.subtasks)
       if (!validTaskIds.has(a.taskId) || !subs.length) continue
       actions.push({ kind, taskId: a.taskId, subtasks: subs })
+    } else if (kind === 'addDetails') {
+      const details = (Array.isArray(a.details) ? a.details : []).map((x: unknown) => String(x || '').trim().slice(0, 600)).filter(Boolean).slice(0, 20)
+      if (!validTaskIds.has(a.taskId) || !details.length) continue
+      actions.push({ kind, taskId: a.taskId, details })
     } else if (kind === 'setDone') {
       if (!validTaskIds.has(a.taskId)) continue
       actions.push({ kind, taskId: a.taskId, done: a.done !== false })

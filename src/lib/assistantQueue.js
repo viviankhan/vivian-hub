@@ -22,6 +22,7 @@ const STORE = 'items'
 const MAX_ITEMS = 30
 
 // ── Pure helpers (unit-tested) ─────────────────────────────────
+import { normalizePlan } from './assistantDetails.js'
 export const STATUS = { PENDING: 'pending', RUNNING: 'running', READY: 'ready', ERROR: 'error' }
 
 export function newItem({ command = '', photos = [], docs = [], today, now = Date.now() } = {}) {
@@ -46,6 +47,9 @@ export function reviveItems(items) {
   return (Array.isArray(items) ? items : [])
     .filter(it => it && it.id)
     .map(it => (it.status === STATUS.RUNNING ? { ...it, status: STATUS.PENDING } : it))
+    // Plans saved before details were told apart from subtasks get the same
+    // treatment as new ones (a room or a Teams link goes in the notes).
+    .map(it => (it.plan ? { ...it, plan: normalizePlan(it.plan) } : it))
     .sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0))
 }
 
