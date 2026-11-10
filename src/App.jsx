@@ -1432,7 +1432,7 @@ export default function App() {
       // on one day only sees that day's items, so items limited to other
       // weekdays (methotrexate on Fridays) and each item's weekdays are kept.
       const had = Array.isArray(prev[id]?.subtasks) ? prev[id].subtasks : []
-      const keep = checklist === undefined ? had : [
+      const keep = checklist === undefined ? had : task.subtasksComplete ? checklist : [
         ...checklist.map(c => { const p = had.find(h => h.id === c.id); return { ...c, ...(c.days ? {} : p?.days ? { days: p.days } : {}) } }),
         ...had.filter(h => h.days?.length && !checklist.some(c => c.id === h.id)),
       ]

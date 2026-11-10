@@ -93,6 +93,47 @@ async function evening(where) {
   ok('home and still not taken: overdue', /OVERDUE/.test(home) && !/When you.re at Home/i.test(home))
 }
 
+console.log('\n— adding a med in the editor —')
+{
+  const { ctx, page } = await open(5)   // a Thursday
+  await page.getByText('Take meds', { exact: true }).first().click(); await page.waitForTimeout(600)
+  const values = await page.evaluate(() => [...document.querySelectorAll('textarea, input')].map(e => e.value).filter(Boolean))
+  ok('the editor lists every med, Friday-only ones too', ['Sulfasalazine', 'Hydroxychloroquine', 'Methotrexate'].every(m => values.includes(m)), JSON.stringify(values))
+  ok('methotrexate shows its day', (await page.getByTestId('sub-days').allInnerTexts()).includes('Fri'))
+  await page.getByPlaceholder(/^Add (a med|subtask)$/).fill('Folic acid')
+  await page.getByRole('button', { name: 'Add', exact: true }).click(); await page.waitForTimeout(200)
+  // Folic acid every day but Friday.
+  const chips = page.getByTestId('sub-days')
+  await chips.nth(3).click()
+  for (const d of ['Mo', 'Tu', 'We', 'Th', 'Sa', 'Su']) await page.getByTestId('sub-day-picker').getByRole('button', { name: d, exact: true }).click()
+  await page.getByRole('button', { name: 'Save changes' }).click(); await page.waitForTimeout(300)
+  const all = page.getByRole('button', { name: 'Apply to all events' })
+  if (await all.isVisible().catch(() => false)) await all.click()
+  await page.waitForTimeout(600)
+  const meta = await page.evaluate(() => JSON.parse(localStorage.getItem('vivian_recurring_meta') || '{}'))
+  const subs = meta['r-meds']?.subtasks || []
+  ok('the new med is saved on the series', subs.some(x => x.text === 'Folic acid'), JSON.stringify(subs))
+  ok('with its days', JSON.stringify(subs.find(x => x.text === 'Folic acid')?.days?.slice().sort()) === JSON.stringify(['monday','saturday','sunday','thursday','tuesday','wednesday']), JSON.stringify(subs))
+  ok('methotrexate keeps Fridays', JSON.stringify(subs.find(x => x.text === 'Methotrexate')?.days) === '["friday"]', JSON.stringify(subs))
+  ok('and Thursday shows three boxes now', await page.evaluate(() => document.body.innerText.includes('0/3')))
+  await ctx.close()
+}
+
+console.log('\n— removing one —')
+{
+  const { ctx, page } = await open(5)
+  await page.getByText('Take meds', { exact: true }).first().click(); await page.waitForTimeout(600)
+  const rows = page.locator('button[aria-label="Remove subtask"]')
+  await rows.nth(2).click()   // methotrexate
+  await page.getByRole('button', { name: 'Save changes' }).click(); await page.waitForTimeout(300)
+  const all = page.getByRole('button', { name: 'Apply to all events' })
+  if (await all.isVisible().catch(() => false)) await all.click()
+  await page.waitForTimeout(600)
+  const meta = await page.evaluate(() => JSON.parse(localStorage.getItem('vivian_recurring_meta') || '{}'))
+  ok('a removed Friday-only med really goes', !(meta['r-meds']?.subtasks || []).some(x => x.text === 'Methotrexate'), JSON.stringify(meta['r-meds']?.subtasks))
+  await ctx.close()
+}
+
 console.log(`\n${pass} passed, ${fail} failed`)
 await browser.close(); server.close()
 process.exit(fail ? 1 : 0)
