@@ -1111,7 +1111,10 @@ export default function App() {
         startMs, endMs: startMs + (c.durationMins || DEFAULT_TASK_MINS) * 60000, done: !!c.done })
     }
     for (const o of recurringOccurrencesForDate(recurringTasksEnriched, date, recurringExceptions)) {
-      if (!o._time || !o.location?.lat || o.block) continue
+      // "When I get home" tasks (shower, bed, meds) aren't missed appointments:
+      // if you never got there they just didn't happen (meds get "Did you take
+      // it?" instead), so they stay out of the location review and the inbox.
+      if (!o._time || !o.location?.lat || o.block || o.location.remindOnArrival) continue
       const startMs = at(o._time)
       // One reminded on arrival can happen whenever you get there that day.
       const endMs = o.location.remindOnArrival ? at('23:59') + 59000 : startMs + (o._dur || DEFAULT_TASK_MINS) * 60000
