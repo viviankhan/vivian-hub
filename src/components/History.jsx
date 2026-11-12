@@ -2,7 +2,8 @@
 // The "History" tab in Settings: a running list of the edits you've made to your
 // tasks and events — adds, edits, and deletes — newest first. Each row can be
 // undone ("delete this edit"), which reverses just that change; leaving it alone
-// keeps it. Check-offs are intentionally not listed (they're not edits).
+// keeps it. Check-offs are intentionally not listed (they're not edits). A
+// delete can carry the reason the user gave for it (`reason`), shown under it.
 //
 // The data + the reversal live in App (changeHistory / undoChange); this file is
 // purely the presentation.
@@ -72,6 +73,11 @@ export default function History({ history = [], onUndo, onClear }) {
                       fontSize: 13.5, color: 'var(--text)', fontWeight: 500, lineHeight: 1.35,
                       overflowWrap: 'anywhere', textDecoration: h.undone ? 'line-through' : 'none',
                     }}>{h.label}</div>
+                    {h.reason && (
+                      <div style={{ fontSize: 12.5, color: 'var(--text)', marginTop: 3, lineHeight: 1.4, overflowWrap: 'anywhere', fontStyle: 'italic' }}>
+                        Why: {h.reason}
+                      </div>
+                    )}
                     <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>
                       {h.entity === 'event' ? 'Event · ' : ''}{when(h.ts)}
                     </div>

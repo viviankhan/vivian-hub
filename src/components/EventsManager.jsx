@@ -52,6 +52,11 @@ function EventSection({ events, addEvent, deleteEvent }) {
   // delete asks first, and the last-deleted one can be brought straight back.
   const [confirmId, setConfirmId] = useState(null)
   const [justDeleted, setJustDeleted] = useState(null)
+  // Optional "why" typed into the delete confirm — saved with the delete in
+  // Settings → History so you can look back on why an event went away.
+  const [reason, setReason] = useState('')
+  const askDelete = (id) => { setConfirmId(id); setReason('') }
+  const cancelDelete = () => { setConfirmId(null); setReason('') }
 
   const reset = () => { setLabel(''); setStartDate(''); setEndDate(''); setAllDay(true); setStartTime(''); setEndTime(''); setColor(DEFAULT_EVENT_COLOR); setIcon(''); setOpen(false) }
   const canSave = label.trim() && startDate && endDate && endDate >= startDate
@@ -73,12 +78,13 @@ function EventSection({ events, addEvent, deleteEvent }) {
   }
 
   const doDelete = (ev) => {
-    setConfirmId(null)
+    const why = reason.trim()
+    cancelDelete()
     // Keep a full copy so Undo can re-add it exactly (minus the id, which is
     // regenerated so it's a fresh row).
     const { id, ...rest } = ev
     setJustDeleted(rest)
-    deleteEvent(ev.id)
+    deleteEvent(ev.id, why ? { reason: why } : undefined)
   }
   const undoDelete = () => {
     if (!justDeleted) return
@@ -113,7 +119,8 @@ function EventSection({ events, addEvent, deleteEvent }) {
       )}
 
       {(events || []).map(ev => (
-        <div key={ev.id} style={{ display:'flex', alignItems:'center', gap:10, padding:'9px 14px', background:`${ev.color}12`, borderRadius:10, borderLeft:`4px solid ${ev.color}`, border:`1px solid ${ev.color}33`, marginBottom:6 }}>
+        <div key={ev.id} style={{ padding:'9px 14px', background:`${ev.color}12`, borderRadius:10, borderLeft:`4px solid ${ev.color}`, border:`1px solid ${ev.color}33`, marginBottom:6 }}>
+        <div style={{ display:'flex', alignItems:'center', gap:10 }}>
           {ev.icon && <Icon value={ev.icon} size={18} />}
           <div style={{ flex:1, minWidth:0 }}>
             <div style={{ fontSize:13, fontWeight:600, color:'var(--text)' }}>{ev.label}</div>
@@ -122,18 +129,27 @@ function EventSection({ events, addEvent, deleteEvent }) {
               {!ev.allDay && ev.startTime ? ` · ${fmt12(ev.startTime)}${ev.endTime ? '–'+fmt12(ev.endTime) : ''}` : ' · all day'}
             </div>
           </div>
-          {confirmId === ev.id ? (
-            <span style={{ display:'inline-flex', alignItems:'center', gap:6 }}>
-              <span style={{ fontSize:11, color:'#991B1B' }}>Delete?</span>
-              <button onClick={() => doDelete(ev)}
-                style={{ fontSize:11, padding:'4px 10px', borderRadius:14, border:'none', background:'#EF4444', color:'white', cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:600 }}>Yes</button>
-              <button onClick={() => setConfirmId(null)}
-                style={{ fontSize:11, padding:'4px 10px', borderRadius:14, border:'1px solid var(--border)', background:'white', color:'var(--muted)', cursor:'pointer', fontFamily:'DM Sans,sans-serif' }}>No</button>
-            </span>
-          ) : (
-            <button onClick={() => setConfirmId(ev.id)} title="Delete event"
+          {confirmId !== ev.id && (
+            <button onClick={() => askDelete(ev.id)} title="Delete event"
               style={{ background:'none', border:'none', cursor:'pointer', color:'#9CA3AF', fontSize:16, padding:'0 2px' }}>✕</button>
           )}
+        </div>
+        {confirmId === ev.id && (
+          <div style={{ marginTop:8, display:'flex', flexDirection:'column', gap:6 }}>
+            <div style={{ fontSize:11, color:'#991B1B', fontWeight:600 }}>Delete this event?</div>
+            <input value={reason} onChange={e => setReason(e.target.value)} autoFocus
+              aria-label="Reason for deleting (optional)"
+              placeholder="Why? (optional — saved in History)"
+              onKeyDown={e => { if (e.key === 'Enter') doDelete(ev); else if (e.key === 'Escape') cancelDelete() }}
+              style={{ ...inp, background:'white' }} />
+            <div style={{ display:'flex', gap:6, justifyContent:'flex-end' }}>
+              <button onClick={cancelDelete}
+                style={{ fontSize:11, padding:'5px 12px', borderRadius:14, border:'1px solid var(--border)', background:'white', color:'var(--muted)', cursor:'pointer', fontFamily:'DM Sans,sans-serif' }}>Keep it</button>
+              <button onClick={() => doDelete(ev)}
+                style={{ fontSize:11, padding:'5px 12px', borderRadius:14, border:'none', background:'#EF4444', color:'white', cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:600 }}>Delete</button>
+            </div>
+          </div>
+        )}
         </div>
       ))}
 

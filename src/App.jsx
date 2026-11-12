@@ -1950,7 +1950,8 @@ export default function App() {
   const deleteEvent = useCallback(async (id, opts = {}) => {
     const snap = eventsRef.current.find(e => e.id === id) || null
     setEvents_(prev => prev.filter(e => e.id !== id))
-    if (snap && !opts.silent) recordChange({ kind: 'delete', entity: 'event', label: 'Deleted event “' + (snap.label || 'event') + '”', inverse: { op: 'restore', entity: 'event', snapshot: snap } })
+    const reason = typeof opts.reason === 'string' ? opts.reason.trim() : ''
+    if (snap && !opts.silent) recordChange({ kind: 'delete', entity: 'event', label: 'Deleted event “' + (snap.label || 'event') + '”', ...(reason ? { reason } : {}), inverse: { op: 'restore', entity: 'event', snapshot: snap } })
     try { await dbDeleteEvent(id) } catch (e) { reportSaveError(e) }
   }, [])
 
