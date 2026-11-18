@@ -21,6 +21,7 @@ import CalendarLegend from './CalendarLegend.jsx'
 import ImportedCalendarCard from './ImportedCalendarCard.jsx'
 import { importedOn, buildImportedRows, importedKey } from '../lib/importedTasks.js'
 import { autoBlockIds } from '../lib/autoBlocks.js'
+import { rideAlong } from '../lib/rideAlong.js'
 import ColorSwatchRow from './ColorSwatchRow.jsx'
 import { MedAlerts } from './MedCare.jsx'
 import Journal from './Journal.jsx'
@@ -1413,7 +1414,7 @@ export default function Today({ locationSlot = null, placesExtras = null, todos,
     const planned = blockStart(id, baseMins)
     const s = arrived == null ? planned : (x.startExact || arrived < planned) ? arrived : planned
     const left = arrived != null ? stampMins(x.endedAt) : null
-    return { start: s, end: left != null && left > s ? left : s + dur }
+    return { start: s, end: left != null && left > s ? left : s + dur, planned }
   }
   // An event with something scheduled inside it becomes a block for the day,
   // so what's inside nests in it (see lib/autoBlocks.js). Read off the day as
@@ -1696,7 +1697,19 @@ export default function Today({ locationSlot = null, placesExtras = null, todos,
     ...templateTodos.filter(t=>!isBlockLike(t)),
     ...customTasks,
   ]
-  const allTasks = applyOverrides(rawTasks)
+  // Arrived late to a located block (Work planned 9:30, got in at 10:08)? Its
+  // own-category tasks that were planned in the time you missed move with it,
+  // rather than sitting stranded before the block began (see lib/rideAlong.js).
+  // A task you've moved yourself today keeps where you put it; a routine step
+  // keeps its routine's time.
+  const lateBlocks = blocks.filter(b => b.planned != null && b.start > b.planned)
+  const withRideAlong = (tasks) => !lateBlocks.length ? tasks : tasks.map(t => {
+    if (t.routine || (!t.isCommitment && timeOverrides[t.id] !== undefined)) return t
+    const moved = rideAlong(lateBlocks, { tag: t.tag ?? null, mins: taskMins(t) })
+    if (!moved) return t
+    return { ...t, label: t.label ? shiftLabelTime(t.label, moved.mins) : t.label, _time: minsToHHMM(moved.mins), _rodeWith: moved.blockId }
+  })
+  const allTasks = withRideAlong(applyOverrides(rawTasks))
 
   const timedSorted = allTasks
     .map(t=>({...t,_mins:taskMins(t)}))
