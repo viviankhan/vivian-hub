@@ -16,6 +16,32 @@
 
 const DAY_NAMES = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday']
 
+// The "YYYY-MM-DD" day before a "YYYY-MM-DD" date. Noon avoids any DST edge.
+export function dayBefore(dateStr) {
+  const x = new Date(dateStr + 'T12:00:00'); x.setDate(x.getDate() - 1)
+  return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}-${String(x.getDate()).padStart(2, '0')}`
+}
+
+// "Delete this & all future" for a series, from `fromDate` on. Returns what to
+// do, so every screen does the same thing:
+//   • template — the series capped the day before (endDate is inclusive), or
+//     null when nothing is left before `fromDate` (deleting from the very first
+//     day): then the whole series goes, rather than lingering as an empty row
+//     that ends before it starts.
+//   • detached — the one-off copies the series left behind when a single day
+//     was edited ("Just this event" → commitment `occ-<id>-<original date>`)
+//     that fall on or after `fromDate`. Ending the series alone left these
+//     showing, so the event kept turning up on those days.
+export function endSeriesFrom(tmpl, fromDate, commitments = []) {
+  const pre = 'occ-' + tmpl.id + '-'
+  const detached = (commitments || []).filter(c => c && typeof c.id === 'string' && c.id.startsWith(pre) &&
+    (c.id.slice(pre.length) >= fromDate || (c.date && c.date >= fromDate)))
+  const end = dayBefore(fromDate)
+  const template = tmpl.startDate && tmpl.startDate >= fromDate ? null
+    : { ...tmpl, endDate: tmpl.endDate && tmpl.endDate < end ? tmpl.endDate : end }
+  return { template, detached }
+}
+
 // Weekday name ("monday"…) for a "YYYY-MM-DD" date. Noon avoids any DST edge.
 export function dowName(dateStr) {
   return DAY_NAMES[new Date(dateStr + 'T12:00:00').getDay()]

@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo, useLayoutEffect } from 'react'
 import { createPortal } from 'react-dom'
-import { recurringOccurrencesForDate, taskSegments, occKey, recurringActiveOn, splitTimePrefix } from '../lib/occurrences.js'
+import { recurringOccurrencesForDate, taskSegments, occKey, recurringActiveOn, splitTimePrefix, endSeriesFrom } from '../lib/occurrences.js'
 import { findSlots } from '../lib/scheduler.js'
 import { Icon } from './IconPicker.jsx'
 import { iconColorOn, suggestGlyph } from '../lib/glyphs.jsx'
@@ -155,38 +155,53 @@ function ManageModal({ task, dateKey, onClose, onDelete, onReschedule, onUnsched
     searchSlots(d)
   }
 
+  // Laid out like a band's action sheet (BandActionsHost): a sheet from the
+  // bottom, plain rows, danger in red text. The series-wide deletes ask a second
+  // time — the row spells out what it's about to do — before they fire.
+  const [armed,setArmed] = useState(null)
+  const row = (danger, isArmed) => ({ width:'100%', textAlign:'left', padding:'13px 14px', borderRadius:14, cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontSize:14.5, fontWeight:600, lineHeight:1.35,
+    border: isArmed ? '1px solid #F5C2C2' : '1px solid var(--border)', background: isArmed ? '#FEF2F2' : 'white', color: danger ? '#B91C1C' : 'var(--text)' })
+  const textBtn = { display:'block', margin:'10px auto 0', border:'none', background:'none', color:'var(--muted)', fontSize:14, fontWeight:600, cursor:'pointer', fontFamily:'DM Sans,sans-serif', padding:'6px 12px' }
+  const items = [
+    { key:'resched', label:'Reschedule', onClick:handleViewReschedule },
+    task.isCommitment && onUnschedule && { key:'unsched', label:'Unschedule — back to Commitments', onClick:()=>{ onUnschedule(task); onClose() } },
+    { key:'del', label: isRec ? 'Delete just this day' : 'Delete…', danger:true, onClick:()=>setView('delete') },
+    isRec && onDeleteFuture && { key:'future', label:'Delete this & all future', danger:true,
+      confirm:'Remove it from this day onward? Earlier days keep it', onClick:()=>{ onDeleteFuture(task); onClose() } },
+    isRec && onDeleteSeries && { key:'all', label:'Delete every day', danger:true,
+      confirm:'Delete it on every day, past and future? This can’t be undone', onClick:()=>{ onDeleteSeries(task); onClose() } },
+  ].filter(Boolean)
+
   return (
-    <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,.5)',zIndex:600,display:'flex',alignItems:'center',justifyContent:'center',padding:16}}>
-      <div style={{background:'white',borderRadius:16,padding:22,maxWidth:380,width:'100%',boxShadow:'0 24px 64px rgba(0,0,0,.3)',maxHeight:'90vh',overflowY:'auto'}}>
+    <div onClick={onClose} style={{position:'fixed',inset:0,background:'rgba(20,28,38,.40)',zIndex:600,display:'flex',alignItems:'flex-end',justifyContent:'center'}}>
+      <div role="menu" data-testid="manage-sheet" onClick={e=>e.stopPropagation()}
+        style={{background:'#F7F6FA',borderRadius:'22px 22px 0 0',width:'100%',maxWidth:480,padding:'16px 14px calc(16px + env(safe-area-inset-bottom))',boxShadow:'0 -10px 44px rgba(20,40,60,.28)',maxHeight:'90vh',overflowY:'auto',boxSizing:'border-box'}}>
+        <div style={{fontSize:11,letterSpacing:1.3,textTransform:'uppercase',color:'var(--muted)',fontWeight:700,margin:'2px 4px 10px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{task.title||task.label||task.text}</div>
         {view==='main'&&<>
-          <div className="serif" style={{fontSize:17,fontWeight:600,color:'var(--text)',marginBottom:8}}>Manage</div>
-          <div style={{fontSize:13,color:'var(--muted)',marginBottom:16,padding:'9px 12px',background:'#F7F6F3',borderRadius:9,lineHeight:1.5}}>{task.label||task.text}</div>
-          <div style={{display:'flex',flexDirection:'column',gap:8}}>
-            <button onClick={handleViewReschedule} style={{padding:'10px',borderRadius:10,border:'1px solid var(--border)',background:'white',cursor:'pointer',textAlign:'left',fontSize:13,color:'var(--text)',fontFamily:'DM Sans,sans-serif'}}>📅 Reschedule</button>
-            {task.isCommitment && onUnschedule && (
-              <button onClick={()=>{onUnschedule(task);onClose()}} style={{padding:'10px',borderRadius:10,border:'1px solid var(--border)',background:'white',cursor:'pointer',textAlign:'left',fontSize:13,color:'var(--text)',fontFamily:'DM Sans,sans-serif'}}>🗓️ Unschedule · back to Commitments</button>
-            )}
-            <button onClick={()=>setView('delete')} style={{padding:'10px',borderRadius:10,border:'1px solid #FECACA',background:'#FFF5F5',cursor:'pointer',textAlign:'left',fontSize:13,color:'#991B1B',fontFamily:'DM Sans,sans-serif'}}>{isRec ? '🗓️ Delete just this day' : '🗑️ Delete & log why'}</button>
-            {isRec && onDeleteFuture && (
-              <button onClick={()=>{onDeleteFuture(task);onClose()}} style={{padding:'10px',borderRadius:10,border:'1px solid #FECACA',background:'#FFF5F5',cursor:'pointer',textAlign:'left',fontSize:13,color:'#991B1B',fontFamily:'DM Sans,sans-serif'}}>⏭️ Delete this &amp; all future</button>
-            )}
-            {isRec && onDeleteSeries && (
-              <button onClick={()=>{onDeleteSeries(task);onClose()}} style={{padding:'10px',borderRadius:10,border:'1px solid #FECACA',background:'#FFF5F5',cursor:'pointer',textAlign:'left',fontSize:13,color:'#991B1B',fontFamily:'DM Sans,sans-serif'}}>🔁 Delete every occurrence (all time)</button>
-            )}
+          <div style={{display:'flex',flexDirection:'column',gap:6}}>
+            {items.map(it => {
+              const isArmed = armed === it.key
+              return (
+                <button key={it.key} role="menuitem" type="button" style={row(it.danger, isArmed)}
+                  onClick={()=>{ if (it.confirm && !isArmed) { setArmed(it.key); return } it.onClick() }}>
+                  {isArmed ? `${it.confirm} — tap again` : it.label}
+                </button>
+              )
+            })}
           </div>
-          <button onClick={onClose} style={{marginTop:10,width:'100%',padding:'8px',borderRadius:10,border:'1px solid var(--border)',background:'white',color:'var(--muted)',cursor:'pointer',fontSize:12,fontFamily:'DM Sans,sans-serif'}}>Cancel</button>
+          <button type="button" onClick={onClose} style={textBtn}>Cancel</button>
         </>}
         {view==='delete'&&<>
-          <div className="serif" style={{fontSize:17,fontWeight:600,color:'#991B1B',marginBottom:6}}>{isRec ? 'Delete this day' : 'Delete Task'}</div>
-          {isRec && <div style={{fontSize:12,color:'var(--muted)',marginBottom:10,lineHeight:1.5}}>Removes just this one occurrence — the recurring task keeps its other days. Use “Delete this &amp; all future” or “Delete every occurrence” to remove more.</div>}
-          <textarea value={reason} onChange={e=>setReason(e.target.value)} placeholder="Reason (optional)…" rows={3} style={{...s,marginBottom:12,resize:'none',lineHeight:1.5}}/>
-          <div style={{display:'flex',gap:8}}>
-            <button onClick={()=>{onDelete(task,reason);onClose()}} style={{flex:1,padding:'10px',borderRadius:10,border:'none',background:'#EF4444',color:'white',cursor:'pointer',fontFamily:'DM Sans,sans-serif',fontWeight:600,fontSize:13}}>{isRec ? 'Delete this day' : 'Delete'}{reason?' & Log':''}</button>
-            <button onClick={()=>setView('main')} style={{padding:'10px 14px',borderRadius:10,border:'1px solid var(--border)',background:'white',color:'var(--muted)',cursor:'pointer',fontSize:12,fontFamily:'DM Sans,sans-serif'}}>Back</button>
-          </div>
+          <div className="serif" style={{fontSize:18,fontWeight:600,color:'var(--text)',margin:'0 4px 6px'}}>{isRec ? 'Delete this day' : 'Delete task'}</div>
+          {isRec && <div style={{fontSize:13,color:'var(--muted)',margin:'0 4px 12px',lineHeight:1.5}}>Just this one day — every other day keeps it.</div>}
+          <textarea value={reason} onChange={e=>setReason(e.target.value)} placeholder="Why? (optional — goes in your log)" rows={3}
+            style={{...s,fontSize:14,padding:'11px 13px',borderRadius:14,background:'white',marginBottom:10,resize:'none',lineHeight:1.5}}/>
+          <button type="button" onClick={()=>{onDelete(task,reason);onClose()}}
+            style={{width:'100%',padding:'13px',borderRadius:14,border:'none',background:'#B91C1C',color:'white',cursor:'pointer',fontFamily:'DM Sans,sans-serif',fontWeight:700,fontSize:14.5}}>{isRec ? 'Delete this day' : 'Delete'}{reason?' & log':''}</button>
+          <button type="button" onClick={()=>setView('main')} style={textBtn}>Back</button>
         </>}
         {view==='reschedule'&&<>
-          <div className="serif" style={{fontSize:17,fontWeight:600,color:'var(--text)',marginBottom:12}}>Reschedule</div>
+          <div className="serif" style={{fontSize:18,fontWeight:600,color:'var(--text)',margin:'0 4px 12px'}}>Reschedule</div>
           <div style={{display:'flex',gap:8,marginBottom:10}}>
             <div style={{flex:1,minWidth:0}}>
               <div style={{fontSize:10,color:'var(--muted)',letterSpacing:1,textTransform:'uppercase',marginBottom:4}}>Date</div>
@@ -201,7 +216,7 @@ function ManageModal({ task, dateKey, onClose, onDelete, onReschedule, onUnsched
           {/* Smart slot suggestions */}
           {slots.length>0&&(
             <div style={{marginBottom:12}}>
-              <div style={{fontSize:10,color:'var(--muted)',letterSpacing:1,textTransform:'uppercase',marginBottom:6}}>🧠 Best open windows</div>
+              <div style={{fontSize:10,color:'var(--muted)',letterSpacing:1,textTransform:'uppercase',marginBottom:6}}>Best open windows</div>
               {slots.slice(0,3).map((slot,i)=>(
                 <button key={i} onClick={()=>setTime(slot.startTime)}
                   style={{display:'block',width:'100%',textAlign:'left',padding:'8px 12px',borderRadius:9,border:`1.5px solid ${time===slot.startTime?'var(--teal)':'var(--border)'}`,background:time===slot.startTime?'#F0FDFB':'white',marginBottom:5,cursor:'pointer',fontFamily:'DM Sans,sans-serif'}}>
@@ -212,10 +227,9 @@ function ManageModal({ task, dateKey, onClose, onDelete, onReschedule, onUnsched
             </div>
           )}
 
-          <div style={{display:'flex',gap:8}}>
-            <button onClick={()=>{onReschedule(task,date,time);onClose()}} style={{flex:1,padding:'10px',borderRadius:10,border:'none',background:'var(--forest)',color:'var(--green-light)',cursor:'pointer',fontFamily:'DM Sans,sans-serif',fontWeight:600,fontSize:13}}>Reschedule</button>
-            <button onClick={()=>setView('main')} style={{padding:'10px 14px',borderRadius:10,border:'1px solid var(--border)',background:'white',color:'var(--muted)',cursor:'pointer',fontSize:12,fontFamily:'DM Sans,sans-serif'}}>Back</button>
-          </div>
+          <button type="button" onClick={()=>{onReschedule(task,date,time);onClose()}}
+            style={{width:'100%',padding:'13px',borderRadius:14,border:'none',background:'var(--forest)',color:'white',cursor:'pointer',fontFamily:'DM Sans,sans-serif',fontWeight:700,fontSize:14.5}}>Reschedule</button>
+          <button type="button" onClick={()=>setView('main')} style={textBtn}>Back</button>
         </>}
       </div>
     </div>
@@ -2572,13 +2586,8 @@ export default function Today({ locationSlot = null, placesExtras = null, todos,
     else if (tmpl) {
       if (scope === 'day' && skipRecurringOccurrence) {
         skipRecurringOccurrence(id, dateKey); what = 'Skipped block for the day'
-      } else if (scope === 'future' && updateRecurringTask) {
-        // updateRecurringTask rebuilds the whole row, so pass the full template
-        // plus the new end date or the other columns get wiped. (endDate is
-        // inclusive, so cap it at the day BEFORE this one.)
-        const x = new Date(dateKey + 'T12:00:00'); x.setDate(x.getDate() - 1)
-        const endDate = `${x.getFullYear()}-${String(x.getMonth()+1).padStart(2,'0')}-${String(x.getDate()).padStart(2,'0')}`
-        updateRecurringTask(tmpl.id, { ...tmpl, endDate }); what = 'Ended block — this day onward'
+      } else if (scope === 'future') {
+        if (endSeries(tmpl.id, dateKey)) what = 'Ended block — this day onward'
       } else if (deleteRecurringTask) {
         deleteRecurringTask(id); what = 'Deleted repeating block'
       }
@@ -2714,21 +2723,25 @@ export default function Today({ locationSlot = null, placesExtras = null, todos,
   const handleDeleteSeries = (task) => {
     if (task.isRecurring && deleteRecurringTask) deleteRecurringTask(task.id)
   }
-  // Delete this occurrence and every future one — cap the template's end date at
-  // the day before this occurrence, so today and everything after it drop off
-  // while past occurrences stay in the history. (endDate is inclusive.)
+  // Delete this occurrence and every future one: the series ends the day before
+  // (past days stay in the history), and any single days of it that were edited
+  // on their own and fall from here on go too (see endSeriesFrom). Deleting from
+  // the series' first day removes it outright.
+  const endSeries = (id, fromDate) => {
+    const tmpl = (recurringTasks || []).find(t => t.id === id)
+    if (!tmpl) return false
+    const { template, detached } = endSeriesFrom(tmpl, fromDate, commitments)
+    // updateRecurringTask rebuilds the whole DB row from what it's given, so the
+    // full template goes back (endSeriesFrom keeps every other field).
+    if (template) { if (!updateRecurringTask) return false; updateRecurringTask(tmpl.id, template) }
+    else { if (!deleteRecurringTask) return false; deleteRecurringTask(tmpl.id) }
+    if (deleteCommitment) detached.forEach(c => deleteCommitment(c.id))
+    return true
+  }
   const handleDeleteFuture = (task) => {
-    if (!task.isRecurring || !updateRecurringTask) return
-    // updateRecurringTask rebuilds the whole DB row from what it's given, so we
-    // must pass the full template (not just the changed field) or the other
-    // columns get wiped. Spread the existing enriched template + new endDate.
-    const tmpl = (recurringTasks || []).find(t => t.id === (task.recurringId || task.id))
-    if (!tmpl) return
-    const x = new Date(dateKey + 'T12:00:00')
-    x.setDate(x.getDate() - 1)
-    const endDate = `${x.getFullYear()}-${String(x.getMonth()+1).padStart(2,'0')}-${String(x.getDate()).padStart(2,'0')}`
-    updateRecurringTask(tmpl.id, { ...tmpl, endDate })
-    if (appendLog) appendLog({ date:dateKey, dateLabel:dayLabel(dateKey), label:`Ended recurring: ${task.label||task.text} — this day onward`, tag:'deleted', ts:new Date().toISOString() })
+    if (!task.isRecurring) return
+    if (endSeries(task.recurringId || task.id, dateKey) && appendLog)
+      appendLog({ date:dateKey, dateLabel:dayLabel(dateKey), label:`Ended recurring: ${task.label||task.text} — this day onward`, tag:'deleted', ts:new Date().toISOString() })
   }
   const handleReschedule = (task, date, time) => {
     if (date === dateKey) {
@@ -3244,17 +3257,7 @@ export default function Today({ locationSlot = null, placesExtras = null, todos,
           if (labelStartMins(t.label) !== ov) maybePromptShift(pivotId, labelStartMins(t.label))
         }}
         onDeleteOccurrence={date=>{ skipRecurringOccurrence&&skipRecurringOccurrence(editingRec.id, date); setEditingRec(null); setEditingRecDate(null) }}
-        onDeleteFuture={date=>{
-          // End the series the day before this occurrence — today onward drops
-          // off, past days stay in history. (endDate is inclusive.)
-          const tmpl=(recurringTasks||[]).find(t=>t.id===editingRec.id)
-          if (tmpl && updateRecurringTask) {
-            const x=new Date(date+'T12:00:00'); x.setDate(x.getDate()-1)
-            const endDate=`${x.getFullYear()}-${String(x.getMonth()+1).padStart(2,'0')}-${String(x.getDate()).padStart(2,'0')}`
-            updateRecurringTask(tmpl.id, { ...tmpl, endDate })
-          }
-          setEditingRec(null); setEditingRecDate(null)
-        }}
+        onDeleteFuture={date=>{ endSeries(editingRec.id, date); setEditingRec(null); setEditingRecDate(null) }}
         onDelete={t=>{ deleteRecurringTask&&deleteRecurringTask(t.id); setEditingRec(null); setEditingRecDate(null) }}
         onClose={()=>{ setEditingRec(null); setEditingRecDate(null) }} title="Edit recurring task"/>}
       {editingRoutine&&<RoutineEditor routine={editingRoutine}

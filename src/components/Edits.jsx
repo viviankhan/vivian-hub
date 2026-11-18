@@ -4,6 +4,16 @@
 
 const EDIT_LOG = [
   {
+    date: '2026-11-18',
+    summary: '"Delete this & all future" clears every day it should, and the Manage sheet matches Bloom',
+    changes: [
+      'Fixed: "Delete this & all future" on a repeating task now also removes days you had edited on their own ("Just this event"). Those were saved as separate copies, so the task kept showing up on them after the series ended',
+      'Deleting "this & all future" from a series\' first day now removes the whole series, instead of leaving an empty one that ends before it starts',
+      'The ⋯ Manage menu on the timeline is now a sheet from the bottom, styled like a time block\'s actions. No emoji, and destructive rows are in red text',
+      '"Delete this & all future" and "Delete every day" ask once more before they go: the row says what it will remove, and you tap again to confirm',
+    ]
+  },
+  {
     date: '2026-10-05',
     summary: 'The AI assistant reads syllabi and agendas — PDF and Word files',
     changes: [

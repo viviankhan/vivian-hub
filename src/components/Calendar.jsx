@@ -3,7 +3,7 @@ import { Icon } from './IconPicker.jsx'
 import AddItemModal from './AddItemModal.jsx'
 import { setItemReminders } from '../lib/notifications.js'
 import { autoBlockIds } from '../lib/autoBlocks.js'
-import { recurringOccurrencesForDate, recurringActiveOn, occKey } from '../lib/occurrences.js'
+import { recurringOccurrencesForDate, recurringActiveOn, occKey, endSeriesFrom } from '../lib/occurrences.js'
 import { iconColorOn } from '../lib/glyphs.jsx'
 import RecurringFilter from './RecurringFilter.jsx'
 import { getRecurringFilter, RECURRING_FILTER_EVENT, visibleRecurring } from '../lib/viewFilter.js'
@@ -622,11 +622,14 @@ export default function Calendar({ commitments, vacations, events, log, categori
           onSaveRecurring={t => { updateRecurringTask && updateRecurringTask(t.id, t); setEditingRec(null); setEditingRecDate(null) }}
           onDeleteOccurrence={date => { skipRecurringOccurrence && skipRecurringOccurrence(editingRec.id, date); setEditingRec(null); setEditingRecDate(null) }}
           onDeleteFuture={date => {
+            // Same as Today: end the series the day before (or delete it when
+            // that's its first day) and drop single days edited from here on.
             const tmpl=(recurringTasks||[]).find(t=>t.id===editingRec.id)
-            if (tmpl && updateRecurringTask) {
-              const x=new Date(date+'T12:00:00'); x.setDate(x.getDate()-1)
-              const endDate=`${x.getFullYear()}-${String(x.getMonth()+1).padStart(2,'0')}-${String(x.getDate()).padStart(2,'0')}`
-              updateRecurringTask(tmpl.id, { ...tmpl, endDate })
+            if (tmpl) {
+              const { template, detached } = endSeriesFrom(tmpl, date, commitments)
+              if (template) updateRecurringTask && updateRecurringTask(tmpl.id, template)
+              else deleteRecurringTask && deleteRecurringTask(tmpl.id)
+              if (deleteCommitment) detached.forEach(c => deleteCommitment(c.id))
             }
             setEditingRec(null); setEditingRecDate(null)
           }}
