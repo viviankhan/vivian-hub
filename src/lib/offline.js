@@ -249,8 +249,10 @@ export async function enqueue(op) {
   }
   notify()
   // Coming back online can be silent (a captive portal that starts working, a
-  // VPN reconnect) — so try right away rather than waiting for an 'online' event.
-  if (isOnline()) scheduleFlush(400)
+  // VPN reconnect, or iOS leaving navigator.onLine stuck at false) — so try
+  // right away rather than waiting for an 'online' event. If the network
+  // really is gone the attempt fails fast and the change just stays queued.
+  scheduleFlush(isOnline() ? 400 : 2000)
   return full
 }
 
@@ -273,6 +275,13 @@ export function pendingCount() { return queue.length }
 // own requests do: one transport-level failure marks us down until something
 // succeeds again.
 let suspectedDown = false
+// Has a request actually gone through since the browser last said "offline"?
+// `navigator.onLine` is wrong in the other direction too: an iOS home-screen
+// app can be left reporting false (with no 'online' event ever coming) while
+// wifi works fine — which used to strand the app in "Offline" with every edit
+// stuck in the queue. A real successful request outranks the flag.
+let confirmedUp = false
+const browserSaysOffline = () => hasWindow && navigator.onLine === false && !confirmedUp
 let syncing = false
 let lastSyncAt = null
 let lastError = null
@@ -284,7 +293,7 @@ const NETWORK_HINTS = /failed to fetch|networkerror|network request failed|load 
 // problem) must surface to the user instead of being retried forever.
 export function isNetworkError(e) {
   if (!e) return false
-  if (hasWindow && navigator.onLine === false) return true
+  if (browserSaysOffline()) return true
   if (typeof e === 'object') {
     // Supabase surfaces a transport failure as a PostgrestError with an empty
     // code and the underlying TypeError text in `message`.
@@ -314,7 +323,7 @@ export function requestReauth() {
 
 export function isOnline() {
   if (!hasWindow) return true
-  if (navigator.onLine === false) return false
+  if (browserSaysOffline()) return false
   return !suspectedDown
 }
 
@@ -332,21 +341,29 @@ export function isBrowserOnline() {
 // network is actually doing rather than what the OS claims.
 export function noteFailure(e) {
   if (!isNetworkError(e)) return false
+  confirmedUp = false
   if (!suspectedDown) { suspectedDown = true; notify() }
   scheduleFlush(5000)   // keep probing; the first success clears the flag
   return true
 }
 export function noteSuccess() {
-  if (suspectedDown) { suspectedDown = false; notify(); scheduleFlush(200) }
+  const wasOnline = isOnline()
+  confirmedUp = true
+  suspectedDown = false
+  if (!wasOnline) { notify(); scheduleFlush(200) }
 }
 
 // ── Subscribers (the status pill in the UI) ──────────────────────────────────
 const listeners = new Set()
+// Only this account's waiting edits count: another account's queued writes are
+// (rightly) never sent while you're signed in, so counting them would leave
+// the pill up forever.
+const myQueue = () => activeUid ? queue.filter(op => op.uid === activeUid) : queue
 export function getStatus() {
   return {
     online: isOnline(),
-    browserOnline: isBrowserOnline(),
-    pending: queue.length,
+    browserOnline: isBrowserOnline() || confirmedUp,
+    pending: myQueue().length,
     syncing,
     lastSyncAt,
     lastError,
@@ -370,6 +387,15 @@ export function subscribe(fn) {
 let replayFn = null
 export function registerReplay(fn) { replayFn = fn }
 
+// A cheap "can we reach the server at all?" request, also from storage.js.
+// Used to tell "the network is down" apart from "this one write keeps failing".
+let probeFn = null
+export function registerProbe(fn) { probeFn = fn }
+async function serverReachable() {
+  if (!probeFn) return false
+  try { await probeFn(); return true } catch { return false }
+}
+
 // Which account's ops we're allowed to send. Set by storage.js when the session
 // changes: replaying account A's queued writes while B is signed in would file
 // them under the wrong owner.
@@ -391,31 +417,48 @@ export function scheduleFlush(delay = 0) {
 // Send everything waiting, oldest first. Serialized: a second caller joins the
 // flush already in flight instead of racing it (two replays of the same op
 // would double-insert).
+//
+// Order only matters per row (and per table for a 'clear'), so when one write
+// fails on the network, later writes to OTHER rows still go. That way one write
+// that keeps failing — a huge photo blob timing out, say — can't hold every
+// other edit hostage, or convince the whole app it's offline.
+const rowKey = op => op.op === 'clear' ? `${op.table}:*` : `${op.table}:${op.id}`
 export function flush() {
   if (flushing) return flushing
   flushing = (async () => {
     await ready()
     if (!replayFn || !activeUid) return { sent: 0 }
     const mine = queue.filter(op => op.uid === activeUid)
-    if (!mine.length) { if (suspectedDown && !(hasWindow && navigator.onLine === false)) { suspectedDown = false; notify() } return { sent: 0 } }
-    if (hasWindow && navigator.onLine === false) return { sent: 0 }
+    if (!mine.length) { if (suspectedDown && !browserSaysOffline()) { suspectedDown = false; notify() } return { sent: 0 } }
 
     syncing = true; lastError = null; notify()
-    let sent = 0, stoppedOnNetwork = false
+    let sent = 0, netFails = 0, held = 0, stoppedOnAuth = false
     const done = []
+    const blocked = new Set()
+    const isBlocked = op => blocked.has(`${op.table}:*`) || blocked.has(rowKey(op)) ||
+      (op.op === 'clear' && [...blocked].some(k => k.startsWith(op.table + ':')))
     try {
       for (const op of mine) {
+        // An earlier write to this row is still unsent: keep this one behind it.
+        if (isBlocked(op)) { blocked.add(rowKey(op)); held++; continue }
         try {
           await replayFn(op)
           done.push(op.seq); sent++
           noteSuccess()
         } catch (e) {
-          if (isNetworkError(e)) {
-            // Still offline. Leave this op and everything after it queued — the
-            // order of the remaining edits has to be preserved.
-            suspectedDown = true
-            stoppedOnNetwork = true
+          if (isAuthError(e)) {
+            // The edit is fine; the sign-in needs renewing. Keep everything
+            // queued (dropping it would lose real edits) and retry once renewed.
+            requestReauth()
+            stoppedOnAuth = true
             break
+          }
+          if (isNetworkError(e)) {
+            blocked.add(rowKey(op)); netFails++; held++
+            // Two failures in a row with nothing getting through: the
+            // connection really is down. Stop rather than hammer it.
+            if (sent === 0 && netFails >= 2) break
+            continue
           }
           // A real rejection. Drop it so the queue can drain, but say so loudly:
           // silently discarding someone's edit is the worst possible outcome.
@@ -423,6 +466,12 @@ export function flush() {
           lastError = (e && e.message) || String(e)
           done.push(op.seq)
         }
+      }
+      // Every attempt failed. If the server answers a plain probe, it's these
+      // particular writes that are failing, not the connection — stay online.
+      if (netFails && !sent) {
+        if (netFails === 1 && await serverReachable()) noteSuccess()
+        else { confirmedUp = false; suspectedDown = true }
       }
     } finally {
       if (done.length) {
@@ -440,7 +489,8 @@ export function flush() {
       // just changed it, and other devices may have moved on too).
       try { window.dispatchEvent(new CustomEvent('bloom-sync-flushed', { detail: { sent } })) } catch {}
     }
-    if (stoppedOnNetwork) scheduleFlush(15000)
+    if (netFails) scheduleFlush(isOnline() ? 60000 : 15000)
+    else if (stoppedOnAuth) scheduleFlush(15000)
     return { sent }
   })().finally(() => { flushing = null })
   return flushing
@@ -451,9 +501,12 @@ export function flush() {
 // and also keep a slow heartbeat while anything is waiting.
 if (hasWindow) {
   window.addEventListener('online', () => { suspectedDown = false; notify(); scheduleFlush(500) })
-  window.addEventListener('offline', () => notify())
+  window.addEventListener('offline', () => { confirmedUp = false; notify() })
   document.addEventListener('visibilitychange', () => { if (!document.hidden && queue.length) scheduleFlush(300) })
   window.addEventListener('focus', () => { if (queue.length) scheduleFlush(300) })
-  setInterval(() => { if (queue.length && isOnline()) scheduleFlush(0) }, 30 * 1000)
+  // The heartbeat keeps trying even while we think we're offline: it's what
+  // gets the app back on its feet if every other reconnect signal was missed
+  // (a retry chain cut short, a sign-in that finished late, a stuck onLine flag).
+  setInterval(() => { if (myQueue().length && !flushTimer && !flushing) scheduleFlush(0) }, 30 * 1000)
   ready()
 }

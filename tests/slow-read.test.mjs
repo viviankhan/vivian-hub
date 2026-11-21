@@ -20,7 +20,10 @@ globalThis.localStorage = {
   removeItem: k => store.delete(k),
 }
 let landed = 0
-globalThis.window = { addEventListener: () => {}, dispatchEvent: e => { if (e && e.type === 'bloom-late-read') landed++; return true } }
+// Like a real browser, flipping navigator.onLine fires 'online' / 'offline'.
+const winL = {}
+const setOnline = (on) => { globalThis.navigator.onLine = on; for (const fn of winL[on ? 'online' : 'offline'] || []) fn() }
+globalThis.window = { addEventListener: (k, fn) => { (winL[k] ||= []).push(fn) }, dispatchEvent: e => { if (e && e.type === 'bloom-late-read') landed++; return true } }
 globalThis.document = { hidden: false, addEventListener: () => {} }
 Object.defineProperty(globalThis, 'navigator', { value: { onLine: true }, configurable: true })
 globalThis.CustomEvent = class { constructor(t, o) { this.type = t; Object.assign(this, o) } }
@@ -80,10 +83,10 @@ mock.state.delay = 0
 await S.dbSet('notes', 'typed just now')
 eq('the read had already answered from the copy', await slow, 'newer, from another device')
 await wait(500)
-mock.state.offline = true; globalThis.navigator.onLine = false
+mock.state.offline = true; setOnline(false)
 eq('the mirror still holds the edit', await S.getNotes(), 'typed just now')
 eq('and no stale refresh was announced', landed, 0)
-mock.state.offline = false; globalThis.navigator.onLine = true
+mock.state.offline = false; setOnline(true)
 
 console.log('\n— a fast answer is untouched —')
 mock.state.tables.kv_store = [{ key: 'notes', value: 'quick' }]

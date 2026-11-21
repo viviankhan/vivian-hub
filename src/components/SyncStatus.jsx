@@ -28,8 +28,11 @@ export default function SyncStatus() {
     })
   }), [])
 
-  const { online, pending, syncing } = status
+  const { online, browserOnline, pending, syncing } = status
   if (online && pending === 0 && !justSynced) return null
+  // The phone has a connection but Bloom's server isn't answering: don't
+  // claim "Offline" next to a full wifi icon.
+  const where = browserOnline ? 'Can’t reach Bloom' : 'Offline'
 
   const tone = !online
     ? { bg: '#FFF4E5', border: '#F5D9AE', fg: '#8A5A00' }   // offline — amber, not alarming
@@ -39,8 +42,8 @@ export default function SyncStatus() {
 
   const label = !online
     ? (pending > 0
-        ? `Offline · ${pending} change${pending === 1 ? '' : 's'} saved here`
-        : 'Offline · your planner still works')
+        ? `${where} · ${pending} change${pending === 1 ? '' : 's'} saved here`
+        : `${where} · your planner still works`)
     : syncing || pending > 0
       ? `Syncing ${pending} change${pending === 1 ? '' : 's'}…`
       : 'All changes synced'

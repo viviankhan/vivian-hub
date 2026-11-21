@@ -21,11 +21,15 @@ const eq = (name, got, want) => {
 }
 
 // Capture what replay is asked to send, and let a test make it fail.
-let sentOps = [], failWith = null
+let sentOps = [], failWith = null, netDown = false, poison = new Set(), probeUp = true
+const dropped = () => Object.assign(new Error('Failed to fetch'), { name: 'TypeError' })
 off.registerReplay(async op => {
+  if (netDown) throw dropped()
+  if (poison.has(op.id)) throw Object.assign(new Error('upstream request timeout'), { status: 504 })
   if (failWith) { const e = failWith; failWith = null; throw e }
   sentOps.push(`${op.table}:${op.op}:${op.id}`)
 })
+off.registerProbe(async () => { if (netDown || !probeUp) throw dropped() })
 off.setActiveUid('u1')
 
 const q = (o) => off.enqueue({ uid: 'u1', ...o })
@@ -85,11 +89,13 @@ console.log('\n— failure handling —')
 sentOps = []
 await q({ table: 'events', op: 'insert', id: 'e1', row: {} })
 await q({ table: 'events', op: 'insert', id: 'e2', row: {} })
-failWith = Object.assign(new Error('Failed to fetch'), { name: 'TypeError' })
+netDown = true
 const r2 = await off.flush()
 eq('a dropped connection stops the flush', r2.sent, 0)
 eq('and keeps every queued write', off.pendingCount(), 2)
+eq('and says offline', off.getStatus().online, false)
 
+netDown = false
 const r3 = await off.flush()
 eq('the retry sends them', r3.sent, 2)
 eq('in order', sentOps, ['events:insert:e1', 'events:insert:e2'])
@@ -103,12 +109,52 @@ eq('a rejected write is dropped, not retried forever', off.pendingCount(), 0)
 eq('and the queue keeps draining behind it', sentOps, ['events:insert:e4'])
 eq('one of the two still went', r4.sent, 1)
 
+console.log('\n— one write that keeps failing —')
+sentOps = []
+poison.add('big')
+await q({ table: 'kv_store', op: 'set', id: 'big', row: { key: 'big', value: 'x'.repeat(100) } })
+await q({ table: 'events', op: 'insert', id: 'e5', row: {} })
+await q({ table: 'commitments', op: 'update', id: 'c9', changes: { text: 'a' } })
+const r7 = await off.flush()
+eq('writes to other rows still go up', sentOps, ['events:insert:e5', 'commitments:update:c9'])
+eq('the failing one stays queued, not dropped', off.pendingCount(), 1)
+eq('and the app does not call itself offline', off.getStatus().online, true)
+await q({ table: 'kv_store', op: 'set', id: 'big', row: { key: 'big', value: 'y' } })
+eq('a later edit to the same row folds into it', off.pendingCount(), 1)
+
+const r8 = await off.flush()
+eq('alone in the queue, it still does not mark the app offline (the server answers)', off.getStatus().online, true)
+poison.delete('big')
+const r9 = await off.flush()
+eq('and it goes up once it can', [r9.sent, off.pendingCount()], [1, 0])
+
+console.log('\n— a stuck "offline" flag on a working connection —')
+sentOps = []
+globalThis.navigator.onLine = false          // iOS can leave this false on good wifi
+for (const fn of listeners.offline || []) fn()
+await q({ table: 'events', op: 'insert', id: 'e6', row: {} })
+eq('looks offline at first', off.getStatus().online, false)
+const r10 = await off.flush()
+eq('the flush still tries, and the edit goes up', r10.sent, 1)
+eq('one real success is enough to be back online', off.getStatus().online, true)
+globalThis.navigator.onLine = true
+
+console.log('\n— an expired sign-in during replay —')
+sentOps = []
+await q({ table: 'events', op: 'insert', id: 'e7', row: {} })
+failWith = Object.assign(new Error('JWT expired'), { status: 401 })
+await off.flush()
+eq('the edit is kept, not discarded', off.pendingCount(), 1)
+await off.flush()
+eq('and goes up once signed in again', [sentOps, off.pendingCount()], [['events:insert:e7'], 0])
+
 console.log('\n— account scoping —')
 await q({ table: 'kv_store', op: 'set', id: 'k', row: { key: 'k', value: 1 } })
 off.setActiveUid('u2')
 const r5 = await off.flush()
 eq('another account’s queued writes are not sent', r5.sent, 0)
 eq('they stay queued for when that account returns', off.pendingCount(), 1)
+eq('but they are not counted as this account’s waiting changes', off.getStatus().pending, 0)
 off.setActiveUid('u1')
 const r6 = await off.flush()
 eq('and go up once that account is back', r6.sent, 1)
