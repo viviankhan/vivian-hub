@@ -1,11 +1,8 @@
 // src/components/ThoughtsBoard.jsx
 // A sticky-note "thoughts" board. Jot a thought → it lands on the board as a
-// sticky note in the first open spot (the board grows taller as it fills) and
-// stamped with the date + time. Drag to rearrange, tap to read a long note in
-// full, "Tidy up" to re-grid a piled-up board. Search the pool, sort by date,
-// and schedule any note straight into your calendar.
-import { useState, useEffect, useRef, useCallback } from 'react'
-import { NOTE_W, noteLeft, noteTop, boardHeight, freeSpot, tidy, hasPileUp } from '../lib/stickyLayout.js'
+// sticky note, randomly placed and stamped with the date + time. Search the
+// pool, sort by date, and schedule any note straight into your calendar.
+import { useState, useEffect, useRef } from 'react'
 import { getThoughts, setThoughts } from '../lib/storage.js'
 import { setItemReminders } from '../lib/notifications.js'
 import { bloomBurst } from '../lib/bloom.js'
@@ -22,7 +19,7 @@ function fmtStamp(iso) {
 function inkFor(color) { return '#4A4030' }
 
 // ── One sticky note ────────────────────────────────────────────
-function Sticky({ t, onSchedule, onComplete, onDelete, style, compact, clampLines = 0 }) {
+function Sticky({ t, onSchedule, onComplete, onDelete, style, compact }) {
   // A scheduled thought stays on the board as a faded record. (Completing a
   // thought removes it from the board entirely — it lives on as the dated
   // event on the day it was finished — so there's no "completed" note state.)
@@ -37,9 +34,7 @@ function Sticky({ t, onSchedule, onComplete, onDelete, style, compact, clampLine
     }}>
       {/* little piece of "tape" */}
       {!compact && <div style={{ position:'absolute', top:-7, left:'50%', transform:'translateX(-50%) rotate(-3deg)', width:44, height:14, background:'rgba(255,255,255,.5)', border:'1px solid rgba(0,0,0,.05)' }} />}
-      <div style={{ fontSize:13.5, lineHeight:1.4, color:inkFor(t.color), whiteSpace:'pre-wrap', wordBreak:'break-word', fontWeight:500, textDecoration: settled ? 'line-through' : 'none',
-        // On the board a long note shows its first few lines; tap it to read the rest.
-        ...(clampLines ? { display:'-webkit-box', WebkitLineClamp:clampLines, WebkitBoxOrient:'vertical', overflow:'hidden' } : {}) }}>
+      <div style={{ fontSize:13.5, lineHeight:1.4, color:inkFor(t.color), whiteSpace:'pre-wrap', wordBreak:'break-word', fontWeight:500, textDecoration: settled ? 'line-through' : 'none' }}>
         {t.text}
       </div>
       <div style={{ marginTop:'auto', display:'flex', alignItems:'center', justifyContent:'space-between', gap:6 }}>
@@ -73,60 +68,13 @@ export default function ThoughtsBoard({ addCommitment, addRecurringTask, categor
   const [sortDir, setSortDir] = useState('new')  // 'new' | 'old'
   const [scheduling, setScheduling] = useState(null)
   const [dragId, setDragId] = useState(null)
-  const [openId, setOpenId] = useState(null)   // a note tapped open to read in full
-  const [zOrder, setZOrder] = useState([])     // ids, most recently touched last
-  const [boardW, setBoardW] = useState(0)
-  const lastW = useRef(0)
-  // The board used to be a fixed 64vh box and notes stored their top as a % of
-  // it; that's still the board's minimum height and what an old `y` % means.
-  const [minH, setMinH] = useState(() => Math.round((typeof window !== 'undefined' ? window.innerHeight : 800) * 0.64))
 
   useEffect(() => { getThoughts().then(t => { setThoughtsState(t); setLoaded(true) }) }, [])
 
-  // Also keep the old `y` % roughly right, so an older copy of the app (e.g. a
-  // phone still running a cached build offline) shows the notes sensibly too.
-  const withCompatY = (list) => {
-    const H = boardHeight(list, minH, minH)
-    return list.map(t => typeof t.py === 'number' ? { ...t, y: Math.max(0, Math.min(92, (t.py / H) * 100)) } : t)
-  }
   const persist = (next) => { setThoughtsState(next); setThoughts(next).catch(() => {}) }
 
-  // ── Measure the board (its width decides how many notes fit per row) ──
-  const roRef = useRef(null)
+  // ── Drag a sticky note around the board ──────────────────────
   const boardRef = useRef(null)
-  const setBoardEl = useCallback((el) => {
-    roRef.current?.disconnect()
-    boardRef.current = el
-    if (!el) return
-    const measure = () => {
-      const w = el.clientWidth
-      if (w) { setBoardW(w); lastW.current = w }
-      setMinH(Math.round(window.innerHeight * 0.64))
-    }
-    measure()
-    roRef.current = new ResizeObserver(measure)
-    roRef.current.observe(el)
-  }, [])
-  useEffect(() => () => roRef.current?.disconnect(), [])
-
-  // Notes pinned from elsewhere (e.g. "Move to Thoughts" on a task) arrive
-  // flagged autoPlace — drop each into an open spot once the board is measured.
-  useEffect(() => {
-    if (!boardW || !thoughts.some(t => t.autoPlace)) return
-    let placed = thoughts.filter(t => !t.autoPlace)
-    const out = thoughts.map(t => {
-      if (!t.autoPlace) return t
-      const { autoPlace, ...rest } = t
-      const n = { ...rest, ...freeSpot(placed, boardW, minH) }
-      placed = [...placed, n]
-      return n
-    })
-    persist(withCompatY(out))
-  }, [boardW, thoughts]) // eslint-disable-line react-hooks/exhaustive-deps
-
-  const bringToFront = (id) => setZOrder(z => [...z.filter(x => x !== id), id])
-
-  // ── Drag a sticky note around the board (a tap opens it instead) ──
   const dragRef = useRef(null)
   const onNotePointerDown = (e, t) => {
     // Let the schedule/delete buttons work — only drag from the note body.
@@ -134,11 +82,8 @@ export default function ThoughtsBoard({ addCommitment, addRecurringTask, categor
     const board = boardRef.current
     if (!board) return
     e.preventDefault()
-    const W = board.clientWidth
-    const H = board.clientHeight
-    dragRef.current = { id: t.id, startX: e.clientX, startY: e.clientY,
-      origL: noteLeft(t, W), origT: noteTop(t, minH), W, H, moved: false }
-    bringToFront(t.id)
+    const rect = board.getBoundingClientRect()
+    dragRef.current = { id: t.id, startX: e.clientX, startY: e.clientY, origX: t.x, origY: t.y, rect, moved: false }
     setDragId(t.id)
     window.addEventListener('pointermove', onDragMove)
     window.addEventListener('pointerup', onDragEnd)
@@ -146,14 +91,12 @@ export default function ThoughtsBoard({ addCommitment, addRecurringTask, categor
   const onDragMove = (e) => {
     const d = dragRef.current
     if (!d) return
-    const dx = e.clientX - d.startX, dy = e.clientY - d.startY
-    // A few px of finger wobble is still a tap.
-    if (!d.moved && Math.hypot(dx, dy) < 6) return
+    const dxPct = ((e.clientX - d.startX) / d.rect.width) * 100
+    const dyPct = ((e.clientY - d.startY) / d.rect.height) * 100
+    const nx = Math.max(0, Math.min(92, d.origX + dxPct))
+    const ny = Math.max(0, Math.min(92, d.origY + dyPct))
     d.moved = true
-    const left = Math.max(0, Math.min(d.W - NOTE_W - 8, d.origL + dx))
-    const top = Math.max(0, Math.min(d.H - 40, d.origT + dy))   // board grows as you near its bottom
-    const nx = Math.max(0, Math.min(92, (left / d.W) * 100))
-    setThoughtsState(prev => prev.map(x => x.id === d.id ? { ...x, x: nx, py: Math.round(top) } : x))
+    setThoughtsState(prev => prev.map(x => x.id === d.id ? { ...x, x: nx, y: ny } : x))
   }
   const onDragEnd = () => {
     const d = dragRef.current
@@ -161,44 +104,25 @@ export default function ThoughtsBoard({ addCommitment, addRecurringTask, categor
     window.removeEventListener('pointerup', onDragEnd)
     dragRef.current = null
     setDragId(null)
-    if (!d) return
-    if (d.moved) {
-      // Persist the new position.
-      setThoughtsState(prev => { const next = withCompatY(prev); setThoughts(next).catch(() => {}); return next })
-    } else {
-      // A tap: open the note to read all of it (tap again to fold it back).
-      setOpenId(cur => cur === d.id ? null : d.id)
-    }
-  }
-
-  // Re-grid the whole board: open notes newest-first, then scheduled ones.
-  const tidyUp = () => {
-    const W = boardRef.current?.clientWidth || lastW.current
-    if (!W) return
-    const order = [...thoughts].sort((a, b) =>
-      (a.scheduled === b.scheduled ? 0 : a.scheduled ? 1 : -1) || b.createdAt.localeCompare(a.createdAt))
-    setOpenId(null)
-    persist(withCompatY(tidy(order, W)))
+    // Persist the new position (only if it actually moved).
+    if (d && d.moved) setThoughtsState(prev => { setThoughts(prev).catch(() => {}); return prev })
   }
 
   const addThought = (e) => {
     if (e?.currentTarget) bloomBurst(e.currentTarget)
     const body = text.trim()
     if (!body) return
-    const W = boardRef.current?.clientWidth || lastW.current
     const note = {
       id: 'th-' + Date.now(),
       text: body,
       createdAt: new Date().toISOString(),
-      // First open spot on the board; if the board isn't on screen (List
-      // view), it's placed the next time the board is.
-      ...(W ? freeSpot(thoughts, W, minH) : { x: 3, y: 3, autoPlace: true }),
+      x: 3 + Math.random() * 66,      // % from left (clamped in style)
+      y: 3 + Math.random() * 80,      // % from top
       rot: -7 + Math.random() * 14,   // slight tilt
       color: COLORS[Math.floor(Math.random() * COLORS.length)],
       scheduled: false,
     }
-    persist(withCompatY([note, ...thoughts]))
-    bringToFront(note.id)
+    persist([note, ...thoughts])
     setText('')
   }
 
@@ -284,12 +208,6 @@ export default function ThoughtsBoard({ addCommitment, addRecurringTask, categor
         </div>
         <button style={tabBtn(view==='board')} onClick={() => setView('board')}>🧷 Board</button>
         <button style={tabBtn(view==='list')} onClick={() => setView('list')}>☰ List</button>
-        {view === 'board' && thoughts.length > 1 && (
-          <button onClick={tidyUp} title="Line the notes up so none are hidden"
-            style={{ fontSize:11, padding:'5px 12px', borderRadius:20, border:'1px solid var(--border)', background:'white', color:'var(--muted)', cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:600 }}>
-            ✨ Tidy up
-          </button>
-        )}
         {view === 'list' && (
           <button onClick={() => setSortDir(d => d === 'new' ? 'old' : 'new')}
             style={{ fontSize:11, padding:'5px 12px', borderRadius:20, border:'1px solid var(--border)', background:'white', color:'var(--muted)', cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:600 }}>
@@ -307,46 +225,32 @@ export default function ThoughtsBoard({ addCommitment, addRecurringTask, categor
             {q ? 'No thoughts match your search.' : 'Nothing here yet — jot your first thought above.'}
           </div>
         </div>
-      ) : view === 'board' ? (<>
-        {boardW > 0 && hasPileUp(thoughts, boardW, minH) && (
-          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:10, marginBottom:10, padding:'8px 12px', borderRadius:12, background:'#FFF8E6', border:'1px solid #F0DDB0', fontSize:12, color:'#6B5530' }}>
-            <span>Some notes are piled on top of each other.</span>
-            <button onClick={tidyUp}
-              style={{ fontSize:11, padding:'5px 12px', borderRadius:20, border:'none', background:'linear-gradient(135deg, #F7DDB0, #FBD1DE)', color:'#5A4030', cursor:'pointer', fontFamily:'DM Sans,sans-serif', fontWeight:700, whiteSpace:'nowrap' }}>
-              ✨ Tidy up
-            </button>
-          </div>
-        )}
-        {/* ── Scattered board — grows taller as it fills ── */}
-        <div ref={setBoardEl} style={{
-          position:'relative', height: boardHeight(thoughts, minH, minH), borderRadius:16, overflow:'hidden',
+      ) : view === 'board' ? (
+        // ── Scattered board ──
+        <div ref={boardRef} style={{
+          position:'relative', minHeight:'64vh', borderRadius:16, overflow:'hidden',
           border:'1px solid #D8C7A8',
           background:'repeating-linear-gradient(45deg, #E9D8B8 0 2px, #E4D2AE 2px 4px), radial-gradient(circle at 50% 40%, #EAD9B9, #DFC9A2)',
           boxShadow:'inset 0 2px 18px rgba(120,95,50,.28)',
           padding:8,
         }}>
-          {/* oldest first, so newer notes sit on top of older ones */}
-          {[...filtered].sort((a, b) => a.createdAt.localeCompare(b.createdAt)).map(t => {
+          {sorted.map(t => {
             const dragging = dragId === t.id
-            const open = openId === t.id
-            const z = zOrder.indexOf(t.id)
             return (
               <div key={t.id}
                 onPointerDown={e => onNotePointerDown(e, t)}
-                style={{ position:'absolute', width:NOTE_W,
-                  left:`min(${t.x || 0}%, calc(100% - ${NOTE_W + 8}px))`, top: noteTop(t, minH),
+                style={{ position:'absolute', width:150,
+                  left:`min(${t.x}%, calc(100% - 158px))`, top:`min(${t.y}%, calc(100% - 128px))`,
                   touchAction:'none', cursor: dragging ? 'grabbing' : 'grab',
-                  zIndex: dragging ? 1000 : open ? 999 : 1 + (z < 0 ? 0 : z + 1),
-                  transition: dragging ? 'none' : 'box-shadow .15s' }}>
+                  zIndex: dragging ? 5 : 1, transition: dragging ? 'none' : 'box-shadow .15s' }}>
                 <div style={{ position:'relative', transform: dragging ? 'scale(1.05)' : 'none', transition:'transform .12s' }}>
-                  <Sticky t={t} onSchedule={setScheduling} onComplete={completeThought} onDelete={deleteThought}
-                    clampLines={open ? 0 : 5} />
+                  <Sticky t={t} onSchedule={setScheduling} onComplete={completeThought} onDelete={deleteThought} />
                 </div>
               </div>
             )
           })}
         </div>
-      </>) : (
+      ) : (
         // ── Sorted list ──
         <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(150px, 1fr))', gap:10 }}>
           {sorted.map(t => (
