@@ -22,7 +22,10 @@ globalThis.localStorage = {
   setItem: (k, v) => store.set(k, String(v)),
   removeItem: k => store.delete(k),
 }
-globalThis.window = { addEventListener: () => {}, dispatchEvent: () => true }
+// Like a real browser, flipping navigator.onLine fires 'online' / 'offline'.
+const winL = {}
+const setOnline = (on) => { globalThis.navigator.onLine = on; for (const fn of winL[on ? 'online' : 'offline'] || []) fn() }
+globalThis.window = { addEventListener: (k, fn) => { (winL[k] ||= []).push(fn) }, dispatchEvent: () => true }
 globalThis.document = { hidden: false, addEventListener: () => {} }
 Object.defineProperty(globalThis, 'navigator', { value: { onLine: true }, configurable: true })
 globalThis.CustomEvent = class { constructor(t, o) { this.type = t; Object.assign(this, o) } }
@@ -123,13 +126,13 @@ P.clearPhotoCache()
 eq('a removed photo reads back as absent', await P.loadPhoto(id2), null)
 
 console.log('\n— attaching a photo works with no connection —')
-mock.state.offline = true; globalThis.navigator.onLine = false
+mock.state.offline = true; setOnline(false)
 const queuedBefore = off.pendingCount()
 const id4 = P.savePhoto(fakePhoto(4))
 await settle()
 eq('it is readable on this device immediately', P.peekPhoto(id4), fakePhoto(4))
 eq('and it is queued for upload', off.pendingCount(), queuedBefore + 1)
-mock.state.offline = false; globalThis.navigator.onLine = true
+mock.state.offline = false; setOnline(true)
 await off.flush()
 eq('reconnecting uploads it', kvRow(`wellness_photo_${id4}`).value.data, fakePhoto(4))
 

@@ -3,7 +3,7 @@ import { createClient } from '@supabase/supabase-js'
 import {
   ready as offlineReady, cacheRead, cacheWrite, cacheClear,
   enqueue, hasPending, isOnline, noteFailure, noteSuccess, isAuthError, requestReauth,
-  registerReplay, setActiveUid, flush as flushOutbox,
+  registerReplay, registerProbe, setActiveUid, flush as flushOutbox,
 } from './offline.js'
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
@@ -1826,6 +1826,13 @@ async function tolerate(codes, run) {
     throw e
   }
 }
+
+// The smallest request that proves the server is reachable (and the sign-in
+// works): one key name from this account's kv_store.
+if (USE_SUPABASE) registerProbe(async () => {
+  const { error } = await supabase.from('kv_store').select('key').limit(1)
+  if (error) throw error
+})
 
 if (USE_SUPABASE) registerReplay(async op => {
   switch (op.table) {
