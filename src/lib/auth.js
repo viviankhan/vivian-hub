@@ -27,7 +27,7 @@
 //      the user out except an explicit sign-out or the server actually
 //      rejecting the refresh token.
 // ─────────────────────────────────────────────────────────────
-import { supabase, isUsingSupabase, supabaseUrl, supabaseAnonKey, setStorageUser, clearOfflineMirror } from './storage.js'
+import { supabase, isUsingSupabase, supabaseUrl, supabaseAnonKey, setStorageUser, clearOfflineMirror, movedFromRef } from './storage.js'
 import { cacheRead, cacheWrite, isOnline, isNetworkError, pendingCount, flush as flushOutbox } from './offline.js'
 
 // When there's no Supabase, everyone is the same implicit "local" user. A fixed
@@ -60,7 +60,10 @@ function setUser(user) {
   currentUid = user?.id || (isUsingSupabase ? null : LOCAL_UID)
   // Tell storage.js who's writing BEFORE any listener triggers a data load, so
   // kv_store reads/writes are scoped to this account from the first request.
-  setStorageUser(currentUid)
+  // …and whether the server has actually confirmed this sign-in. On a merely
+  // remembered account storage.js works from the mirror only: a request with no
+  // real session is answered "no rows", which must never be mistaken for data.
+  setStorageUser(currentUid, { verified: !unverified })
   for (const fn of listeners) { try { fn(currentUser) } catch (e) { console.error('[auth] listener', e) } }
 }
 
@@ -111,6 +114,13 @@ function authKeysInLocalStorage() {
   return out
 }
 
+// The key family of the project this build talks to. After a move to a new
+// project the old project's entry is still on the device (it is what carries
+// the sign-in across — see adoptOldSession), and it must not be mistaken for a
+// live session here.
+const THIS_REF = (() => { try { return new URL(supabaseUrl).hostname.split('.')[0] } catch { return '' } })()
+const isThisProjectsKey = k => !THIS_REF || k.startsWith(`sb-${THIS_REF}-auth-token`)
+
 // Copy whatever Supabase has written for the session into IndexedDB.
 async function mirrorSession() {
   const keys = authKeysInLocalStorage()
@@ -125,7 +135,7 @@ async function mirrorSession() {
 // Writing the tokens back BEFORE the client reads them means supabase-js starts
 // up already signed in, exactly as if nothing had been cleared.
 async function restoreSessionFromMirror() {
-  if (authKeysInLocalStorage().length) return false
+  if (authKeysInLocalStorage().some(isThisProjectsKey)) return false
   let saved
   try { saved = await cacheRead(SESSION_MIRROR) } catch { return false }
   if (!saved || !saved.entries) return false
@@ -191,6 +201,81 @@ export async function storageReport() {
   if (!ls) { try { localStorage.setItem(MARK_KEY, mark) } catch {} }
   if (!idb) cacheWrite(MARK_MIRROR, { id: mark, at: Date.now() }).catch(() => {})
   return { known: true, localStorage: !!ls, indexedDb: !!idb }
+}
+
+// ── Carrying a sign-in to a new project ──────────────────────
+// When Bloom moves to a new Supabase project (storage.js `movedFromRef`), the
+// passwords stay behind in the old database. What every signed-in device still
+// has is the access token the old project issued it. The new project's
+// `adopt-session` function knows the old signing secret, checks that token, and
+// answers with a one-time sign-in for the same account — so the move costs the
+// person nothing, not even typing a password.
+//
+// Returns { user } on success. Otherwise { transient: true } when it simply
+// couldn't be done right now (no network, the function not answering) and is
+// worth trying again, or { transient: false } when this device has nothing the
+// new project will accept and a password reset is the way in.
+function oldAccessTokenFrom(entries) {
+  const base = `sb-${movedFromRef}-auth-token`
+  let raw = entries[base]
+  if (raw == null && entries[base + '.0'] != null) {
+    raw = ''
+    for (let i = 0; entries[`${base}.${i}`] != null; i++) raw += entries[`${base}.${i}`]
+  }
+  if (!raw) return ''
+  try {
+    if (raw.startsWith('base64-')) raw = atob(raw.slice(7))
+    const v = JSON.parse(raw)
+    return (v && (v.access_token || v.currentSession?.access_token)) || ''
+  } catch { return '' }
+}
+async function findOldAccessToken() {
+  const fromLs = {}
+  for (const k of authKeysInLocalStorage()) { try { fromLs[k] = localStorage.getItem(k) } catch {} }
+  let token = oldAccessTokenFrom(fromLs)
+  if (!token) {
+    try { const saved = await cacheRead(SESSION_MIRROR); if (saved?.entries) token = oldAccessTokenFrom(saved.entries) } catch {}
+  }
+  return token
+}
+let adopting = null
+function adoptOldSession() {
+  if (!movedFromRef || !isUsingSupabase) return Promise.resolve({ user: null, transient: false })
+  if (adopting) return adopting
+  adopting = (async () => {
+    const token = await findOldAccessToken()
+    if (!token) return { user: null, transient: false }
+    let timer = null
+    try {
+      const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null
+      if (ctrl) timer = setTimeout(() => ctrl.abort(), 12000)
+      const res = await fetch(supabaseUrl + '/functions/v1/adopt-session', {
+        method: 'POST',
+        cache: 'no-store',
+        headers: { apikey: supabaseAnonKey, Authorization: 'Bearer ' + supabaseAnonKey, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ old_access_token: token }),
+        signal: ctrl ? ctrl.signal : undefined,
+      })
+      if (!res.ok) {
+        // 4xx is the function's own answer ("not a token I accept"); anything
+        // else is the function or the network having trouble.
+        const refused = res.status >= 400 && res.status < 500 && res.status !== 408 && res.status !== 429
+        if (refused) console.warn('[auth] the new project did not accept this device\u2019s old sign-in:', res.status)
+        return { user: null, transient: !refused }
+      }
+      const body = await res.json()
+      const { data, error } = await supabase.auth.verifyOtp({ token_hash: body.token_hash, type: body.type || 'magiclink' })
+      if (error) return { user: null, transient: isNetworkError(error) }
+      const user = data?.session?.user || data?.user || null
+      if (user) console.info('[auth] carried this device\u2019s sign-in over to the new project')
+      return { user, transient: !user }
+    } catch {
+      return { user: null, transient: true }
+    } finally {
+      if (timer) clearTimeout(timer)
+    }
+  })().finally(() => { adopting = null })
+  return adopting
 }
 
 // Is the auth server actually answering right now?
@@ -275,6 +360,14 @@ export function initAuth() {
     const sessionErr = res.error || res.value?.error || null
     let user = session?.user || null
 
+    // No session for this project — but this may be a device that was signed in
+    // to the project Bloom moved away from. Bring its sign-in across.
+    let adoption = null
+    if (!user && movedFromRef) {
+      adoption = await adoptOldSession()
+      if (adoption.user) user = adoption.user
+    }
+
     if (user) {
       rememberUser(user)
       unverified = false
@@ -301,6 +394,7 @@ export function initAuth() {
         res.timedOut ||
         !isOnline() ||
         (sessionErr && isNetworkError(sessionErr)) ||
+        (adoption && adoption.transient) ||
         !(await authServerReachable())
       )
       if (couldNotAsk) {
@@ -314,7 +408,9 @@ export function initAuth() {
         // stores, the browser evicted everything — that's the iOS seven-day
         // cap, not a bug in the app.
         const report = await storageReport().catch(() => null)
-        if (remembered) {
+        if (remembered && movedFromRef) {
+          noteSignedOut('expired', 'Bloom moved to a new database and could not sign this device in by itself. Use \u201cForgot password\u201d and open the link in the email on this device. Everything saved here is still here, and uploads once you are in.')
+        } else if (remembered) {
           noteSignedOut('expired', 'The saved sign-in was no longer accepted.')
         } else if (report && !report.known) {
           noteSignedOut('storage-cleared', 'This browser had no saved sign-in — either it is new to Bloom, or the browser cleared Bloom\u2019s storage.')
@@ -375,6 +471,19 @@ export async function revalidateSession() {
       setUser(data.session.user)
       mirrorSession().catch(() => {})
       return
+    }
+    // After a move to a new project there is no session here yet: carry the
+    // old sign-in across now that the server can be reached.
+    if (movedFromRef) {
+      const adopted = await adoptOldSession()
+      if (adopted.user) {
+        unverified = false
+        rememberUser(adopted.user)
+        setUser(adopted.user)
+        mirrorSession().catch(() => {})
+        return
+      }
+      if (adopted.transient) return      // try again on the next reconnect
     }
     // A session-less success means the stored refresh token was used up or
     // revoked. Ask for a refresh explicitly so we get a definitive answer

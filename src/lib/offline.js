@@ -125,6 +125,20 @@ export async function cacheWrite(key, value) {
   catch (e) { console.warn('[offline] cache write failed for', key, e && e.message) }
 }
 
+// Every mirrored key under a prefix. Used once, by the move to a new database
+// (see storage.js), to find everything this device holds for an account.
+export async function cacheKeys(prefix) {
+  const out = new Set([...memCache.keys()].filter(k => !prefix || String(k).startsWith(prefix)))
+  const db = await openDb()
+  if (db) {
+    try {
+      const keys = await tx(db, CACHE_STORE, 'readonly', os => os.getAllKeys())
+      for (const k of keys || []) if (!prefix || String(k).startsWith(prefix)) out.add(String(k))
+    } catch {}
+  }
+  return [...out]
+}
+
 // Drop everything mirrored for one account — used on sign-out so the next
 // person to use this device can't read the previous account's data offline.
 export async function cacheClear(prefix) {
@@ -269,6 +283,19 @@ export function hasPending(table, id) {
 
 export function pendingCount() { return queue.length }
 
+// Mark every write waiting for one account as "never discard". Normally a write
+// the server refuses outright is dropped so the queue can drain; during the
+// move to a new database a refusal more likely means the new database is
+// missing something, and the write may be the only copy of that edit.
+export async function keepAllPending(uid) {
+  await ready()
+  for (const op of queue) {
+    if (op.uid !== uid || op.keep) continue
+    op.keep = true
+    await persistOp(op)
+  }
+}
+
 // ── Network state ────────────────────────────────────────────────────────────
 // `navigator.onLine` only tells you the device has *a* network — it's true on a
 // captive-portal wifi that drops every request. So the real signal is what our
@@ -409,6 +436,16 @@ export function setActiveUid(uid) {
 let flushTimer = null
 let flushing = null
 
+// storage.js closes this while it is not safe to talk to the cloud as this
+// account: the sign-in hasn't been confirmed, or the move to a new database
+// hasn't been settled yet. Nothing is replayed until it opens again.
+let replayHeld = false
+export function holdReplay(held) {
+  const was = replayHeld
+  replayHeld = !!held
+  if (was && !replayHeld && queue.length) scheduleFlush(200)
+}
+
 export function scheduleFlush(delay = 0) {
   if (flushTimer) clearTimeout(flushTimer)
   flushTimer = setTimeout(() => { flushTimer = null; flush() }, delay)
@@ -427,12 +464,12 @@ export function flush() {
   if (flushing) return flushing
   flushing = (async () => {
     await ready()
-    if (!replayFn || !activeUid) return { sent: 0 }
+    if (!replayFn || !activeUid || replayHeld) return { sent: 0 }
     const mine = queue.filter(op => op.uid === activeUid)
     if (!mine.length) { if (suspectedDown && !browserSaysOffline()) { suspectedDown = false; notify() } return { sent: 0 } }
 
     syncing = true; lastError = null; notify()
-    let sent = 0, netFails = 0, held = 0, stoppedOnAuth = false
+    let sent = 0, netFails = 0, held = 0, kept = 0, stoppedOnAuth = false
     const done = []
     const blocked = new Set()
     const isBlocked = op => blocked.has(`${op.table}:*`) || blocked.has(rowKey(op)) ||
@@ -460,10 +497,17 @@ export function flush() {
             if (sent === 0 && netFails >= 2) break
             continue
           }
+          lastError = (e && e.message) || String(e)
+          if (op.keep) {
+            // A write that must not be thrown away (see keepAllPending). Hold
+            // it and everything behind it for this row, and try again later.
+            console.error('[offline] the server rejected a write that is being kept:', op.table, op.op, op.id, lastError)
+            blocked.add(rowKey(op)); held++; kept++
+            continue
+          }
           // A real rejection. Drop it so the queue can drain, but say so loudly:
           // silently discarding someone's edit is the worst possible outcome.
           console.error('[offline] discarding a write the server rejected:', op, e)
-          lastError = (e && e.message) || String(e)
           done.push(op.seq)
         }
       }
@@ -491,6 +535,7 @@ export function flush() {
     }
     if (netFails) scheduleFlush(isOnline() ? 60000 : 15000)
     else if (stoppedOnAuth) scheduleFlush(15000)
+    else if (kept) scheduleFlush(5 * 60000)
     return { sent }
   })().finally(() => { flushing = null })
   return flushing

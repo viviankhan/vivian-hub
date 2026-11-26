@@ -53,6 +53,7 @@ const fakeStorage = `
 export const isUsingSupabase = true
 export const supabaseUrl = 'https://proj.supabase.co'
 export const supabaseAnonKey = 'anon'
+export const movedFromRef = ''
 export let lastUid = null
 export function setStorageUser(uid) { lastUid = uid }
 export async function clearOfflineMirror() {}

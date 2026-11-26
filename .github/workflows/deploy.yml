@@ -29,8 +29,16 @@ jobs:
       - run: npm install
       - run: npm run build
         env:
-          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
-          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          # Bloom moved to a new Supabase project on Nov 26, 2026: the first one
+          # (fdvfpbhrojniiqqdnoii) stopped starting when its disk filled and
+          # could not be cleared on the free plan. These are written here rather
+          # than read from the repository secrets, which still hold the old
+          # project's values; both are public by design (they ship in the page).
+          # VITE_MOVED_FROM_REF switches on the one-time carry-over of each
+          # device's saved copy and sign-in (src/lib/storage.js, auth.js).
+          VITE_SUPABASE_URL: https://jzhfdtnzdwyeokwujyua.supabase.co
+          VITE_SUPABASE_ANON_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imp6aGZkdG56ZHd5ZW9rd3VqeXVhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTU2NTczMzQsImV4cCI6MjExMTIzMzMzNH0.bHMrBajl90PyhdIr8PtrXs1TuY5VnlfE33KywPcknrg
+          VITE_MOVED_FROM_REF: fdvfpbhrojniiqqdnoii
       - uses: actions/configure-pages@v4
       - uses: actions/upload-pages-artifact@v3
         with:

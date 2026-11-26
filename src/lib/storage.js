@@ -1,14 +1,19 @@
 // src/lib/storage.js
 import { createClient } from '@supabase/supabase-js'
 import {
-  ready as offlineReady, cacheRead, cacheWrite, cacheClear,
+  ready as offlineReady, cacheRead, cacheWrite, cacheClear, cacheKeys,
   enqueue, hasPending, isOnline, noteFailure, noteSuccess, isAuthError, requestReauth,
-  registerReplay, registerProbe, setActiveUid, flush as flushOutbox,
+  registerReplay, registerProbe, setActiveUid, flush as flushOutbox, keepAllPending, holdReplay,
 } from './offline.js'
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
 const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY
 const USE_SUPABASE = !!(SUPABASE_URL && SUPABASE_KEY)
+// Set when this build talks to a project the app MOVED to (the value is the old
+// project's ref). It switches on the one-time carry-over at the bottom of this
+// file and the sign-in hand-off in auth.js; unset, neither exists.
+const MOVED_FROM = (import.meta.env && import.meta.env.VITE_MOVED_FROM_REF) || ''
+export const movedFromRef = MOVED_FROM
 
 // Force every request to bypass HTTP caching — a cached GET response for a
 // kv_store row would silently show stale (pre-delete) data after a real write
@@ -101,12 +106,34 @@ const wsigSet = (k, v) => { try { localStorage.setItem(WSIG_PREFIX + kvNs() + k,
 // (that would be a cycle). 'local' is the implicit single user without Supabase.
 let kvUid = USE_SUPABASE ? null : 'local'
 const kvNs = () => (kvUid ? kvUid + ':' : '')
-export function setStorageUser(uid) {
+// `verified: false` means auth.js is running on a remembered account it has not
+// been able to confirm with the server. The planner opens (from the mirror) but
+// nothing is asked of the cloud: without a real session every table answers
+// "no rows" rather than an error, and taking that at face value would replace
+// this device's copy with nothing.
+let sessionVerified = true
+export function setStorageUser(uid, { verified = true } = {}) {
   kvUid = uid || (USE_SUPABASE ? null : 'local')
+  sessionVerified = !!verified
+  moveOpen = !MOVED_FROM || !kvUid || moveDoneLocally(kvUid)
+  holdReplay(!!kvUid && !(sessionVerified && moveOpen))
   // The outbox is shared by every account that has used this device, so it has
   // to know whose writes it may replay — sending A's queued edits while B is
   // signed in would file them under the wrong owner.
   setActiveUid(kvUid)
+  if (kvUid && sessionVerified && !moveOpen) settleMove()
+}
+// May this device read from and write to the cloud right now? Offline, an
+// unconfirmed sign-in, or a move that hasn't been settled all mean "work from
+// the mirror and queue": the same safe mode, for three different reasons.
+let moveOpen = !MOVED_FROM
+const cloudOk = () => isOnline() && sessionVerified && moveOpen
+// A read that would otherwise fall back to "nothing" waits (briefly) for the
+// move to settle first, so a device with no copy of its own isn't told the
+// account is empty while the carry-over is still being worked out.
+async function cloudReady() {
+  if (moveOpen || !sessionVerified || !kvUid || !isOnline()) return
+  await Promise.race([settleMove(), new Promise(r => setTimeout(r, 12000))])
 }
 export const currentStorageUser = () => kvUid
 
@@ -219,7 +246,8 @@ async function cloudRead({ mirror, table, id, run, fallback, label }) {
   await offlineReady()
   const cached = await cacheRead(mirrorKey(mirror))
   const local = cached === undefined ? fallback : cached
-  if (!isOnline() || (table && hasPending(table, id))) return local
+  if (cached === undefined) await cloudReady()
+  if (!cloudOk() || (table && hasPending(table, id))) return local
   try {
     const request = Promise.resolve().then(run)
     const r = cached === undefined ? { value: await request } : await withDeadline(request, READ_DEADLINE_MS)
@@ -254,7 +282,7 @@ async function cloudWrite(op, run) {
   // rather than overtake it, or the replay would land the older value last.
   // (Setting something straight back — restoring a version, say — right after
   // an offline edit is exactly that case.)
-  if (isOnline() && !hasPending(op.table, op.id)) {
+  if (cloudOk() && !hasPending(op.table, op.id)) {
     try {
       const result = await run()
       noteSuccess()
@@ -399,7 +427,8 @@ async function runKvBatch(batch) {
       else ask.push(k)
     }
     if (!ask.length) return
-    if (!isOnline()) { for (const k of ask) settle(k, local.get(k)); return }
+    if (ask.some(k => cached[keys.indexOf(k)] === undefined)) await cloudReady()
+    if (!cloudOk()) { for (const k of ask) settle(k, local.get(k)); return }
 
     // One request per chunk; in practice one chunk for the whole app.
     const chunks = []
@@ -471,7 +500,7 @@ export async function dbGetChanged(key, sinceISO) {
   // to pull down, and reporting a change would let a stale cloud copy overwrite
   // the edit that hasn't been uploaded yet. "Unchanged" is the safe answer —
   // the caller then keeps what it already has.
-  if (!isOnline() || hasPending('kv_store', key)) return { status: 'unchanged', updatedAt: sinceISO ?? null }
+  if (!cloudOk() || hasPending('kv_store', key)) return { status: 'unchanged', updatedAt: sinceISO ?? null }
   const { data: meta, error: metaErr } = await supabase
     .from('kv_store').select('updated_at').eq('key', key).maybeSingle()
   if (metaErr) {
@@ -739,7 +768,7 @@ export async function deleteLogEntry(label, storageKey) {
     await offlineReady()
     // With a network and nothing queued, the cloud is the authority on which
     // rows match — resolve there, exactly as before.
-    if (isOnline() && !hasPending('log_entries')) {
+    if (cloudOk() && !hasPending('log_entries')) {
       try {
         const { data: exact, error: e1 } = await supabase.from('log_entries')
           .select('id').eq('label', label).eq('storage_key', storageKey)
@@ -1902,3 +1931,158 @@ if (USE_SUPABASE) registerReplay(async op => {
       return
   }
 })
+
+
+// ── Carrying this device's copy to a new database ───────────────
+// Bloom's first Supabase project stopped starting on Nov 20, 2026 and could not
+// be revived, so the app moved to a fresh, empty one (VITE_MOVED_FROM_REF names
+// the project it left). The data did not move with it — but every device holds
+// a mirror of everything it had read, plus an outbox of everything it changed
+// since. That mirror is now the only copy there is, so before a single read is
+// allowed to reach the empty database (which would dutifully overwrite the
+// mirror with "nothing"), this device puts what it holds back in the cloud.
+//
+// It does that with the machinery already trusted for offline edits: each
+// mirrored value becomes an ordinary queued write. A key with a write waiting
+// is always answered from the mirror, never the cloud, so the copy on this
+// device is protected for exactly as long as it takes to upload, and a write
+// that is cut off simply resumes.
+//
+//   • The FIRST device to arrive (no marker row yet) uploads everything.
+//   • Every later device only fills gaps: kv keys the cloud still lacks — a
+//     photo opened on a laptop but never on the phone, say. Its own unsent
+//     edits replay afterwards as they always would.
+//   • Nothing queued before or during this is ever discarded on a rejection
+//     (see keepAllPending): a refusal here means the new database is missing
+//     something, not that the edit was wrong.
+const MOVE_MARK = '__move'
+const moveFlag = uid => 'bloom_moved_' + uid
+function moveDoneLocally(uid) {
+  if (!MOVED_FROM) return true
+  try { return localStorage.getItem(moveFlag(uid)) === MOVED_FROM } catch { return false }
+}
+
+// Every kv key the cloud holds for this account (names only).
+async function cloudKvKeys() {
+  const out = new Set()
+  for (let from = 0; ; from += 1000) {
+    let q = supabase.from('kv_store').select('key')
+    if (typeof q.range === 'function') q = q.range(from, from + 999)
+    const { data, error } = await q
+    if (error) throw error
+    for (const r of data || []) out.add(r.key)
+    if (!data || data.length < 1000 || typeof q.range !== 'function') break
+  }
+  return out
+}
+
+const pickFields = (row, fields) => {
+  const out = {}
+  for (const f of fields) if (row[f] !== undefined) out[f] = row[f]
+  return out
+}
+// The row tables, in the shape their own insert helpers expect.
+const MOVE_ROWS = [
+  ['categories',      'categories',      r => pickFields(r, ['id', 'label', 'color', 'icon', 'sortOrder'])],
+  ['commitments',     'commitments',     r => pickFields(r, ['id', 'text', 'date', 'time', 'prepMin', 'durationMins', 'cat', 'person', 'done', 'createdAt'])],
+  ['events',          'events',          r => pickFields(r, ['id', 'label', 'startDate', 'endDate', 'allDay', 'startTime', 'endTime', 'color', 'icon'])],
+  ['vacations',       'vacations',       r => pickFields(r, ['id', 'label', 'startDate', 'endDate'])],
+  ['recurring_tasks', 'recurring_tasks', r => pickFields(r, ['id', 'days', 'cat', 'tag', 'startDate', 'endDate', 'label', 'note'])],
+  ['log',             'log_entries',     r => pickFields(r, ['id', 'date', 'dateLabel', 'label', 'tag', 'storageKey', 'ts'])],
+]
+
+let settling = null
+// Resolves true once the cloud is open for this account, false when it could
+// not be settled this time (no network, the server not answering). Safe to call
+// as often as anything likes: one attempt runs at a time.
+export function settleMove() {
+  if (moveOpen || !MOVED_FROM || !USE_SUPABASE || !kvUid || !sessionVerified) return Promise.resolve(moveOpen)
+  if (settling) return settling
+  const uid = kvUid
+  settling = (async () => {
+    await offlineReady()
+    const doneKey = uid + ':move:done'
+    if ((await cacheRead(doneKey)) !== MOVED_FROM) {
+      if (!isOnline()) return false
+      let inCloud
+      try {
+        inCloud = await Promise.race([
+          cloudKvKeys(),
+          new Promise((_, rej) => setTimeout(() => rej(Object.assign(new Error('timed out'), { name: 'AbortError' })), 10000)),
+        ])
+        noteSuccess()
+      } catch (e) {
+        if (isAuthError(e)) requestReauth()
+        else if (!noteFailure(e)) console.error('[move] could not ask the new database what it holds:', (e && e.message) || e)
+        return false
+      }
+      const first = !inCloud.has(MOVE_MARK)
+      const queuedKey = uid + ':move:queued'
+      let queued = 0
+      if ((await cacheRead(queuedKey)) !== MOVED_FROM) {
+        await keepAllPending(uid)
+        const put = async op => { await enqueue({ ...op, uid, keep: true }); queued++ }
+        const mine = await cacheKeys(uid + ':')
+        for (const full of mine) {
+          const name = full.slice(uid.length + 1)
+          if (!name.startsWith('kv:')) continue
+          const key = name.slice(3)
+          if (key === MOVE_MARK) continue
+          if (!first && inCloud.has(key)) continue
+          if (hasPending('kv_store', key)) continue      // its newest value is already waiting
+          const value = await cacheRead(full)
+          if (value === undefined || value === null) continue
+          await put({ table: 'kv_store', op: 'set', id: key, row: { key, value } })
+        }
+        if (first) {
+          for (const [mirror, table, shape] of MOVE_ROWS) {
+            const rows = await cacheRead(uid + ':' + mirror)
+            for (const r of Array.isArray(rows) ? rows : []) {
+              if (!r || r.id == null) continue
+              await put({ table, op: 'insert', id: r.id, row: shape(r) })
+            }
+          }
+          const ticks = await cacheRead(uid + ':completions')
+          if (ticks && typeof ticks === 'object') {
+            for (const [storageKey, done] of Object.entries(ticks)) {
+              if (hasPending('task_completions', storageKey)) continue
+              await put({ table: 'task_completions', op: 'set', id: storageKey, row: { storageKey, done: !!done, keep: !done } })
+            }
+          }
+        }
+        await cacheWrite(queuedKey, MOVED_FROM)
+        console.info(`[move] ${first ? 'first device here' : 'filling gaps'}: ${queued} saved item${queued === 1 ? '' : 's'} queued for the new database`)
+      }
+      if (uid !== kvUid) return false
+      // Say "a device with real data has been here" BEFORE the uploads start,
+      // so a second device arriving mid-upload only fills gaps instead of also
+      // uploading everything. A device with nothing to offer leaves no mark.
+      if (first && (queued > 0 || hasPending('kv_store') || hasPending('commitments'))) {
+        try { await cloudKvSet(MOVE_MARK, { from: MOVED_FROM, at: new Date().toISOString(), items: queued }) }
+        catch (e) {
+          if (isAuthError(e)) requestReauth()
+          else if (!noteFailure(e)) console.error('[move] could not mark the new database:', (e && e.message) || e)
+          return false
+        }
+      }
+      await cacheWrite(doneKey, MOVED_FROM)
+    }
+    try { localStorage.setItem(moveFlag(uid), MOVED_FROM) } catch {}
+    if (uid !== kvUid) return false
+    moveOpen = true
+    holdReplay(!sessionVerified)
+    flushOutbox()
+    return true
+  })().catch(e => { console.error('[move] failed:', (e && e.message) || e); return false })
+    .finally(() => { settling = null })
+  return settling
+}
+
+// Until the move is settled the app is in its offline mode, so keep trying on
+// every sign that the connection is back, and on a slow heartbeat.
+if (MOVED_FROM && typeof window !== 'undefined' && typeof document !== 'undefined') {
+  const retry = () => { if (!moveOpen && kvUid && sessionVerified) settleMove() }
+  window.addEventListener('online', retry)
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) retry() })
+  setInterval(retry, 30 * 1000)
+}
