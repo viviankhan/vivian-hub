@@ -22,8 +22,12 @@ const here = dirname(fileURLToPath(import.meta.url))
 const REPO = fileURLToPath(new URL('..', import.meta.url))
 
 let pass = 0, fail = 0
+// Postgres jsonb does not keep the order of an object's keys, so compare
+// values, not spellings.
+const canon = v => Array.isArray(v) ? v.map(canon)
+  : (v && typeof v === 'object') ? Object.fromEntries(Object.keys(v).sort().map(k => [k, canon(v[k])])) : v
 const eq = (name, got, want) => {
-  const g = JSON.stringify(got), w = JSON.stringify(want)
+  const g = JSON.stringify(canon(got)), w = JSON.stringify(canon(want))
   if (g === w) { pass++; console.log('  ok  ', name) }
   else { fail++; console.log('  FAIL', name, '\n        got ', (g || '').slice(0, 400), '\n        want', (w || '').slice(0, 400)) }
 }
@@ -118,7 +122,7 @@ try {
   ])
   await m('vacations', [{ id: 'vac-1', label: 'Break', startDate: '2026-12-20', endDate: '2026-12-27' }])
   await m('recurring_tasks', [
-    { id: 'r-1', days: [1, 3, 5], cat: 'cat-1', tag: 'cat-1', startDate: '2026-09-01', endDate: null, label: 'Meds', note: 'with food' },
+    { id: 'r-1', days: ['Mon', 'Wed', 'Fri'], cat: 'cat-1', tag: 'cat-1', startDate: '2026-09-01', endDate: null, label: 'Meds', note: 'with food' },
     { id: 'r-2', days: [], cat: 'meeting', tag: 'meeting', startDate: null, endDate: null, label: 'CLL lab meeting', note: '' },
   ])
   const logId = randomUUID()
@@ -165,7 +169,7 @@ try {
   eq('events', [E.ev1.all_day, E.ev1.start_time, E.ev2.all_day, E.ev2.start_time, E.ev2.end_time, E.ev2.icon], [true, null, false, '09:00:00', '10:30:00', 'book'])
   eq('vacations', (await rows('vacations')).map(r => [r.id, r.start_date, r.end_date]), [['vac-1', '2026-12-20', '2026-12-27']])
   const R = byId(await rows('recurring_tasks'))
-  eq('recurring tasks', [R['r-1'].days, R['r-1'].start_date, R['r-1'].note, R['r-2'].label, R['r-2'].days], [[1, 3, 5], '2026-09-01', 'with food', 'CLL lab meeting', []])
+  eq('recurring tasks', [R['r-1'].days, R['r-1'].start_date, R['r-1'].note, R['r-2'].label, R['r-2'].days], [['Mon', 'Wed', 'Fri'], '2026-09-01', 'with food', 'CLL lab meeting', []])
   eq('categories', (await rows('categories')).map(r => [r.id, r.label, r.sort_order]).sort(), [['cat-1', 'Health', 2], ['meeting', 'Meeting', 0]])
   eq('log entries', (await rows('log_entries')).map(r => [r.id, r.date, r.date_label, r.storage_key]), [[logId, '2026-11-19', 'Thu, Nov 19', 'r-1@2026-11-19']])
   eq('ticks', (await rows('task_completions', 'storage_key,done')).map(r => [r.storage_key, r.done]).sort(), [['c2', true], ['r-1@2026-11-24', false], ['r-1@2026-11-25', true]])
@@ -186,8 +190,8 @@ try {
   await S.setScheduledTasks([...tasks, { id: 't3', text: 'New after move' }])
   await S.addEvent({ id: 'ev3', label: 'Trip', startDate: '2026-12-10', endDate: '2026-12-12' })
   await S.deleteEvent('ev3')
-  await S.addRecurringTask({ id: 'r-3', label: 'Stretch', days: [0, 6], cat: 'cat-1' })
-  await S.updateRecurringTask('r-3', { label: 'Stretch more', days: [0], cat: 'cat-1' })
+  await S.addRecurringTask({ id: 'r-3', label: 'Stretch', days: ['Sat', 'Sun'], cat: 'cat-1' })
+  await S.updateRecurringTask('r-3', { label: 'Stretch more', days: ['Sun'], cat: 'cat-1' })
   await S.addCategory({ id: 'cat-2', label: 'Fun', color: '#ff00aa' })
   await S.addLogEntry({ date: '2026-11-26', dateLabel: 'Thu', label: 'After move', tag: 'cat-2', storageKey: 'c-new' })
   await S.addVacation({ id: 'vac-2', label: 'Jan', startDate: '2027-01-02', endDate: '2027-01-04' })
